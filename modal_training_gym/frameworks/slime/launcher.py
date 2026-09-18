@@ -1199,7 +1199,12 @@ def build_slime_app(
     )
     app = App(app_name, tags=tags)
     gpu_spec = f"{slime.gpu_type}:{slime.gpu_allocation.gpus_per_node}"
-    conversion_gpu_spec = f"{slime.gpu_type}:{slime.actor_num_gpus_per_node}"
+    conversion_gpus = (
+        slime.actor_num_gpus_per_node
+        if slime.conversion_gpus_per_node is None
+        else slime.conversion_gpus_per_node
+    )
+    conversion_gpu_spec = f"{slime.gpu_type}:{conversion_gpus}"
 
     @app.function(
         image=image,

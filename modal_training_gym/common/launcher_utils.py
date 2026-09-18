@@ -171,7 +171,11 @@ def get_checkpoint_conversion_policy(
     ``arch_args_model_script_attr`` is set, arch flags are skipped if that
     attribute is populated (the model script already sources them).
     """
-    gpus_per_node = getattr(cfg, "actor_num_gpus_per_node", 8)
+    gpus_per_node = getattr(cfg, "conversion_gpus_per_node", None)
+    if gpus_per_node is None:
+        gpus_per_node = getattr(cfg, "actor_num_gpus_per_node", 8)
+    if type(gpus_per_node) is not int or gpus_per_node <= 0:
+        raise ValueError("conversion_gpus_per_node must be a positive integer")
     actor_nodes = getattr(cfg, "actor_num_nodes", 1)
     # torch_dist is reshard-friendly, so conversion parallelism is independent of
     # the training layout.
@@ -189,7 +193,7 @@ def get_checkpoint_conversion_policy(
     max_world_size = actor_nodes * gpus_per_node
     if world_size > max_world_size:
         raise ValueError(
-            f"checkpoint conversion world_size={world_size} exceeds actor cluster capacity "
+            f"checkpoint conversion world_size={world_size} exceeds conversion cluster capacity "
             f"{actor_nodes}x{gpus_per_node}={max_world_size}"
         )
 

@@ -39,6 +39,7 @@ _SLIME_SKIP = {
     "environment",
     "async_mode",
     "physical_gpus_per_node",
+    "conversion_gpus_per_node",
     "wandb",
     "name",
     "app_tags",
@@ -170,6 +171,8 @@ class SlimeRecipe(BaseTrainRecipe):
     # Modal worker size; trainer ranks and Slime CLI flags remain independent.
     # None preserves the existing allocation for all other recipes.
     physical_gpus_per_node: int | None = None
+    # Independent checkpoint-conversion worker size; None retains actor sizing.
+    conversion_gpus_per_node: int | None = None
     rollout_num_gpus: int | None = None
     use_critic: bool = False
     critic_num_nodes: int | None = None

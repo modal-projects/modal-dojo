@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from modal_training_gym.common.errors import GpuAllocationError
+from modal_training_gym.common.launcher_utils import get_checkpoint_conversion_policy
 from modal_training_gym.train_recipes.miles_recipe.recipe import MilesConfig
 from modal_training_gym.train_recipes.gpu_allocation import (
     resolve_gpu_allocation,
@@ -58,6 +59,36 @@ def test_two_trainer_six_rollout_gpus_share_one_physical_node() -> None:
 def test_actor_ranks_cannot_exceed_physical_node_size() -> None:
     with pytest.raises(ValueError, match="cannot exceed"):
         SlimeRecipe(**_SLIME_KW, physical_gpus_per_node=4)
+
+
+def test_conversion_can_use_one_gpu_without_changing_training_allocation() -> None:
+    recipe = SlimeRecipe(
+        **{**_SLIME_KW, "rollout_num_gpus_per_engine": 1},
+        actor_num_gpus_per_node=2,
+        physical_gpus_per_node=8,
+        rollout_num_gpus=6,
+        conversion_gpus_per_node=1,
+    )
+    nodes, processes, flags = get_checkpoint_conversion_policy(recipe)
+    assert (nodes, processes, flags) == (1, 1, [])
+    assert recipe.gpu_allocation.actor_gpus == 2
+    assert recipe.gpu_allocation.gpus_per_node == 8
+    assert "--conversion-gpus-per-node" not in recipe.cli_args()
+    recipe.conversion_gpus_per_node = None
+    assert get_checkpoint_conversion_policy(recipe)[:2] == (1, 2)
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 1.0, "1"])
+def test_conversion_rejects_invalid_worker_sizes(value) -> None:
+    with pytest.raises(ValueError, match="conversion_gpus_per_node"):
+        get_checkpoint_conversion_policy(SimpleNamespace(conversion_gpus_per_node=value))
+
+
+def test_conversion_parallelism_cannot_exceed_its_allocation() -> None:
+    with pytest.raises(ValueError, match="exceeds conversion cluster capacity"):
+        get_checkpoint_conversion_policy(SimpleNamespace(
+            conversion_gpus_per_node=1, tensor_model_parallel_size=2,
+        ))
 
 
 @pytest.mark.parametrize("value", [0, -1, True, 8.0, "8"])
