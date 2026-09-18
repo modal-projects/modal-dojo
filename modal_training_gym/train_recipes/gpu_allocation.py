@@ -36,15 +36,23 @@ class GpuAllocation:
 
 
 def resolve_gpu_allocation(config: Any, *, warn: bool = True) -> GpuAllocation:
-    gpus_per_node = _positive_int_field(config, "actor_num_gpus_per_node")
+    actor_gpus_per_node = _positive_int_field(config, "actor_num_gpus_per_node")
+    gpus_per_node = (
+        _optional_positive_int_field(config, "physical_gpus_per_node")
+        or actor_gpus_per_node
+    )
+    if actor_gpus_per_node > gpus_per_node:
+        raise GpuAllocationError(
+            "actor_num_gpus_per_node cannot exceed physical_gpus_per_node"
+        )
     actor_nodes = _positive_int_field(config, "actor_num_nodes")
-    actor_gpus = actor_nodes * gpus_per_node
+    actor_gpus = actor_nodes * actor_gpus_per_node
     rollout_num_gpus_per_engine = _positive_int_field(
         config, "rollout_num_gpus_per_engine"
     )
 
     colocate = bool(getattr(config, "colocate", False))
-    critic_gpus = _critic_gpus(config, actor_nodes, gpus_per_node)
+    critic_gpus = _critic_gpus(config, actor_nodes, actor_gpus_per_node)
     rollout_gpus = _rollout_gpus(
         config,
         actor_gpus=actor_gpus,

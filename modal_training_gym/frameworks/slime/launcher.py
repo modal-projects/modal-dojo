@@ -701,6 +701,7 @@ def _scientific_run_contract(
             "total_nodes": int(recipe.total_nodes),
             "actor_num_nodes": int(recipe.actor_num_nodes),
             "actor_num_gpus_per_node": int(recipe.actor_num_gpus_per_node),
+            "physical_gpus_per_node": int(recipe.gpu_allocation.gpus_per_node),
             "rollout_num_gpus": int(recipe.rollout_num_gpus or 0),
             "memory": _contract_value(recipe.memory),
             "cloud": recipe.cloud,
@@ -1197,7 +1198,8 @@ def build_slime_app(
         wandb=slime.wandb,
     )
     app = App(app_name, tags=tags)
-    gpu_spec = f"{slime.gpu_type}:{slime.actor_num_gpus_per_node}"
+    gpu_spec = f"{slime.gpu_type}:{slime.gpu_allocation.gpus_per_node}"
+    conversion_gpu_spec = f"{slime.gpu_type}:{slime.actor_num_gpus_per_node}"
 
     @app.function(
         image=image,
@@ -1239,7 +1241,7 @@ def build_slime_app(
 
     @app.function(
         image=image,
-        gpu=gpu_spec,
+        gpu=conversion_gpu_spec,
         memory=slime.memory,
         cloud=slime.cloud,
         region=slime.region,
@@ -1437,7 +1439,7 @@ def build_slime_app(
     # provides CAP_IPC_LOCK and NVSwitch device access that slime's colocated
     # weight sync (UpdateWeightFromTensor) needs for fast CUDA IPC transfers.
     _multi_node = slime.total_nodes > 1
-    _full_node = slime.actor_num_gpus_per_node >= 8
+    _full_node = slime.gpu_allocation.gpus_per_node >= 8
     _use_clustered = _multi_node or (_full_node and _supports_rdma(slime.gpu_type))
 
     train_secrets: list[Secret] = []

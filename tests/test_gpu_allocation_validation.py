@@ -39,6 +39,42 @@ def test_slime_resolves_non_colocated_gpu_allocation() -> None:
     assert recipe.total_nodes == 2
 
 
+def test_two_trainer_six_rollout_gpus_share_one_physical_node() -> None:
+    recipe = SlimeRecipe(
+        **{**_SLIME_KW, "rollout_num_gpus_per_engine": 1},
+        actor_num_gpus_per_node=2,
+        physical_gpus_per_node=8,
+        rollout_num_gpus=6,
+    )
+    allocation = recipe.gpu_allocation
+    assert (allocation.actor_gpus, allocation.rollout_gpus) == (2, 6)
+    assert (allocation.total_gpus, allocation.total_nodes, allocation.gpus_per_node) == (8, 1, 8)
+    assert allocation.rollout_engines == 6
+    arguments = recipe.cli_args()
+    assert "--physical-gpus-per-node" not in arguments
+    assert arguments[arguments.index("--actor-num-gpus-per-node") + 1] == "2"
+
+
+def test_actor_ranks_cannot_exceed_physical_node_size() -> None:
+    with pytest.raises(ValueError, match="cannot exceed"):
+        SlimeRecipe(**_SLIME_KW, physical_gpus_per_node=4)
+
+
+@pytest.mark.parametrize("value", [0, -1, True, 8.0, "8"])
+def test_physical_node_size_is_a_positive_integer(value) -> None:
+    config = SimpleNamespace(
+        actor_num_nodes=1,
+        actor_num_gpus_per_node=2,
+        physical_gpus_per_node=value,
+        rollout_num_gpus_per_engine=1,
+        colocate=False,
+        rollout_num_gpus=6,
+        use_critic=False,
+    )
+    with pytest.raises(GpuAllocationError, match="physical_gpus_per_node"):
+        resolve_gpu_allocation(config, warn=False)
+
+
 def test_rollout_gpus_must_divide_rollout_engine_size() -> None:
     with pytest.raises(ValueError, match="not divisible"):
         SlimeRecipe(**_SLIME_KW, rollout_num_gpus=10)
