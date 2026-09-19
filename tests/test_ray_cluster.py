@@ -288,8 +288,13 @@ def test_ray_worker_cleans_partial_state_after_start_timeout(monkeypatch):
 
 def test_stop_ray_is_bounded_and_marks_cluster_stopped(monkeypatch):
     calls = []
+    shutdown = []
+    monkeypatch.setitem(
+        sys.modules, "ray", SimpleNamespace(shutdown=lambda: shutdown.append(True))
+    )
 
     def _run(command, **kwargs):
+        assert shutdown == [True], "Disconnect the driver before killing its GCS server"
         calls.append((command, kwargs))
         return SimpleNamespace(returncode=0, stdout="stopped", stderr="")
 
@@ -311,6 +316,14 @@ def test_stop_ray_is_bounded_and_marks_cluster_stopped(monkeypatch):
         )
     ]
     assert cluster._started is False
+
+
+def test_stop_ray_without_started_cluster_does_not_disconnect_other_driver(monkeypatch):
+    def unexpected():
+        raise AssertionError("An unused cluster must not disconnect another driver")
+
+    monkeypatch.setitem(sys.modules, "ray", SimpleNamespace(shutdown=unexpected))
+    ModalRayCluster().stop_ray()
 
 
 def test_sustained_failure_requires_one_continuous_interval():

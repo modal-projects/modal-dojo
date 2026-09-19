@@ -797,6 +797,12 @@ class ModalRayCluster:
             raise ValueError("timeout_seconds must be positive")
         if not self._started:
             return
+        # Disconnect this driver's native GCS client before stopping its server.
+        # Otherwise the client can terminate the process during later metadata
+        # finalization, even after a successful result has been persisted.
+        import ray
+
+        ray.shutdown()
         try:
             completed = subprocess.run(
                 ["ray", "stop", "--force"],
