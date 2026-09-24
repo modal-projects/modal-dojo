@@ -41,7 +41,7 @@ export function parseTutorialMetadata(source: string, tutorialPath: string) {
       throw new Error(`${tutorialPath} has invalid frontmatter line: ${line}`);
     }
     const [, name, value] = match;
-    if (name !== 'order' && name !== 'deps') {
+    if (name !== 'order' && name !== 'deps' && name !== 'github') {
       throw new Error(`${tutorialPath} has unsupported frontmatter field: ${name}`);
     }
     if (fields.has(name)) {
@@ -59,6 +59,11 @@ export function parseTutorialMetadata(source: string, tutorialPath: string) {
     throw new Error(`${tutorialPath} frontmatter order exceeds the safe integer range`);
   }
 
+  const github = fields.get('github');
+  if (github !== undefined && !github.startsWith('https://')) {
+    throw new Error(`${tutorialPath} frontmatter github must be an https URL`);
+  }
+
   const deps = (fields.get('deps') ?? '')
     .split(',')
     .map((dependency) => dependency.trim())
@@ -69,6 +74,9 @@ export function parseTutorialMetadata(source: string, tutorialPath: string) {
   const invalidDeps = deps.filter((dependency) => !dependencyPattern.test(dependency));
   if (invalidDeps.length > 0) {
     throw new Error(`${tutorialPath} has invalid frontmatter deps: ${invalidDeps.join(', ')}`);
+  }
+  if (github !== undefined && deps.length > 0) {
+    throw new Error(`${tutorialPath} cannot set deps when github is overridden`);
   }
 
   const contentLines = lines.slice(frontmatterEnd + 1);
@@ -81,6 +89,7 @@ export function parseTutorialMetadata(source: string, tutorialPath: string) {
     order,
     title: titleLine.slice(4).trim(),
     deps,
+    github,
     content: contentLines.join('\n'),
   };
 }
@@ -97,7 +106,8 @@ export interface Tutorial {
   order: number;
   title: string;
   body: string;
-  runCommand: string;
+  runCommand?: string;
+  githubUrl?: string;
   deps: string[];
 }
 
@@ -207,7 +217,10 @@ async function readTutorial(
   sourcePath: string,
 ): Promise<Tutorial> {
   const source = await readFile(tutorialPath, 'utf8');
-  const { order, title, deps, content } = parseTutorialMetadata(source, tutorialPath);
+  const { order, title, deps, github, content } = parseTutorialMetadata(
+    source,
+    tutorialPath,
+  );
   return {
     path: tutorialPath,
     slug,
@@ -216,7 +229,8 @@ async function readTutorial(
     order,
     title,
     body: renderBody(content),
-    runCommand: formatRunCommand(runTarget, deps),
+    runCommand: github === undefined ? formatRunCommand(runTarget, deps) : undefined,
+    githubUrl: github,
     deps,
   };
 }
@@ -271,7 +285,12 @@ export function tutorialDocsLoader(): Loader {
           title: tutorial.title,
           order: tutorial.order,
           sidebar: { order: tutorial.order },
-          runCommand: tutorial.runCommand,
+          ...(tutorial.runCommand !== undefined
+            ? { runCommand: tutorial.runCommand }
+            : {}),
+          ...(tutorial.githubUrl !== undefined
+            ? { githubUrl: tutorial.githubUrl }
+            : {}),
           sourcePath: tutorial.sourcePath,
         },
         tutorial.body,

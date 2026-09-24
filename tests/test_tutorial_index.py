@@ -85,6 +85,55 @@ def test_parse_tutorial_rejects_non_decimal_order(tmp_path: Path, order: str) ->
         parse_tutorial(tutorial, "example")
 
 
+def test_parse_tutorial_github_defaults_none(tmp_path: Path) -> None:
+    tutorial = tmp_path / "example.py"
+    tutorial.write_text("# ---\n# order: 0\n# ---\n# # Example\n")
+
+    entry = parse_tutorial(tutorial, "example")
+    assert entry.github is None
+
+
+def test_parse_tutorial_github_override(tmp_path: Path) -> None:
+    tutorial = tmp_path / "example.py"
+    tutorial.write_text(
+        "# ---\n"
+        "# order: 0\n"
+        "# github: https://github.com/modal-labs/sf3/blob/main/src/train/main.py\n"
+        "# ---\n"
+        "# # Example\n"
+    )
+
+    entry = parse_tutorial(tutorial, "example")
+    assert (
+        entry.github == "https://github.com/modal-labs/sf3/blob/main/src/train/main.py"
+    )
+
+
+def test_parse_tutorial_rejects_github_with_deps(tmp_path: Path) -> None:
+    tutorial = tmp_path / "example.py"
+    tutorial.write_text(
+        "# ---\n"
+        "# order: 0\n"
+        "# github: https://github.com/modal-labs/sf3\n"
+        "# deps: pillow\n"
+        "# ---\n"
+        "# # Example\n"
+    )
+
+    with pytest.raises(ValueError, match="cannot set deps when github is overridden"):
+        parse_tutorial(tutorial, "example")
+
+
+def test_parse_tutorial_rejects_non_https_github(tmp_path: Path) -> None:
+    tutorial = tmp_path / "example.py"
+    tutorial.write_text(
+        "# ---\n# order: 0\n# github: http://example.com\n# ---\n# # Example\n"
+    )
+
+    with pytest.raises(ValueError, match="github must be an https URL"):
+        parse_tutorial(tutorial, "example")
+
+
 def _frontmatter_lines(text: str) -> list[str]:
     assert text.startswith("---\n"), text[:40]
     parts = text.split("---\n", 2)

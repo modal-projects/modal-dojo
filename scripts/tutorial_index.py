@@ -24,6 +24,7 @@ class TutorialEntry:
     order: int
     title: str
     deps: tuple[str, ...]
+    github: str | None = None
 
 
 def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
@@ -42,7 +43,7 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
         if match is None:
             raise ValueError(f"{path} has invalid frontmatter line: {line!r}")
         name, value = match.groups()
-        if name not in {"order", "deps"}:
+        if name not in {"order", "deps", "github"}:
             raise ValueError(f"{path} has unsupported frontmatter field: {name}")
         if name in fields:
             raise ValueError(f"{path} has duplicate frontmatter field: {name}")
@@ -54,6 +55,10 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
     order = int(order_text)
     if order > MAX_SAFE_INTEGER:
         raise ValueError(f"{path} frontmatter order exceeds the safe integer range")
+
+    github = fields.get("github")
+    if github is not None and not github.startswith("https://"):
+        raise ValueError(f"{path} frontmatter github must be an https URL")
 
     deps = tuple(
         dependency.strip()
@@ -67,6 +72,8 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
     ]
     if invalid_deps:
         raise ValueError(f"{path} has invalid frontmatter deps: {invalid_deps}")
+    if github is not None and deps:
+        raise ValueError(f"{path} cannot set deps when github is overridden")
 
     title_line = next(
         (line for line in lines[frontmatter_end + 1 :] if line.startswith("# # ")),
@@ -81,6 +88,7 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
         order=order,
         title=title_line.removeprefix("# # ").strip(),
         deps=deps,
+        github=github,
     )
 
 
