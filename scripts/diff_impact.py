@@ -23,7 +23,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
-from scripts.tutorial_index import TutorialEntry, load_tutorial_index
+from scripts.tutorial_index import (
+    TutorialEntry,
+    has_executable_python,
+    load_tutorial_index,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TUTORIAL_SRC_ROOT = REPO_ROOT / "tutorials"
@@ -270,7 +274,7 @@ def analyze_diff(diff_text: str) -> ImpactReport:
                 tuple(sorted(reasons)),
             )
             for slug, reasons in affected_tutorial_reasons.items()
-            if slug in tutorials
+            if slug in tutorials and has_executable_python(tutorials[slug].path)
         )
     )
 

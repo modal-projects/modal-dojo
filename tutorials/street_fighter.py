@@ -1,6 +1,6 @@
 # ---
 # order: 7
-# github: https://github.com/modal-projects/sf3/blob/main/src/train
+# github: https://github.com/modal-projects/sf3/tree/main/src/train
 # ---
 #
 # # Fighting LLMs in Street Fighter III

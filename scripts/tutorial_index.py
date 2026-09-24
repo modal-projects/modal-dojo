@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -90,6 +91,11 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
         deps=deps,
         github=github,
     )
+
+
+def has_executable_python(path: Path) -> bool:
+    """True when the module body has at least one statement (not comment-only)."""
+    return bool(ast.parse(path.read_text()).body)
 
 
 def discover_tutorial_paths(

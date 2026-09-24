@@ -26,12 +26,26 @@ from scripts.generate_llms_txt import (
     _render,
     flatten_doc_id,
 )
-from scripts.tutorial_index import discover_tutorial_paths, parse_tutorial
+from scripts.tutorial_index import (
+    discover_tutorial_paths,
+    has_executable_python,
+    parse_tutorial,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 GUIDE_PAGES = tuple(
     path for path in sorted(GUIDES_DIR.rglob("*.md")) if path.stem != "index"
 )
+
+
+def test_has_executable_python_skips_comment_only(tmp_path: Path) -> None:
+    comment_only = tmp_path / "docs.py"
+    comment_only.write_text("# ---\n# order: 0\n# ---\n# # Docs\n# x = 1\n")
+    with_code = tmp_path / "code.py"
+    with_code.write_text("# ---\n# order: 1\n# ---\n# # Code\nx = 1\n")
+
+    assert not has_executable_python(comment_only)
+    assert has_executable_python(with_code)
 
 
 def test_discover_tutorial_paths_finds_flat_and_nested(tmp_path: Path) -> None:
