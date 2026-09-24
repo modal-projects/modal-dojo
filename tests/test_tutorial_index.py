@@ -26,11 +26,7 @@ from scripts.generate_llms_txt import (
     _render,
     flatten_doc_id,
 )
-from scripts.tutorial_index import (
-    discover_tutorial_paths,
-    has_executable_python,
-    parse_tutorial,
-)
+from scripts.tutorial_index import discover_tutorial_paths, parse_tutorial
 
 ROOT = Path(__file__).resolve().parents[1]
 GUIDE_PAGES = tuple(
@@ -38,19 +34,10 @@ GUIDE_PAGES = tuple(
 )
 
 
-def test_has_executable_python_skips_comment_only(tmp_path: Path) -> None:
-    comment_only = tmp_path / "docs.py"
-    comment_only.write_text("# ---\n# order: 0\n# ---\n# # Docs\n# x = 1\n")
-    with_code = tmp_path / "code.py"
-    with_code.write_text("# ---\n# order: 1\n# ---\n# # Code\nx = 1\n")
-
-    assert not has_executable_python(comment_only)
-    assert has_executable_python(with_code)
-
-
 def test_discover_tutorial_paths_finds_flat_and_nested(tmp_path: Path) -> None:
     (tmp_path / "flat.py").write_text("# ---\n# order: 0\n# ---\n# # Flat\n")
     (tmp_path / "main.py").write_text("# ---\n# order: 1\n# ---\n# # Main\n")
+    (tmp_path / "prose.md").write_text("---\norder: 3\n---\n# Prose\n")
     nested = tmp_path / "nested"
     nested.mkdir()
     (nested / "main.py").write_text("# ---\n# order: 2\n# ---\n# # Nested\n")
@@ -62,6 +49,7 @@ def test_discover_tutorial_paths_finds_flat_and_nested(tmp_path: Path) -> None:
         (tmp_path / "flat.py", "flat"),
         (tmp_path / "main.py", "main"),
         (nested / "main.py", "nested"),
+        (tmp_path / "prose.md", "prose"),
     )
 
 
@@ -107,17 +95,19 @@ def test_parse_tutorial_github_defaults_none(tmp_path: Path) -> None:
     assert entry.github is None
 
 
-def test_parse_tutorial_github_override(tmp_path: Path) -> None:
-    tutorial = tmp_path / "example.py"
+def test_parse_markdown_tutorial_github_override(tmp_path: Path) -> None:
+    tutorial = tmp_path / "example.md"
     tutorial.write_text(
-        "# ---\n"
-        "# order: 0\n"
-        "# github: https://github.com/modal-labs/sf3/blob/main/src/train/main.py\n"
-        "# ---\n"
-        "# # Example\n"
+        "---\n"
+        "order: 0\n"
+        "github: https://github.com/modal-labs/sf3/blob/main/src/train/main.py\n"
+        "---\n"
+        "\n"
+        "# Example\n"
     )
 
     entry = parse_tutorial(tutorial, "example")
+    assert entry.title == "Example"
     assert (
         entry.github == "https://github.com/modal-labs/sf3/blob/main/src/train/main.py"
     )
@@ -136,6 +126,11 @@ def test_parse_tutorial_rejects_github_with_deps(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="cannot set deps when github is overridden"):
         parse_tutorial(tutorial, "example")
+
+    markdown = tmp_path / "example.md"
+    markdown.write_text("---\norder: 0\ndeps: pillow\n---\n# Example\n")
+    with pytest.raises(ValueError, match="cannot set deps"):
+        parse_tutorial(markdown, "example")
 
 
 def test_parse_tutorial_rejects_non_https_github(tmp_path: Path) -> None:

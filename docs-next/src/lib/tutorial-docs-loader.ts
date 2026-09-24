@@ -7,7 +7,6 @@ import { flattenDocId } from './docs-sections';
 import { discoverTutorialEntries } from './tutorial-slugs';
 
 const TUTORIAL_ENTRY_PREFIX = 'tutorials/';
-const frontmatterFieldPattern = /^# ([a-z_]+):\s*(.*)$/;
 const dependencyPattern =
   /^[A-Za-z0-9_.-]+(?: @ (?:git\+)?https:\/\/[A-Za-z0-9._/-]+(?:@[A-Za-z0-9._-]+)?)?$/;
 
@@ -25,18 +24,21 @@ function generateDocsId({
 }
 
 export function parseTutorialMetadata(source: string, tutorialPath: string) {
+  const isMarkdown = tutorialPath.endsWith('.md');
+  const prefix = isMarkdown ? '' : '# ';
   const lines = source.split(/\r?\n/);
-  if (lines[0] !== '# ---') {
+  if (lines[0] !== `${prefix}---`) {
     throw new Error(`${tutorialPath} must start with tutorial frontmatter`);
   }
-  const frontmatterEnd = lines.indexOf('# ---', 1);
+  const frontmatterEnd = lines.indexOf(`${prefix}---`, 1);
   if (frontmatterEnd === -1) {
     throw new Error(`${tutorialPath} has unterminated tutorial frontmatter`);
   }
 
+  const fieldPattern = new RegExp(`^${prefix}([a-z_]+):\\s*(.*)$`);
   const fields = new Map<string, string>();
   for (const line of lines.slice(1, frontmatterEnd)) {
-    const match = line.match(frontmatterFieldPattern);
+    const match = line.match(fieldPattern);
     if (!match) {
       throw new Error(`${tutorialPath} has invalid frontmatter line: ${line}`);
     }
@@ -75,21 +77,23 @@ export function parseTutorialMetadata(source: string, tutorialPath: string) {
   if (invalidDeps.length > 0) {
     throw new Error(`${tutorialPath} has invalid frontmatter deps: ${invalidDeps.join(', ')}`);
   }
-  if (github !== undefined && deps.length > 0) {
-    throw new Error(`${tutorialPath} cannot set deps when github is overridden`);
+  if (deps.length > 0 && (github !== undefined || isMarkdown)) {
+    throw new Error(`${tutorialPath} cannot set deps when github is overridden or in Markdown`);
   }
 
   const contentLines = lines.slice(frontmatterEnd + 1);
-  const titleLine = contentLines.find((line) => line.startsWith('# # '));
+  const titlePrefix = `${prefix}# `;
+  const titleLine = contentLines.find((line) => line.startsWith(titlePrefix));
   if (!titleLine) {
     throw new Error(`${tutorialPath} is missing an H1 heading`);
   }
 
   return {
     order,
-    title: titleLine.slice(4).trim(),
+    title: titleLine.slice(titlePrefix.length).trim(),
     deps,
     github,
+    isMarkdown,
     content: contentLines.join('\n'),
   };
 }
@@ -217,7 +221,7 @@ async function readTutorial(
   sourcePath: string,
 ): Promise<Tutorial> {
   const source = await readFile(tutorialPath, 'utf8');
-  const { order, title, deps, github, content } = parseTutorialMetadata(
+  const { order, title, deps, github, isMarkdown, content } = parseTutorialMetadata(
     source,
     tutorialPath,
   );
@@ -228,8 +232,9 @@ async function readTutorial(
     sourcePath,
     order,
     title,
-    body: renderBody(content),
-    runCommand: github === undefined ? formatRunCommand(runTarget, deps) : undefined,
+    body: isMarkdown ? content.trim() : renderBody(content),
+    runCommand:
+      github === undefined && !isMarkdown ? formatRunCommand(runTarget, deps) : undefined,
     githubUrl: github,
     deps,
   };
@@ -336,7 +341,7 @@ export function tutorialDocsLoader(): Loader {
           relativePath !== '' &&
           !relativePath.startsWith('..') &&
           !path.isAbsolute(relativePath) &&
-          path.extname(resolvedPath) === '.py'
+          ['.py', '.md'].includes(path.extname(resolvedPath))
         );
       };
       let pendingReload = Promise.resolve();

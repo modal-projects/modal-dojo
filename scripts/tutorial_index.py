@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import ast
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TUTORIALS_DIR = REPO_ROOT / "tutorials"
-FIELD_PATTERN = re.compile(r"^# ([a-z_]+):\s*(.*)$")
 DEP_PATTERN = re.compile(
     r"^[A-Za-z0-9_.-]+"
     r"(?: @ (?:git\+)?https://[A-Za-z0-9._/-]+(?:@[A-Za-z0-9._-]+)?)?"
@@ -29,18 +27,20 @@ class TutorialEntry:
 
 
 def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
+    prefix = "" if path.suffix == ".md" else "# "
     lines = path.read_text().splitlines()
-    if not lines or lines[0] != "# ---":
+    if not lines or lines[0] != f"{prefix}---":
         raise ValueError(f"{path} must start with tutorial frontmatter")
 
     try:
-        frontmatter_end = lines.index("# ---", 1)
+        frontmatter_end = lines.index(f"{prefix}---", 1)
     except ValueError as exc:
         raise ValueError(f"{path} has unterminated tutorial frontmatter") from exc
 
+    field_pattern = re.compile(rf"{prefix}([a-z_]+):\s*(.*)")
     fields: dict[str, str] = {}
     for line in lines[1:frontmatter_end]:
-        match = FIELD_PATTERN.fullmatch(line)
+        match = field_pattern.fullmatch(line)
         if match is None:
             raise ValueError(f"{path} has invalid frontmatter line: {line!r}")
         name, value = match.groups()
@@ -73,11 +73,18 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
     ]
     if invalid_deps:
         raise ValueError(f"{path} has invalid frontmatter deps: {invalid_deps}")
-    if github is not None and deps:
-        raise ValueError(f"{path} cannot set deps when github is overridden")
+    if deps and (github is not None or path.suffix == ".md"):
+        raise ValueError(
+            f"{path} cannot set deps when github is overridden or in Markdown"
+        )
 
+    title_prefix = f"{prefix}# "
     title_line = next(
-        (line for line in lines[frontmatter_end + 1 :] if line.startswith("# # ")),
+        (
+            line
+            for line in lines[frontmatter_end + 1 :]
+            if line.startswith(title_prefix)
+        ),
         None,
     )
     if title_line is None:
@@ -87,15 +94,10 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
         path=path,
         slug=slug,
         order=order,
-        title=title_line.removeprefix("# # ").strip(),
+        title=title_line.removeprefix(title_prefix).strip(),
         deps=deps,
         github=github,
     )
-
-
-def has_executable_python(path: Path) -> bool:
-    """True when the module body has at least one statement (not comment-only)."""
-    return bool(ast.parse(path.read_text()).body)
 
 
 def discover_tutorial_paths(
@@ -106,7 +108,7 @@ def discover_tutorial_paths(
     if not tutorials_dir.is_dir():
         return ()
     for child in sorted(tutorials_dir.iterdir(), key=lambda path: path.name):
-        if child.is_file() and child.suffix == ".py":
+        if child.is_file() and child.suffix in {".py", ".md"}:
             candidate = child
             slug = child.stem
         elif child.is_dir() and (child / "main.py").is_file():

@@ -40,7 +40,7 @@ docs-next/
 ├── src/
 │   ├── styles/custom.css   # Modal-green accent, Inter font
 │   ├── lib/
-│   │   └── tutorial-docs-loader.ts  # loads tutorials/*.py and */main.py into Starlight
+│   │   └── tutorial-docs-loader.ts  # loads tutorials/*.{py,md} and */main.py into Starlight
 │   └── content/
 │       └── docs/           # page tree (frontmatter-led)
 │           └── index.md

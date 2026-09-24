@@ -96,7 +96,7 @@ Launchers use `resolve_caller_module()` (in `common/framework.py`) to find the u
 
 ### Tutorial system
 
-Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helpers. Each entry starts with comment frontmatter containing `order` and optional comma-separated `deps`. `docs-next/src/lib/tutorial-docs-loader.ts` discovers the corpus, validates contiguous order values, and renders Markdown comments plus Python code into docs pages.
+Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helpers, or docs-only `tutorials/*.md`. Each entry starts with `# `-prefixed frontmatter containing `order` and optional comma-separated `deps`; Markdown entries use `key: value` lines between `---` fences and cannot set `deps`. `docs-next/src/lib/tutorial-docs-loader.ts` discovers the corpus, validates contiguous order values, and renders Markdown comments plus Python code into docs pages.
 
 ### API reference generation
 
@@ -109,7 +109,7 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
 ## Working rules
 
 - Use `uv` for all Python operations. Never install packages at the system level.
-- Tutorial sources are `tutorials/*.py` or `tutorials/<name>/main.py`. Keep `order` values contiguous from zero.
+- Tutorial sources are `tutorials/*.py`, `tutorials/*.md`, or `tutorials/<name>/main.py`. Keep `order` values contiguous from zero.
 - Never hand-edit the models table in README.md. It is generated from `__all__` of each `train_recipes/*_recipe/__init__.py`; add the recipe and matching `ModelConfig` export, then rerun `scripts/generate_models_table.py`.
 - Ruff excludes `tutorials/**`.
 - Python 3.12 is pinned. Modal's `serialized=True` requires local ↔ remote Python version match.
