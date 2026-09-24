@@ -26,6 +26,7 @@
 # ideal play, we expect the sum of all rewards to be 0.
 # 
 # ```python
+# MODEL = Qwen3_VL_8B()
 # REWARDS = {"P1": (1.0, -1.0), "P2": (-1.0, 1.0), "draw": (0.0, 0.0)}
 # 
 #
@@ -90,7 +91,9 @@
 #             for seat, move in enumerate(turn):
 #                 moves[seat].append(move)
 #                 move_buttons, move_name = resolve_move_with_fallback(
-#                     characters[seat], move.response.strip(), fighters[seat].side
+#                     characters[seat],
+#                     MODEL.parse_response(move.response).content,
+#                     fighters[seat].side,
 #                 )
 #                 recent[seat].append(move_name)
 #                 buttons.append(move_buttons)
