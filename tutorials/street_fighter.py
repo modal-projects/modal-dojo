@@ -14,7 +14,7 @@
 # [OnlineRollout](https://gym.modal.dev/reference/onlinerollout) class and a
 # custom generate function.
 # 
-# You can find the full code [here](https://github.com/modal-projects/sf3).
+# You can find the [full code here](https://github.com/modal-projects/sf3).
 # 
 # ## Creating the environment and reward function
 #
