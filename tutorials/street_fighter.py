@@ -116,8 +116,11 @@
 # ## Setting up a self-play recipe
 # 
 # Since the above logic is implemented as custom hooks, we can simply plug them into
-# the `Qwen3_VL_8B_Recipe` class with ease.
-
+# the `Qwen3_VL_8B_Recipe` class with ease. When you start training, watching the reward
+# curves will not be that useful: instead, you'll want to watch the `Metrics` tab in the 
+# [dashboard](https://gym.modal.dev/guides/dashboard) in addition to running
+# [offline evals](https://github.com/modal-projects/sf3/tree/main/src/eval).
+# 
 # ```python
 # NUM_ROLLOUTS = 10
 #
