@@ -113,24 +113,12 @@ def test_parse_markdown_tutorial_github_override(tmp_path: Path) -> None:
     )
 
 
-def test_parse_tutorial_rejects_github_with_deps(tmp_path: Path) -> None:
-    tutorial = tmp_path / "example.py"
-    tutorial.write_text(
-        "# ---\n"
-        "# order: 0\n"
-        "# github: https://github.com/modal-labs/sf3\n"
-        "# deps: pillow\n"
-        "# ---\n"
-        "# # Example\n"
-    )
+def test_parse_markdown_tutorial_rejects_deps(tmp_path: Path) -> None:
+    tutorial = tmp_path / "example.md"
+    tutorial.write_text("---\norder: 0\ndeps: pillow\n---\n# Example\n")
 
-    with pytest.raises(ValueError, match="cannot set deps when github is overridden"):
+    with pytest.raises(ValueError, match="cannot set deps in Markdown"):
         parse_tutorial(tutorial, "example")
-
-    markdown = tmp_path / "example.md"
-    markdown.write_text("---\norder: 0\ndeps: pillow\n---\n# Example\n")
-    with pytest.raises(ValueError, match="cannot set deps"):
-        parse_tutorial(markdown, "example")
 
 
 def test_parse_tutorial_rejects_non_https_github(tmp_path: Path) -> None:

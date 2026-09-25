@@ -73,10 +73,8 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
     ]
     if invalid_deps:
         raise ValueError(f"{path} has invalid frontmatter deps: {invalid_deps}")
-    if deps and (github is not None or path.suffix == ".md"):
-        raise ValueError(
-            f"{path} cannot set deps when github is overridden or in Markdown"
-        )
+    if deps and path.suffix == ".md":
+        raise ValueError(f"{path} cannot set deps in Markdown")
 
     title_prefix = f"{prefix}# "
     title_line = next(

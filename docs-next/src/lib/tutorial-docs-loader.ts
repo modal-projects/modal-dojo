@@ -77,8 +77,8 @@ export function parseTutorialMetadata(source: string, tutorialPath: string) {
   if (invalidDeps.length > 0) {
     throw new Error(`${tutorialPath} has invalid frontmatter deps: ${invalidDeps.join(', ')}`);
   }
-  if (deps.length > 0 && (github !== undefined || isMarkdown)) {
-    throw new Error(`${tutorialPath} cannot set deps when github is overridden or in Markdown`);
+  if (deps.length > 0 && isMarkdown) {
+    throw new Error(`${tutorialPath} cannot set deps in Markdown`);
   }
 
   const contentLines = lines.slice(frontmatterEnd + 1);
@@ -233,8 +233,7 @@ async function readTutorial(
     order,
     title,
     body: isMarkdown ? content.trim() : renderBody(content),
-    runCommand:
-      github === undefined && !isMarkdown ? formatRunCommand(runTarget, deps) : undefined,
+    runCommand: isMarkdown ? undefined : formatRunCommand(runTarget, deps),
     githubUrl: github,
     deps,
   };

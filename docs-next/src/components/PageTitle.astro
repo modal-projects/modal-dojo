@@ -15,7 +15,7 @@ const sourcePath =
 const githubHref =
   githubUrl ||
   (sourcePath
-    ? `https://github.com/modal-projects/modal-dojo/${sourcePath.endsWith('.py') ? 'blob' : 'tree'}/main/${sourcePath}`
+    ? `https://github.com/modal-projects/modal-dojo/${/\.(py|md)$/.test(sourcePath) ? 'blob' : 'tree'}/main/${sourcePath}`
     : '');
 const showGithub = Boolean(githubHref);
 
