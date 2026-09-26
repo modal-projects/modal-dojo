@@ -202,11 +202,17 @@ config = TrainConfig(
 
 
 def train(config):
+    failure = None
+    results = []
     with config.launch() as run, ThreadPoolExecutor() as evals:
         print(f"run id: {run.training_run_id}")
         checkpoint, pending = None, []
+        terminal_status = terminal_error = None
         while True:
             done = run.done()
+            if done and terminal_status is None:
+                terminal_status = run.status.value
+                terminal_error = run.error
             latest = run.latest_checkpoint()
             if latest is not None and latest != checkpoint:
                 checkpoint = latest
@@ -216,11 +222,13 @@ def train(config):
                 break
             time.sleep(30)
         results = [f.result() for f in pending]
-        if run.status.value != "completed":
-            raise RuntimeError(
-                run.error or f"training ended with status {run.status.value}"
+        if terminal_status != "completed":
+            failure = RuntimeError(
+                terminal_error or f"training ended with status {terminal_status}"
             )
-        return results
+    if failure is not None:
+        raise failure
+    return results
 
 
 def print_results(rows):
