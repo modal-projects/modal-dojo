@@ -170,7 +170,7 @@ REMOTE_ASSETS_DIR = "/root/flower_assets"
 REFERENCE_POOL = "HuggingEnvs/watercolour-reference-pool"
 JUDGE_REFS = 4
 
-HPSV3_APP = "training-gym-flower-hpsv3"
+HPSV3_APP = "paint-flowers-hpsv3"
 HPSV3_PROMPT = "a loose watercolour flower"
 
 _CACHE: dict[str, object] = {}

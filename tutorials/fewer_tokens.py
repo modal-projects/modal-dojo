@@ -37,7 +37,11 @@ model = Qwen3_5_4B()
 
 
 def deploy_base_model():
-    base_deployment = Endpoint.launch(model, unauthenticated=True)
+    base_deployment = Endpoint.launch(
+        model,
+        unauthenticated=True,
+        endpoint_name="fewer-tokens-baseline",
+    )
     try:
         base_deployment.wait_until_ready()
     except BaseException:
@@ -156,7 +160,13 @@ def density_post_process(args, samples, **kwargs):
 
 
 def deploy_trained_model(checkpoint):
-    trained_deployment = Endpoint.launch(model, checkpoint, unauthenticated=True)
+    step = int(checkpoint.name.removeprefix("iter_")) + 1
+    trained_deployment = Endpoint.launch(
+        model,
+        checkpoint,
+        unauthenticated=True,
+        endpoint_name=f"fewer-tokens-{step}",
+    )
     try:
         trained_deployment.wait_until_ready()
     except BaseException:
