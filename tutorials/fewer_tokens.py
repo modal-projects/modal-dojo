@@ -17,6 +17,7 @@
 
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from transformers import AutoTokenizer
 
@@ -36,9 +37,7 @@ model = Qwen3_5_4B()
 
 
 def deploy_base_model():
-    base_deployment = Endpoint.launch(
-        model, unauthenticated=True, recreate_if_existing=True
-    )
+    base_deployment = Endpoint.launch(model, unauthenticated=True)
     base_deployment.wait_until_ready()
     print(f"base model deployed to {base_deployment.url}")
     return base_deployment
@@ -77,9 +76,7 @@ eval_dataset = HuggingFaceDataset(
 )
 
 
-def run_eval(deployment, max_concurrency: int = 2) -> tuple[float, float]:
-    from concurrent.futures import ThreadPoolExecutor
-
+def run_eval(deployment, max_concurrency: int = 16) -> tuple[float, float]:
     deployment.wait_until_ready()
     tokenizer = AutoTokenizer.from_pretrained(model.model_name)
 
@@ -109,6 +106,7 @@ def run_baseline_evals(deployment):
     accuracy, mean_tokens = run_eval(deployment)
     print(f"percent correct: {accuracy:.1%}")
     print(f"mean output tokens: {mean_tokens:.0f}")
+    return accuracy, mean_tokens
 
 
 # ## Defining the reward function
@@ -152,51 +150,9 @@ def density_post_process(args, samples, **kwargs):
 #
 # Sit back and watch it rip.
 
-config = TrainConfig(
-    model=model,
-    dataset=train_dataset,
-    eval_dataset=eval_dataset,
-    recipe=Qwen3_5_4B_Recipe(
-        num_rollout=10,
-        rollout_batch_size=16,
-        n_samples_per_prompt=8,
-        global_batch_size=16,
-        rollout_max_response_len=8192,
-        apply_chat_template_kwargs='{"enable_thinking": true}',
-        custom_rm_function=gsm8k_correctness_rm,
-        custom_reward_post_process_function=density_post_process,
-    ),
-)
-
-
-def train(config):
-    with config.launch() as run:
-        print(f"run id: {run.training_run_id}")
-        checkpoint = None
-        while True:
-            done = run.done()
-            latest = run.latest_checkpoint()
-            if latest is not None and latest != checkpoint:
-                checkpoint = latest
-                print(f"new checkpoint: {checkpoint.path}")
-            if done:
-                break
-            time.sleep(30)
-        if checkpoint is None:
-            raise RuntimeError("run produced no checkpoint")
-        print(f"checkpoint: {checkpoint.path}")
-    return checkpoint
-
-
-# ## Evaluate the trained checkpoint
-#
-# Let's see how our model does now.
-
 
 def deploy_trained_model(checkpoint):
-    trained_deployment = Endpoint.launch(
-        model, checkpoint, unauthenticated=True, recreate_if_existing=True
-    )
+    trained_deployment = Endpoint.launch(model, checkpoint, unauthenticated=True)
     trained_deployment.wait_until_ready()
     print(f"checkpoint deployed to {trained_deployment.url}")
     return trained_deployment
@@ -207,18 +163,81 @@ def run_trained_evals(trained_deployment):
     accuracy, mean_tokens = run_eval(trained_deployment)
     print(f"percent correct: {accuracy:.1%}")
     print(f"mean output tokens: {mean_tokens:.0f}")
+    return accuracy, mean_tokens
+
+
+def eval_checkpoint(checkpoint):
+    deployment = deploy_trained_model(checkpoint)
+    try:
+        step = int(checkpoint.name.removeprefix("iter_")) + 1
+        return (f"Step {step}", *run_trained_evals(deployment))
+    finally:
+        deployment.stop()
+
+
+config = TrainConfig(
+    model=model,
+    dataset=train_dataset,
+    eval_dataset=eval_dataset,
+    recipe=Qwen3_5_4B_Recipe(
+        num_rollout=10,
+        rollout_batch_size=16,
+        n_samples_per_prompt=8,
+        global_batch_size=16,
+        rollout_max_response_len=8192,
+        save_interval=1,
+        apply_chat_template_kwargs='{"enable_thinking": true}',
+        custom_rm_function=gsm8k_correctness_rm,
+        custom_reward_post_process_function=density_post_process,
+    ),
+)
+
+
+def train(config):
+    with config.launch() as run, ThreadPoolExecutor() as evals:
+        print(f"run id: {run.training_run_id}")
+        checkpoint, pending = None, []
+        while True:
+            done = run.done()
+            latest = run.latest_checkpoint()
+            if latest is not None and latest != checkpoint:
+                checkpoint = latest
+                print(f"new checkpoint: {checkpoint.path}")
+                pending.append(evals.submit(eval_checkpoint, checkpoint))
+            if done:
+                break
+            time.sleep(30)
+        return [f.result() for f in pending]
+
+
+def print_results(rows):
+    print("| | Accuracy | Mean output tokens |")
+    print("| --- | ---: | ---: |")
+    for label, accuracy, mean_tokens in rows:
+        print(f"| {label} | {accuracy:.1%} | {mean_tokens:.0f} |")
 
 
 if __name__ == "__main__":
     base_deployment = deploy_base_model()
-    run_baseline_evals(base_deployment)
-    checkpoint = train(config)
-    trained_deployment = deploy_trained_model(checkpoint)
-    run_trained_evals(trained_deployment)
+    try:
+        rows = [("Baseline", *run_baseline_evals(base_deployment))]
+    finally:
+        base_deployment.stop()
+    rows.extend(train(config))
+    print_results(rows)
 
 # ## Results
 #
 # | | Accuracy | Mean output tokens |
 # | --- | ---: | ---: |
-# | Before training | 70.5% | 4085 |
-# | After 10 steps | 88.0% | 1007 |
+# | Baseline | 67.0% | 4272 |
+# | Step 1 | 71.5% | 3878 |
+# | Step 2 | 72.0% | 3598 |
+# | Step 3 | 80.0% | 2866 |
+# | Step 4 | 83.5% | 2442 |
+# | Step 5 | 82.0% | 2244 |
+# | Step 6 | 83.5% | 1961 |
+# | Step 7 | 85.5% | 1662 |
+# | Step 8 | 85.0% | 1455 |
+# | Step 9 | 86.5% | 1307 |
+# | Step 10 | 85.5% | 1136 |
