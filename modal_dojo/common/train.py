@@ -591,6 +591,7 @@ class TrainConfig:
         recipe = _dc.replace(
             self.recipe,
             num_rollout=0,
+            async_mode=False,
             eval_interval=1,
             n_samples_per_eval_prompt=n_samples,
             eval_config=None,

@@ -118,9 +118,9 @@ training run use a fresh path and attempt materialization independently.
 
 `TrainConfig` composes `dataset`, `model`, and a recipe (`SlimeRecipe` /
 `MilesRecipe`). It also accepts an optional, separate `eval_dataset` for the
-framework's internal evaluation loop; this is independent from explicit
-offline evaluation over `eval_dataset.rows()`. Recipes carry Modal infra +
-framework CLI flags (`extra="forbid"`). Call `.train()` / `.launch()` — no
+framework's internal evaluation loop. Offline evaluation uses
+`TrainConfig.evaluate(dataset, n_samples)` instead. Recipes carry Modal infra
++ framework CLI flags (`extra="forbid"`). Call `.train()` / `.launch()` — no
 public `build_app()`.
 
 ```python
