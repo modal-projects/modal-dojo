@@ -128,11 +128,16 @@ def test_every_config_builds_a_recipe_on_its_declared_framework(config):
     fail on a GPU, minutes into a run.
     """
     recipe, dataset = build_recipe_and_dataset(
-        config.framework, config.model_config(), step_count=1
+        config.framework,
+        config.model_config(),
+        step_count=1,
+        loss_type=config.loss_type,
     )
     assert recipe is not None
     assert dataset is not None
-    assert recipe.rm_type, f"{config.name} validation recipe has no rm_type"
+    assert recipe.loss_type == config.loss_type
+    if config.loss_type != "sft_loss":
+        assert recipe.rm_type, f"{config.name} validation recipe has no rm_type"
 
 
 def test_list_prints_every_registered_model():

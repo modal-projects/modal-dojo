@@ -97,6 +97,19 @@ def test_off_mode_does_not_record_or_publish(monkeypatch):
     assert snapshots == []
 
 
+def test_sft_skips_rl_only_phases(monkeypatch):
+    _configure(monkeypatch)
+    monkeypatch.setenv("TRAINING_GYM_LOSS_TYPE", "sft_loss")
+    monkeypatch.setattr(reporting, "_enqueue_timing", lambda *_a, **_k: None)
+
+    recorder = RoleRecorder("driver", 0)
+    for name in ("weight_sync", "reward_post_process", "train_models"):
+        with recorder.phase(name):
+            pass
+
+    assert set(recorder.phases) == {"train_models"}
+
+
 def test_preloop_recorders_close_before_queue_drains(monkeypatch):
     _configure(monkeypatch)
     timing_recorder._PRELOOP_RECORDERS.clear()

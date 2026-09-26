@@ -106,6 +106,7 @@
     { key: "model", label: "Model", width: 210, minWidth: 120 },
     { key: "dataset", label: "Dataset", width: 180, minWidth: 120 },
     { key: "recipe", label: "Recipe", width: 116, minWidth: 88 },
+    { key: "training_type", label: "Training type", width: 116, minWidth: 88 },
     { key: "group", label: "Group", width: 280, minWidth: 220 },
     { key: "tags", label: "Tags", width: 520, minWidth: 360 },
     { key: "created", label: "Created", width: 150, minWidth: 130 },
@@ -300,7 +301,7 @@
       <div class="table-wrap freeze-header">
         <MinimalTableSkeleton
           class="training-runs-table"
-          columns={["Name", "Status", "Stage", "Model", "Dataset", "Recipe", "Group", "Tags", "Created", "Last updated", ""]}
+          columns={["Name", "Status", "Stage", "Model", "Dataset", "Recipe", "Training type", "Group", "Tags", "Created", "Last updated", ""]}
           rows={8}
         />
       </div>
@@ -379,6 +380,11 @@
                   <td class="row-open-cell">
                     <a href={trainingRunDetailPath(run.run_id)} class="cell-open-button" onclick={(event) => selectRun(run.run_id, event)}>
                       {run.recipe || "—"}
+                    </a>
+                  </td>
+                  <td class="row-open-cell">
+                    <a href={trainingRunDetailPath(run.run_id)} class="cell-open-button" onclick={(event) => selectRun(run.run_id, event)}>
+                      {(run.training_type ?? "rl").toUpperCase()}
                     </a>
                   </td>
                   <td class="group-cell row-open-cell" title={groupTags?.group_id || run.group_id || ""}>

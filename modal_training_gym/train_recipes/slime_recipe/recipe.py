@@ -358,7 +358,8 @@ class SlimeRecipe(BaseTrainRecipe):
             ``PYTHONPATH`` and NCCL settings.
         async_mode:
             Overlap rollout generation and training with slime's one-step off-policy
-            ``train_async.py``.
+            ``train_async.py``. Ignored with ``loss_type="sft_loss"``, which always
+            runs ``train.py``.
         metrics:
             Metric tracker settings; expands to slime's W&B-compatible flags.
             Defaults to the dashboard-only tracker; ``None`` disables metric
@@ -809,10 +810,6 @@ class SlimeRecipe(BaseTrainRecipe):
         model: "ModelConfig | None" = None,
     ) -> dict[str, Any]:
         fields = self._field_values()
-        if fields["save_interval"] is None and fields["save"] is not None:
-            fields["save_interval"] = self._escape_hatch_values().get(
-                "num_rollout", self.num_rollout
-            )
         if (
             self.colocate
             and self.loss_type != "sft_loss"
@@ -831,6 +828,7 @@ class SlimeRecipe(BaseTrainRecipe):
             )
         _apply_loss_type_fields(
             fields,
+            self._escape_hatch_values(),
             sft_rollout_function="slime.rollout.sft_rollout.generate_rollout",
         )
         if model is not None:

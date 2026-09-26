@@ -180,7 +180,6 @@ def test_config_summary_fallbacks_and_metric_defaults():
     assert summary.dataset_name == "repo/dataset"
     assert summary.dataset_prompt_data == "prompts.jsonl"
     assert summary.gpu_type == "H100"
-    assert summary.loss_type == ""
     assert summary.lr == 0
     assert summary.global_batch_size == 0
     assert summary.metric_run_id == "abcdefgh"
@@ -191,11 +190,24 @@ def test_config_summary_fallbacks_and_metric_defaults():
     assert payload["wandb_url"] == summary.metric_url
     assert [link["label"] for link in payload["wandb_links"]] == ["W&B"]
     assert run_summary_module._config_summary(None, "run-id") == {}
-    sft = run_summary_module._config_summary(
-        {"recipe": {"loss_type": "sft_loss"}},
-        "run-id",
+
+
+def test_training_type_and_sft_stage_labels():
+    sft = {"recipe": {"loss_type": "sft_loss"}}
+    assert build_run_summary({"config": sft}).training_type == "sft"
+    assert build_run_summary({"config": {}}).training_type == "rl"
+    for status, label in (
+        ("generate_rollouts", "Preparing batch"),
+        ("weight_sync", "Training"),
+    ):
+        assert (
+            build_run_summary({"config": sft, "framework_status": status}).display_stage
+            == label
+        )
+    assert (
+        build_run_summary({"framework_status": "weight_sync"}).display_stage
+        == "Weight sync"
     )
-    assert sft.loss_type == "sft_loss"
 
 
 def test_progress_rollout_and_resume_helpers_handle_missing_and_invalid_values():

@@ -69,6 +69,7 @@ def sent(monkeypatch) -> list[dict]:
         lambda payload, final=False: batches.append({**payload, "final": final}),
     )
     monkeypatch.setattr(metric_mirror, "FLUSH_INTERVAL_SECONDS", 3600)
+    monkeypatch.setattr(metric_mirror.time, "time", lambda: 1000.0)
     return batches
 
 
@@ -91,11 +92,11 @@ def test_implicit_step_and_commit_follow_wandb_semantics(sent):
             "training_run_id": "run-1",
             "final": False,
             "points": [
-                {"step": 0, "metrics": {"a": 1.0}},
-                {"step": 1, "metrics": {"b": 2.0, "c": 3.0}},
-                {"step": 3, "metrics": {"f": 6.0, "loss": 0.5}},
-                {"step": 10, "metrics": {"d": 4.0, "e": 5.0}},
-                {"step": 11, "metrics": {"g": 7.0}},
+                {"step": 0, "metrics": {"a": 1.0}, "time": 1000.0},
+                {"step": 1, "metrics": {"b": 2.0, "c": 3.0}, "time": 1000.0},
+                {"step": 3, "metrics": {"f": 6.0, "loss": 0.5}, "time": 1000.0},
+                {"step": 10, "metrics": {"d": 4.0, "e": 5.0}, "time": 1000.0},
+                {"step": 11, "metrics": {"g": 7.0}, "time": 1000.0},
             ],
         }
     ]
@@ -133,7 +134,7 @@ def test_mirror_log_is_best_effort(sent, monkeypatch):
         {
             "training_run_id": "run-env",
             "final": True,
-            "points": [{"step": 2, "metrics": {"a": 1.0}}],
+            "points": [{"step": 2, "metrics": {"a": 1.0}, "time": 1000.0}],
         }
     ]
     monkeypatch.setattr(metric_mirror, "_MIRROR", None)
@@ -178,7 +179,7 @@ def test_drain_compaction_folds_metric_batches_into_one_prioritized_post():
         {
             "_url": metrics_url,
             "training_run_id": "r",
-            "points": [{"step": 10, "metrics": {"loss": 0.8, "lr": 1.0}}],
+            "points": [{"step": 10, "metrics": {"loss": 0.8, "lr": 1.0}, "time": 1.0}],
             "final": False,
             "_retry_count": 1,
         },
@@ -188,7 +189,7 @@ def test_drain_compaction_folds_metric_batches_into_one_prioritized_post():
         {
             "_url": metrics_url,
             "training_run_id": "r",
-            "points": [{"step": 10, "metrics": {"loss": 0.7}}],
+            "points": [{"step": 10, "metrics": {"loss": 0.7}, "time": 2.0}],
             "final": True,
             "_retry_count": 3,
         },
@@ -198,7 +199,9 @@ def test_drain_compaction_folds_metric_batches_into_one_prioritized_post():
     reporting._compact_report_queue()
     final_timing, metrics, status, rollouts = queue.queue
     assert final_timing["n"] == 4 and status["n"] == 3 and rollouts["n"] == 1
-    assert metrics["points"] == [{"step": 10, "metrics": {"loss": 0.7, "lr": 1.0}}]
+    assert metrics["points"] == [
+        {"step": 10, "metrics": {"loss": 0.7, "lr": 1.0}, "time": 2.0}
+    ]
     assert metrics["final"] is True and metrics["_retry_count"] == 3
     assert queue.unfinished_tasks == 4
     while not queue.empty():
@@ -340,8 +343,8 @@ def test_dashboard_shim_routes_wandb_calls_to_the_mirror(isolated_wandb, sent):
     assert wandb.run is None
     metric_mirror._MIRROR.flush()
     assert sent[0]["points"] == [
-        {"step": 1, "metrics": {"train/loss": 0.9}},
-        {"step": 2, "metrics": {"train/loss": 0.4, "reward": 1.5}},
+        {"step": 1, "metrics": {"train/loss": 0.9}, "time": 1000.0},
+        {"step": 2, "metrics": {"train/loss": 0.4, "reward": 1.5}, "time": 1000.0},
     ]
 
 
@@ -377,9 +380,9 @@ def test_tee_patches_run_log_and_keeps_calling_wandb(isolated_wandb, sent):
     assert len(run.logged) == 4
     metric_mirror._MIRROR.flush()
     assert sent[0]["points"] == [
-        {"step": 0, "metrics": {"a": 1.0}},
-        {"step": 1, "metrics": {"b": 2.0, "c": 3.0}},
-        {"step": 7, "metrics": {"d": 4.0}},
+        {"step": 0, "metrics": {"a": 1.0}, "time": 1000.0},
+        {"step": 1, "metrics": {"b": 2.0, "c": 3.0}, "time": 1000.0},
+        {"step": 7, "metrics": {"d": 4.0}, "time": 1000.0},
     ]
 
 
@@ -401,4 +404,4 @@ def test_trackio_shim_mirrors(isolated_wandb, sent, monkeypatch):
     wandb.log({"x": 1.0}, step=4)
     assert logged == [({"x": 1.0}, 4)]
     metric_mirror._MIRROR.flush()
-    assert sent[0]["points"] == [{"step": 4, "metrics": {"x": 1.0}}]
+    assert sent[0]["points"] == [{"step": 4, "metrics": {"x": 1.0}, "time": 1000.0}]

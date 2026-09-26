@@ -177,6 +177,10 @@
         <span class="kv-key">Recipe</span>
         <span class="kv-value">{run.recipe || "—"}</span>
       </div>
+      <div class="kv">
+        <span class="kv-key">Training type</span>
+        <span class="kv-value">{(run.training_type ?? "rl").toUpperCase()}</span>
+      </div>
       {#if modalAppUrl}
         <div class="kv">
           <span class="kv-key">Modal app</span>

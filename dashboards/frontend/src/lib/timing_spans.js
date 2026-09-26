@@ -224,7 +224,11 @@ export function clockAlignmentDisclosure(span) {
   return isApproximateSpan(span) ? "*" : null;
 }
 
-export function groupTooltipChildren(children, aggregateStats = {}) {
+export function groupTooltipChildren(
+  children,
+  aggregateStats = {},
+  trainingType = null,
+) {
   const groups = new Map();
   const allChildren = [...(children || []), ...Object.values(aggregateStats)];
   const rolesByName = new Map();
@@ -265,7 +269,7 @@ export function groupTooltipChildren(children, aggregateStats = {}) {
         : "";
     groups.set(key, {
       name: child.name,
-      label: `${labelFor(child.name, child.rolloutId)}${roleLabel}`,
+      label: `${labelFor(child.name, child.rolloutId, trainingType)}${roleLabel}`,
       duration: child.duration,
       count,
       start: child.start,

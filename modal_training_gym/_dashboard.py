@@ -1514,7 +1514,7 @@ def fastapi_app():
                     await _flush_metrics(training_run_id, entry)
                 except Exception:
                     stale = True
-            series = metric_series(entry.metrics.table, MAX_POINTS_PER_KEY)
+            series = metric_series(entry.metrics, MAX_POINTS_PER_KEY)
         return JSONResponse({"series": series, "stale": stale})
 
     # ── Training rollouts ────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import dataclasses
 import importlib
 import inspect
 import pkgutil
+from contextlib import nullcontext
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from modal_training_gym.common.launcher_utils import (
 from modal_training_gym.common.models import Qwen3_4B
 from modal_training_gym.common.models.validation import Framework, _ValidationConfig
 from modal_training_gym.common.train import TrainConfig
+from modal_training_gym.train_recipes.base import SAVE_AT_EPOCH_ENDS_ONLY
 from modal_training_gym.train_recipes.gpu_allocation import (
     validate_megatron_actor_parallelism,
 )
@@ -253,8 +255,21 @@ def test_sft_loss_emits_native_sft_flags(recipe_cls, framework) -> None:
         args
     )
     assert not {"--apply-chat-template", "--num-rollout", "--colocate"} & set(args)
+    assert values["--save-interval"] == str(SAVE_AT_EPOCH_ENDS_ONLY)
     assert recipe.gpu_allocation.rollout_gpus == 0
     assert recipe.train_async is (recipe_cls is MilesRecipe)
+
+
+@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+def test_extra_config_num_epoch_skips_rollout_save_interval(recipe_cls) -> None:
+    recipe = recipe_cls(
+        loss_type="sft_loss",
+        num_rollout=1,
+        extra_config={"num_epoch": 3},
+    )
+    args = recipe.cli_args(dataset=_dataset())
+    assert args[args.index("--save-interval") + 1] == str(SAVE_AT_EPOCH_ENDS_ONLY)
+    assert "--num-rollout" not in args
 
 
 def test_sft_qwen35_emits_loss_mask_type_qwen3_5() -> None:
@@ -275,4 +290,37 @@ def test_sft_none_global_batch_size_uses_rollout_batch_size() -> None:
 def test_miles_qwen35_sft_raises() -> None:
     recipe = Qwen3_5_4B_Miles_Recipe(loss_type="sft_loss")
     with pytest.raises(TrainingGymConfigError, match="qwen3_5"):
+        recipe.cli_args(dataset=_dataset())
+
+
+def test_sft_extra_config_batch_keeps_rollout_in_sync() -> None:
+    recipe = SlimeRecipe(
+        loss_type="sft_loss",
+        global_batch_size=4,
+        extra_config={"global_batch_size": 8},
+    )
+    args = recipe.cli_args(dataset=_dataset())
+    assert dict(zip(args, args[1:]))["--rollout-batch-size"] == "8"
+
+
+def test_sft_extra_config_conflicting_batches_raise() -> None:
+    recipe = SlimeRecipe(
+        loss_type="sft_loss",
+        extra_config={"global_batch_size": 8, "rollout_batch_size": 4},
+    )
+    with pytest.raises(TrainingGymConfigError, match="must match"):
+        recipe.cli_args(dataset=_dataset())
+
+
+@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize(
+    ("hatch_loss", "expectation"),
+    [
+        ("sft_loss", pytest.raises(TrainingGymConfigError, match="loss_type field")),
+        ("custom_loss", nullcontext()),
+    ],
+)
+def test_extra_config_loss_type_raises(recipe_cls, hatch_loss, expectation) -> None:
+    recipe = recipe_cls(extra_config={"loss_type": hatch_loss})
+    with expectation:
         recipe.cli_args(dataset=_dataset())

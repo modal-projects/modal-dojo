@@ -33,17 +33,11 @@ def run_list_field_metadata() -> dict[str, dict[str, object]]:
 
 def run_facet_values(summary: RunSummary) -> dict[str, str]:
     """Return the buckets the run list's filter chips group a run into."""
-    config_summary = summary.config_summary
-    loss_type = (
-        config_summary.get("loss_type")
-        if isinstance(config_summary, dict)
-        else config_summary.loss_type
-    )
     return {
         "status": summary.display_status or PENDING_STATUS,
         "recipe": summary.recipe or summary.framework or UNTAGGED_RECIPE,
         "group": summary.group_id or NO_GROUP,
-        "training_type": "sft" if loss_type == "sft_loss" else "rl",
+        "training_type": summary.training_type,
     }
 
 

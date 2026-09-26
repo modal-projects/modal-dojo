@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import uuid
 from abc import ABC
 from collections.abc import Callable
@@ -38,6 +39,8 @@ def _safe_data_key(cache_key: str) -> str:
 # Recipe fields whose dict values are emitted as JSON CLI arguments.
 JSON_CONFIG_FIELDS = ("train_env_vars", "apply_chat_template_kwargs", "multimodal_keys")
 
+SAVE_AT_EPOCH_ENDS_ONLY = sys.maxsize
+
 _SFT_CLI_OVERRIDES: dict[str, Any] = {
     "colocate": False,
     "rollout_num_gpus": None,
@@ -54,21 +57,52 @@ _SFT_CLI_OVERRIDES: dict[str, Any] = {
 
 
 def _apply_loss_type_fields(
-    fields: dict[str, Any], *, sft_rollout_function: str
+    fields: dict[str, Any], hatch: dict[str, Any], *, sft_rollout_function: str
 ) -> None:
+    if "loss_type" in hatch and (hatch["loss_type"] == "sft_loss") != (
+        fields["loss_type"] == "sft_loss"
+    ):
+        raise TrainingGymConfigError(
+            "extra_config loss_type cannot switch between SFT and RL; "
+            "set the loss_type field instead"
+        )
+    fields.update(hatch)
+    if fields["save_interval"] is None and fields["save"] is not None:
+        fields["save_interval"] = (
+            SAVE_AT_EPOCH_ENDS_ONLY
+            if fields["num_epoch"] is not None
+            else fields["num_rollout"]
+        )
     if fields["num_epoch"] is not None:
         fields["num_rollout"] = None
-    if fields["loss_type"] == "policy_loss":
+    if fields["loss_type"] != "sft_loss":
         fields["loss_type"] = None
         fields["loss_mask_type"] = None
         return
     fields.update(_SFT_CLI_OVERRIDES)
-    global_batch_size = fields.get("global_batch_size")
-    rollout_batch_size = fields.get("rollout_batch_size")
-    if global_batch_size is not None:
-        fields["rollout_batch_size"] = global_batch_size
-    elif rollout_batch_size is not None:
-        fields["global_batch_size"] = rollout_batch_size
+    hatch_global = hatch.get("global_batch_size")
+    hatch_rollout = hatch.get("rollout_batch_size")
+    if None not in (hatch_global, hatch_rollout) and hatch_global != hatch_rollout:
+        raise TrainingGymConfigError(
+            "extra_config global_batch_size and rollout_batch_size must match "
+            f"for loss_type='sft_loss' (got {hatch_global!r} and {hatch_rollout!r})"
+        )
+    batch_size = next(
+        (
+            size
+            for size in (
+                hatch_global,
+                hatch_rollout,
+                fields["global_batch_size"],
+                fields["rollout_batch_size"],
+            )
+            if size is not None
+        ),
+        None,
+    )
+    if batch_size is not None:
+        fields["global_batch_size"] = batch_size
+        fields["rollout_batch_size"] = batch_size
     fields["rollout_function"] = sft_rollout_function
     if fields.get("loss_mask_type") == "qwen":
         fields["loss_mask_type"] = None
@@ -204,6 +238,9 @@ class BaseTrainRecipe(ABC):
             "label_key": ds.label_key(),
             "apply_chat_template": ds.apply_chat_template(),
         }
+
+    def effective_num_epoch(self) -> int | None:
+        return self._escape_hatch_values().get("num_epoch", self.num_epoch)
 
     @staticmethod
     def _metrics_to_fields(metric: "MetricConfig") -> dict[str, Any]:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import quote
 
 from pydantic import BaseModel, Field, ValidationError, model_serializer
@@ -45,6 +45,11 @@ _STAGE_LABELS = {
     "checkpoint_save": "Saving checkpoint",
     "training": "Training",
 }
+_SFT_STAGE_LABELS = {
+    **_STAGE_LABELS,
+    "generate_rollouts": "Preparing batch",
+    "weight_sync": "Training",
+}
 _QUEUEABLE_STAGES = {"download_model", "convert_model"}
 
 
@@ -57,11 +62,16 @@ def _display_status(status: str, *, has_train_result: bool) -> str:
     return "pending"
 
 
-def _display_stage(status: str, progress: FrameworkProgress | None) -> str:
+def _display_stage(
+    status: str,
+    progress: FrameworkProgress | None,
+    training_type: Literal["sft", "rl"],
+) -> str:
     normalized = status.strip().lower()
     if not normalized:
         return ""
-    label = _STAGE_LABELS.get(normalized, normalized.replace("_", " ").title())
+    labels = _SFT_STAGE_LABELS if training_type == "sft" else _STAGE_LABELS
+    label = labels.get(normalized, normalized.replace("_", " ").title())
     if (
         normalized in _QUEUEABLE_STAGES
         and progress is not None
@@ -147,7 +157,6 @@ class ConfigSummary(BaseModel):
     actor_num_gpus_per_node: int = 0
     lr: float = 0.0
     global_batch_size: int = 0
-    loss_type: str = ""
     metric_provider: str = ""
     metric_project: str = ""
     metric_group: str = ""
@@ -223,6 +232,11 @@ class RunSummary(BaseModel):
     model: str = _run_list_field("Model", default="", filterable=True)
     dataset: str = _run_list_field("Dataset", default="", filterable=True)
     recipe: str = _run_list_field("Recipe", default="", filterable=True)
+    training_type: Literal["sft", "rl"] = _run_list_field(
+        "Training type",
+        default="rl",
+        filterable=True,
+    )
     group_id: str = _run_list_field(
         "Group",
         default="",
@@ -403,7 +417,6 @@ def _config_summary(config: object, training_run_id: str) -> ConfigSummary | Jso
         actor_num_gpus_per_node=_integer(recipe.get("actor_num_gpus_per_node")),
         lr=_number(config.get("lr")),
         global_batch_size=_integer(config.get("global_batch_size")),
-        loss_type=_text(recipe.get("loss_type")),
         **_metric_summary(
             entity=metric_config.get("entity"),
             project=metric_config.get("project"),
@@ -646,6 +659,11 @@ def build_run_summary(
     framework = _text(run.get("framework")) or "(untagged)"
     framework_status = _text(run.get("framework_status"))
     framework_progress = _framework_progress(metadata)
+    training_type: Literal["sft", "rl"] = (
+        "sft"
+        if _text(_mapping(config.get("recipe")).get("loss_type")) == "sft_loss"
+        else "rl"
+    )
     return RunSummary(
         training_run_id=training_run_id,
         run_id=training_run_id,
@@ -654,7 +672,9 @@ def build_run_summary(
             status,
             has_train_result=result_summary is not None,
         ),
-        display_stage=_display_stage(framework_status, framework_progress),
+        display_stage=_display_stage(
+            framework_status, framework_progress, training_type
+        ),
         framework=framework,
         framework_status=framework_status,
         framework_progress=framework_progress,
@@ -662,6 +682,7 @@ def build_run_summary(
         model=model,
         dataset=config_dataset,
         recipe=framework,
+        training_type=training_type,
         group_id=group_id,
         group_tags=_group_tags(metadata, group_id),
         modal_app_id=modal_app_id,

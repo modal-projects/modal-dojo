@@ -7,6 +7,7 @@ import pytest
 from modal_training_gym.common.checkpoint import Checkpoint, CheckpointType
 from modal_training_gym.common.dataset import HuggingFaceDataset
 from modal_training_gym.common.errors import TrainingGymConfigError
+from modal_training_gym.common.launcher_helpers import resumed_recipe
 from modal_training_gym.common.models import Qwen3_5_4B
 from modal_training_gym.common.train import TrainConfig
 from modal_training_gym.frameworks.miles.launcher import build_miles_app
@@ -198,6 +199,17 @@ def test_internal_resume_uses_saved_optimizer_and_restores_recipe(
     assert recipe.load == "/checkpoints/seed"
     assert recipe.start_rollout_id == 0
     assert recipe.no_load_optim is not no_save_optim
+
+
+@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+def test_internal_resume_after_epoch_save_under_num_epoch(recipe_cls) -> None:
+    recipe = recipe_cls(num_rollout=1, extra_config={"num_epoch": 3})
+    checkpoint = {
+        "resume_from_iteration": 5,
+        "resume_checkpoint_path": "/checkpoints/run/iter_0000005",
+    }
+    with resumed_recipe(recipe, "/checkpoints/run", checkpoint):
+        assert recipe.load == "/checkpoints/run"
 
 
 def test_miles_conversion_uses_wrapper_with_expected_environment() -> None:

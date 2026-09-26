@@ -100,7 +100,7 @@ Qwen3_5_4B_Miles_Recipe(
 
 ## Rollouts
 
-Each step of training involves the model generating rollouts to calculate rewards. More specifically, a random subset is taken from our dataset to prompt the model, and the model generates one or more completions for each prompt.
+For RL, each step of training involves the model generating rollouts to calculate rewards. More specifically, a random subset is taken from our dataset to prompt the model, and the model generates one or more completions for each prompt.
 
 The four most important parameters to specify are:
 

@@ -298,7 +298,7 @@
         recipe:
           safeText(run.recipe) || safeText(run.framework) || UNTAGGED_RECIPE,
         group: getGroup(run),
-        training_type: run.config_summary?.loss_type === "sft_loss" ? "sft" : "rl",
+        training_type: run.training_type ?? "rl",
       };
       for (const [name, value] of Object.entries(values)) {
         buckets[name][value] = (buckets[name][value] || 0) + 1;

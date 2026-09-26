@@ -29,6 +29,7 @@ StepTable = dict[int, dict[str, float]]
 class MetricPoint(BaseModel):
     step: int = Field(ge=0, le=100_000_000)
     metrics: dict[str, float] = Field(default_factory=dict)
+    time: float | None = None
 
 
 class MetricPointsBatch(BaseModel):
@@ -54,6 +55,10 @@ class RunMetrics:
     def __init__(self) -> None:
         self.table: StepTable = {}
         self.written: dict[int, dict[str, float]] = {}
+        self.times: dict[int, float] = {}
+
+    def _stamp(self, step: int, at: float) -> None:
+        self.times[step] = max(at, self.times.get(step, at))
 
     def merge_points(self, points: Iterable[MetricPoint]) -> set[str]:
         """Last write wins per ``(step, key)``. Returns the chunk keys touched."""
@@ -65,6 +70,8 @@ class RunMetrics:
                 self.written.setdefault(point.step, {}).update(
                     dict.fromkeys(point.metrics, now)
                 )
+                if point.time is not None:
+                    self._stamp(point.step, point.time)
                 touched.add(chunk_key(point.step))
         return touched
 
@@ -73,6 +80,7 @@ class RunMetrics:
         return {
             "steps": {str(s): self.table[s] for s in steps},
             "written": {str(s): self.written.get(s, {}) for s in steps},
+            "times": {str(s): self.times[s] for s in steps if s in self.times},
         }
 
     def load_chunk(self, payload: Mapping[str, Any]) -> None:
@@ -83,12 +91,16 @@ class RunMetrics:
             return
         written = payload.get("written")
         written = written if isinstance(written, Mapping) else {}
+        times = payload.get("times")
+        times = times if isinstance(times, Mapping) else {}
         for raw_step, metrics in steps.items():
             if not (
                 isinstance(metrics, Mapping) and metrics and str(raw_step).isdigit()
             ):
                 continue
             step = int(raw_step)
+            if isinstance(at := times.get(raw_step), (int, float)):
+                self._stamp(step, float(at))
             stamps = written.get(raw_step)
             stamps = stamps if isinstance(stamps, Mapping) else {}
             mine = self.table.setdefault(step, {})
@@ -101,7 +113,7 @@ class RunMetrics:
                     mine_at[key] = at
 
 
-def downsample(rows: list[list[float]], max_points: int) -> list[list[float]]:
+def downsample(rows: list[list[Any]], max_points: int) -> list[list[Any]]:
     """Keep both endpoints plus each bucket's min and max, so loss spikes
     survive (W&B's history sampler does the same)."""
     if len(rows) <= max_points:
@@ -115,10 +127,12 @@ def downsample(rows: list[list[float]], max_points: int) -> list[list[float]]:
     return [rows[i] for i in sorted(keep)]
 
 
-def metric_series(table: StepTable, max_points: int) -> dict[str, list[list[float]]]:
-    """``{key: [[step, value], ...]}``, each key downsampled to ``max_points``."""
-    by_key: dict[str, list[list[float]]] = {}
-    for step in sorted(table):
-        for key, value in table[step].items():
-            by_key.setdefault(key, []).append([step, value])
+def metric_series(
+    run: RunMetrics, max_points: int
+) -> dict[str, list[list[float | None]]]:
+    """``{key: [[step, value, time], ...]}``, each key downsampled to ``max_points``."""
+    by_key: dict[str, list[list[float | None]]] = {}
+    for step in sorted(run.table):
+        for key, value in run.table[step].items():
+            by_key.setdefault(key, []).append([step, value, run.times.get(step)])
     return {key: downsample(rows, max_points) for key, rows in sorted(by_key.items())}

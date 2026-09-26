@@ -213,3 +213,21 @@ def test_sft_rejects_eval_dataset():
         BaseTrainRecipe._validate_datasets(
             RowsDataset("a"), RowsDataset("b"), loss_type="sft_loss"
         )
+
+
+def test_failed_write_cleanup_preserves_committed_destination(tmp_path):
+    path = str(tmp_path / "train.jsonl")
+
+    class RaceDataset(RowsDataset):
+        def write(self, dest: str) -> None:
+            self.write_count += 1
+            RowsDataset("peer", "peer").write(path)
+            raise TrainingGymConfigError("boom")
+
+    with pytest.raises(TrainingGymConfigError, match="boom"):
+        write_dataset_if_needed(RaceDataset("train"), path)
+    assert json.loads((tmp_path / "train.jsonl").read_text()) == {
+        "prompt": "peer",
+        "label": "peer",
+    }
+    assert not any(p.name.endswith(".tmp.jsonl") for p in tmp_path.iterdir())

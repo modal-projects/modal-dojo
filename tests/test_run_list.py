@@ -39,6 +39,7 @@ def test_schema_metadata_drives_columns_and_filters():
         "model",
         "dataset",
         "recipe",
+        "training_type",
         "group_id",
         "created_at",
         "updated_at",
@@ -48,6 +49,7 @@ def test_schema_metadata_drives_columns_and_filters():
         "model",
         "dataset",
         "recipe",
+        "training_type",
         "group_id",
     }
 
@@ -251,13 +253,9 @@ def test_facet_counts_cover_every_run():
     }
 
 
-def test_training_type_facet_follows_config_summary_loss_type():
+def test_training_type_facet_filters_and_counts():
     rl = _summary(run_id="rl", training_run_id="rl")
-    sft = _summary(
-        run_id="sft",
-        training_run_id="sft",
-        config_summary={"loss_type": "sft_loss"},
-    )
+    sft = _summary(run_id="sft", training_run_id="sft", training_type="sft")
 
     assert filter_run_summaries(
         [rl, sft],

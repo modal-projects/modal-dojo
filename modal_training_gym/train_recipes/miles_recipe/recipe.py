@@ -410,6 +410,7 @@ class MilesRecipe(BaseTrainRecipe):
             ``PYTHONPATH`` and NCCL settings.
         async_mode:
             Run Miles' ``train_async.py`` so rollout generation and training overlap.
+            Ignored with ``loss_type="sft_loss"``, which always runs ``train_async.py``.
         metrics:
             Metric tracker settings; expands to Miles' W&B-compatible flags.
             Defaults to the dashboard-only tracker; ``None`` disables metric
@@ -837,10 +838,6 @@ class MilesRecipe(BaseTrainRecipe):
         model: ModelConfig | None = None,
     ) -> dict[str, Any]:
         fields = self._field_values()
-        if fields["save_interval"] is None and fields["save"] is not None:
-            fields["save_interval"] = self._escape_hatch_values().get(
-                "num_rollout", self.num_rollout
-            )
         if model is not None:
             self.validate_model_parallelism(model)
             for k, v in self._model_to_fields(model).items():
@@ -870,6 +867,7 @@ class MilesRecipe(BaseTrainRecipe):
             )
         _apply_loss_type_fields(
             fields,
+            self._escape_hatch_values(),
             sft_rollout_function="miles.rollout.sft_rollout.generate_rollout",
         )
         if self.metrics is not None:
