@@ -348,14 +348,17 @@ def run_base_training(
     model_config = config.model_config()
 
     train_recipe, dataset = build_recipe_and_dataset(
-        config.framework, model_config, step_count
+        config.framework,
+        model_config,
+        step_count,
+        loss_type=config.loss_type,
     )
     train_recipe.num_rollout = step_count
-    if eval_interval is not None:
+    if eval_interval is not None and config.loss_type != "sft_loss":
         train_recipe.eval_interval = eval_interval
     if save_interval is not None:
         train_recipe.save_interval = save_interval
-    if non_colocated:
+    if non_colocated and config.loss_type != "sft_loss":
         train_recipe.colocate = False
         if train_recipe.rollout_num_gpus is None:
             train_recipe.rollout_num_gpus = (
@@ -378,7 +381,7 @@ def run_base_training(
     train_config = TrainConfig(
         model=model_config,
         dataset=dataset,
-        eval_dataset=dataset,
+        eval_dataset=None if config.loss_type == "sft_loss" else dataset,
         recipe=train_recipe,
     )
 

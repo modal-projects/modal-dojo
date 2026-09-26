@@ -1120,8 +1120,14 @@ def fastapi_app():
         status: list[str] | None,
         recipe: list[str] | None,
         group: list[str] | None,
+        training_type: list[str] | None,
     ) -> dict[str, set[str]]:
-        selected = {"status": status, "recipe": recipe, "group": group}
+        selected = {
+            "status": status,
+            "recipe": recipe,
+            "group": group,
+            "training_type": training_type,
+        }
         return {name: set(values) for name, values in selected.items() if values}
 
     async def load_run_summaries() -> list[RunSummary]:
@@ -1145,6 +1151,7 @@ def fastapi_app():
         status: FacetParam = None,
         recipe: FacetParam = None,
         group: FacetParam = None,
+        training_type: FacetParam = None,
     ):
         if limit is not None and limit < 1:
             raise HTTPException(status_code=400, detail="Limit must be positive")
@@ -1159,7 +1166,7 @@ def fastapi_app():
             for name, metadata in run_list_field_metadata().items()
             if metadata.get("filterable") and name not in FACET_NAMES
         }
-        facets = _requested_facets(status, recipe, group)
+        facets = _requested_facets(status, recipe, group, training_type)
         filtered = filter_run_summaries(
             summaries,
             filters=filters,
@@ -1191,13 +1198,14 @@ def fastapi_app():
         status: FacetParam = None,
         recipe: FacetParam = None,
         group: FacetParam = None,
+        training_type: FacetParam = None,
     ):
         summaries = await load_run_summaries()
         counts = count_run_facets(summaries)
         counts["matching"] = len(
             filter_run_summaries(
                 summaries,
-                facets=_requested_facets(status, recipe, group),
+                facets=_requested_facets(status, recipe, group, training_type),
                 query=q,
             )
         )

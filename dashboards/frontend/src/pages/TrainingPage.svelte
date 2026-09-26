@@ -33,6 +33,9 @@
     groups,
     groupCounts,
     activeGroups,
+    trainingTypes,
+    trainingTypeCounts,
+    activeTrainingTypes,
     filteredRuns,
     runGroups,
     groupBy = $bindable(),
@@ -55,6 +58,9 @@
     onToggleGroup,
     onSelectAllGroups,
     onClearGroups,
+    onToggleTrainingType,
+    onSelectAllTrainingTypes,
+    onClearTrainingTypes,
   } = $props();
 
   // The drawer is now driven by the parent: it holds the run-summary while the
@@ -268,6 +274,10 @@
       {groupCounts}
       {activeGroups}
       allGroupsActive={activeGroups.size === groups.length}
+      {trainingTypes}
+      {trainingTypeCounts}
+      {activeTrainingTypes}
+      allTrainingTypesActive={activeTrainingTypes.size === trainingTypes.length}
       bind:search
       bind:groupBy
       onToggleRecipe={onToggleRecipe}
@@ -279,6 +289,9 @@
       onToggleGroup={onToggleGroup}
       onSelectAllGroups={onSelectAllGroups}
       onClearGroups={onClearGroups}
+      onToggleTrainingType={onToggleTrainingType}
+      onSelectAllTrainingTypes={onSelectAllTrainingTypes}
+      onClearTrainingTypes={onClearTrainingTypes}
     />
   </div>
 

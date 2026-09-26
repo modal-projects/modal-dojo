@@ -38,6 +38,45 @@ def _safe_data_key(cache_key: str) -> str:
 # Recipe fields whose dict values are emitted as JSON CLI arguments.
 JSON_CONFIG_FIELDS = ("train_env_vars", "apply_chat_template_kwargs", "multimodal_keys")
 
+_SFT_CLI_OVERRIDES: dict[str, Any] = {
+    "colocate": False,
+    "rollout_num_gpus": None,
+    "calculate_per_token_loss": True,
+    "disable_compute_advantages_and_returns": True,
+    "debug_train_only": True,
+    "n_samples_per_prompt": 1,
+    "use_fault_tolerance": False,
+    "use_kl_loss": False,
+    "kl_coef": 0.0,
+    "entropy_coef": 0.0,
+    "apply_chat_template": False,
+}
+
+
+def _apply_loss_type_fields(
+    fields: dict[str, Any], *, sft_rollout_function: str
+) -> None:
+    if fields["num_epoch"] is not None:
+        fields["num_rollout"] = None
+    if fields["loss_type"] == "policy_loss":
+        fields["loss_type"] = None
+        fields["loss_mask_type"] = None
+        return
+    fields.update(_SFT_CLI_OVERRIDES)
+    global_batch_size = fields.get("global_batch_size")
+    rollout_batch_size = fields.get("rollout_batch_size")
+    if global_batch_size is not None:
+        fields["rollout_batch_size"] = global_batch_size
+    elif rollout_batch_size is not None:
+        fields["global_batch_size"] = rollout_batch_size
+    fields["rollout_function"] = sft_rollout_function
+    if fields.get("loss_mask_type") == "qwen":
+        fields["loss_mask_type"] = None
+    if fields["advantage_estimator"] == "ppo":
+        fields["advantage_estimator"] = "grpo"
+    if "num_steps_per_rollout" in fields:
+        fields["num_steps_per_rollout"] = 1
+
 
 class BaseTrainRecipe(ABC):
     model_config_class: ClassVar["type[ModelConfig] | None"] = None
@@ -126,7 +165,13 @@ class BaseTrainRecipe(ABC):
     def _validate_datasets(
         ds: "DatasetConfig",
         eval_ds: "DatasetConfig | None" = None,
+        *,
+        loss_type: str = "policy_loss",
     ) -> None:
+        if loss_type == "sft_loss" and eval_ds is not None:
+            raise TrainingGymConfigError(
+                "eval_dataset is not supported with loss_type='sft_loss'"
+            )
         if eval_ds is None:
             return
         for dataset_method in ("input_key", "label_key", "apply_chat_template"):

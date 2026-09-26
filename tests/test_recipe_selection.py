@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from modal_training_gym.common.dataset import HuggingFaceDataset
+from modal_training_gym.common.errors import TrainingGymConfigError
 from modal_training_gym.common.launcher_utils import (
     get_checkpoint_conversion_policy,
     prepare_launch_config,
@@ -23,8 +24,17 @@ from modal_training_gym.train_recipes.miles_recipe.gemma4_26b_a4b import (
     Gemma4_26B_A4B_Recipe,
 )
 from modal_training_gym.train_recipes.miles_recipe.inkling import Inkling_Small_Recipe
+from modal_training_gym.train_recipes.miles_recipe.moonlight_16b_a3b import (
+    Moonlight_16B_A3B_Recipe,
+)
+from modal_training_gym.train_recipes.miles_recipe.qwen3_5_4b import (
+    Qwen3_5_4B_Miles_Recipe,
+)
 from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
 from modal_training_gym.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
+from modal_training_gym.train_recipes.slime_recipe.qwen3_5_0_8b import (
+    Qwen3_5_0_8B_Recipe,
+)
 
 _RECIPE_PACKAGES = (
     "modal_training_gym.train_recipes.slime_recipe",
@@ -221,3 +231,48 @@ def test_prepare_recipe_does_not_mutate_stored_launch_callables() -> None:
     assert recipe.custom_rm_function is custom_rm_function
     assert second.image_overlay is image_overlay
     assert second.custom_rm_function is custom_rm_function
+
+
+@pytest.mark.parametrize(
+    ("recipe_cls", "framework"), [(SlimeRecipe, "slime"), (MilesRecipe, "miles")]
+)
+def test_sft_loss_emits_native_sft_flags(recipe_cls, framework) -> None:
+    recipe = recipe_cls(global_batch_size=8, n_samples_per_prompt=4, num_epoch=3)
+    assert "--loss-type" not in recipe.cli_args(dataset=_dataset())
+    recipe.loss_type = "sft_loss"
+    args = recipe.cli_args(dataset=_dataset())
+    values = dict(zip(args, args[1:]))
+    assert values["--loss-type"] == "sft_loss"
+    assert values["--rollout-function-path"] == (
+        f"{framework}.rollout.sft_rollout.generate_rollout"
+    )
+    assert values["--n-samples-per-prompt"] == "1"
+    assert values["--rollout-batch-size"] == "8"
+    assert "--loss-mask-type" not in args
+    assert {"--debug-train-only", "--disable-compute-advantages-and-returns"} <= set(
+        args
+    )
+    assert not {"--apply-chat-template", "--num-rollout", "--colocate"} & set(args)
+    assert recipe.gpu_allocation.rollout_gpus == 0
+    assert recipe.train_async is (recipe_cls is MilesRecipe)
+
+
+def test_sft_qwen35_emits_loss_mask_type_qwen3_5() -> None:
+    assert "--loss-mask-type" not in Qwen3_5_0_8B_Recipe().cli_args(dataset=_dataset())
+    sft_args = Qwen3_5_0_8B_Recipe(loss_type="sft_loss").cli_args(dataset=_dataset())
+    assert dict(zip(sft_args, sft_args[1:]))["--loss-mask-type"] == "qwen3_5"
+
+
+def test_sft_none_global_batch_size_uses_rollout_batch_size() -> None:
+    recipe = Moonlight_16B_A3B_Recipe(loss_type="sft_loss")
+    assert recipe.global_batch_size is None
+    args = recipe.cli_args(dataset=_dataset())
+    values = dict(zip(args, args[1:]))
+    assert values["--global-batch-size"] == str(recipe.rollout_batch_size)
+    assert values["--rollout-batch-size"] == str(recipe.rollout_batch_size)
+
+
+def test_miles_qwen35_sft_raises() -> None:
+    recipe = Qwen3_5_4B_Miles_Recipe(loss_type="sft_loss")
+    with pytest.raises(TrainingGymConfigError, match="qwen3_5"):
+        recipe.cli_args(dataset=_dataset())

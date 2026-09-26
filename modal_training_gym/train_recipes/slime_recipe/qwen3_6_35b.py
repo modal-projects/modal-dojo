@@ -1,4 +1,5 @@
 from dataclasses import field
+from typing import Literal
 
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
@@ -10,6 +11,7 @@ from modal_training_gym.train_recipes.slime_recipe.recipe import SlimeRecipe
 class Qwen3_6_35B_Recipe(SlimeRecipe):
     """Qwen3.6-35B-A3B recipe."""
 
+    loss_mask_type: Literal["qwen", "qwen3", "qwen3_5", "distill_qwen"] = "qwen3_5"
     gpu_type: str = "B300"
     colocate: bool = False
     rollout_num_gpus: int | None = 1

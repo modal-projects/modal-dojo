@@ -128,6 +128,53 @@ class DatasetConfig(ABC):
             )
 
 
+class _SftDataset(DatasetConfig):
+    def __init__(self, inner: DatasetConfig) -> None:
+        if getattr(inner, "input_format", None) == "raw":
+            raise TrainingGymConfigError(
+                "input_format='raw' is not supported with loss_type='sft_loss'"
+            )
+        if isinstance(inner, HarborDataset):
+            raise TrainingGymConfigError(
+                "HarborDataset is not supported with loss_type='sft_loss'"
+            )
+        self._inner = inner
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "_inner":
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+    def cache_key(self) -> str | None:
+        key = self._inner.cache_key()
+        return None if key is None else f"{key}:sft"
+
+    def input_key(self) -> str:
+        return self._inner.input_key()
+
+    def label_key(self) -> str:
+        return ""
+
+    def rows(self) -> Iterable[DatasetRow]:
+        input_key, label_key = self._inner.input_key(), self._inner.label_key()
+        for row in self._inner.rows():
+            messages = row.get(input_key)
+            if messages is None:
+                raise TrainingGymConfigError(
+                    f"SFT row is missing a prompt in column {input_key!r}"
+                )
+            if not isinstance(messages, list):
+                messages = [{"role": "user", "content": str(messages)}]
+            if not messages or messages[-1].get("role") != "assistant":
+                label = row.get(label_key) if label_key else None
+                if label in (None, ""):
+                    raise TrainingGymConfigError(
+                        "SFT row has no label and does not end with an assistant turn"
+                    )
+                messages = [*messages, {"role": "assistant", "content": str(label)}]
+            yield {**row, input_key: messages}
+
+
 class HuggingFaceDataset(DatasetConfig):
     """A dataset loaded from a Hugging Face ``datasets`` repository.
 
@@ -150,7 +197,7 @@ class HuggingFaceDataset(DatasetConfig):
     hf_split: str
     hf_config: str | None
     input_column: str
-    output_column: str
+    output_column: str | None
     input_format: Literal["text", "messages", "raw"]
     system_prompt: str
     prompt_template: str
@@ -163,7 +210,7 @@ class HuggingFaceDataset(DatasetConfig):
         hf_split: str = "train",
         hf_config: str | None = None,
         input_column: str,
-        output_column: str,
+        output_column: str | None = None,
         input_format: Literal["text", "messages", "raw"] = "text",
         system_prompt: str = "",
         prompt_template: str = "{input}",
@@ -208,9 +255,9 @@ class HuggingFaceDataset(DatasetConfig):
 
     def label_key(self) -> str:
         if self.input_format == "text":
-            return "label"
+            return "label" if self.output_column else ""
         else:
-            return self.output_column
+            return self.output_column or ""
 
     def apply_chat_template(self) -> bool:
         return self.input_format != "raw"
@@ -235,10 +282,10 @@ class HuggingFaceDataset(DatasetConfig):
             messages.append({"role": "system", "content": self.system_prompt})
         user_content = self.prompt_template.format(input=row[self.input_column])
         messages.append({"role": "user", "content": user_content})
-        return {
-            self.input_key(): messages,
-            self.label_key(): str(row[self.output_column]),
-        }
+        result = {self.input_key(): messages}
+        if self.output_column:
+            result[self.label_key()] = str(row[self.output_column])
+        return result
 
     def rows(self) -> Iterable[DatasetRow]:
         for row in self._load_hf_dataset():

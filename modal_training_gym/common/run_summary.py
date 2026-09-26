@@ -147,6 +147,7 @@ class ConfigSummary(BaseModel):
     actor_num_gpus_per_node: int = 0
     lr: float = 0.0
     global_batch_size: int = 0
+    loss_type: str = ""
     metric_provider: str = ""
     metric_project: str = ""
     metric_group: str = ""
@@ -402,6 +403,7 @@ def _config_summary(config: object, training_run_id: str) -> ConfigSummary | Jso
         actor_num_gpus_per_node=_integer(recipe.get("actor_num_gpus_per_node")),
         lr=_number(config.get("lr")),
         global_batch_size=_integer(config.get("global_batch_size")),
+        loss_type=_text(recipe.get("loss_type")),
         **_metric_summary(
             entity=metric_config.get("entity"),
             project=metric_config.get("project"),

@@ -1,4 +1,5 @@
 from dataclasses import field
+from typing import Literal
 
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
@@ -10,6 +11,7 @@ from modal_training_gym.train_recipes.slime_recipe.recipe import SlimeRecipe
 class Qwen3_8_27B_Recipe(SlimeRecipe):
     """Qwen3.8-27B recipe."""
 
+    loss_mask_type: Literal["qwen", "qwen3", "qwen3_5", "distill_qwen"] = "qwen3_5"
     memory: int | tuple[int, int] | None = (128, 2_097_152)
     slime_model_script: str = "scripts/models/qwen3.5-27B.sh"
     hf_checkpoint: str = "Qwen/Qwen3.8-27B"

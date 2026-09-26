@@ -195,6 +195,7 @@
   // Active tab: "summary" | "rollouts" | "logs". One-way sync with the URL:
   // init/popstate/runId read URL → activeTab; selectTab writes pushState.
   let activeTab = $state(/** @type {TabId} */ (DEFAULT_TAB));
+  let isSftRun = $derived(run?.config_summary?.loss_type === "sft_loss");
 
   function selectTab(tab) {
     const next = DETAIL_TABS.has(tab) ? /** @type {TabId} */ (tab) : DEFAULT_TAB;
@@ -230,6 +231,12 @@
     runId;
     if (embedded || typeof window === "undefined") return;
     activeTab = parseTabFromUrl();
+  });
+
+  $effect(() => {
+    if (!isSftRun || activeTab !== "rollouts") return;
+    activeTab = DEFAULT_TAB;
+    if (!embedded) history.replaceState({}, "", urlForTab(DEFAULT_TAB));
   });
 
   function formatMean(value) {
@@ -657,7 +664,7 @@
   // steps stream in on a running run.
   $effect(() => {
     const id = runId;
-    if (!id || runMissing || activeTab !== "summary") return;
+    if (!id || runMissing || isSftRun || activeTab !== "summary") return;
 
     const controller = new AbortController();
     void loadAdvantages(controller.signal);
@@ -681,8 +688,10 @@
     if (!id || runMissing || (tab !== "summary" && tab !== "rollouts")) return;
 
     const controller = new AbortController();
-    rolloutsLoading = true;
-    void loadRollouts(controller.signal);
+    if (!isSftRun) {
+      rolloutsLoading = true;
+      void loadRollouts(controller.signal);
+    }
     void loadTimings(controller.signal);
 
     // Poll while the run is active so new rollouts stream in.
@@ -696,7 +705,7 @@
           timingStaleFailures >= MAX_TERMINAL_TIMING_STALE_READS)
       )
         return;
-      if (!status || status === "running") {
+      if (!isSftRun && (!status || status === "running")) {
         void loadRollouts(controller.signal);
       }
       void loadTimings(controller.signal);
@@ -1646,7 +1655,9 @@
       tabs={[
         { value: "summary", label: "Summary" },
         { value: "metrics", label: "Metrics" },
-        { value: "rollouts", label: "Rollouts", count: rolloutSummaries.length || undefined },
+        ...(isSftRun
+          ? []
+          : [{ value: "rollouts", label: "Rollouts", count: rolloutSummaries.length || undefined }]),
         { value: "logs", label: "Logs" },
       ]}
     />
@@ -1660,7 +1671,7 @@
               <pre class="[border:1px_solid_color-mix(in_srgb,var(--red,#f87171)_45%,transparent)] rounded-[8px] bg-[color-mix(in_srgb,var(--red,#f87171)_12%,transparent)] text-(--red,#f87171) [font-family:var(--font-mono)] text-[12px] leading-[17px] m-0 max-h-[320px] overflow-auto p-[12px_14px] whitespace-pre-wrap [word-break:break-word]">{run.error_message}</pre>
             </div>
           {/if}
-          {#if showTimingSection || rolloutSummaries.length}
+          {#if showTimingSection || (!isSftRun && rolloutSummaries.length)}
             <div class="chart-range-bar">
               <div class="chart-range-dropdown">
                 <MetricsRangeDropdown
@@ -1710,6 +1721,7 @@
                 {attemptMarkers}
                 timeRange={chartRange.entireRun ? null : chartRange}
                 onChangeTimeRange={setChartRange}
+                showOpenRollout={!isSftRun}
                 onOpenRollout={(id) => {
                   selectTab("rollouts");
                   if (expandedRolloutId !== id) void toggleRolloutDetail(id);
@@ -1718,6 +1730,7 @@
               {/if}
             </div>
           {/if}
+          {#if !isSftRun}
           {#if rolloutsLoading && !rolloutSummaries.length}
             <div class="rollout-chart">
               <ChartSkeleton variant="line" height={140} showTitle />
@@ -1863,6 +1876,7 @@
                 {/each}
               </div>
             {/if}
+          {/if}
           {/if}
         </div>
         <aside class="summary-tab-side">

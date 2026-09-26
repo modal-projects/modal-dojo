@@ -16,7 +16,6 @@
   import logoSvg from "./lib/logo.svg";
   import { fmtDuration } from "./lib/format.js";
   import { createSidebarCollapsedState } from "./lib/sidebarCollapsed.svelte.js";
-
   const DOCS_URL = "https://gym.modal.dev";
 
   // The server filters, sorts and pages the run list, so `runs` only holds the
@@ -30,6 +29,7 @@
     status: {},
     recipe: {},
     group: {},
+    training_type: {},
   });
   let allEvals = $state([]);
   let loading = $state(true);
@@ -39,13 +39,15 @@
   let activeRecipes = $state(new Set());
   let activeStatuses = $state(new Set());
   let activeGroups = $state(new Set());
+  let activeTrainingTypes = $state(new Set());
   let trainingGroupBy = $state("none");
-  // Recipe/status/group values we've seen across loads. New ones are
+  // Facet values we've seen across loads. New ones are
   // auto-enabled in the filters once; the user's selections are never reset by
   // a refresh.
   let seenRecipes = new Set();
   let seenStatuses = new Set();
   let seenGroups = new Set();
+  let seenTrainingTypes = new Set();
   let activePage = $state("training");
   const sidebar = createSidebarCollapsedState();
   let activeTrainingRunId = $state(null);
@@ -230,11 +232,17 @@
   // all, and leaving it out of the request keeps the URL (and the response
   // cache key) stable while the user is only toggling within one group.
   function requestFacets() {
-    const universes = { status: statuses, recipe: recipes, group: groups };
+    const universes = {
+      status: statuses,
+      recipe: recipes,
+      group: groups,
+      training_type: trainingTypes,
+    };
     const selections = {
       status: activeStatuses,
       recipe: activeRecipes,
       group: activeGroups,
+      training_type: activeTrainingTypes,
     };
     const facets = {};
     for (const [name, selected] of Object.entries(selections)) {
@@ -253,12 +261,13 @@
   );
 
   function adoptFacetValues(counts) {
-    // Auto-enable newly-seen recipes/statuses/groups without resetting the
+    // Auto-enable newly-seen facet values without resetting the
     // user's current filter selection on every refresh.
     const seen = {
       recipe: [seenRecipes, activeRecipes],
       status: [seenStatuses, activeStatuses],
       group: [seenGroups, activeGroups],
+      training_type: [seenTrainingTypes, activeTrainingTypes],
     };
     for (const [facet, [seenValues, active]] of Object.entries(seen)) {
       const next = new Set(active);
@@ -272,7 +281,8 @@
       if (!changed) continue;
       if (facet === "recipe") activeRecipes = next;
       else if (facet === "status") activeStatuses = next;
-      else activeGroups = next;
+      else if (facet === "group") activeGroups = next;
+      else activeTrainingTypes = next;
     }
   }
 
@@ -281,13 +291,14 @@
   // not take the rows down with it: count the loaded window instead. Exact
   // once everything is paged in, an undercount before that.
   function countsFromPage(page) {
-    const buckets = { status: {}, recipe: {}, group: {} };
+    const buckets = { status: {}, recipe: {}, group: {}, training_type: {} };
     for (const run of page) {
       const values = {
         status: getStatus(run),
         recipe:
           safeText(run.recipe) || safeText(run.framework) || UNTAGGED_RECIPE,
         group: getGroup(run),
+        training_type: run.config_summary?.loss_type === "sft_loss" ? "sft" : "rl",
       };
       for (const [name, value] of Object.entries(values)) {
         buckets[name][value] = (buckets[name][value] || 0) + 1;
@@ -348,6 +359,7 @@
         activeRecipes = new Set();
         activeStatuses = new Set();
         activeGroups = new Set();
+        activeTrainingTypes = new Set();
       }
     } finally {
       // Always retire the cold-start skeleton once any attempt settles — even a
@@ -429,6 +441,7 @@
   let recipeCounts = $derived(runCounts.recipe || {});
   let statusCounts = $derived(runCounts.status || {});
   let groupCounts = $derived(runCounts.group || {});
+  let trainingTypeCounts = $derived(runCounts.training_type || {});
 
   let recipes = $derived(Object.keys(recipeCounts).sort());
   let statuses = $derived(Object.keys(statusCounts).sort());
@@ -441,6 +454,7 @@
       return a.localeCompare(b);
     }),
   );
+  let trainingTypes = $derived(Object.keys(trainingTypeCounts).sort());
 
   // Runs arrive already filtered and sorted newest-first by the server.
   let filteredRuns = $derived(runs);
@@ -791,6 +805,21 @@
     activeGroups = new Set();
   }
 
+  function toggleTrainingType(value) {
+    const next = new Set(activeTrainingTypes);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    activeTrainingTypes = next;
+  }
+
+  function selectAllTrainingTypes() {
+    activeTrainingTypes = new Set(trainingTypes);
+  }
+
+  function clearTrainingTypes() {
+    activeTrainingTypes = new Set();
+  }
+
   function setActivePage(page) {
     activePage = page;
     activeTrainingRunId = null;
@@ -913,6 +942,9 @@
         {groups}
         {groupCounts}
         {activeGroups}
+        {trainingTypes}
+        {trainingTypeCounts}
+        {activeTrainingTypes}
         {filteredRuns}
         runGroups={trainingRunGroups}
         bind:groupBy={trainingGroupBy}
@@ -935,6 +967,9 @@
         onToggleGroup={toggleGroup}
         onSelectAllGroups={selectAllGroups}
         onClearGroups={clearGroups}
+        onToggleTrainingType={toggleTrainingType}
+        onSelectAllTrainingTypes={selectAllTrainingTypes}
+        onClearTrainingTypes={clearTrainingTypes}
       />
     {:else if activePage === "evals"}
       <EvalsPage

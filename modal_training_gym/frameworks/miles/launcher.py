@@ -18,7 +18,7 @@ from modal_training_gym.common import (
     proxy_auth_secrets,
 )
 from modal_training_gym.common.checkpoint import Checkpoint
-from modal_training_gym.common.dataset import DatasetConfig, HarborDataset
+from modal_training_gym.common.dataset import DatasetConfig, HarborDataset, _SftDataset
 from modal_training_gym.common.framework import (
     Framework,
     mount_tools_dir,
@@ -482,7 +482,9 @@ def build_miles_app(
 ) -> App:
     app_name = name or miles.name or f"miles-{type(miles).__name__.lstrip('_').lower()}"
     volume_prefix = miles.name or f"miles-{type(miles).__name__.lstrip('_').lower()}"
-    MilesRecipe._validate_datasets(dataset, eval_dataset)
+    MilesRecipe._validate_datasets(dataset, eval_dataset, loss_type=miles.loss_type)
+    if miles.loss_type == "sft_loss":
+        dataset = _SftDataset(dataset)
     dataset_path = MilesRecipe._resolve_data_paths(dataset)
     eval_dataset_path = (
         MilesRecipe._resolve_data_paths(eval_dataset)
@@ -959,7 +961,7 @@ def build_miles_app(
                 framework_status_token=framework_status_token,
             )
 
-            mode = "async" if miles.async_mode else "sync"
+            mode = "async" if miles.train_async else "sync"
             print(
                 f"Training {app_name} - {miles.total_nodes} node(s) x {gpu_spec} ({mode})"
             )
