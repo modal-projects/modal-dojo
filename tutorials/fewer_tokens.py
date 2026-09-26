@@ -38,7 +38,11 @@ model = Qwen3_5_4B()
 
 def deploy_base_model():
     base_deployment = Endpoint.launch(model, unauthenticated=True)
-    base_deployment.wait_until_ready()
+    try:
+        base_deployment.wait_until_ready()
+    except BaseException:
+        base_deployment.stop()
+        raise
     print(f"base model deployed to {base_deployment.url}")
     return base_deployment
 
@@ -153,7 +157,11 @@ def density_post_process(args, samples, **kwargs):
 
 def deploy_trained_model(checkpoint):
     trained_deployment = Endpoint.launch(model, checkpoint, unauthenticated=True)
-    trained_deployment.wait_until_ready()
+    try:
+        trained_deployment.wait_until_ready()
+    except BaseException:
+        trained_deployment.stop()
+        raise
     print(f"checkpoint deployed to {trained_deployment.url}")
     return trained_deployment
 
@@ -207,7 +215,12 @@ def train(config):
             if done:
                 break
             time.sleep(30)
-        return [f.result() for f in pending]
+        results = [f.result() for f in pending]
+        if run.status.value != "completed":
+            raise RuntimeError(
+                run.error or f"training ended with status {run.status.value}"
+            )
+        return results
 
 
 def print_results(rows):
