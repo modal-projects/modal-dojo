@@ -29,12 +29,16 @@ from modal_dojo.common.status import (
     MilesStatus,
     SlimeStatus,
 )
+from modal_dojo.common.training_rollout import (
+    TrainingRolloutResult,
+    TrainingRolloutSample,
+)
 from modal_dojo.frameworks.miles import build_miles_app
 from modal_dojo.frameworks.slime import build_slime_app
 from modal_dojo.train_recipes.base import BaseTrainRecipe
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
-from modal_dojo.utils.metadata import MetadataStore, vol_put
+from modal_dojo.utils.metadata import MetadataStore, vol_get, vol_put
 
 
 def _megatron_load_dir(checkpoint: Checkpoint) -> str:
@@ -578,6 +582,32 @@ class TrainConfig:
                 stop_app(launch.modal_app_id)
             raise
 
+    def evaluate(
+        self, dataset: DatasetConfig, n_samples: int
+    ) -> list[TrainingRolloutSample]:
+        """Sample ``n_samples`` rollouts per ``dataset`` row without training."""
+        if not isinstance(self.recipe, SlimeRecipe):
+            raise DojoConfigError("evaluate() requires a Slime recipe")
+        recipe = _dc.replace(
+            self.recipe,
+            num_rollout=0,
+            eval_interval=1,
+            n_samples_per_eval_prompt=n_samples,
+            eval_config=None,
+            # Megatron requires warmup < decay steps, and decay steps > 0.
+            extra_config={
+                **(self.recipe.extra_config or {}),
+                "lr_decay_iters": 1,
+                "lr_warmup_iters": 0,
+            },
+        )
+        run = _dc.replace(self, eval_dataset=dataset, recipe=recipe).train()
+        key = TrainingRolloutResult(
+            training_run_id=run.training_run_id, rollout_id=0
+        ).storage_key
+        payload = vol_get(MetadataStore.TRAINING_ROLLOUTS, key)
+        return TrainingRolloutResult.model_validate(payload).samples
+
     def launch(
         self,
         *,
@@ -677,19 +707,21 @@ class TrainConfig:
                             self.recipe, "megatron_to_hf_mode", ""
                         )
                         needs_conversion = megatron_to_hf_mode != "bridge"
-                        download_status, convert_status = (
-                            (SlimeStatus.DOWNLOAD_MODEL, SlimeStatus.CONVERT_MODEL)
+                        statuses = (
+                            SlimeStatus
                             if isinstance(self.recipe, SlimeRecipe)
-                            else (MilesStatus.DOWNLOAD_MODEL, MilesStatus.CONVERT_MODEL)
+                            else MilesStatus
                         )
-                        _set_status(download_status, is_active=False)
+                        _set_status(statuses.PREPARE_DATASET, is_active=False)
+                        app.prepare_dataset.remote()
+                        _set_status(statuses.DOWNLOAD_MODEL, is_active=False)
                         app.download.remote(
                             training_run_id=training_run_id,
                             framework_status_url=framework_status_url,
                             framework_status_token=framework_status_token,
                         )
                         if needs_conversion:
-                            _set_status(convert_status, is_active=False)
+                            _set_status(statuses.CONVERT_MODEL, is_active=False)
                             _convert_checkpoint_on_cache_miss(
                                 app,
                                 training_run_id=training_run_id,

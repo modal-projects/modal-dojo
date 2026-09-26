@@ -648,7 +648,13 @@ def _sample_to_dict(
     reward = get("reward") if attrs is not None else get("reward", None)
 
     metadata: dict[str, Any] = {}
-    for key in ("response_length", "prompt_length", "rollout_id", "rollout_idx"):
+    for key in (
+        "response_length",
+        "prompt_length",
+        "rollout_id",
+        "rollout_idx",
+        "remove_sample",
+    ):
         value = get(key) if attrs is not None else get(key, None)
         if value is not None:
             metadata[key] = value
