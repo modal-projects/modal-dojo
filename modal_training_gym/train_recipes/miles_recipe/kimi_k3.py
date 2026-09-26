@@ -59,13 +59,19 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
             # conversion ranks racing to write it read each other's partial
             # files. Container-local, and warmed once per node by the launcher.
             "HF_MODULES_CACHE": "/tmp/hf_modules",
-            # Multi-node B300 on Modal has no MNNVL fabric, and the TP16
-            # engines span two nodes: with NVLS left on, their pynccl
-            # communicator dies in ncclCommInitRank with "invalid usage" (the
-            # Inkling two-node engines needed the same switch).
+            # Multi-node B300 on Modal has no MNNVL fabric.
             "NCCL_MNNVL_ENABLE": "0",
             "NCCL_NVLS_ENABLE": "0",
             "NCCL_RAS_ENABLE": "0",
+            # The TP16 engines span two nodes. sglang's GroupCoordinator
+            # broadcasts the NCCL unique id over a gloo CPU group, and gloo
+            # picks its address from the hostname, which resolves to 127.0.0.1
+            # in Modal containers: every rank waits on the peer's loopback and
+            # ncclCommInitRank is never reached. Pin gloo and the TCPStore to
+            # eth1, the interface NCCL already bootstraps on (Modal sets
+            # NCCL_SOCKET_IFNAME=eth1); eth0 is a per-host network.
+            "GLOO_SOCKET_IFNAME": "eth1",
+            "TP_SOCKET_IFNAME": "eth1",
             "NCCL_TIMEOUT": "3600",
             # The release packs its routed experts as MXFP4 compressed-tensors
             # and ships no bf16 export; the converter dequantizes them as
