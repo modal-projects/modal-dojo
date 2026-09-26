@@ -40,6 +40,7 @@ def deploy_base_model():
     base_deployment = Endpoint.launch(
         model,
         unauthenticated=True,
+        recreate_if_existing=True,
         endpoint_name="fewer-tokens-baseline",
     )
     try:
@@ -165,6 +166,7 @@ def deploy_trained_model(checkpoint):
         model,
         checkpoint,
         unauthenticated=True,
+        recreate_if_existing=True,
         endpoint_name=f"fewer-tokens-{step}",
     )
     try:
