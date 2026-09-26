@@ -63,7 +63,7 @@ All frameworks expose a single `train()` entry point. Calling `train()` handles 
 
 Instantiate `HuggingFaceDataset(...)` directly; do not subclass it. Its `input_format` is `"text"` for plain text that the dataset should convert to messages, `"messages"` for an already formatted message column, and `"raw"` for input that must bypass the model chat template. Custom `DatasetConfig` classes implement the methods `input_key()`, `label_key()`, and `rows()`; override `apply_chat_template()` only when the default `True` is wrong. Launchers create the destination directory, then call `write(path)` to materialize framework input; the default implementation writes `rows()` as JSONL. `cache_key()` controls materialization reuse: stable equal keys share a path, while `None` gives every training run a fresh path and forces it to attempt materialization independently.
 
-`TrainConfig.eval_dataset` is an optional, separate dataset for the framework's internal evaluation loop. Explicit offline evaluation is independent and should iterate `dataset.rows()` directly.
+`TrainConfig.eval_dataset` is an optional, separate dataset for the framework's internal evaluation loop. `TrainConfig.evaluate(dataset, n_samples)` is independent offline evaluation that samples `n_samples` rollouts per row without training.
 
 ### Volume layout
 
