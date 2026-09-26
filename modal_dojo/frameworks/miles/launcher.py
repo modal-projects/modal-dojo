@@ -535,6 +535,7 @@ def build_miles_app(
     register_recipe_functions(
         app,
         image,
+        miles,
         hf_cache_volume=hf_cache_volume,
         data_volume=data_volume,
         checkpoints_volume=checkpoints_volume,
@@ -545,7 +546,6 @@ def build_miles_app(
         prepare_dataset=lambda: write_datasets(
             dataset, eval_dataset, dataset_path, eval_dataset_path
         ),
-        dataset_timeout=dataset_timeout,
     )
 
     convert_nnodes, convert_nproc, _ = get_checkpoint_conversion_policy(

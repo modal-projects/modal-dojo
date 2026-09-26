@@ -527,6 +527,7 @@ def build_slime_app(
     register_recipe_functions(
         app,
         image,
+        slime,
         hf_cache_volume=hf_cache_volume,
         data_volume=data_volume,
         checkpoints_volume=checkpoints_volume,
@@ -537,7 +538,6 @@ def build_slime_app(
         prepare_dataset=lambda: write_datasets(
             dataset, eval_dataset, dataset_path, eval_dataset_path
         ),
-        dataset_timeout=2 * 60 * 60,
     )
 
     convert_nnodes, convert_nproc, _ = get_checkpoint_conversion_policy(

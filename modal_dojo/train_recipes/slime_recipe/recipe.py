@@ -352,6 +352,9 @@ class SlimeRecipe(BaseTrainRecipe):
             Max generated tokens per eval sample.
         eval_top_p:
             Nucleus-sampling top-p for eval generation.
+        eval_temperature:
+            Sampling temperature for eval generation; ``None`` uses
+            ``rollout_temperature``.
         eval_config:
             Evaluation defaults and datasets written to ``--eval-config`` as YAML.
 
@@ -561,6 +564,7 @@ class SlimeRecipe(BaseTrainRecipe):
     n_samples_per_eval_prompt: int = 2
     eval_max_response_len: int = 4096
     eval_top_p: float = 1.0
+    eval_temperature: float | None = None
     eval_config: dict | None = None
 
     # ── Launcher instructions ─────────────────────────
