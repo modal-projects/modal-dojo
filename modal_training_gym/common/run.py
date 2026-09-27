@@ -14,7 +14,13 @@ from collections.abc import Awaitable, Callable, Sequence
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from modal.exception import NotFoundError
+from modal.exception import (
+    ConnectionError as ModalConnectionError,
+    InternalError,
+    NotFoundError,
+    ResourceExhaustedError,
+    ServiceError,
+)
 from pydantic import (
     BaseModel,
     Field,
@@ -226,9 +232,15 @@ class TrainingRun(BaseModel):
         try:
             call.get(timeout=0)
             return True, None
-        except TimeoutError:
+        except (
+            TimeoutError,
+            ModalConnectionError,
+            InternalError,
+            ResourceExhaustedError,
+            ServiceError,
+        ):
             return False, None
-        except BaseException as exc:
+        except Exception as exc:
             return True, exc
 
     def checkpoints(self) -> list["Checkpoint"]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import modal.exception
 import pytest
 
 from modal_training_gym.common.framework import Framework
@@ -151,6 +152,28 @@ def test_done_is_false_while_function_call_is_pending(fake_volume):
 
     assert run.done() is False
     assert run.status is TrainingRunStatus.RUNNING
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        modal.exception.ConnectionError("network down"),
+        modal.exception.ResourceExhaustedError("rate limited"),
+        modal.exception.ServiceError("unavailable"),
+    ],
+)
+def test_done_is_false_when_status_check_hits_transport_error(exc, fake_volume):
+    class _FlakyCall:
+        def get(self, timeout=None):
+            del timeout
+            raise exc
+
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _FlakyCall()
+
+    assert run.done() is False
+    assert run.status is TrainingRunStatus.RUNNING
+    assert run.error is None
 
 
 def test_wait_timeout_does_not_mark_failed(fake_volume):
