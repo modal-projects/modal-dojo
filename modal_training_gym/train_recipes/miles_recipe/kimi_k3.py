@@ -185,6 +185,11 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
 
     # ── Colocation and weight sync ───────────────────────────────────────────
     offload_train: bool = True
+    # Upstream's resolved config for this recipe shows ``gpu``; the miles
+    # default is ``cpu``. ``gpu`` onloads the other side first so the trainer
+    # and the engine briefly coexist in GPU memory rather than host memory,
+    # which is the tighter budget here (8 ranks' backups a node).
+    colocate_memory_peak_device: str = "gpu"
     # Only the adapter crosses to the engines each step, so the sync buffer is
     # small; the base stays resident in the engines.
     update_weight_buffer_size: int | None = 256 * 1024**2
