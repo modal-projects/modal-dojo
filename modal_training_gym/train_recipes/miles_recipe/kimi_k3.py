@@ -30,7 +30,7 @@ _PATCH_DIR = (
 )
 
 # Build-time patches; see each script's docstring.
-_PATCHES = ("patch_cell_tick_timeout",)
+_PATCHES = ("patch_cell_tick_timeout", "patch_ipc_bucket_empty_cache")
 
 # First multi-arch nightly carrying radixark/miles#1825 together with its
 # Megatron (radixark/Megatron-LM#94) and sglang (sgl-project/sglang#37704)
@@ -249,8 +249,8 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
         """Keep the build-time patches at the head of ``image_run_commands``.
 
         The field is replaced wholesale, so a caller adding their own command
-        would otherwise drop the tick-timeout patch and the engines' first
-        memory release would time out again.
+        would otherwise drop the tick-timeout and sync-cache patches and the
+        first release or the first adapter sync would fail again.
         """
         patches = _image_patches()
         current = list(self.image_run_commands or [])
