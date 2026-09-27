@@ -100,7 +100,21 @@ def test_training_lifecycle_persists_terminal_state(
         assert "worker failed" in saved.error_message
 
 
-def test_record_run_failure_persists_errors_raised_before_lifecycle(fake_volume):
+@pytest.mark.parametrize(
+    "rank, expected",
+    [
+        (None, run_mod.TrainingRunStatus.FAILED),
+        (0, run_mod.TrainingRunStatus.FAILED),
+        (1, run_mod.TrainingRunStatus.RUNNING),
+    ],
+)
+def test_record_run_failure_persists_errors_raised_before_lifecycle(
+    fake_volume, monkeypatch, rank, expected
+):
+    if rank is not None:
+        monkeypatch.setattr(
+            launcher_helpers, "get_cluster_info", lambda: Mock(rank=rank)
+        )
     run_mod.TrainingRun(
         training_run_id="startup", framework=Framework.SLIME, config={}
     ).save()
@@ -111,9 +125,7 @@ def test_record_run_failure_persists_errors_raised_before_lifecycle(fake_volume)
 
     with pytest.raises(ServiceError):
         asyncio.run(train())
-    saved = run_mod.TrainingRun.from_id("startup")
-    assert saved.status is run_mod.TrainingRunStatus.FAILED
-    assert saved.error_message == "ServiceError: volume reload failed"
+    assert run_mod.TrainingRun.from_id("startup").status is expected
 
 
 @pytest.mark.parametrize("fw", list(Framework))

@@ -25,6 +25,8 @@ from typing import Any, Callable
 
 import cloudpickle
 from modal import Image, Retries, Volume
+from modal.exception import InvalidError
+from modal.experimental import get_cluster_info
 
 from modal_training_gym.common import COMMON_TRAINING_GYM_TAGS, modal_tag_value
 from modal_training_gym.common.framework import (
@@ -735,9 +737,19 @@ async def training_run_lifecycle(run_record: TrainingRun, status_token: str = ""
                 print(f"Failed to save run record: {exc}")
 
 
+def _is_head_container() -> bool:
+    try:
+        return get_cluster_info().rank == 0
+    except InvalidError:
+        return True
+
+
 def record_run_failure(training_run_id: str) -> Callable[[Callable], Callable]:
     """Persist a terminal status for errors raised outside ``training_run_lifecycle``
-    so a stored ``running`` record never outlives its training function."""
+    so a stored ``running`` record never outlives its training function.
+
+    Only the head container writes: Modal reports rank 0's result as the call's
+    result and keeps it running when a worker fails."""
 
     def decorate(train: Callable) -> Callable:
         @functools.wraps(train)
@@ -745,6 +757,8 @@ def record_run_failure(training_run_id: str) -> Callable[[Callable], Callable]:
             try:
                 return await train(*args, **kwargs)
             except BaseException:
+                if not _is_head_container():
+                    raise
                 try:
                     run_record = await TrainingRun.from_id(
                         training_run_id, is_async=True
