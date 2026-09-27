@@ -32,6 +32,19 @@ _PATCH_DIR = (
 # Build-time patches; see each script's docstring.
 _PATCHES = ("patch_cell_tick_timeout",)
 
+# First multi-arch nightly carrying radixark/miles#1825 together with its
+# Megatron (radixark/Megatron-LM#94) and sglang (sgl-project/sglang#37704)
+# halves; the base pin predates all three.
+_DOCKER_IMAGE = "radixark/miles:dev-202609251434"
+
+# Compiled-kernel caches on the checkpoints Volume, keyed by the image tag so a
+# nightly bump never reuses binaries built against another triton/torch.
+# Upstream's launcher forwards these for the same reason: the KDA triton
+# kernels otherwise JIT-compile in every engine and every trainer rank on
+# every run, which is what the serve-time "Triton kernel ... took N s to
+# compile" stalls and part of the first train step are.
+_KERNEL_CACHE_ROOT = f"/checkpoints/.kernel-cache/{_DOCKER_IMAGE.split(':')[-1]}"
+
 
 def _image_patches() -> list[str]:
     return [
@@ -52,10 +65,7 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
 
     model_config_class: ClassVar[type[ModelConfig]] = Kimi_K3
 
-    # First multi-arch nightly carrying radixark/miles#1825 together with its
-    # Megatron (radixark/Megatron-LM#94) and sglang (sgl-project/sglang#37704)
-    # halves; the base pin predates all three.
-    docker_image: str = "radixark/miles:dev-202609251434"
+    docker_image: str = _DOCKER_IMAGE
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "B300"
     # ``lora_base_cpu_backup`` mirrors each rank's frozen base weights into host
@@ -99,6 +109,8 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
             # and ships no bf16 export; the converter dequantizes them as
             # mbridge reads them instead of staging a ~5.6 TB bf16 checkpoint.
             "CONVERT_DEQUANT_MXFP4": "1",
+            "TRITON_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/triton",
+            "TORCHINDUCTOR_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/torchinductor",
             "SGLANG_JIT_ROUTE_RADIX": "1",
             # sglang's membind pins the whole host backup to one NUMA node,
             # which cannot hold it.
