@@ -400,9 +400,21 @@ def _build_miles_base_image(
 
 
 def _compose_ld_library_path() -> str:
-    parts = [SYSTEM_LIB_DIR]
-    for part in os.environ.get("LD_LIBRARY_PATH", "").split(":"):
-        if part and part not in parts:
+    """System lib dir first, except for Modal's RDMA toolchain, which stays ahead.
+
+    RDMA clusters come up with ``NCCL_NET=OFI`` / ``NCCL_NET_PLUGIN=ofi`` and
+    ``/opt/amazon/efa/lib`` (libfabric) plus ``/opt/amazon/ofi-nccl/lib`` on the
+    container's ``LD_LIBRARY_PATH``. An image that also ships an older system
+    ``libfabric.so.1`` would otherwise shadow Modal's, the plugin fails with
+    ``version FABRIC_1.8 not found``, and because the plugin is named
+    explicitly NCCL does not fall back: every communicator in every Ray actor
+    dies with ``Failed to initialize any NET plugin`` / ``invalid usage``.
+    """
+    container = [p for p in os.environ.get("LD_LIBRARY_PATH", "").split(":") if p]
+    rdma = [p for p in container if p.startswith("/opt/amazon/")]
+    parts: list[str] = []
+    for part in [*rdma, SYSTEM_LIB_DIR, *container]:
+        if part not in parts:
             parts.append(part)
     return ":".join(parts)
 
