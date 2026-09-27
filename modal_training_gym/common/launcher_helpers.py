@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import functools
 from pathlib import Path
 from contextlib import asynccontextmanager, contextmanager
 import inspect
@@ -732,6 +733,35 @@ async def training_run_lifecycle(run_record: TrainingRun, status_token: str = ""
                 await latest.save(is_async=True)
             except Exception as exc:
                 print(f"Failed to save run record: {exc}")
+
+
+def record_run_failure(training_run_id: str) -> Callable[[Callable], Callable]:
+    """Persist a terminal status for errors raised outside ``training_run_lifecycle``
+    so a stored ``running`` record never outlives its training function."""
+
+    def decorate(train: Callable) -> Callable:
+        @functools.wraps(train)
+        async def wrapped(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return await train(*args, **kwargs)
+            except BaseException:
+                try:
+                    run_record = await TrainingRun.from_id(
+                        training_run_id, is_async=True
+                    )
+                except Exception:
+                    run_record = None
+                if (
+                    run_record is not None
+                    and run_record.status is TrainingRunStatus.RUNNING
+                ):
+                    async with training_run_lifecycle(run_record):
+                        raise
+                raise
+
+        return wrapped
+
+    return decorate
 
 
 def check_training_result(result: Any, run_record: TrainingRun) -> None:

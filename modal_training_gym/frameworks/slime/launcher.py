@@ -752,6 +752,7 @@ def build_slime_app(
         ),
     )
     @clustered_if(_use_clustered, slime.total_nodes, gpu_type=slime.gpu_type)
+    @shared.record_run_failure(training_run_id)
     async def train(
         modal_app_id: str = "",
         modal_app_url: str = "",
