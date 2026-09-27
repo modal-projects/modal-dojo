@@ -11,13 +11,34 @@ frozen weights, and upstream itself validates the release in LoRA mode only.
 """
 
 from dataclasses import field
+from pathlib import Path
 from typing import ClassVar
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
 from modal_training_gym.common.models import Kimi_K3, ModelConfig
+from modal_training_gym.common.patches import encode_patch
 from modal_training_gym.train_recipes.miles_recipe.recipe import MilesRecipe
+
+_PATCH_DIR = (
+    Path(__file__).resolve().parents[2]
+    / "frameworks"
+    / "miles"
+    / "modal_helpers"
+    / "patches"
+)
+
+# Build-time patches; see each script's docstring.
+_PATCHES = ("patch_cell_tick_timeout",)
+
+
+def _image_patches() -> list[str]:
+    return [
+        f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
+        for name in _PATCHES
+    ]
+
 
 # Upstream's validated rollout concurrency per engine. The KDA radix cache needs
 # five cache slots per running request under the extra-buffer strategy, and the
@@ -35,6 +56,7 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
     # Megatron (radixark/Megatron-LM#94) and sglang (sgl-project/sglang#37704)
     # halves; the base pin predates all three.
     docker_image: str = "radixark/miles:dev-202609251434"
+    image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "B300"
     # ``lora_base_cpu_backup`` mirrors each rank's frozen base weights into host
     # RAM (~90 GB a rank, 8 ranks a node) so the GPU copy can be released for
@@ -204,3 +226,21 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
     # Volume and repacks it for Marlin before it answers a health check; the
     # 14 GB prune loaded at ~1 GB/s per engine.
     rollout_health_check_first_wait: int = 7200
+
+    @model_validator(mode="after")
+    def _keep_image_patches(self) -> "Kimi_K3_LoRA_Recipe":
+        """Keep the build-time patches at the head of ``image_run_commands``.
+
+        The field is replaced wholesale, so a caller adding their own command
+        would otherwise drop the tick-timeout patch and the engines' first
+        memory release would time out again.
+        """
+        patches = _image_patches()
+        current = list(self.image_run_commands or [])
+        if current[: len(patches)] != patches:
+            object.__setattr__(
+                self,
+                "image_run_commands",
+                [*patches, *(c for c in current if c not in patches)],
+            )
+        return self
