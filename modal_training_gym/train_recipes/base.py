@@ -59,12 +59,12 @@ _SFT_CLI_OVERRIDES: dict[str, Any] = {
 def _apply_loss_type_fields(
     fields: dict[str, Any], hatch: dict[str, Any], *, sft_rollout_function: str
 ) -> None:
-    if "loss_type" in hatch and (hatch["loss_type"] == "sft_loss") != (
-        fields["loss_type"] == "sft_loss"
+    if "loss_type" in hatch and (
+        hatch["loss_type"] == "sft_loss" or fields["loss_type"] == "sft_loss"
     ):
         raise TrainingGymConfigError(
-            "extra_config loss_type cannot switch between SFT and RL; "
-            "set the loss_type field instead"
+            "extra_config cannot set loss_type for SFT; "
+            "set loss_type on the recipe field instead"
         )
     fields.update(hatch)
     if fields["save_interval"] is None and fields["save"] is not None:
@@ -79,6 +79,15 @@ def _apply_loss_type_fields(
         fields["loss_type"] = None
         fields["loss_mask_type"] = None
         return
+    conflicts = sorted(
+        key
+        for key, forced in _SFT_CLI_OVERRIDES.items()
+        if key in hatch and hatch[key] != forced
+    )
+    if conflicts:
+        raise TrainingGymConfigError(
+            "extra_config conflicts with SFT-forced values for: " + ", ".join(conflicts)
+        )
     fields.update(_SFT_CLI_OVERRIDES)
     hatch_global = hatch.get("global_batch_size")
     hatch_rollout = hatch.get("rollout_batch_size")

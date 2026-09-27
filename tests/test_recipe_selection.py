@@ -314,13 +314,49 @@ def test_sft_extra_config_conflicting_batches_raise() -> None:
 
 @pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
 @pytest.mark.parametrize(
-    ("hatch_loss", "expectation"),
+    ("field_loss", "hatch_loss", "expectation"),
     [
-        ("sft_loss", pytest.raises(TrainingGymConfigError, match="loss_type field")),
-        ("custom_loss", nullcontext()),
+        (
+            "sft_loss",
+            "sft_loss",
+            pytest.raises(
+                TrainingGymConfigError, match="loss_type on the recipe field"
+            ),
+        ),
+        (
+            "policy_loss",
+            "sft_loss",
+            pytest.raises(
+                TrainingGymConfigError, match="loss_type on the recipe field"
+            ),
+        ),
+        (
+            "sft_loss",
+            "custom_loss",
+            pytest.raises(
+                TrainingGymConfigError, match="loss_type on the recipe field"
+            ),
+        ),
+        ("policy_loss", "custom_loss", nullcontext()),
     ],
 )
-def test_extra_config_loss_type_raises(recipe_cls, hatch_loss, expectation) -> None:
-    recipe = recipe_cls(extra_config={"loss_type": hatch_loss})
+def test_extra_config_loss_type_raises(
+    recipe_cls, field_loss, hatch_loss, expectation
+) -> None:
+    recipe = recipe_cls(loss_type=field_loss, extra_config={"loss_type": hatch_loss})
+    with expectation:
+        recipe.cli_args(dataset=_dataset())
+
+
+@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize(
+    ("colocate", "expectation"),
+    [
+        (True, pytest.raises(TrainingGymConfigError, match="colocate")),
+        (False, nullcontext()),
+    ],
+)
+def test_sft_extra_config_forced_override(recipe_cls, colocate, expectation) -> None:
+    recipe = recipe_cls(loss_type="sft_loss", extra_config={"colocate": colocate})
     with expectation:
         recipe.cli_args(dataset=_dataset())
