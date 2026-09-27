@@ -30,7 +30,11 @@ _PATCH_DIR = (
 )
 
 # Build-time patches; see each script's docstring.
-_PATCHES = ("patch_cell_tick_timeout", "patch_ipc_bucket_empty_cache")
+_PATCHES = (
+    "patch_cell_tick_timeout",
+    "patch_ipc_bucket_empty_cache",
+    "patch_lora_sync_stream_pp",
+)
 
 # First multi-arch nightly carrying radixark/miles#1825 together with its
 # Megatron (radixark/Megatron-LM#94) and sglang (sgl-project/sglang#37704)
@@ -95,15 +99,9 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
             "NCCL_MNNVL_ENABLE": "0",
             "NCCL_NVLS_ENABLE": "0",
             "NCCL_RAS_ENABLE": "0",
-            # The TP16 engines span two nodes. sglang's GroupCoordinator
-            # broadcasts the NCCL unique id over a gloo CPU group, and gloo
-            # picks its address from the hostname, which resolves to 127.0.0.1
-            # in Modal containers: every rank waits on the peer's loopback and
-            # ncclCommInitRank is never reached. Pin gloo and the TCPStore to
-            # eth1, the interface NCCL already bootstraps on (Modal sets
-            # NCCL_SOCKET_IFNAME=eth1); eth0 is a per-host network.
-            "GLOO_SOCKET_IFNAME": "eth1",
-            "TP_SOCKET_IFNAME": "eth1",
+            # The TP16 engines span two nodes; the launcher pins gloo and the
+            # TCPStore to the cluster's NCCL interface so their unique-id
+            # broadcast crosses nodes.
             "NCCL_TIMEOUT": "3600",
             # The release packs its routed experts as MXFP4 compressed-tensors
             # and ships no bf16 export; the converter dequantizes them as

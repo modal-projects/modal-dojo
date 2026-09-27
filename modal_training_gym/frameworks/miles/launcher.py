@@ -448,6 +448,16 @@ def build_ray_runtime_env(
         "LD_LIBRARY_PATH": _compose_ld_library_path(),
         "TRAINING_GYM_SUBSTEP_TIMING": substep_timing,
     }
+    # Modal's RDMA clusters export NCCL_SOCKET_IFNAME for the interface that
+    # routes between nodes (eth1; eth0 is per-host). The container hostname
+    # resolves to 127.0.0.1, so gloo and the TCPStore, which pick their
+    # address from the hostname, need the same pin: a multi-node sglang
+    # engine broadcasts its NCCL unique id over a gloo group and otherwise
+    # waits forever on the peer's loopback. Single-node containers export
+    # nothing and keep the defaults.
+    if nccl_iface := os.environ.get("NCCL_SOCKET_IFNAME"):
+        env_vars["GLOO_SOCKET_IFNAME"] = nccl_iface
+        env_vars["TP_SOCKET_IFNAME"] = nccl_iface
     env_vars.update(environment)
     # Tracker identity and credentials must match the preflight configuration.
     env_vars.update(metric_env)
