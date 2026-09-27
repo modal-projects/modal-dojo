@@ -51,6 +51,12 @@ if TYPE_CHECKING:
 
 TRAINING_RUNS_STORE_NAME = MetadataStore.TRAINING_RUNS.value
 CHECKPOINT_LOCATION_METADATA_KEY = "checkpoint_location"
+_TRANSIENT_MODAL_ERRORS = (
+    ModalConnectionError,
+    InternalError,
+    ResourceExhaustedError,
+    ServiceError,
+)
 
 
 class FrameworkStatusUpdate(BaseModel):
@@ -232,13 +238,7 @@ class TrainingRun(BaseModel):
         try:
             call.get(timeout=0)
             return True, None
-        except (
-            TimeoutError,
-            ModalConnectionError,
-            InternalError,
-            ResourceExhaustedError,
-            ServiceError,
-        ):
+        except (TimeoutError, *_TRANSIENT_MODAL_ERRORS):
             return False, None
         except Exception as exc:
             return True, exc
@@ -302,7 +302,10 @@ class TrainingRun(BaseModel):
 
         Does not stop the Modal app.
         """
-        self._reload()
+        try:
+            self._reload()
+        except _TRANSIENT_MODAL_ERRORS:
+            pass
         if self.status is not TrainingRunStatus.RUNNING:
             return True
         finished, exc = self._function_call_outcome()

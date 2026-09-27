@@ -176,6 +176,18 @@ def test_done_is_false_when_status_check_hits_transport_error(exc, fake_volume):
     assert run.error is None
 
 
+def test_done_is_false_when_metadata_reload_hits_transport_error(monkeypatch):
+    def _flaky_from_id(run_id):
+        raise modal.exception.ServiceError("unavailable")
+
+    monkeypatch.setattr(TrainingRun, "from_id", _flaky_from_id)
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _PendingCall()
+
+    assert run.done() is False
+    assert run.status is TrainingRunStatus.RUNNING
+
+
 def test_wait_timeout_does_not_mark_failed(fake_volume):
     run = _run(TrainingRunStatus.RUNNING)
     run._function_call = _TimeoutCall()
