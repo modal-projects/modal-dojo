@@ -59,6 +59,41 @@ def test_ld_library_path_comes_from_the_container(monkeypatch):
     assert "MASTER_PORT" not in env_vars
 
 
+def test_efa_dirs_move_ahead_of_the_system_lib_dir(monkeypatch):
+    """Host-mounted libfabric/ofi-nccl must shadow the image's libfabric."""
+    monkeypatch.setenv(
+        "LD_LIBRARY_PATH",
+        "/opt/amazon/efa/lib:/opt/amazon/ofi-nccl/lib:/usr/local/cuda/lib64"
+        ":/wheel/nvidia/lib",
+    )
+
+    env_vars = build_ray_runtime_env(
+        head_addr="10.0.0.1", metric_env={}, environment={}
+    )["env_vars"]
+
+    assert env_vars["LD_LIBRARY_PATH"] == (
+        "/opt/amazon/efa/lib:/opt/amazon/ofi-nccl/lib:/usr/lib/x86_64-linux-gnu"
+        ":/usr/local/cuda/lib64:/wheel/nvidia/lib"
+    )
+
+
+def test_efa_dirs_keep_relative_order_when_not_leading(monkeypatch):
+    monkeypatch.setenv(
+        "LD_LIBRARY_PATH",
+        "/usr/local/cuda/lib64:/opt/amazon/ofi-nccl/lib:/usr/lib/x86_64-linux-gnu"
+        ":/opt/amazon/efa/lib:/opt/amazon/efa/lib",
+    )
+
+    env_vars = build_ray_runtime_env(
+        head_addr="10.0.0.1", metric_env={}, environment={}
+    )["env_vars"]
+
+    assert env_vars["LD_LIBRARY_PATH"] == (
+        "/opt/amazon/ofi-nccl/lib:/opt/amazon/efa/lib:/usr/lib/x86_64-linux-gnu"
+        ":/usr/local/cuda/lib64"
+    )
+
+
 def test_recipe_environment_still_wins(monkeypatch):
     monkeypatch.setenv("LD_LIBRARY_PATH", "/from/container")
 

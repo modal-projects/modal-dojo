@@ -82,6 +82,7 @@ MILES_ROOT = "/root/miles"
 # Editable install location of sglang inside the miles images.
 SGLANG_ROOT = "/sgl-workspace/sglang"
 SYSTEM_LIB_DIR = "/usr/lib/x86_64-linux-gnu"
+EFA_LIB_PREFIX = "/opt/amazon/"
 # Disagg multi-node mooncake needs matching libibverbs/libmlx5. The apt
 # reinstall strips NCCL NET plugins, so 2-node SGLang dies in
 # ncclCommInitRank ("invalid usage" / "Failed to initialize any NET
@@ -397,9 +398,26 @@ def _build_miles_base_image(
 
 
 def _compose_ld_library_path() -> str:
-    parts = [SYSTEM_LIB_DIR]
-    for part in os.environ.get("LD_LIBRARY_PATH", "").split(":"):
-        if part and part not in parts:
+    """System lib dir first, except for Modal's host-mounted EFA dirs.
+
+    On EFA workers Modal bind-mounts the host's libfabric and aws-ofi-nccl
+    under ``/opt/amazon`` and puts those dirs at the front of the container's
+    ``LD_LIBRARY_PATH``. They must stay ahead of the system lib dir: the
+    plugin is linked against the host libfabric, and an image-installed
+    ``libfabric.so.1`` found first fails the load with a ``FABRIC_*`` version
+    error, leaving NCCL with no NET plugin.
+    """
+    container = [
+        part for part in os.environ.get("LD_LIBRARY_PATH", "").split(":") if part
+    ]
+    parts: list[str] = []
+    for part in container:
+        if part.startswith(EFA_LIB_PREFIX) and part not in parts:
+            parts.append(part)
+    if SYSTEM_LIB_DIR not in parts:
+        parts.append(SYSTEM_LIB_DIR)
+    for part in container:
+        if part not in parts:
             parts.append(part)
     return ":".join(parts)
 
@@ -418,7 +436,9 @@ def build_ray_runtime_env(
     Ray workers do not pick up the container's linker path on their own, and
     without it the Megatron actor can resolve a libibverbs that does not match
     the image's libmlx5 and die importing mooncake. The system lib dir is put
-    in front for that reason; the rest is read from the container, so whatever
+    in front for that reason, behind only Modal's host-mounted ``/opt/amazon``
+    EFA dirs (see ``_compose_ld_library_path``); the rest is read from the
+    container, so whatever
     the image exports — including any wheel-shipped nvidia lib dirs — is
     carried through. Composing it here rather than in an ``image_env`` entry
     keeps it independent of whether the base image exports ``LD_LIBRARY_PATH``
