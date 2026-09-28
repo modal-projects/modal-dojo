@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copyreg
 import pickle
 
 import cloudpickle
@@ -22,7 +23,8 @@ def _modal_repr(value) -> str:
     return original._rep
 
 
-def test_modal_function_handle_fails_without_training_gym_reducer() -> None:
+def test_modal_function_handle_fails_without_training_gym_reducer(monkeypatch) -> None:
+    monkeypatch.delitem(copyreg.dispatch_table, modal.Function, raising=False)
     helper = modal.Function.from_name("reward-helper", "score")
 
     with pytest.raises(AttributeError, match="_load_remote"):
