@@ -18,6 +18,9 @@ image = modal.Image.from_registry(_DOCKER_IMAGE).entrypoint([])
 def read_sources() -> dict[str, str]:
     root = Path("/root/miles/miles/backends/training_utils/weight_update")
     return {
+        "inference_controller.py": Path(
+            "/root/miles/miles/ray/rollout/inference_controller.py"
+        ).read_text(),
         "checkpoint_io.py": (root.parent / "checkpoint_io.py").read_text(),
         "cuda_ipc.py": (root / "protocols/cuda_ipc.py").read_text(),
         "updater.py": (root / "updater.py").read_text(),

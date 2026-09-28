@@ -7,6 +7,7 @@ Outputs apply the corresponding K3 patch:
 - `cuda_ipc.py` and `updater.py`: `patch_ipc_bucket_empty_cache`.
 - `hf_weight_iterator.py`: `patch_lora_sync_stream_pp`.
 - `checkpoint_io.py`: `patch_checkpoint_local_dirs`.
+- `inference_controller.py`: `patch_cell_tick_timeout`.
 
 Tests compile patched sources and check idempotence and drift rejection.
 The updater lifecycle test verifies that its final bucket is released before

@@ -518,6 +518,14 @@ def build_miles_app(
     hf_cache_volume = all_volumes[str(HF_CACHE_PATH)]
     data_volume = all_volumes[str(DATA_PATH)]
     checkpoints_volume = all_volumes[checkpoints_mount_path]
+    environment = dict(miles.environment)
+    for key in ("TRITON_CACHE_DIR", "TORCHINDUCTOR_CACHE_DIR"):
+        cache_dir = environment.get(key)
+        if cache_dir and Path(cache_dir).is_relative_to(CHECKPOINTS_PATH):
+            environment[key] = str(
+                Path(checkpoints_mount_path)
+                / Path(cache_dir).relative_to(CHECKPOINTS_PATH)
+            )
     checkpoint_dir = compute_recipe_save_root(
         miles,
         recipe_default_save_root=str(CHECKPOINTS_PATH),
@@ -540,7 +548,9 @@ def build_miles_app(
         # tokenizer) through the cache's symlinks; rewrite them while this
         # container is the only writer, before its Volume commit.
         if model and model.model_name and not is_local_checkpoint_ref(model.model_name):
-            materialize_remote_code(resolve_checkpoint_ref(model.model_name))
+            materialize_remote_code(
+                resolve_checkpoint_ref(model.model_path or model.model_name)
+            )
 
     def download_inputs() -> None:
         model.download()
@@ -749,7 +759,7 @@ def build_miles_app(
                 f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
             )
 
-        env = {**os.environ, **miles.environment}
+        env = {**os.environ, **environment}
         if any(arg.startswith("--pipeline-model-parallel-size ") for arg in extra_args):
             env["CONVERT_KEEP_PP1"] = "1"
         if num_nodes > 1:
@@ -933,7 +943,7 @@ def build_miles_app(
             # remote code concurrently once Ray is up.
             prewarm_remote_code(
                 resolve_checkpoint_ref(model.model_path or model.model_name),
-                miles.environment,
+                environment,
             )
 
         cluster.start_ray()
@@ -983,7 +993,7 @@ def build_miles_app(
                     run_id=metric_run_id,
                     entity=metric_entity,
                 ),
-                environment=miles.environment,
+                environment=environment,
                 substep_timing=miles.substep_timing,
                 extra_env={
                     "TRAINING_GYM_TRAINING_RUN_ID": training_run_id,
