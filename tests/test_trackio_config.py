@@ -212,7 +212,10 @@ def test_trackio_wandb_adapter_covers_the_framework_surface(monkeypatch):
         id="framework-id",
         group="baseline",
         name="framework-name",
-        config={"learning_rate": 1e-5},
+        config={
+            "learning_rate": 1e-5,
+            "_is_global_batch_size_explicitly_specified": True,
+        },
         settings=settings,
         reinit=True,
         dir="/tmp/wandb",
