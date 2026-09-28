@@ -8,8 +8,8 @@ Lastly, before we start training, we need a recipe.
 
 While the model and dataset dictate what will be trained, the recipe dictates how training will occur by specifying parameters for:
 
-- Training type
 - Hardware and parallelism
+- Training type
 - Total rollout size
 - Environment
 - Etc.
@@ -25,32 +25,6 @@ We provide optimized recipes for all supported models in the Training Gym, but n
 This guide will focus on the most important ones. However, you can see the full lists for each of the base classes (i.e., [MilesRecipe](https://gym.modal.dev/reference/milesrecipe) and [SlimeRecipe](https://gym.modal.dev/reference/slimerecipe)).
 
 See [this guide](https://gym.modal.dev/guides/metric) for more details on logging integrations.
-
-## Supervised fine-tuning
-
-For supervised fine-tuning (SFT), set `loss_type="sft_loss"`. At the moment, passing `eval_dataset` is not supported.
-
-```python
-from modal_training_gym import HuggingFaceDataset, Qwen3_0_6B, Qwen3_0_6B_Recipe, TrainConfig
-
-conversations = HuggingFaceDataset(
-    "HuggingFaceH4/no_robots",
-    input_column="messages",
-    input_format="messages",
-)
-
-TrainConfig(
-    model=Qwen3_0_6B(),
-    dataset=conversations,
-    recipe=Qwen3_0_6B_Recipe(loss_type="sft_loss", num_epoch=3),
-).train()
-```
-
-Prompt and answer datasets also work too:
-
-```python
-pairs = HuggingFaceDataset("statworx/haiku", input_column="keywords", output_column="text")
-```
 
 ## Hardware and parallelism
 
@@ -96,6 +70,32 @@ Qwen3_5_4B_Miles_Recipe(
     expert_model_parallel_size=1,
     expert_tensor_parallel_size=1,
 )
+```
+
+## Supervised fine-tuning
+
+For supervised fine-tuning (SFT), set `loss_type="sft_loss"`. At the moment, passing `eval_dataset` is not supported.
+
+```python
+from modal_training_gym import HuggingFaceDataset, Qwen3_0_6B, Qwen3_0_6B_Recipe, TrainConfig
+
+conversations = HuggingFaceDataset(
+    "HuggingFaceH4/no_robots",
+    input_column="messages",
+    input_format="messages",
+)
+
+TrainConfig(
+    model=Qwen3_0_6B(),
+    dataset=conversations,
+    recipe=Qwen3_0_6B_Recipe(loss_type="sft_loss", num_epoch=3),
+).train()
+```
+
+Prompt and answer datasets also work too:
+
+```python
+pairs = HuggingFaceDataset("statworx/haiku", input_column="keywords", output_column="text")
 ```
 
 ## Reinforcement learning
