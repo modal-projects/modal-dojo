@@ -171,6 +171,10 @@ def create_training_volumes(
     return name, mount, volumes
 
 
+def experimental_options(recipe: Any) -> dict[str, Any]:
+    return dict((recipe.train_function_kwargs or {}).get("experimental_options") or {})
+
+
 def training_function_options(
     recipe: Any,
     *,

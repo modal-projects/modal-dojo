@@ -628,7 +628,7 @@ def build_slime_app(
         volumes=all_volumes,
         timeout=4 * 60 * 60,
         secrets=proxy_auth_secrets() or None,
-        experimental_options={"efa_enabled": True},
+        experimental_options=shared.experimental_options(slime),
         serialized=True,
         single_use_containers=True,
         name="convert_checkpoint",
@@ -748,7 +748,7 @@ def build_slime_app(
             slime,
             framework="slime",
             secrets=train_secrets,
-            experimental_options={"efa_enabled": True},
+            experimental_options={},
         ),
     )
     @clustered_if(_use_clustered, slime.total_nodes, gpu_type=slime.gpu_type)
