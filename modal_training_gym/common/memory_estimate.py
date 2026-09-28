@@ -199,7 +199,8 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     settings = ", ".join(f"{name}={value}" for name, value in raised.items())
     warnings.warn(
         f"Estimated peak ~{peak:.1f} GiB per GPU exceeds "
-        f"{recipe.gpu_type} capacity ({gpu_gib:g} GiB). Some relevant settings: {shape}. {settings}.",
+        f"{recipe.gpu_type} capacity ({gpu_gib:g} GiB). Some relevant settings: {shape}. {settings}. "
+        f"Set gpu_type on the recipe to use a larger GPU; see https://modal.com/docs/guide/gpu.",
         UserWarning,
         stacklevel=3,
     )
