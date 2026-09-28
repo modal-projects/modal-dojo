@@ -9,7 +9,4 @@ Outputs apply the corresponding K3 patch:
 - `checkpoint_io.py`: `patch_checkpoint_local_dirs`.
 - `inference_controller.py`: `patch_cell_tick_timeout`.
 
-Tests compile patched sources and check idempotence and drift rejection.
-The updater lifecycle test verifies that its final bucket is released before
-engine commit. Checkpoint tests exercise a writer whose directory is absent
-in its local mount, overwrite behavior, completion metadata and write errors.
+The patch-snapshot workflow refreshes these inputs and rejects source drift.
