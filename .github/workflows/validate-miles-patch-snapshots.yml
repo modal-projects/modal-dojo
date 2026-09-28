@@ -6,11 +6,8 @@ on:
       - ".github/workflows/validate-miles-patch-snapshots.yml"
       - "modal_training_gym/frameworks/miles/launcher.py"
       - "modal_training_gym/train_recipes/miles_recipe/recipe.py"
-      - "modal_training_gym/train_recipes/miles_recipe/kimi_k3.py"
       - "scripts/fetch_miles_patch_snapshots.py"
-      - "scripts/fetch_kimi_k3_patch_snapshots.py"
       - "tests/testdata/miles/*.input"
-      - "tests/testdata/miles/kimi_k3/*.input"
 
 jobs:
   validate-snapshot:
@@ -36,9 +33,6 @@ jobs:
 
       - name: Fetch source from pinned Miles image
         run: uv run modal run scripts/fetch_miles_patch_snapshots.py
-
-      - name: Fetch Kimi K3 sync sources from its pinned Miles image
-        run: uv run modal run scripts/fetch_kimi_k3_patch_snapshots.py
 
       - name: Verify committed snapshot is current
         run: |
