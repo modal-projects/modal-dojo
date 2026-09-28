@@ -400,16 +400,7 @@ def _build_miles_base_image(
 
 
 def _compose_ld_library_path() -> str:
-    """System lib dir first, except for Modal's RDMA toolchain, which stays ahead.
-
-    RDMA clusters come up with ``NCCL_NET=OFI`` / ``NCCL_NET_PLUGIN=ofi`` and
-    ``/opt/amazon/efa/lib`` (libfabric) plus ``/opt/amazon/ofi-nccl/lib`` on the
-    container's ``LD_LIBRARY_PATH``. An image that also ships an older system
-    ``libfabric.so.1`` would otherwise shadow Modal's, the plugin fails with
-    ``version FABRIC_1.8 not found``, and because the plugin is named
-    explicitly NCCL does not fall back: every communicator in every Ray actor
-    dies with ``Failed to initialize any NET plugin`` / ``invalid usage``.
-    """
+    # Keep Modal's OFI/libfabric ahead of older system libraries.
     container = [p for p in os.environ.get("LD_LIBRARY_PATH", "").split(":") if p]
     rdma = [p for p in container if p.startswith("/opt/amazon/")]
     parts: list[str] = []
@@ -544,9 +535,7 @@ def build_miles_app(
     gpu_spec = f"{miles.gpu_type}:{miles.gpu_allocation.gpus_per_node}"
 
     def materialize_model_remote_code() -> None:
-        # transformers 5 cannot load multi-file remote code (Kimi-K3's
-        # tokenizer) through the cache's symlinks; rewrite them while this
-        # container is the only writer, before its Volume commit.
+        # Rewrite remote-code symlinks before the head commits the cache Volume.
         if model and model.model_name and not is_local_checkpoint_ref(model.model_name):
             materialize_remote_code(
                 resolve_checkpoint_ref(model.model_path or model.model_name)
@@ -683,8 +672,7 @@ def build_miles_app(
         volumes=all_volumes,
         timeout=miles.convert_timeout_seconds or 4 * 60 * 60,
         secrets=proxy_auth_secrets() or None,
-        # The torch_dist save stages every rank's shard through host RAM, so
-        # the converter needs the recipe's memory request as much as training.
+        # torch_dist stages each rank's shard through host RAM.
         memory=miles.memory,
         ephemeral_disk=miles.convert_ephemeral_disk_mb,
         experimental_options={"efa_enabled": True} if convert_multi_node else {},
@@ -939,8 +927,7 @@ def build_miles_app(
                 await asyncio.sleep(5)
 
         if model and model.model_name:
-            # Every node: the actors and engines it hosts import the model's
-            # remote code concurrently once Ray is up.
+            # Warm each node's cache before Ray imports remote code concurrently.
             prewarm_remote_code(
                 resolve_checkpoint_ref(model.model_path or model.model_name),
                 environment,

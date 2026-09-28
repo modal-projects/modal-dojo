@@ -1,10 +1,7 @@
 """Create checkpoint directories in every writer's Modal Volume mount.
 
-Miles' checkpoint_io creates the directory on global rank zero and broadcasts
-success. A distributed barrier does not refresh another container's Volume
-view, so LoRA shard writers on other nodes can see a missing parent directory.
-Create it locally after rank zero's overwrite preparation, inside the existing
-write-error collection block. Only rank zero still removes old checkpoints.
+Rank zero's directory creation is not immediately visible on other nodes.
+Create it locally after rank-zero preparation, inside write-error collection.
 """
 
 from pathlib import Path
@@ -14,7 +11,6 @@ MARKER = "PATCHED_TRAINING_GYM_CHECKPOINT_LOCAL_DIRS"
 ANCHOR = "    try:\n        write_shards(checkpoint_dir)\n"
 REPLACEMENT = f"""    try:
         # {MARKER}
-        # Volume directory creation on rank zero is not immediately visible on other nodes.
         checkpoint_dir.mkdir(parents=True, exist_ok=True)
         write_shards(checkpoint_dir)
 """

@@ -1,14 +1,4 @@
-"""Kimi-K3 LoRA GRPO recipe, ported from upstream's ``run_kimi_k3.py``.
-
-Upstream validates the 93-layer release on 16 nodes x 4 GB300 (radixark/miles#1825,
-``docs/models/kimi/kimi-k3.md``): TP4 / SP / PP8 / CP2 / EP8 / ETP1 over 64 GPUs,
-rollout TP16, rank-32 LoRA at lr 1e-5. Modal has no 4-GPU Blackwell nodes, so
-the same 64-GPU layout runs here as 8 nodes x 8 B300; the per-rank shapes are
-unchanged and only the per-node host footprint doubles.
-
-Full-parameter training is not offered: the 2.8T-parameter base only fits with
-frozen weights, and upstream itself validates the release in LoRA mode only.
-"""
+"""Kimi-K3 LoRA GRPO recipe, ported from upstream's ``run_kimi_k3.py``."""
 
 from dataclasses import field
 from pathlib import Path
@@ -29,7 +19,6 @@ _PATCH_DIR = (
     / "patches"
 )
 
-# Build-time patches; see each script's docstring.
 _PATCHES = (
     "patch_cell_tick_timeout",
     "patch_lora_sync_stream_pp",
@@ -37,17 +26,10 @@ _PATCHES = (
     "patch_checkpoint_local_dirs",
 )
 
-# First multi-arch nightly carrying radixark/miles#1825 together with its
-# Megatron (radixark/Megatron-LM#94) and sglang (sgl-project/sglang#37704)
-# halves; the base pin predates all three.
+# Includes K3 support in Miles, Megatron, and SGLang.
 _DOCKER_IMAGE = "radixark/miles:dev-202609251434"
 
-# Compiled-kernel caches on the checkpoints Volume, keyed by the image tag so a
-# nightly bump never reuses binaries built against another triton/torch.
-# Upstream's launcher forwards these for the same reason: the KDA triton
-# kernels otherwise JIT-compile in every engine and every trainer rank on
-# every run, which is what the serve-time "Triton kernel ... took N s to
-# compile" stalls and part of the first train step are.
+# Reuse compiled kernels only within the same image version.
 _KERNEL_CACHE_ROOT = f"/checkpoints/.kernel-cache/{_DOCKER_IMAGE.split(':')[-1]}"
 
 
@@ -58,9 +40,7 @@ def _image_patches() -> list[str]:
     ]
 
 
-# Upstream's validated rollout concurrency per engine. The KDA radix cache needs
-# five cache slots per running request under the extra-buffer strategy, and the
-# decode graphs are captured only for the batch sizes that concurrency reaches.
+# KDA's extra-buffer strategy needs five cache slots per running request.
 _ROLLOUT_MAX_CONCURRENCY = 8
 
 
@@ -73,46 +53,29 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
     docker_image: str = _DOCKER_IMAGE
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "B300"
-    # ``lora_base_cpu_backup`` mirrors each rank's frozen base weights into host
-    # RAM (~90 GB a rank, 8 ranks a node) so the GPU copy can be released for
-    # rollout without re-shipping it every step.
+    # Host backups hold frozen weights for eight ranks per node.
     memory: tuple[int, int] = (1792 * 1024, 2048 * 1024)
 
-    # KDA layers and the attention-residual bank are not representable as a
-    # ModelArchitecture, so the launcher renders upstream's
-    # scripts/models/kimi-k3.py through model_args_utils.py and passes
-    # ${MODEL_ARGS[@]} verbatim — including its --spec for the K3 layer spec.
+    # Upstream's model script supplies the KDA/MLA architecture and layer spec.
     miles_model_name: str = "kimi-k3"
-    # Selects miles' megatron→HF weight mapping
-    # (miles/backends/megatron_utils/megatron_to_hf/kimi_k3.py).
+    # Selects Miles' Megatron-to-HF weight mapping.
     model_name: str = "kimi_k3"
 
     environment: dict[str, str] = field(
         default_factory=lambda: {
             "PYTHONPATH": "/root/Megatron-LM/",
             "CUDA_DEVICE_MAX_CONNECTIONS": "1",
-            # transformers copies the tokenizer's remote code into this cache on
-            # first import; the default lives on the shared HF Volume, where 32
-            # conversion ranks racing to write it read each other's partial
-            # files. Container-local, and warmed once per node by the launcher.
+            # Container-local remote code, warmed once per node by the launcher.
             "HF_MODULES_CACHE": "/tmp/hf_modules",
             # Multi-node B300 on Modal has no MNNVL fabric.
             "NCCL_MNNVL_ENABLE": "0",
             "NCCL_NVLS_ENABLE": "0",
             "NCCL_RAS_ENABLE": "0",
-            # The TP16 engines span two nodes. sglang's GroupCoordinator
-            # broadcasts the NCCL unique id over a gloo CPU group, and gloo
-            # picks its address from the hostname, which resolves to 127.0.0.1
-            # in Modal containers: every rank waits on the peer's loopback and
-            # ncclCommInitRank is never reached. Pin gloo and the TCPStore to
-            # eth1, the interface NCCL already bootstraps on (Modal sets
-            # NCCL_SOCKET_IFNAME=eth1); eth0 is a per-host network.
+            # Cross-node Gloo/TCP must use eth1, not the hostname's loopback.
             "GLOO_SOCKET_IFNAME": "eth1",
             "TP_SOCKET_IFNAME": "eth1",
             "NCCL_TIMEOUT": "3600",
-            # The release packs its routed experts as MXFP4 compressed-tensors
-            # and ships no bf16 export; the converter dequantizes them as
-            # mbridge reads them instead of staging a ~5.6 TB bf16 checkpoint.
+            # Dequantize on read to avoid an intermediate BF16 HF checkpoint.
             "CONVERT_DEQUANT_MXFP4": "1",
             "TRITON_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/triton",
             "TORCHINDUCTOR_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/torchinductor",
@@ -129,18 +92,13 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
     # ── Checkpoints ──────────────────────────────────────────────────────────
     megatron_to_hf_mode: str = "raw"
     ref_load: str = "/checkpoints/Kimi-K3_torch_dist"
-    # Upstream converts on 32 ranks at TP32/EP32 (4 GB300 hosts, 8 ranks each).
-    # The torch_dist save stages each rank's bf16 shard through host RAM, and
-    # at 32 ranks that is ~1.4 TB a node: the node died at 1068 GiB RSS. EP64
-    # spreads the 896 experts over all 8 nodes (~0.7 TB a node) and the DP
-    # replicas the wider expert world needs. torch_dist re-shards at load, so
-    # training at TP4/PP8/EP8 reads it fine.
+    # EP64 spreads conversion's host-memory load across all eight nodes.
+    # torch_dist reshards to the training layout on load.
     conversion_tensor_model_parallel_size: int = 32
     conversion_pipeline_model_parallel_size: int = 1
     conversion_expert_model_parallel_size: int = 64
     conversion_expert_tensor_parallel_size: int = 1
-    # Each conversion node stages its eighth of the ~5.6 TB bf16 torch_dist
-    # checkpoint on local disk before the Volume commits it.
+    # Local staging for each node's share of the ~5.6 TB BF16 checkpoint.
     convert_ephemeral_disk_mb: int | None = 2 * 1024 * 1024
     # 1.5 TB in, ~5.6 TB out: neither fits the launcher's 4-hour stage default.
     download_timeout_seconds: int | None = 8 * 60 * 60
@@ -163,10 +121,7 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
     # ── LoRA ─────────────────────────────────────────────────────────────────
     lora_rank: int | None = 32
     lora_alpha: int | None = 64
-    # Resolves to Kimi-K3's HF defaults: attention output, both MLA
-    # down-projections, the dense MLP and both routed-expert projections.
-    # The pinned miles validates targets against HF names, so upstream's
-    # older Megatron-style module list is rejected at parse time.
+    # Resolve K3's HF targets; this image rejects the older Megatron names.
     target_modules: str | None = "all-linear"
     # One A factor shared across the 896 routed experts, per-expert B factors.
     experts_shared_outer_loras: bool = True
@@ -191,8 +146,6 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
     distributed_timeout_minutes: int = 60
 
     # ── Optimizer ────────────────────────────────────────────────────────────
-    # Upstream's validated LoRA learning rate; eval/aime rose 0.367 -> 0.467
-    # over the first ten evals with it.
     lr: float = 1e-5
     use_distributed_optimizer: bool = True
     optimizer_cpu_offload: bool = True
@@ -202,17 +155,12 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
 
     # ── Colocation and weight sync ───────────────────────────────────────────
     offload_train: bool = True
-    # Upstream's resolved config for this recipe shows ``gpu``; the miles
-    # default is ``cpu``. ``gpu`` onloads the other side first so the trainer
-    # and the engine briefly coexist in GPU memory rather than host memory,
-    # which is the tighter budget here (8 ranks' backups a node).
+    # Overlap trainer/engine residency on GPU to reduce peak host memory.
     colocate_memory_peak_device: str = "gpu"
-    # Only the adapter crosses to the engines each step, so the sync buffer is
-    # small; the base stays resident in the engines.
+    # Only the adapter is transferred each step.
     update_weight_buffer_size: int | None = 256 * 1024**2
     train_memory_margin_bytes: int = 4 * 1024**3
-    # The trainer has no vision tower, and the MXFP4 experts round-trip
-    # through bf16 on every sync.
+    # The trainer omits vision weights; base weights differ by quantization.
     check_weight_update_skip_list: list[str] = field(
         default_factory=lambda: ["vision_tower.", "mm_projector."]
     )
@@ -224,9 +172,7 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
     sglang_max_running_requests: int | None = _ROLLOUT_MAX_CONCURRENCY
     sglang_max_mamba_cache_size: int = 5 * _ROLLOUT_MAX_CONCURRENCY
     sglang_max_total_tokens: int = 65536
-    # Marlin is the one MXFP4 MoE runner with a LoRA path; the skill's
-    # ``triton`` guidance is for INT4 checkpoints, where marlin's LoRA path
-    # faults capturing decode graphs.
+    # Marlin supports MXFP4 experts with LoRA.
     sglang_moe_runner_backend: str | None = "marlin"
     sglang_lora_backend: str | None = "triton"
     sglang_lora_strict_loading: bool = True
@@ -235,8 +181,7 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
     # Above TP8 the Marlin MoE intermediate is tile-padded, which the
     # virtual-experts LoRA kernel rejects.
     no_sglang_lora_use_virtual_experts: bool = True
-    # The adapter is re-streamed every step; a host copy per TP rank (~45 GB)
-    # would never be read.
+    # Adapters are streamed each step, so their host backup is unused.
     sglang_lora_no_cpu_backup: bool = True
     sglang_decode_attention_backend: str | None = "trtllm_mla"
     sglang_mamba_radix_cache_strategy: str | None = "extra_buffer"
@@ -244,19 +189,11 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
         default_factory=lambda: [1, 2, 4, 8]
     )
     sglang_cuda_graph_backend_prefill: str | None = "disabled"
-    # Each of the four engines reads the whole 1.5 TB MXFP4 release off the
-    # Volume and repacks it for Marlin before it answers a health check; the
-    # 14 GB prune loaded at ~1 GB/s per engine.
+    # Each engine loads and repacks the full 1.5 TB release before health checks.
     rollout_health_check_first_wait: int = 7200
 
     @model_validator(mode="after")
     def _keep_image_patches(self) -> "Kimi_K3_LoRA_Recipe":
-        """Keep the build-time patches at the head of ``image_run_commands``.
-
-        The field is replaced wholesale, so a caller adding their own command
-        would otherwise drop the tick-timeout and sync-memory patches and the
-        first release or the first adapter sync would fail again.
-        """
         patches = _image_patches()
         current = list(self.image_run_commands or [])
         if current[: len(patches)] != patches:

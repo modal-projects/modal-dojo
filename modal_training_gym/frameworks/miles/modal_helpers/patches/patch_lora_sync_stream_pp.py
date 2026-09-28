@@ -1,21 +1,8 @@
 """Stream the LoRA adapter across PP one stage at a time during weight sync.
 
-``miles/backends/megatron_utils/update_weight/hf_weight_iterator.py`` exports
-the adapter for the colocated engines through ``_iter_hf_adapter_units``: it
-takes this rank's PP-local slice, then ``_gather_pp_full_adapter`` broadcasts
-every stage's slice as one flat tensor and returns the whole adapter, sorted
-by name, before a single bucket is sent. On Kimi-K3 (r32 ``all-linear`` over
-896 experts x 93 layers) that is ~54 GB of flats resident on every trainer
-rank for the entire sync, and the name order interleaves stages so almost
-none of it frees early. The colocated engine meanwhile stashes the same
-~54 GB on top of its 140 GB base, and the two copies plus the base exceed a
-267 GB B300 at ``end_weight_update``.
-
-The replacement keeps the collectives and the tensor set identical but yields
-each stage's units right after its broadcast and drops the flat before the
-next one, so a rank holds one stage's slice (~7 GB) instead of eight. Every
-rank sees the same metadata, so the broadcast/bucket sequence stays lockstep.
-The engine only checks the streamed *set* of names, never their order.
+Gathering the full adapter on every trainer rank exhausts colocated GPU memory.
+Yield each stage after its broadcast and release it before gathering the next.
+All ranks retain the same collective order and export the same tensor set.
 
 Executed at image-build time via ``python3 <this file>``.
 """
@@ -29,13 +16,10 @@ TARGET = pathlib.Path(
 )
 ANCHOR = "def _gather_pp_full_adapter("
 
-OVERRIDE = f'''
+OVERRIDE = f"""
 
-# {MARKER}: stream the adapter one PP stage at a time instead of gathering it whole.
+# {MARKER}
 def _iter_hf_adapter_units_streaming(self, adapter, *, materialize):
-    """Both megatron exporters are PP-local after gathering TP/EP; the PP
-    gather runs only where the resolved placement asks for it, one stage
-    at a time so the full adapter is never resident on a rank."""
     named_tensors = self._export_pp_local_lora(adapter)
     pp = get_parallel_state().pp
     if not self.placement.gather_pp or pp.size == 1:
@@ -88,7 +72,7 @@ def _check_adapter_export(names):
 
 
 MegatronHfWeightIteratorBase._iter_hf_adapter_units = _iter_hf_adapter_units_streaming
-'''
+"""
 
 
 def apply(target: pathlib.Path = TARGET) -> None:

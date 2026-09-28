@@ -1,13 +1,7 @@
 """Release exported LoRA buffers before SGLang applies the complete adapter.
 
-Per-bucket empty_cache is insufficient: the exporter yields views into PP
-slabs, the caller keeps its final bucket, and CUDA IPC can retain freed blocks.
-Drop that final bucket after exhausting the exporter, then collect IPC and
-allocator caches in finalize(), after every sender has received its engine's
-acknowledgement and joined the existing Gloo barrier. This frees the trainer's
-temporary storage before end_weight_update allocates normalized LoRA tensors.
-
-Only Kimi-K3 installs this patch. No tensor values or transfer order change.
+Drop the last exported view, then collect IPC and allocator caches after the
+Gloo barrier, before end_weight_update allocates normalized LoRA tensors.
 """
 
 from pathlib import Path
@@ -20,14 +14,13 @@ def apply(root: Path = ROOT) -> None:
     replacements = {
         root / "updater.py": (
             "            protocol.after_base_weights()",
-            "            # Release the final exported view before protocol finalization.\n"
             f"            bucket = None  # {MARKER}\n"
             "            protocol.after_base_weights()",
         ),
         root / "protocols" / "cuda_ipc.py": (
             "    def after_engines_resumed(self) -> None:",
             "    def finalize(self, weight_version: int) -> None:\n"
-            f"        # {MARKER}: all bucket RPCs completed before the Gloo barrier.\n"
+            f"        # {MARKER}\n"
             "        torch.cuda.ipc_collect()\n"
             "        torch.cuda.empty_cache()\n"
             "        logger.info(\n"

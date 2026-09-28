@@ -1,20 +1,7 @@
 """Dequantize MXFP4 compressed-tensors experts as mbridge reads them.
 
-Kimi-K3's release stores its routed experts as ``mxfp4-pack-quantized``
-compressed-tensors: each ``<expert>.w{1,2,3}.weight`` ships as a
-``.weight_packed`` uint8 tensor ``[M, N/2]`` of e2m1 nibbles (low nibble first)
-next to a ``.weight_scale`` uint8 tensor ``[M, N/32]`` of e8m0 group exponents.
-Everything else in the checkpoint (attention, dense and shared MLPs, the head)
-is plain bf16.
-
-Upstream's Megatron path wants a bf16 checkpoint on disk first
-(``tools/convert_mxfp4_to_bf16.py``), and its ``KimiK3Bridge`` refuses an index
-that still holds ``.weight_packed`` names. That intermediate is ~5.6 TB for the
-93-layer release, so the gym dequantizes on read instead, the way
-``hf_block_dequant`` does for DeepSeek's block-scaled checkpoints: the bridge's
-safetensor reader is built directly (past the guard), its index is rewritten so
-every packed pair appears as the one ``.weight`` name the bridge asks for, and
-reads of those names decode the pair to bf16 on the conversion GPU.
+Expose each packed weight/scale pair as one BF16 weight to KimiK3Bridge,
+avoiding a separate ~5.6 TB BF16 checkpoint before torch_dist conversion.
 """
 
 from __future__ import annotations
@@ -36,10 +23,7 @@ MXFP4_FORMAT = "mxfp4-pack-quantized"
 
 
 def group_size_from_config(hf_dir: str) -> int:
-    """The MXFP4 group size ``config.json`` declares, or 0 without a quantization_config.
-
-    Multimodal releases nest ``quantization_config`` under ``text_config``.
-    """
+    """Read the MXFP4 group size, or return 0 for an unquantized checkpoint."""
     with open(os.path.join(hf_dir, "config.json")) as f:
         config = json.load(f)
     section = config.get("text_config", config)
@@ -110,12 +94,7 @@ def load_dequantized(
 
 
 def wrap_safetensor_io(io):
-    """Make ``io`` look like a bf16 checkpoint to the bridge.
-
-    ``io.index`` is what ``load_hf_weight_names`` returns and what the bridge
-    checks its HF targets against, so the packed pairs are folded there; the
-    reads themselves go through a ``ShardReader`` over the original index.
-    """
+    """Expose a BF16 index while reading packed tensors through the original index."""
     device = (
         torch.device("cuda", torch.cuda.current_device())
         if torch.cuda.is_available()
@@ -133,11 +112,7 @@ def wrap_safetensor_io(io):
 
 
 def install() -> None:
-    """Hook ``Bridge.load_weights`` so the reader it builds is the wrapped one.
-
-    ``KimiK3Bridge._get_safetensor_io`` asserts the index holds no packed
-    names, so the reader is constructed here directly rather than through it.
-    """
+    """Wrap the reader before KimiK3Bridge rejects packed weight names."""
     from mbridge.core.bridge import Bridge
     from mbridge.core.safetensor_io import SafeTensorIO
 

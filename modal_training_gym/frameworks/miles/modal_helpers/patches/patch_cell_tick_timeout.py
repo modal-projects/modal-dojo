@@ -1,16 +1,7 @@
-"""Patch miles' inference-controller tick timeout for engines that release slowly.
+"""Extend Miles' cell tick timeout for the initial weights backup.
 
-``miles/ray/rollout/inference_controller.py`` bounds every cell tick with a
-hardcoded ``CELL_TICK_TIMEOUT_SECONDS = 120.0`` and no CLI flag. The first tick
-after an engine comes up is ``release_memory_occupation``: with
-``--enable-memory-saver`` and the weights CPU backup miles turns on for
-colocation, a TP16 Kimi-K3 engine has ~95 GB of weights a rank to copy to host,
-eight ranks a node on Modal B300 (upstream validated four). That takes longer
-than 120 s, the controller logs ``Ticking cell ... failed`` on a
-``TimeoutError``, keeps re-ticking against an engine still mid-release, and a
-later probe request lands on released memory (``Pointer argument cannot be
-accessed from Triton (cpu tensor?)``). Raising the bound is safe: a tick that
-finishes returns immediately, and a dead engine still fails on its own.
+Kimi-K3's first release_memory_occupation copies frozen weights to host RAM
+and exceeds the hardcoded 120-second timeout on eight-GPU nodes.
 
 Executed at image-build time via ``python3 <this file>``.
 """
