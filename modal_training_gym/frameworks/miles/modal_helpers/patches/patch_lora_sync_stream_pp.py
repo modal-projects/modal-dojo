@@ -90,25 +90,26 @@ def _check_adapter_export(names):
 MegatronHfWeightIteratorBase._iter_hf_adapter_units = _iter_hf_adapter_units_streaming
 '''
 
-if not TARGET.exists():
-    print(f"{TARGET} not found; skipping LoRA sync streaming patch")
-    raise SystemExit(0)
 
-src = TARGET.read_text()
-if MARKER in src:
-    print("LoRA sync streaming patch already applied")
-    raise SystemExit(0)
-
-if (
-    ANCHOR not in src
-    or "def _iter_hf_adapter_units(self, adapter, *, materialize):" not in src
-):
-    raise SystemExit(
-        "LoRA sync streaming patch did not find _iter_hf_adapter_units / "
-        "_gather_pp_full_adapter; miles' hf_weight_iterator.py has changed."
+def apply(target: pathlib.Path = TARGET) -> None:
+    src = target.read_text()
+    if MARKER in src:
+        return
+    if (
+        src.count(ANCHOR) != 1
+        or src.count("def _iter_hf_adapter_units(self, adapter, *, materialize):") != 1
+    ):
+        raise RuntimeError(
+            "LoRA sync streaming patch did not find the expected iterator; "
+            "inspect the new Miles source before applying."
+        )
+    patched = src.rstrip("\n") + "\n" + OVERRIDE
+    compile(patched, str(target), "exec")
+    target.write_text(patched)
+    print(
+        "Patched MegatronHfWeightIteratorBase._iter_hf_adapter_units to stream per PP stage"
     )
 
-TARGET.write_text(src.rstrip("\n") + "\n" + OVERRIDE)
-print(
-    "Patched MegatronHfWeightIteratorBase._iter_hf_adapter_units to stream per PP stage"
-)
+
+if __name__ == "__main__":
+    apply()

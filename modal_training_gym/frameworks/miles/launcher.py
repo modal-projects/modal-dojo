@@ -107,7 +107,6 @@ _PATCH_ROLLOUT_STATUS_B64 = encode_patch(
 )
 _PATCH_ADVANTAGE_DIST_B64 = encode_patch("patch_advantage_distribution", _MILES_PATCHES)
 _PATCH_SUBSTEP_TIMING_B64 = encode_patch("patch_substep_timing", _MILES_PATCHES)
-_PATCH_LORA_CKPT_MKDIR_B64 = encode_patch("patch_lora_checkpoint_mkdir", _MILES_PATCHES)
 
 _REPORTING_PATCH_COMMANDS = (
     f"echo {_PATCH_ROLLOUT_STATUS_B64} | base64 -d | python3",
@@ -335,7 +334,6 @@ def _build_miles_base_image(
             ),
             *_REPORTING_PATCH_COMMANDS,
             f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3",
-            f"echo {_PATCH_LORA_CKPT_MKDIR_B64} | base64 -d | python3",
         )
     )
     if (
@@ -450,16 +448,6 @@ def build_ray_runtime_env(
         "LD_LIBRARY_PATH": _compose_ld_library_path(),
         "TRAINING_GYM_SUBSTEP_TIMING": substep_timing,
     }
-    # Modal's RDMA clusters export NCCL_SOCKET_IFNAME for the interface that
-    # routes between nodes (eth1; eth0 is per-host). The container hostname
-    # resolves to 127.0.0.1, so gloo and the TCPStore, which pick their
-    # address from the hostname, need the same pin: a multi-node sglang
-    # engine broadcasts its NCCL unique id over a gloo group and otherwise
-    # waits forever on the peer's loopback. Single-node containers export
-    # nothing and keep the defaults.
-    if nccl_iface := os.environ.get("NCCL_SOCKET_IFNAME"):
-        env_vars["GLOO_SOCKET_IFNAME"] = nccl_iface
-        env_vars["TP_SOCKET_IFNAME"] = nccl_iface
     env_vars.update(environment)
     # Tracker identity and credentials must match the preflight configuration.
     env_vars.update(metric_env)
@@ -489,8 +477,7 @@ def apply_source_overlays(image: Image, miles: MilesRecipe) -> Image:
             " miles_git_ref checkout; transient router failures during rollout"
             " cleanup may crash the run'",
             *_REPORTING_PATCH_COMMANDS,
-            f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3",
-            f"echo {_PATCH_LORA_CKPT_MKDIR_B64} | base64 -d | python3"
+            f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3"
             " || echo 'WARNING: substep timing patch did not apply to the"
             " miles_git_ref checkout; substep timings will be missing'",
         )

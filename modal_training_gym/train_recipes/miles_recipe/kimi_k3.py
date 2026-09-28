@@ -32,8 +32,9 @@ _PATCH_DIR = (
 # Build-time patches; see each script's docstring.
 _PATCHES = (
     "patch_cell_tick_timeout",
-    "patch_ipc_bucket_empty_cache",
     "patch_lora_sync_stream_pp",
+    "patch_ipc_bucket_empty_cache",
+    "patch_checkpoint_local_dirs",
 )
 
 # First multi-arch nightly carrying radixark/miles#1825 together with its
@@ -99,9 +100,15 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
             "NCCL_MNNVL_ENABLE": "0",
             "NCCL_NVLS_ENABLE": "0",
             "NCCL_RAS_ENABLE": "0",
-            # The TP16 engines span two nodes; the launcher pins gloo and the
-            # TCPStore to the cluster's NCCL interface so their unique-id
-            # broadcast crosses nodes.
+            # The TP16 engines span two nodes. sglang's GroupCoordinator
+            # broadcasts the NCCL unique id over a gloo CPU group, and gloo
+            # picks its address from the hostname, which resolves to 127.0.0.1
+            # in Modal containers: every rank waits on the peer's loopback and
+            # ncclCommInitRank is never reached. Pin gloo and the TCPStore to
+            # eth1, the interface NCCL already bootstraps on (Modal sets
+            # NCCL_SOCKET_IFNAME=eth1); eth0 is a per-host network.
+            "GLOO_SOCKET_IFNAME": "eth1",
+            "TP_SOCKET_IFNAME": "eth1",
             "NCCL_TIMEOUT": "3600",
             # The release packs its routed experts as MXFP4 compressed-tensors
             # and ships no bf16 export; the converter dequantizes them as
@@ -247,7 +254,7 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
         """Keep the build-time patches at the head of ``image_run_commands``.
 
         The field is replaced wholesale, so a caller adding their own command
-        would otherwise drop the tick-timeout and sync-cache patches and the
+        would otherwise drop the tick-timeout and sync-memory patches and the
         first release or the first adapter sync would fail again.
         """
         patches = _image_patches()
