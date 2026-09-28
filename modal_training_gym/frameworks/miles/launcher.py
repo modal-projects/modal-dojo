@@ -651,7 +651,7 @@ def build_miles_app(
         timeout=4 * 60 * 60,
         secrets=proxy_auth_secrets() or None,
         ephemeral_disk=miles.convert_ephemeral_disk_mb,
-        experimental_options={"efa_enabled": True} if convert_multi_node else {},
+        experimental_options=shared.experimental_options(miles),
         serialized=True,
         name="convert_checkpoint",
     )
@@ -786,7 +786,7 @@ def build_miles_app(
             miles,
             framework="miles",
             secrets=train_secrets,
-            experimental_options={"efa_enabled": True} if _multi_node else {},
+            experimental_options={},
         ),
     )
     @clustered_if(
