@@ -43,6 +43,8 @@ from modal_training_gym.train_recipes.gpu_allocation import (
 
 # ── Types ─────────────────────────────────────────────────────────────────────
 
+SlimeLossMaskType = Literal["qwen", "qwen3", "qwen3_5", "distill_qwen"]
+
 _SLIME_SKIP = {
     "environment",
     "async_mode",
@@ -486,7 +488,7 @@ class SlimeRecipe(BaseTrainRecipe):
     entropy_coef: float = 0.0
     calculate_per_token_loss: bool = False
     loss_type: Literal["policy_loss", "sft_loss"] = "policy_loss"
-    loss_mask_type: Literal["qwen", "qwen3", "qwen3_5", "distill_qwen"] = "qwen"
+    loss_mask_type: SlimeLossMaskType = "qwen"
 
     # ── Dynamic sampling (DAPO) ────────────────────────────────────────────
     over_sampling_batch_size: int | None = None

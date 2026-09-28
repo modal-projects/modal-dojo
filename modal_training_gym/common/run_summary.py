@@ -225,6 +225,11 @@ class RunSummary(BaseModel):
         "Stage",
         default="",
     )
+    training_type: Literal["sft", "rl"] = _run_list_field(
+        "Type",
+        default="rl",
+        filterable=True,
+    )
     framework: str = ""
     framework_status: str = ""
     framework_progress: FrameworkProgress | None = None
@@ -232,11 +237,6 @@ class RunSummary(BaseModel):
     model: str = _run_list_field("Model", default="", filterable=True)
     dataset: str = _run_list_field("Dataset", default="", filterable=True)
     recipe: str = _run_list_field("Recipe", default="", filterable=True)
-    training_type: Literal["sft", "rl"] = _run_list_field(
-        "Training type",
-        default="rl",
-        filterable=True,
-    )
     group_id: str = _run_list_field(
         "Group",
         default="",

@@ -48,8 +48,8 @@ class DatasetConfig(ABC):
         raise NotImplementedError(f"{type(self).__name__} has no input_key()")
 
     @abstractmethod
-    def label_key(self) -> str:
-        """Ground-truth column name."""
+    def label_key(self) -> str | None:
+        """Ground-truth column name, or ``None`` when rows carry no label."""
         raise NotImplementedError(f"{type(self).__name__} has no label_key()")
 
     def output_format(self) -> str:
@@ -79,8 +79,8 @@ class DatasetConfig(ABC):
         cols: set[str] = set()
         if self.input_key():
             cols.add(self.input_key())
-        if self.label_key():
-            cols.add(self.label_key())
+        if label_key := self.label_key():
+            cols.add(label_key)
         return cols
 
     def validate_written(self, path: str) -> None:
@@ -130,7 +130,7 @@ class DatasetConfig(ABC):
 
 class _SftDataset(DatasetConfig):
     def __init__(self, inner: DatasetConfig) -> None:
-        if getattr(inner, "input_format", None) == "raw":
+        if isinstance(inner, HuggingFaceDataset) and inner.input_format == "raw":
             raise TrainingGymConfigError(
                 "input_format='raw' is not supported with loss_type='sft_loss'"
             )
@@ -152,8 +152,8 @@ class _SftDataset(DatasetConfig):
     def input_key(self) -> str:
         return self._inner.input_key()
 
-    def label_key(self) -> str:
-        return ""
+    def label_key(self) -> str | None:
+        return None
 
     def rows(self) -> Iterable[DatasetRow]:
         input_key, label_key = self._inner.input_key(), self._inner.label_key()
@@ -253,11 +253,11 @@ class HuggingFaceDataset(DatasetConfig):
         else:
             return self.input_column
 
-    def label_key(self) -> str:
+    def label_key(self) -> str | None:
         if self.input_format == "text":
-            return "label" if self.output_column else ""
+            return "label" if self.output_column else None
         else:
-            return self.output_column or ""
+            return self.output_column
 
     def apply_chat_template(self) -> bool:
         return self.input_format != "raw"
