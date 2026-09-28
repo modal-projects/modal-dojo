@@ -13,6 +13,7 @@ class Qwen3_5_4B_Miles_Recipe(MilesRecipe):
     """Qwen3.5-4B recipe."""
 
     model_config_class: ClassVar[type[ModelConfig]] = Qwen3_5_4B
+    sft_supported: ClassVar[bool] = False
 
     miles_model_name: str = "qwen3.5-4B"
     optimizer_cpu_offload: bool = True

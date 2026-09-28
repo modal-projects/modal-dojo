@@ -17,7 +17,7 @@ DASHBOARD_PREVIEW_ENV_KEY = "TRAINING_GYM_DASHBOARD_PREVIEW"
 DASHBOARD_VERSION_ENV_KEY = "DASHBOARD_VERSION"
 
 # Bump when the deployed dashboard frontend or backend changes.
-DASHBOARD_VERSION = 3
+DASHBOARD_VERSION = 4
 
 
 def current_dashboard_version() -> str:

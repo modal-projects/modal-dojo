@@ -207,6 +207,15 @@ def _rollout_gpus(
 ) -> int:
     explicit_rollout_gpus = _optional_positive_int_field(config, "rollout_num_gpus")
 
+    if getattr(config, "loss_type", None) == "sft_loss":
+        if warn and explicit_rollout_gpus is not None:
+            warnings.warn(
+                "loss_type='sft_loss' does not start rollout engines; "
+                f"rollout_num_gpus={explicit_rollout_gpus} is ignored.",
+                stacklevel=2,
+            )
+        return 0
+
     if colocate:
         if warn and explicit_rollout_gpus not in (None, actor_gpus):
             warnings.warn(

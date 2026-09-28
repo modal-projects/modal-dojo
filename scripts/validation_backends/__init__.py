@@ -23,6 +23,8 @@ def build_recipe_and_dataset(
     framework: Framework,
     model_config: "ModelConfig",
     step_count: int,
+    *,
+    loss_type: str = "policy_loss",
 ) -> tuple["BaseTrainRecipe", "DatasetConfig"]:
     """The model's base recipe and the dataset it validates against.
 
@@ -34,9 +36,9 @@ def build_recipe_and_dataset(
     if framework is Framework.SLIME:
         from .slime import build_slime_validation
 
-        return build_slime_validation(model_config, step_count)
+        return build_slime_validation(model_config, step_count, loss_type=loss_type)
     if framework is Framework.MILES:
         from .miles import build_miles_validation
 
-        return build_miles_validation(model_config, step_count)
+        return build_miles_validation(model_config, step_count, loss_type=loss_type)
     raise TrainingGymConfigError(f"no validation backend for framework {framework!r}")

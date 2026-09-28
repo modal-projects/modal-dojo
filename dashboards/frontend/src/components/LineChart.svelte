@@ -103,9 +103,9 @@
   );
   let yExtent = $derived.by(() => {
     if (!yValues.length) return [0, 1];
-    if (!axes) return [Math.min(0, ...yValues), Math.max(0, ...yValues)];
     const lo = Math.min(...yValues);
     const hi = Math.max(...yValues);
+    if (!axes && hi > lo) return [Math.min(0, lo), Math.max(0, hi)];
     const pad = (hi - lo || Math.abs(lo) || 1) * 0.08;
     return [lo - pad, hi + pad];
   });

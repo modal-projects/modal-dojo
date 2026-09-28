@@ -96,6 +96,16 @@ export const TIMING_LABELS = {
   train_step_finalize: "Train-step cleanup & metrics",
 };
 
+const SFT_TIMING_LABELS = {
+  generate_rollouts: "Preparing batch",
+  generate_samples: "Preparing batch",
+};
+
+const SFT_CATEGORY_LABELS = {
+  generate: "Preparing batch",
+  transfer: "Offload",
+};
+
 export const IDLE_PHASES = new Set([
   "wait_for_rollout",
   "wait_for_next_rollout",
@@ -137,7 +147,10 @@ export const GROUPS = [
 
 export const NEGLIGIBLE_WORK_S = 0.0005;
 export const CROSS_LANE_CONTAINMENT_TOLERANCE_S = 0.01;
-export function labelFor(name, rolloutId = null) {
+export function labelFor(name, rolloutId = null, trainingType = null) {
+  if (trainingType === "sft" && SFT_TIMING_LABELS[name]) {
+    return SFT_TIMING_LABELS[name];
+  }
   if (
     (name === "wait_for_rollout" || name === "wait_for_next_rollout") &&
     rolloutId != null
@@ -148,6 +161,13 @@ export function labelFor(name, rolloutId = null) {
     }
   }
   return TIMING_LABELS[name] || name.replace(/_/g, " ");
+}
+
+export function categoryLabelFor(key, trainingType = null) {
+  if (trainingType === "sft" && key in SFT_CATEGORY_LABELS) {
+    return SFT_CATEGORY_LABELS[key];
+  }
+  return CATEGORIES[key].label;
 }
 
 export function isLegacyTiming(timings) {

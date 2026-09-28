@@ -39,6 +39,7 @@ class _ValidationConfig:
     model_config: type[ModelConfig]
     # Which framework's ``get_base_recipe`` trains this model.
     framework: Framework
+    loss_type: str = "policy_loss"
 
     @property
     def model_name(self) -> str:
@@ -64,7 +65,11 @@ class _ValidationConfig:
         matches = [
             config
             for config in VALIDATION_CONFIGS
-            if wanted in (config.name.lower(), config.model_name.lower())
+            if wanted == config.name.lower()
+            or (
+                wanted == config.model_name.lower()
+                and config.loss_type == "policy_loss"
+            )
         ]
         if len(matches) == 1:
             return matches[0]
@@ -86,6 +91,9 @@ VALIDATION_CONFIGS: set[_ValidationConfig] = {
     _ValidationConfig("Qwen3.5-0.8B", Qwen3_5_0_8B, Framework.SLIME),
     _ValidationConfig("Qwen3.5-2B", Qwen3_5_2B, Framework.SLIME),
     _ValidationConfig("Qwen3.5-4B", Qwen3_5_4B, Framework.SLIME),
+    _ValidationConfig(
+        "Qwen3.5-4B-SFT", Qwen3_5_4B, Framework.SLIME, loss_type="sft_loss"
+    ),
     _ValidationConfig("Qwen3.5-4B-Miles", Qwen3_5_4B, Framework.MILES),
     _ValidationConfig("Qwen3.5-9B", Qwen3_5_9B, Framework.SLIME),
     _ValidationConfig("Qwen3.6-27B", Qwen3_6_27B, Framework.SLIME),
@@ -95,6 +103,12 @@ VALIDATION_CONFIGS: set[_ValidationConfig] = {
         "Moonlight-16B-A3B-Instruct",
         Moonlight_16B_A3B_Instruct,
         Framework.MILES,
+    ),
+    _ValidationConfig(
+        "Moonlight-16B-A3B-Instruct-SFT",
+        Moonlight_16B_A3B_Instruct,
+        Framework.MILES,
+        loss_type="sft_loss",
     ),
     _ValidationConfig("Gemma-4-26B-A4B-it", Gemma4_26B_A4B, Framework.MILES),
     _ValidationConfig("Inkling-Small", Inkling_Small, Framework.MILES),

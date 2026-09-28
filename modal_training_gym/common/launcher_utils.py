@@ -539,7 +539,7 @@ def build_train_cmd(
     model_args_command: str = "",
 ) -> str:
     """Build the Ray job entrypoint, sourcing model arch args if needed."""
-    train_script = f"{root}/{'train_async.py' if cfg.async_mode else 'train.py'}"
+    train_script = f"{root}/{'train_async.py' if cfg.train_async else 'train.py'}"
     args = shlex.join(
         cfg.cli_args(
             dataset=dataset,

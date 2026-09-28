@@ -11,7 +11,7 @@ UNTAGGED_RECIPE = "(untagged)"
 NO_GROUP = "(no group)"
 PENDING_STATUS = "pending"
 
-FACET_NAMES = ("status", "recipe", "group")
+FACET_NAMES = ("status", "recipe", "group", "training_type")
 
 
 def run_list_field_metadata() -> dict[str, dict[str, object]]:
@@ -37,6 +37,7 @@ def run_facet_values(summary: RunSummary) -> dict[str, str]:
         "status": summary.display_status or PENDING_STATUS,
         "recipe": summary.recipe or summary.framework or UNTAGGED_RECIPE,
         "group": summary.group_id or NO_GROUP,
+        "training_type": summary.training_type,
     }
 
 

@@ -12,6 +12,7 @@ from modal_training_gym.common import reporting
 
 TIMING_MODE_ENV = "TRAINING_GYM_SUBSTEP_TIMING"
 TIMING_DEBUG_ENV = "TRAINING_GYM_TIMING_DEBUG"
+LOSS_TYPE_ENV = "TRAINING_GYM_LOSS_TYPE"
 
 MIN_PUBLISH_INTERVAL_S = 3.0
 MAX_PHASE_INVOCATIONS = 10_000
@@ -20,6 +21,9 @@ MAX_TIMING_PHASES = 64
 MAX_TOTAL_INVOCATIONS = 20_000
 
 PER_SAMPLE_PHASES = frozenset({"reward", "reward_batch", "sample_generation"})
+RL_ONLY_PHASES = frozenset(
+    {"initial_weight_sync", "weight_sync", "reward_post_process"}
+)
 
 
 def _timing_debug(event: str, **fields: object) -> None:
@@ -113,7 +117,9 @@ class RoleRecorder:
 
     @contextmanager
     def phase(self, name: str) -> Iterator[None]:
-        if timing_mode() == "off":
+        if timing_mode() == "off" or (
+            name in RL_ONLY_PHASES and os.environ.get(LOSS_TYPE_ENV) == "sft_loss"
+        ):
             yield
             return
         start = time.monotonic()

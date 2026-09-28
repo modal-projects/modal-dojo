@@ -546,8 +546,9 @@ def _compact_report_queue() -> None:
                     str(item.get("training_run_id")), {**item, "points": {}}
                 )
                 for point in item.get("points", []):
-                    merged["points"].setdefault(point["step"], {}).update(
-                        point["metrics"]
+                    folded = merged["points"].setdefault(point["step"], {"metrics": {}})
+                    folded.update(
+                        point, metrics={**folded["metrics"], **point["metrics"]}
                     )
                 merged["final"] = merged.get("final", False) or item.get("final", False)
                 merged["_retry_count"] = max(
@@ -563,10 +564,7 @@ def _compact_report_queue() -> None:
             else:
                 remaining.append(item)
         for merged in metrics_by_run.values():
-            points = [
-                {"step": step, "metrics": metrics}
-                for step, metrics in sorted(merged["points"].items())
-            ]
+            points = [point for _, point in sorted(merged["points"].items())]
             chunks = [
                 points[i : i + MAX_METRIC_POINTS_PER_BATCH]
                 for i in range(0, len(points), MAX_METRIC_POINTS_PER_BATCH)

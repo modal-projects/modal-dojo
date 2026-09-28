@@ -1,5 +1,6 @@
 export {
   CATEGORIES,
+  categoryLabelFor,
   colorFor,
   fmtSecs,
   HIDDEN_PHASES,
