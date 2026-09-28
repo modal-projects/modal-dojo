@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import time
+
 import modal.exception
 import pytest
 
+from modal_training_gym.common import run as run_mod
 from modal_training_gym.common.framework import Framework
 from modal_training_gym.common.run import TrainingRun, TrainingRunStatus
 
@@ -174,6 +177,62 @@ def test_done_is_false_when_status_check_hits_transport_error(exc, fake_volume):
     assert run.done() is False
     assert run.status is TrainingRunStatus.RUNNING
     assert run.error is None
+
+
+def _save_failed(ended_at: int | None) -> None:
+    failed = _run(TrainingRunStatus.FAILED)
+    if ended_at is not None:
+        failed.metadata = {"last_attempt_ended_at": ended_at}
+    failed.save()
+
+
+def test_done_waits_for_pending_retry_before_honoring_failed_record(fake_volume):
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _PendingCall()
+    _save_failed(ended_at=int(time.time()))
+
+    assert run.done() is False
+    assert run.status is TrainingRunStatus.FAILED
+
+
+def test_done_honors_failed_record_after_retry_grace_expires(fake_volume):
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _PendingCall()
+    _save_failed(ended_at=int(time.time() - run_mod._FAILED_RECORD_SETTLE_SECONDS - 1))
+
+    assert run.done() is True
+    assert run.status is TrainingRunStatus.FAILED
+
+
+def test_done_honors_failed_record_once_function_call_finishes(fake_volume):
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _FailedCall()
+    _save_failed(ended_at=int(time.time()))
+
+    assert run.done() is True
+    assert run.status is TrainingRunStatus.FAILED
+
+
+def test_done_honors_failed_record_without_attempt_timestamp(fake_volume):
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _PendingCall()
+    _save_failed(ended_at=None)
+
+    assert run.done() is True
+    assert run.status is TrainingRunStatus.FAILED
+
+
+@pytest.mark.parametrize(
+    "status",
+    [TrainingRunStatus.STOPPED, TrainingRunStatus.CANCELLED],
+)
+def test_done_honors_stopped_or_cancelled_while_call_pending(status, fake_volume):
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _PendingCall()
+    _run(status).save()
+
+    assert run.done() is True
+    assert run.status is status
 
 
 def test_done_is_false_when_metadata_reload_hits_transport_error(monkeypatch):

@@ -57,6 +57,10 @@ _TRANSIENT_MODAL_ERRORS = (
     ResourceExhaustedError,
     ServiceError,
 )
+# How long a FAILED record is allowed to outvote a still-pending FunctionCall
+# before done() honors it. Covers Modal retry bring-up (container provisioning
+# plus startup) before the next attempt re-marks the record RUNNING.
+_FAILED_RECORD_SETTLE_SECONDS = 15 * 60
 
 
 class FrameworkStatusUpdate(BaseModel):
@@ -297,6 +301,28 @@ class TrainingRun(BaseModel):
             model.model_path = self.checkpoint_dir
         return model
 
+    def _failed_record_settled(self) -> bool:
+        """Whether a stored FAILED record is safe to honor as terminal.
+
+        FAILED is persisted inside the remote function while its FunctionCall
+        is still running, and a Modal retry can re-mark the record RUNNING once
+        the next attempt starts — so FAILED observed while the call still
+        reports pending is given a grace window (anchored at the record's own
+        ``last_attempt_ended_at``) before it counts.
+        """
+        if self._function_call is None and not self.function_call_id:
+            return True
+        finished, _ = self._function_call_outcome()
+        if finished:
+            return True
+        ended_at = (self.metadata or {}).get("last_attempt_ended_at")
+        if ended_at is None:
+            return True
+        try:
+            return time.time() - float(ended_at) >= _FAILED_RECORD_SETTLE_SECONDS
+        except (TypeError, ValueError):
+            return True
+
     def done(self) -> bool:
         """True if status is not RUNNING or the FunctionCall has finished.
 
@@ -307,6 +333,11 @@ class TrainingRun(BaseModel):
         except _TRANSIENT_MODAL_ERRORS:
             pass
         if self.status is not TrainingRunStatus.RUNNING:
+            if (
+                self.status is TrainingRunStatus.FAILED
+                and not self._failed_record_settled()
+            ):
+                return False
             return True
         finished, exc = self._function_call_outcome()
         if not finished:
