@@ -41,6 +41,24 @@ def _normalize_gpu_type(gpu_type: str | None) -> str:
     return (gpu_type or "").split(":")[0].strip().rstrip("!+").upper()
 
 
+# per-device total as torch reports it (total_memory / 2**30)
+_GPU_MEMORY_GIB = {
+    "H100": 79.2,
+    "H200": 140.4,
+    "B200": 178.4,
+    "B300": 268.0,
+    "A100": 39.4,
+    "A100-40GB": 39.4,
+    "A100-80GB": 79.2,
+    "L40S": 44.4,
+    "A10": 22.1,
+}
+
+
+def gpu_memory_gib(gpu_type: str | None) -> float | None:
+    return _GPU_MEMORY_GIB.get(_normalize_gpu_type(gpu_type))
+
+
 def _max_gpus_per_container(gpu_type: str | None) -> int:
     return _MAX_GPUS_PER_CONTAINER.get(_normalize_gpu_type(gpu_type), 8)
 
