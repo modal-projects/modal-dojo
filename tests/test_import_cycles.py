@@ -50,6 +50,7 @@ REMOTE_ONLY = frozenset(
         "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_cell_tick_timeout",
         "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_ipc_bucket_empty_cache",
         "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_lora_sync_stream_pp",
+        "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_lora_checkpoint_mkdir",
         "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_chat_template",
         "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_fp4_dequant_block",
         "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_fp8_hopper_gemm",

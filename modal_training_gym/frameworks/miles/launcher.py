@@ -107,6 +107,7 @@ _PATCH_ROLLOUT_STATUS_B64 = encode_patch(
 )
 _PATCH_ADVANTAGE_DIST_B64 = encode_patch("patch_advantage_distribution", _MILES_PATCHES)
 _PATCH_SUBSTEP_TIMING_B64 = encode_patch("patch_substep_timing", _MILES_PATCHES)
+_PATCH_LORA_CKPT_MKDIR_B64 = encode_patch("patch_lora_checkpoint_mkdir", _MILES_PATCHES)
 
 _REPORTING_PATCH_COMMANDS = (
     f"echo {_PATCH_ROLLOUT_STATUS_B64} | base64 -d | python3",
@@ -334,6 +335,7 @@ def _build_miles_base_image(
             ),
             *_REPORTING_PATCH_COMMANDS,
             f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3",
+            f"echo {_PATCH_LORA_CKPT_MKDIR_B64} | base64 -d | python3",
         )
     )
     if (
@@ -487,7 +489,8 @@ def apply_source_overlays(image: Image, miles: MilesRecipe) -> Image:
             " miles_git_ref checkout; transient router failures during rollout"
             " cleanup may crash the run'",
             *_REPORTING_PATCH_COMMANDS,
-            f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3"
+            f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3",
+            f"echo {_PATCH_LORA_CKPT_MKDIR_B64} | base64 -d | python3"
             " || echo 'WARNING: substep timing patch did not apply to the"
             " miles_git_ref checkout; substep timings will be missing'",
         )
