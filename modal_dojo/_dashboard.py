@@ -623,12 +623,6 @@ def fastapi_app():
     # When DASHBOARD_PASSWORD is set we gate the whole app behind HTTP Basic
     # Auth (the username is ignored). An empty value means open access.
     dashboard_password = os.environ.get("DASHBOARD_PASSWORD", "")
-    # The stop endpoint is the only unauthenticated mutation: with neither
-    # Basic Auth nor Modal proxy auth configured, any network caller could
-    # terminate training apps, so refuse it on fully-open dashboards.
-    mutations_allowed = bool(dashboard_password) or (
-        os.environ.get(DASHBOARD_REQUIRES_PROXY_AUTH_ENV_KEY, "false") == "true"
-    )
 
     def _password_ok(authorization: str | None) -> bool:
         scheme, _, encoded = (authorization or "").partition(" ")
@@ -654,10 +648,6 @@ def fastapi_app():
     @web.get(DASHBOARD_PROXY_AUTH_PATH)
     async def proxy_auth_status() -> bool:
         return os.environ.get(DASHBOARD_REQUIRES_PROXY_AUTH_ENV_KEY, "false") == "true"
-
-    @web.get("/api/mutations-allowed")
-    async def mutations_allowed_status() -> bool:
-        return mutations_allowed
 
     @web.get(DASHBOARD_VERSION_PATH)
     async def version() -> str:
@@ -1245,14 +1235,6 @@ def fastapi_app():
 
     @web.post("/api/runs/{training_run_id}/stop", response_model=RunSummary)
     async def stop_run(training_run_id: str, request: Request):
-        if not mutations_allowed:
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    "Stopping runs requires dashboard authentication "
-                    "(DASHBOARD_PASSWORD or proxy auth)."
-                ),
-            )
         if request.headers.get(DASHBOARD_CSRF_HEADER) != DASHBOARD_STOP_RUN_ACTION:
             raise HTTPException(
                 status_code=400,
