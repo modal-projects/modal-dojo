@@ -153,7 +153,10 @@ def _parse_running_run(raw: dict[str, Any]) -> TrainingRun | None:
     if "training_run_id" not in raw and "run_id" in raw:
         raw = {**raw, "training_run_id": raw["run_id"]}
     try:
-        run = TrainingRun.from_stored_data(raw)
+        try:
+            run = TrainingRun.from_id(raw["training_run_id"])
+        except KeyError:
+            run = TrainingRun.from_stored_data(raw)
     except Exception:
         return None
     if run.status != TrainingRunStatus.RUNNING:

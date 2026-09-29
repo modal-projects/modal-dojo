@@ -25,6 +25,7 @@ class MetadataStore(Enum):
     """Named prefixes for JSON records on the shared metadata volume."""
 
     TRAINING_RUNS = "training-runs"
+    TRAINING_RUN_UPDATES = "training-run-updates"
     TRAINING_RUNS_SUMMARY = "training-runs-summary"
     FRAMEWORK_STATUS_TOKENS = "framework-status-tokens"
     TRAIN_RESULTS = "train-results"

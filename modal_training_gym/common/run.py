@@ -6,6 +6,7 @@ It is used to track the training run and its results.
 from __future__ import annotations
 
 import copy
+import asyncio
 import math
 import inspect
 import os
@@ -13,8 +14,9 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, overload
+from uuid import uuid4
 
-from modal.exception import NotFoundError
+from modal.exception import Error, NotFoundError
 from pydantic import (
     BaseModel,
     Field,
@@ -35,6 +37,8 @@ from modal_training_gym.common.torch_dist_checkpoint import (
 from modal_training_gym.utils.metadata import (
     MetadataStore,
     vol_get,
+    vol_list_prefix,
+    vol_put,
     vol_put_with_summary,
 )
 
@@ -45,6 +49,46 @@ if TYPE_CHECKING:
 
 TRAINING_RUNS_STORE_NAME = MetadataStore.TRAINING_RUNS.value
 CHECKPOINT_LOCATION_METADATA_KEY = "checkpoint_location"
+
+
+def run_update_keys(data: dict[str, Any]) -> dict[str, str]:
+    run_id = data.get("training_run_id") or data.get("run_id")
+    if not run_id:
+        return {}
+    attempt = (data.get("metadata") or {}).get("attempt_count", 0)
+    return {
+        field: f"{run_id}__{attempt}__{field}"
+        for field in ("framework_progress", "latest_rollout")
+    }
+
+
+def merge_run_updates(
+    data: dict[str, Any], updates: dict[str, list[dict[str, Any]]]
+) -> dict[str, Any]:
+    data = {**data, "metadata": dict(data.get("metadata") or {})}
+    for field, key in run_update_keys(data).items():
+        candidates = updates.get(key)
+        if not candidates:
+            continue
+        existing = data["metadata"].get(field) or {}
+        order = (
+            ("updated_at",)
+            if field == "framework_progress"
+            else ("rollout_id", "created_at")
+        )
+        update = max(
+            candidates,
+            key=lambda item: tuple(item[field].get(k, 0) for k in order),
+        )
+        if tuple(existing.get(k, 0) for k in order) > tuple(
+            update[field].get(k, 0) for k in order
+        ):
+            continue
+        data["metadata"][field] = update[field]
+        data["updated_at"] = max(data.get("updated_at") or 0, update["updated_at"])
+        if field == "framework_progress":
+            data["framework_status"] = update["framework_status"]
+    return data
 
 
 class FrameworkStatusUpdate(BaseModel):
@@ -443,7 +487,7 @@ class TrainingRun(BaseModel):
         self.framework_status = status
         progress: dict[str, Any] = {
             "phase": status.value,
-            "updated_at": int(time.time()),
+            "updated_at": time.time(),
         }
         # is_active: True = stage is actually running on hardware; False =
         # we've marked the stage but it's queuing for a GPU. Sent by the
@@ -551,6 +595,21 @@ class TrainingRun(BaseModel):
 
     def _touch(self) -> None:
         self.updated_at = int(time.time())
+
+    async def _save_dashboard_update(
+        self, field: Literal["framework_progress", "latest_rollout"]
+    ) -> None:
+        data = self.model_dump(mode="json")
+        payload = {field: data["metadata"][field], "updated_at": int(time.time())}
+        if field == "framework_progress":
+            payload["framework_status"] = data["framework_status"]
+        key = f"{run_update_keys(data)[field]}__{uuid4().hex}"
+        await vol_put(
+            MetadataStore.TRAINING_RUN_UPDATES,
+            key,
+            payload,
+            is_async=True,
+        )
 
     def save(self, *, is_async: bool = False) -> None | Awaitable[None]:
         self._touch()
@@ -695,10 +754,31 @@ class TrainingRun(BaseModel):
         if is_async:
 
             async def _run() -> TrainingRun:
-                return cls.from_stored_data(await data)
+                stored = await data
+
+                async def read(key: str) -> tuple[str, list[dict[str, Any]]]:
+                    try:
+                        return key, await asyncio.to_thread(
+                            vol_list_prefix, MetadataStore.TRAINING_RUN_UPDATES, key
+                        )
+                    except (KeyError, Error):
+                        return key, []
+
+                updates = dict(
+                    await asyncio.gather(
+                        *(read(key) for key in run_update_keys(stored).values())
+                    )
+                )
+                return cls.from_stored_data(merge_run_updates(stored, updates))
 
             return _run()
-        return cls.from_stored_data(data)
+        updates = {}
+        for key in run_update_keys(data).values():
+            try:
+                updates[key] = vol_list_prefix(MetadataStore.TRAINING_RUN_UPDATES, key)
+            except (KeyError, Error):
+                pass
+        return cls.from_stored_data(merge_run_updates(data, updates))
 
     @classmethod
     def from_stored_data(cls, data: object) -> TrainingRun:

@@ -71,6 +71,8 @@ from modal_training_gym.common.run import (
     FrameworkStatusUpdate,
     TrainingRun,
     TrainingRunStatus,
+    merge_run_updates,
+    run_update_keys,
 )
 from modal_training_gym.common.run_list import (
     FACET_NAMES,
@@ -611,6 +613,7 @@ def fastapi_app():
         summary_items_from_payload,
         vol_get,
         vol_get_summary_items_healed,
+        vol_list_prefix,
         vol_put_summary_items,
     )
 
@@ -1048,6 +1051,19 @@ def fastapi_app():
 
     async def load_runs() -> list[JsonDict]:
         run_records = await load_list_summary(MetadataStore.TRAINING_RUNS_SUMMARY)
+        keys = [key for run in run_records for key in run_update_keys(run).values()]
+        fetched = await bounded_gather_with_retries(
+            lambda key=key: run_in_threadpool(
+                vol_list_prefix, MetadataStore.TRAINING_RUN_UPDATES, key
+            )
+            for key in keys
+        )
+        updates = {}
+        for key, result in zip(keys, fetched):
+            if isinstance(result, BaseException):
+                continue
+            updates[key] = result
+        run_records = [merge_run_updates(run, updates) for run in run_records]
         try:
             result_records = await load_list_summary(
                 MetadataStore.TRAIN_RESULTS_SUMMARY
@@ -1443,7 +1459,7 @@ def fastapi_app():
                     f"for {run.framework.value}"
                 ),
             )
-        await run.save(is_async=True)
+        await run._save_dashboard_update("framework_progress")
         invalidate_cache("runs")
         if run.status in {
             TrainingRunStatus.STOPPED,
@@ -1529,7 +1545,7 @@ def fastapi_app():
 
         await run_in_threadpool(result.save)
         run.record_latest_rollout(result)
-        await run.save(is_async=True)
+        await run._save_dashboard_update("latest_rollout")
         invalidate_cache("runs")
 
         return JSONResponse(
