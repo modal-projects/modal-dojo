@@ -7,7 +7,7 @@ file: miles/miles/backends/training_utils/checkpoint_io.py::write_checkpoint_dir
 from pathlib import Path
 
 TARGET = Path("/root/miles/miles/backends/training_utils/checkpoint_io.py")
-MARKER = "PATCHED_TRAINING_GYM_CHECKPOINT_LOCAL_DIRS"
+MARKER = "PATCHED_MODAL_DOJO_CHECKPOINT_LOCAL_DIRS"
 ANCHOR = "    try:\n        write_shards(checkpoint_dir)\n"
 REPLACEMENT = f"""    try:
         # {MARKER}
