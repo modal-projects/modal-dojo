@@ -90,10 +90,10 @@ _SLIME_SKIP = {
 YAML_CONFIG_FIELDS = ("eval_config", "extra_config", "sglang_config")
 
 _HOOK_PATH_CONFIG_KEYS = {
-    "custom_rollout_log_function": "training_gym_custom_rollout_log_function_path",
-    "custom_eval_rollout_log_function": "training_gym_custom_eval_rollout_log_function_path",
-    "custom_megatron_before_log_prob_hook": "training_gym_custom_megatron_before_log_prob_hook_path",
-    "custom_megatron_before_train_step_hook": "training_gym_custom_megatron_before_train_step_hook_path",
+    "custom_rollout_log_function": "modal_dojo_custom_rollout_log_function_path",
+    "custom_eval_rollout_log_function": "modal_dojo_custom_eval_rollout_log_function_path",
+    "custom_megatron_before_log_prob_hook": "modal_dojo_custom_megatron_before_log_prob_hook_path",
+    "custom_megatron_before_train_step_hook": "modal_dojo_custom_megatron_before_train_step_hook_path",
 }
 _HOOK_WRAPPER_PATHS = {
     "custom_rollout_log_function": "modal_dojo.frameworks.slime.phase_reporting.log_rollout_data",
@@ -374,7 +374,7 @@ class SlimeRecipe(BaseTrainRecipe):
             Public HTTPS Git repository to overlay onto the image's slime checkout.
             Must be paired with ``slime_git_revision`` and is intended for
             reproducible fork-backed runs. The selected source must remain compatible
-            with Training Gym's build-time Slime patches.
+            with Modal Dojo's build-time Slime patches.
         slime_git_revision:
             Full 40-character commit SHA fetched from ``slime_git_repository``.
             Branches and tags are rejected because they can move between runs.

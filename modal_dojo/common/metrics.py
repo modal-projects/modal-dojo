@@ -31,7 +31,7 @@ class MetricConfig(ABC):
         """Machine-readable metric provider identifier."""
 
     def runtime_env(self, *, run_id: str, entity: str = "") -> dict[str, str]:
-        return {"TRAINING_GYM_METRIC_PROVIDER": self.provider}
+        return {"MODAL_DOJO_METRIC_PROVIDER": self.provider}
 
     def url(self, *, entity: str = "", run_id: str = "") -> str | None:
         return None
@@ -85,7 +85,7 @@ def metric_secrets(metric: MetricConfig) -> list[Any]:
 
 def apply_metric_image(image: Any, metric: MetricConfig | None) -> Any:
     """Install the provider package and the ``.pth`` that mirrors metrics to
-    the dashboard (inert unless ``TRAINING_GYM_METRIC_PROVIDER`` is set)."""
+    the dashboard (inert unless ``MODAL_DOJO_METRIC_PROVIDER`` is set)."""
     if metric is None:
         return image
     from modal_dojo.common.metric_mirror import pth_install_command

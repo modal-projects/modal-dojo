@@ -9,7 +9,7 @@ from .base import (
     parse_glm_response,
 )
 
-_TOOLS_PATH = "/opt/training-gym/tools"
+_TOOLS_PATH = "/opt/modal-dojo/tools"
 
 
 class GLM_4_7(HFModelConfiguration):

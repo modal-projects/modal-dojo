@@ -49,15 +49,15 @@ from .advantage_reporting import (
     report_advantage_distribution as report_advantage_distribution,
 )
 
-CUSTOM_ROLLOUT_LOG_FUNCTION_PATH_KEY = "training_gym_custom_rollout_log_function_path"
+CUSTOM_ROLLOUT_LOG_FUNCTION_PATH_KEY = "modal_dojo_custom_rollout_log_function_path"
 CUSTOM_EVAL_ROLLOUT_LOG_FUNCTION_PATH_KEY = (
-    "training_gym_custom_eval_rollout_log_function_path"
+    "modal_dojo_custom_eval_rollout_log_function_path"
 )
 CUSTOM_BEFORE_LOG_PROB_HOOK_PATH_KEY = (
-    "training_gym_custom_megatron_before_log_prob_hook_path"
+    "modal_dojo_custom_megatron_before_log_prob_hook_path"
 )
 CUSTOM_BEFORE_TRAIN_STEP_HOOK_PATH_KEY = (
-    "training_gym_custom_megatron_before_train_step_hook_path"
+    "modal_dojo_custom_megatron_before_train_step_hook_path"
 )
 
 
@@ -66,7 +66,7 @@ def _hook_path_from_args(args: Any, path_key: str) -> str | None:
     if isinstance(direct, str) and direct.strip():
         return direct
 
-    native_key = path_key.removeprefix("training_gym_")
+    native_key = path_key.removeprefix("modal_dojo_")
     for container_name in ("extra_config", "custom_config"):
         container = getattr(args, container_name, None)
         if not isinstance(container, dict):

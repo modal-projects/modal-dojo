@@ -1,4 +1,4 @@
-"""Shared HTTP client for the deployed training-gym dashboard."""
+"""Shared HTTP client for the deployed modal-dojo dashboard."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from modal_dojo.common.config import (
 from .errors import CLIError, ExitCode
 
 
-DASHBOARD_PASSWORD_ENV = "TRAINING_GYM_DASHBOARD_PASSWORD"
+DASHBOARD_PASSWORD_ENV = "MODAL_DOJO_DASHBOARD_PASSWORD"
 DEFAULT_TIMEOUT_SECONDS = 10.0
 QueryParams = Mapping[str, str | int | float | bool | None]
 
@@ -74,7 +74,7 @@ class DashboardClient:
             os.environ.get(DASHBOARD_PASSWORD_ENV, "") if password is None else password
         )
         auth = (
-            httpx.BasicAuth("training-gym", dashboard_password)
+            httpx.BasicAuth("modal-dojo", dashboard_password)
             if dashboard_password
             else None
         )

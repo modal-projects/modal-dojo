@@ -879,16 +879,16 @@ def build_slime_app(
                     **shared.training_reporting_env(
                         slime, model, app_name, framework_status_url
                     ),
-                    "TRAINING_GYM_SUBSTEP_TIMING": slime.substep_timing,
+                    "MODAL_DOJO_SUBSTEP_TIMING": slime.substep_timing,
                     **metric_runtime_env(
                         slime.metrics,
                         run_id=metric_run_id,
                         entity=metric_entity,
                     ),
                     **timing_debug_env(),
-                    "TRAINING_GYM_TRAINING_RUN_ID": training_run_id,
-                    "TRAINING_GYM_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
-                    "TRAINING_GYM_FRAMEWORK_STATUS_TOKEN": framework_status_token,
+                    "MODAL_DOJO_TRAINING_RUN_ID": training_run_id,
+                    "MODAL_DOJO_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
+                    "MODAL_DOJO_FRAMEWORK_STATUS_TOKEN": framework_status_token,
                 }
             }
 

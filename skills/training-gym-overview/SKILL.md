@@ -39,7 +39,7 @@ modal_dojo/         <- installable package
 ├── frameworks/             <- one subpackage per training framework
 │   ├── slime/              <- slime GRPO (Ray + Megatron + SGLang)
 └── tools/                  <- shared scripts mounted on every image at
-                              /opt/training-gym/tools (see "Tools" below)
+                              /opt/modal-dojo/tools (see "Tools" below)
 
 tutorials/                  <- runnable Python tutorial sources
 
@@ -150,7 +150,7 @@ the remote container.
 ## The `tools/` shared directory
 
 Any cross-framework script lives at `modal_dojo/tools/`. Every
-launcher mounts this directory at **`/opt/training-gym/tools`** on its
+launcher mounts this directory at **`/opt/modal-dojo/tools`** on its
 remote image(s) via `common.framework.mount_tools_dir`, so scripts are at a
 predictable path regardless of which framework's container calls them.
 Framework-agnostic `ModelConfig.download` overrides use this path.
@@ -197,7 +197,7 @@ remote_path=TOOLS_REMOTE_PATH, copy=True)` on every framework image.
 - Just HF snapshot -> inherit `HFModelConfiguration` (do nothing).
 - Extra post-processing (format conversion, weight repacking, tokenizer
   tweaks) -> override `download` in the subclass. Reference
-  `tools/<script>.py` via the canonical `/opt/training-gym/tools` path.
+  `tools/<script>.py` via the canonical `/opt/modal-dojo/tools` path.
   Do **not** put this logic in a framework launcher -- keep model-specific
   quirks with the model spec, not the framework plumbing.
 

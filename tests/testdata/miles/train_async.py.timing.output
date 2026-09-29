@@ -1,4 +1,4 @@
-# PATCHED_TRAINING_GYM_TIMING_PREAMBLE: bootstrap substep-timing recorder
+# PATCHED_MODAL_DOJO_TIMING_PREAMBLE: bootstrap substep-timing recorder
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
@@ -36,7 +36,7 @@ except ImportError:
     def _tg_time_phase(name):
         yield
 
-# PATCHED_TRAINING_GYM_PREAMBLE: bootstrap phase reporter (runs once per process)
+# PATCHED_MODAL_DOJO_PREAMBLE: bootstrap phase reporter (runs once per process)
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
@@ -80,7 +80,7 @@ async def train(args):
 
     # create the rollout manager, with sglang engines inside.
     # need to initialize rollout manager first to calculate num_rollout
-    # PATCHED_TRAINING_GYM_ROLLOUT_STATUS: initialize_rollouts state
+    # PATCHED_MODAL_DOJO_ROLLOUT_STATUS: initialize_rollouts state
     _tg_report('initialize_rollouts', args, None)
     rollout_manager, num_rollout_per_epoch = create_rollout_manager(args, pgs["rollout"])
 
@@ -115,7 +115,7 @@ async def train(args):
     if args.eval_interval is not None and args.start_rollout_id == 0 and not args.skip_eval_before_train:
         if not args.eval_uses_snapshots:
             with _tg_role('driver', None) as _tg_rec:
-                # PATCHED_TRAINING_GYM_TIMING_EVALUATE_ROLLOUTS
+                # PATCHED_MODAL_DOJO_TIMING_EVALUATE_ROLLOUTS
                 with _tg_rec.phase('evaluate_rollouts'):
                     await eval_dispatcher.dispatch(0, hf_dir=args.hf_checkpoint)
         else:
@@ -131,11 +131,11 @@ async def train(args):
     # async train loop.
     rollout_data_next_future = rollout_manager.generate.remote(args.start_rollout_id)
     for rollout_id in range(args.start_rollout_id, args.num_rollout):
-        # PATCHED_TRAINING_GYM_TIMING_RECORDER: driver lane active
+        # PATCHED_MODAL_DOJO_TIMING_RECORDER: driver lane active
         with _tg_role('driver', rollout_id) as _tg_rec:
             # Sync the last generation
             if rollout_data_next_future is not None:
-                # PATCHED_TRAINING_GYM_TIMING_WAIT_FOR_ROLLOUT
+                # PATCHED_MODAL_DOJO_TIMING_WAIT_FOR_ROLLOUT
                 with _tg_rec.phase('wait_for_rollout'):
                     rollout_data_curr_ref = await rollout_data_next_future
 
@@ -144,27 +144,27 @@ async def train(args):
                 rollout_data_next_future = rollout_manager.generate.remote(rollout_id + 1)
 
             if args.use_critic:
-                # PATCHED_TRAINING_GYM_TIMING_TRAIN_MODELS
+                # PATCHED_MODAL_DOJO_TIMING_TRAIN_MODELS
                 with _tg_rec.phase('train_models'):
                     values = await critic_model.train(rollout_id, rollout_data_curr_ref)
                 if args.offload_train:
-                    # PATCHED_TRAINING_GYM_TIMING_OFFLOAD_TRAIN
+                    # PATCHED_MODAL_DOJO_TIMING_OFFLOAD_TRAIN
                     with _tg_rec.phase('offload_train'):
                         await critic_model.offload()
                 if rollout_id >= args.num_critic_only_steps:
-                    # PATCHED_TRAINING_GYM_COMPUTE_LOG_PROBS_STATUS: compute_log_probs state
+                    # PATCHED_MODAL_DOJO_COMPUTE_LOG_PROBS_STATUS: compute_log_probs state
                     _tg_report('compute_log_probs', args, rollout_id)
-                    # PATCHED_TRAINING_GYM_TIMING_TRAIN_MODELS
+                    # PATCHED_MODAL_DOJO_TIMING_TRAIN_MODELS
                     with _tg_rec.phase('train_models'):
                         await actor_model.train(rollout_id, rollout_data_curr_ref, external_data=values)
                     if args.offload_train:
-                        # PATCHED_TRAINING_GYM_TIMING_OFFLOAD_TRAIN
+                        # PATCHED_MODAL_DOJO_TIMING_OFFLOAD_TRAIN
                         with _tg_rec.phase('offload_train'):
                             await actor_model.offload()
             else:
-                # PATCHED_TRAINING_GYM_COMPUTE_LOG_PROBS_STATUS: compute_log_probs state
+                # PATCHED_MODAL_DOJO_COMPUTE_LOG_PROBS_STATUS: compute_log_probs state
                 _tg_report('compute_log_probs', args, rollout_id)
-                # PATCHED_TRAINING_GYM_TIMING_TRAIN_MODELS
+                # PATCHED_MODAL_DOJO_TIMING_TRAIN_MODELS
                 with _tg_rec.phase('train_models'):
                     await actor_model.train(rollout_id, rollout_data_curr_ref)
             remove_rollout_data_refs(args, rollout_data_curr_ref)
@@ -173,14 +173,14 @@ async def train(args):
             if external_save or should_run_periodic_action(
                 rollout_id, args.save_interval, num_rollout_per_epoch, args.num_rollout
             ):
-                # PATCHED_TRAINING_GYM_CHECKPOINT_SAVE_STATUS: checkpoint save state
+                # PATCHED_MODAL_DOJO_CHECKPOINT_SAVE_STATUS: checkpoint save state
                 _tg_report('checkpoint_save', args, rollout_id)
                 force_sync = external_save or rollout_id == args.num_rollout - 1
-                # PATCHED_TRAINING_GYM_TIMING_CHECKPOINT_SAVE
+                # PATCHED_MODAL_DOJO_TIMING_CHECKPOINT_SAVE
                 with _tg_rec.phase('checkpoint_save'):
                     await save_training_model(actor_model, rollout_id, force_sync)
                 if args.use_critic:
-                    # PATCHED_TRAINING_GYM_TIMING_CHECKPOINT_SAVE
+                    # PATCHED_MODAL_DOJO_TIMING_CHECKPOINT_SAVE
                     with _tg_rec.phase('checkpoint_save'):
                         await save_training_model(critic_model, rollout_id, force_sync)
                 await rollout_manager.save.remote(rollout_id)
@@ -188,20 +188,20 @@ async def train(args):
                     os.remove(args.save_trigger_sentinel)
 
             if (rollout_id + 1) % args.update_weights_interval == 0:
-                # PATCHED_TRAINING_GYM_TIMING_WAIT_FOR_NEXT_ROLLOUT
+                # PATCHED_MODAL_DOJO_TIMING_WAIT_FOR_NEXT_ROLLOUT
                 with _tg_rec.phase('wait_for_next_rollout'):
                     # sync generate before update weights to prevent update weight in the middle of generation
                     rollout_data_curr_ref = (await x) if (x := rollout_data_next_future) is not None else None
                     rollout_data_next_future = None
-                # PATCHED_TRAINING_GYM_WEIGHT_SYNC_STATUS: weight_sync state
+                # PATCHED_MODAL_DOJO_WEIGHT_SYNC_STATUS: weight_sync state
                 _tg_report('weight_sync', args, rollout_id)
-                # PATCHED_TRAINING_GYM_TIMING_WEIGHT_SYNC
+                # PATCHED_MODAL_DOJO_TIMING_WEIGHT_SYNC
                 with _tg_rec.phase('weight_sync'):
                     await actor_model.update_weights(rollout_id=rollout_id)
 
             if should_run_periodic_action(rollout_id, args.eval_interval, num_rollout_per_epoch, args.num_rollout):
                 if not args.eval_uses_snapshots:
-                    # PATCHED_TRAINING_GYM_TIMING_EVALUATE_ROLLOUTS_END
+                    # PATCHED_MODAL_DOJO_TIMING_EVALUATE_ROLLOUTS_END
                     with _tg_rec.phase('evaluate_rollouts_end'):
                         await eval_dispatcher.dispatch(rollout_id, force=rollout_id == args.num_rollout - 1)
                 else:
@@ -219,7 +219,7 @@ async def train(args):
                 break
 
     with _tg_role('driver', None) as _tg_rec:
-        # PATCHED_TRAINING_GYM_TIMING_EVALUATE_ROLLOUTS_END
+        # PATCHED_MODAL_DOJO_TIMING_EVALUATE_ROLLOUTS_END
         with _tg_rec.phase('evaluate_rollouts_end'):
             await eval_dispatcher.drain()
     await rollout_manager.dispose.remote()

@@ -125,13 +125,13 @@ def test_recipe_hooks_ship_closures_to_framework_destinations(recipe_cls):
         fields["rollout_function_path"],
         config[reward_key] if recipe_cls is SlimeRecipe else fields[reward_key],
         *(
-            config[f"training_gym_{name}_path"]
+            config[f"modal_dojo_{name}_path"]
             for name in _WRAPPED_HOOKS
             if getattr(recipe, name) is None
         ),
     ]
     assert shipped == set(destinations)
     assert all(".phase_reporting." in fields[f"{n}_path"] for n in _WRAPPED_HOOKS)
-    assert config["training_gym_custom_eval_rollout_log_function_path"] == (
+    assert config["modal_dojo_custom_eval_rollout_log_function_path"] == (
         "user.eval_hook"
     )

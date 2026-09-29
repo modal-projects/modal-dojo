@@ -1,7 +1,7 @@
 """Mirror the scalars Slime and Miles log through ``wandb`` into the dashboard.
 
 A ``.pth`` in the training image imports this module in every interpreter, and
-``bootstrap()`` picks the ``wandb`` surface from ``TRAINING_GYM_METRIC_PROVIDER``:
+``bootstrap()`` picks the ``wandb`` surface from ``MODAL_DOJO_METRIC_PROVIDER``:
 
 - ``dashboard`` (``DashboardMetricConfig``): a W&B-shaped shim whose only sink
   is the dashboard.
@@ -31,12 +31,12 @@ from typing import Any, ClassVar
 
 from modal_dojo.common.metrics import MetricConfig
 
-PROVIDER_ENV = "TRAINING_GYM_METRIC_PROVIDER"
+PROVIDER_ENV = "MODAL_DOJO_METRIC_PROVIDER"
 FLUSH_INTERVAL_SECONDS = 2.0
 
 _PTH_FILE = "_training_gym_metric_mirror.pth"
 _PTH_LINE = (
-    "import os; not os.environ.get('TRAINING_GYM_METRIC_PROVIDER') "
+    "import os; not os.environ.get('MODAL_DOJO_METRIC_PROVIDER') "
     "or __import__('modal_dojo.common.metric_mirror', "
     "fromlist=['bootstrap']).bootstrap()\n"
 )
@@ -44,7 +44,7 @@ _PTH_LINE = (
 
 @dataclass
 class DashboardMetricConfig(MetricConfig):
-    """Log framework metrics to the Training Gym dashboard only.
+    """Log framework metrics to the Modal Dojo dashboard only.
 
     Slime and Miles keep calling ``wandb.*``; a W&B-shaped shim routes the
     scalars to the dashboard's Metrics tab. No W&B account, API key or Trackio
@@ -184,7 +184,7 @@ def mirror_log(
     try:
         with _MIRROR_LOCK:
             if _MIRROR is None:
-                if not (run_id := os.environ.get("TRAINING_GYM_TRAINING_RUN_ID")):
+                if not (run_id := os.environ.get("MODAL_DOJO_TRAINING_RUN_ID")):
                     return
                 from modal_dojo.common.reporting import register_pre_drain_hook
 
@@ -231,9 +231,9 @@ def install_wandb_tee() -> None:
 def patch_wandb_module() -> None:
     """Tee ``Run.log``, which ``wandb.log`` dispatches to after ``init``."""
     run_cls = import_module("wandb.sdk.wandb_run").Run
-    if "_training_gym_mirror" in vars(run_cls):
+    if "_modal_dojo_mirror" in vars(run_cls):
         return
-    run_cls._training_gym_mirror = True
+    run_cls._modal_dojo_mirror = True
     original_log = run_cls.log
 
     def log(

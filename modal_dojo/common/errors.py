@@ -1,5 +1,5 @@
 class DojoError(ValueError):
-    """Base error for Training Gym."""
+    """Base error for Modal Dojo."""
 
 
 class DojoConfigError(DojoError):

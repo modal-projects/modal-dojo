@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-PREAMBLE_MARKER = "PATCHED_TRAINING_GYM_PREAMBLE"
+PREAMBLE_MARKER = "PATCHED_MODAL_DOJO_PREAMBLE"
 
 PREAMBLE = (
     f"# {PREAMBLE_MARKER}: bootstrap phase reporter (runs once per process)\n"
@@ -29,7 +29,7 @@ PREAMBLE = (
 # indent. Anchors target miles' await-style driver loop.
 _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
     (
-        "PATCHED_TRAINING_GYM_ROLLOUT_STATUS",
+        "PATCHED_MODAL_DOJO_ROLLOUT_STATUS",
         "initialize_rollouts",
         "None",
         re.compile(
@@ -39,7 +39,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         ),
     ),
     (
-        "PATCHED_TRAINING_GYM_GENERATE_ROLLOUT_STATUS",
+        "PATCHED_MODAL_DOJO_GENERATE_ROLLOUT_STATUS",
         "generate_rollouts",
         "rollout_id",
         re.compile(
@@ -49,7 +49,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         ),
     ),
     (
-        "PATCHED_TRAINING_GYM_COMPUTE_LOG_PROBS_STATUS",
+        "PATCHED_MODAL_DOJO_COMPUTE_LOG_PROBS_STATUS",
         # actor_model.train() first recomputes log probs in the train actor
         # (which has no rollout_id), so report the phase from the driver loop.
         "compute_log_probs",
@@ -61,7 +61,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         ),
     ),
     (
-        "PATCHED_TRAINING_GYM_OFFLOAD_ROLLOUT_STATUS",
+        "PATCHED_MODAL_DOJO_OFFLOAD_ROLLOUT_STATUS",
         "offload_rollout",
         "rollout_id",
         re.compile(
@@ -71,7 +71,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         ),
     ),
     (
-        "PATCHED_TRAINING_GYM_OFFLOAD_TRAIN_STATUS",
+        "PATCHED_MODAL_DOJO_OFFLOAD_TRAIN_STATUS",
         "offload_train",
         "rollout_id",
         re.compile(
@@ -80,7 +80,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         ),
     ),
     (
-        "PATCHED_TRAINING_GYM_WEIGHT_SYNC_STATUS",
+        "PATCHED_MODAL_DOJO_WEIGHT_SYNC_STATUS",
         "weight_sync",
         "rollout_id",
         re.compile(
@@ -91,7 +91,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
     ),
 ]
 
-CHECKPOINT_SAVE_MARKER = "PATCHED_TRAINING_GYM_CHECKPOINT_SAVE_STATUS"
+CHECKPOINT_SAVE_MARKER = "PATCHED_MODAL_DOJO_CHECKPOINT_SAVE_STATUS"
 _CHECKPOINT_SAVE_PATTERN = re.compile(
     r"^(?P<indent>[ \t]*)(?P<guard>if "
     r"(?:external_save or )?should_run_periodic_action\("

@@ -1,4 +1,4 @@
-"""Deploy the training-gym dashboard to Modal.
+"""Deploy the modal-dojo dashboard to Modal.
 
 Usage (CLI):
     modal-dojo setup
@@ -57,7 +57,7 @@ def setup(
     trajectory_viewer: str | Path | None = None,
     reset_trajectory_viewer: bool = False,
 ) -> str:
-    """Deploy the training-gym dashboard, persist its URL, and return it.
+    """Deploy the modal-dojo dashboard, persist its URL, and return it.
 
     ``interactive=False`` resolves Modal credentials silently (from env vars
     or ``~/.modal.toml``) and never prompts — used by the auto-deploy path in
@@ -289,7 +289,7 @@ def open_dashboard() -> str | None:
 
     if not web_url:
         print(
-            "No deployed training-gym dashboard found. "
+            "No deployed modal-dojo dashboard found. "
             "Run `modal-dojo setup` to deploy it first."
         )
         return None
@@ -328,12 +328,12 @@ def ensure_dashboard_deployed() -> str | None:
             if not is_dashboard_upgrade(incoming, deployed):
                 return web_url
             print(
-                f"Training-gym dashboard ({DASHBOARD_APP_NAME!r}) is older than "
+                f"modal-dojo dashboard ({DASHBOARD_APP_NAME!r}) is older than "
                 f"this dashboard ({incoming}): redeploying it."
             )
         else:
             print(
-                f"Training-gym dashboard ({DASHBOARD_APP_NAME!r}) is not deployed: "
+                f"modal-dojo dashboard ({DASHBOARD_APP_NAME!r}) is not deployed: "
                 "deploying it now."
             )
         return setup(
@@ -342,7 +342,7 @@ def ensure_dashboard_deployed() -> str | None:
         )
     except Exception as exc:
         print(
-            f"WARNING: could not ensure the training-gym dashboard is deployed: "
+            f"WARNING: could not ensure the modal-dojo dashboard is deployed: "
             f"{exc}. Continuing without dashboard status reporting; run "
             "`modal-dojo setup` to deploy it manually."
         )

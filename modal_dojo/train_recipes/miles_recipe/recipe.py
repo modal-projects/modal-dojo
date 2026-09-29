@@ -99,10 +99,10 @@ _HOOK_PATH_FLAGS = {
 }
 
 _HOOK_PATH_CONFIG_KEYS = {
-    "custom_rollout_log_function": "training_gym_custom_rollout_log_function_path",
-    "custom_eval_rollout_log_function": "training_gym_custom_eval_rollout_log_function_path",
-    "custom_megatron_before_log_prob_hook": "training_gym_custom_megatron_before_log_prob_hook_path",
-    "custom_megatron_before_train_step_hook": "training_gym_custom_megatron_before_train_step_hook_path",
+    "custom_rollout_log_function": "modal_dojo_custom_rollout_log_function_path",
+    "custom_eval_rollout_log_function": "modal_dojo_custom_eval_rollout_log_function_path",
+    "custom_megatron_before_log_prob_hook": "modal_dojo_custom_megatron_before_log_prob_hook_path",
+    "custom_megatron_before_train_step_hook": "modal_dojo_custom_megatron_before_train_step_hook_path",
 }
 
 _HOOK_WRAPPER_PATHS = {
@@ -714,7 +714,7 @@ class MilesRecipe(BaseTrainRecipe):
     def _resolve_callable_paths(self) -> "MilesRecipe":
         cfg = dict(self.extra_config) if isinstance(self.extra_config, dict) else {}
         for field_name, config_key in _HOOK_PATH_CONFIG_KEYS.items():
-            native_key = config_key.removeprefix("training_gym_")
+            native_key = config_key.removeprefix("modal_dojo_")
             native_value = cfg.pop(native_key, None)
             value = getattr(self, field_name)
             if cfg.get(config_key):

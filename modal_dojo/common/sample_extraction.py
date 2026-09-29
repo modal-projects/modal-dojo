@@ -22,12 +22,12 @@ from modal_dojo.common.sample import Sample
 
 # Import path of the run model's response parser (a (str) -> ParsedResponse
 # callable). The launcher exports it; the recorder resolves and applies it.
-RESPONSE_PARSER_PATH_ENV = "TRAINING_GYM_RESPONSE_PARSER_PATH"
+RESPONSE_PARSER_PATH_ENV = "MODAL_DOJO_RESPONSE_PARSER_PATH"
 # Per-sample execution-trace capture (off by default — traces inflate rollout
 # payloads). When on, only the first TRACE_SAMPLE_LIMIT_ENV samples of each
 # rollout carry a trace, and only timing/scalar attributes are kept.
-CAPTURE_TRACE_ENV = "TRAINING_GYM_CAPTURE_TRACE"
-TRACE_SAMPLE_LIMIT_ENV = "TRAINING_GYM_TRACE_SAMPLE_LIMIT"
+CAPTURE_TRACE_ENV = "MODAL_DOJO_CAPTURE_TRACE"
+TRACE_SAMPLE_LIMIT_ENV = "MODAL_DOJO_TRACE_SAMPLE_LIMIT"
 _TRACE_SAMPLE_LIMIT_DEFAULT = 16
 # Backstops so a pathological trace can't blow up the payload we already keep
 # small by sampling + dropping payload-bearing attributes.
@@ -36,7 +36,7 @@ _TRACE_ATTR_STR_MAX = 200
 # Input-image capture (image-modality runs). The limit bounds *distinct* images, not
 # samples: a prompt group's ``n_samples_per_prompt`` samples share one screenshot. Each
 # distinct image is thumbnailed and size-capped before it goes on the payload.
-IMAGE_SAMPLE_LIMIT_ENV = "TRAINING_GYM_IMAGE_SAMPLE_LIMIT"
+IMAGE_SAMPLE_LIMIT_ENV = "MODAL_DOJO_IMAGE_SAMPLE_LIMIT"
 _IMAGE_LIMIT_DEFAULT = 16
 _IMAGE_MAX_DIM = 512
 _IMAGE_MAX_BYTES = 256 * 1024
@@ -47,7 +47,7 @@ _IMAGE_REF_CHARS = 16
 # content is length-capped — enough for the dashboard's ConversationView to render
 # the conversation without bloating the rollout payload. Without it, multi-turn
 # rollouts (e.g. toolathlon) collapse to a single flat block on the dashboard.
-TRAJECTORY_SAMPLE_LIMIT_ENV = "TRAINING_GYM_TRAJECTORY_SAMPLE_LIMIT"
+TRAJECTORY_SAMPLE_LIMIT_ENV = "MODAL_DOJO_TRAJECTORY_SAMPLE_LIMIT"
 _TRAJECTORY_SAMPLE_LIMIT_DEFAULT = 16
 _TRAJECTORY_MSG_CHARS_MAX = 8000
 _TRAJECTORY_MAX_MESSAGES = 128
@@ -112,7 +112,7 @@ _SHAPED_REWARD_KEY = "shaped_reward"
 
 
 def _sample_score(sample: Sample, reward: float | None = None) -> float:
-    """Resolve reward score from a training gym Sample.
+    """Resolve reward score from a Modal Dojo Sample.
 
     Resolution order:
 

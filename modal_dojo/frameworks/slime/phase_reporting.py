@@ -92,15 +92,15 @@ from modal_dojo.common.sample_extraction import (
     _trace_scalar as _trace_scalar,
 )
 
-CUSTOM_ROLLOUT_LOG_FUNCTION_PATH_KEY = "training_gym_custom_rollout_log_function_path"
+CUSTOM_ROLLOUT_LOG_FUNCTION_PATH_KEY = "modal_dojo_custom_rollout_log_function_path"
 CUSTOM_EVAL_ROLLOUT_LOG_FUNCTION_PATH_KEY = (
-    "training_gym_custom_eval_rollout_log_function_path"
+    "modal_dojo_custom_eval_rollout_log_function_path"
 )
 CUSTOM_BEFORE_LOG_PROB_HOOK_PATH_KEY = (
-    "training_gym_custom_megatron_before_log_prob_hook_path"
+    "modal_dojo_custom_megatron_before_log_prob_hook_path"
 )
 CUSTOM_BEFORE_TRAIN_STEP_HOOK_PATH_KEY = (
-    "training_gym_custom_megatron_before_train_step_hook_path"
+    "modal_dojo_custom_megatron_before_train_step_hook_path"
 )
 
 

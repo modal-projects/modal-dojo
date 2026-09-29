@@ -42,7 +42,7 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
-      - name: Deploy gym-model-synmon on Modal
+      - name: Deploy Modal Dojo model synmon on Modal
         run: >
           uv run modal deploy
           -m synthetic_monitoring.model_validation::app

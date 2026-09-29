@@ -1,4 +1,4 @@
-# PATCHED_TRAINING_GYM_TIMING_PREAMBLE: bootstrap substep-timing recorder
+# PATCHED_MODAL_DOJO_TIMING_PREAMBLE: bootstrap substep-timing recorder
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
@@ -36,7 +36,7 @@ except ImportError:
     def _tg_time_phase(name):
         yield
 
-# PATCHED_TRAINING_GYM_PREAMBLE: bootstrap phase reporter (runs once per process)
+# PATCHED_MODAL_DOJO_PREAMBLE: bootstrap phase reporter (runs once per process)
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
@@ -66,7 +66,7 @@ def train(args):
 
     # create the rollout manager, with sglang engines inside.
     # need to initialize rollout manager first to calculate num_rollout
-    # PATCHED_TRAINING_GYM_ROLLOUT_STATUS: rollout engine startup state
+    # PATCHED_MODAL_DOJO_ROLLOUT_STATUS: rollout engine startup state
     _tg_report('initialize_rollouts', args)
     rollout_manager, num_rollout_per_epoch = create_rollout_manager(args, pgs["rollout"])
 
@@ -84,11 +84,11 @@ def train(args):
     # async train loop.
     rollout_data_next_future = rollout_manager.generate.remote(args.start_rollout_id)
     for rollout_id in range(args.start_rollout_id, args.num_rollout):
-        # PATCHED_TRAINING_GYM_TIMING_RECORDER: driver lane active
+        # PATCHED_MODAL_DOJO_TIMING_RECORDER: driver lane active
         with _tg_role('driver', rollout_id) as _tg_rec:
             # Sync the last generation
             if rollout_data_next_future is not None:
-                # PATCHED_TRAINING_GYM_TIMING_WAIT_FOR_ROLLOUT
+                # PATCHED_MODAL_DOJO_TIMING_WAIT_FOR_ROLLOUT
                 with _tg_rec.phase('wait_for_rollout'):
                     rollout_data_curr_ref = ray.get(rollout_data_next_future)
 
@@ -100,29 +100,29 @@ def train(args):
                 actor_model.create()
 
             actor_trains = (not args.use_critic) or rollout_id >= args.num_critic_only_steps
-            # PATCHED_TRAINING_GYM_TIMING_TRAIN_MODELS
+            # PATCHED_MODAL_DOJO_TIMING_TRAIN_MODELS
             with _tg_rec.phase('train_models'):
                 if args.use_critic:
                     value_refs = critic_model.async_train(rollout_id, rollout_data_curr_ref)
                     if actor_trains:
-                        # PATCHED_TRAINING_GYM_COMPUTE_LOG_PROBS_STATUS: compute log probs state
+                        # PATCHED_MODAL_DOJO_COMPUTE_LOG_PROBS_STATUS: compute log probs state
                         _tg_report('compute_log_probs', args, rollout_id)
                         ray.get(actor_model.async_train(rollout_id, rollout_data_curr_ref, external_data=value_refs))
                     else:
                         ray.get(value_refs)
                 else:
-                    # PATCHED_TRAINING_GYM_COMPUTE_LOG_PROBS_STATUS: compute log probs state
+                    # PATCHED_MODAL_DOJO_COMPUTE_LOG_PROBS_STATUS: compute log probs state
                     _tg_report('compute_log_probs', args, rollout_id)
                     ray.get(actor_model.async_train(rollout_id, rollout_data_curr_ref))
 
-            # PATCHED_TRAINING_GYM_STEP_FINISH: training step finish
+            # PATCHED_MODAL_DOJO_STEP_FINISH: training step finish
             _tg_report('weight_sync', args, rollout_id, 'finish')
             if release_train or should_run_periodic_action(
                 rollout_id, args.save_interval, num_rollout_per_epoch, args.num_rollout
             ):
-                # PATCHED_TRAINING_GYM_TIMING_CHECKPOINT_SAVE
+                # PATCHED_MODAL_DOJO_TIMING_CHECKPOINT_SAVE
                 with _tg_rec.phase('checkpoint_save'):
-                    # PATCHED_TRAINING_GYM_CHECKPOINT_SAVE_STATUS: checkpoint save state
+                    # PATCHED_MODAL_DOJO_CHECKPOINT_SAVE_STATUS: checkpoint save state
                     _tg_report('checkpoint_save', args, rollout_id)
                     force_sync = release_train or rollout_id == args.num_rollout - 1
                     if actor_trains:
@@ -133,24 +133,24 @@ def train(args):
                         ray.get(rollout_manager.save.remote(rollout_id))
 
             if release_train or (rollout_id + 1) % args.update_weights_interval == 0:
-                # PATCHED_TRAINING_GYM_TIMING_WAIT_FOR_NEXT_ROLLOUT
+                # PATCHED_MODAL_DOJO_TIMING_WAIT_FOR_NEXT_ROLLOUT
                 with _tg_rec.phase('wait_for_next_rollout'):
                     # sync generate before update weights to prevent update weight in the middle of generation
                     rollout_data_curr_ref = ray.get(x) if (x := rollout_data_next_future) is not None else None
                     rollout_data_next_future = None
-                # PATCHED_TRAINING_GYM_TIMING_WEIGHT_SYNC
+                # PATCHED_MODAL_DOJO_TIMING_WEIGHT_SYNC
                 with _tg_rec.phase('weight_sync'):
-                    # PATCHED_TRAINING_GYM_WEIGHT_SYNC_STATUS: weight sync state
+                    # PATCHED_MODAL_DOJO_WEIGHT_SYNC_STATUS: weight sync state
                     _tg_report('weight_sync', args, rollout_id)
                     actor_model.update_weights()
 
             if should_run_periodic_action(rollout_id, args.eval_interval, num_rollout_per_epoch):
-                # PATCHED_TRAINING_GYM_TIMING_EVALUATE_ROLLOUTS_END
+                # PATCHED_MODAL_DOJO_TIMING_EVALUATE_ROLLOUTS_END
                 with _tg_rec.phase('evaluate_rollouts_end'):
-                    # PATCHED_TRAINING_GYM_EVAL_END: eval-after-train substep start
+                    # PATCHED_MODAL_DOJO_EVAL_END: eval-after-train substep start
                     _tg_report('evaluate_rollouts', args, rollout_id, 'eval_end')
                     ray.get(rollout_manager.eval.remote(rollout_id))
-            # PATCHED_TRAINING_GYM_SUBSTEP_FINISH: end-of-iteration substep boundary
+            # PATCHED_MODAL_DOJO_SUBSTEP_FINISH: end-of-iteration substep boundary
             _tg_report('weight_sync', args, rollout_id, 'substep_finish')
 
     ray.get(rollout_manager.dispose.remote())

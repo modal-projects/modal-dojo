@@ -93,7 +93,7 @@ def _total_step_time_s(result: "ValidationResult") -> float:
 
     Reported instead of wall clock, which also covers queue, model download and
     checkpoint conversion time — variable with compute availability rather than
-    gym performance.
+    Modal Dojo performance.
     """
     return float(
         sum(step.get("duration_s") or 0 for step in (result.step_times or {}).values())

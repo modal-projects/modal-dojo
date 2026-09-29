@@ -1,4 +1,4 @@
-"""Identity of the deployed training-gym dashboard app.
+"""Identity of the deployed modal-dojo dashboard app.
 
 Lives in ``common`` so library code — ``common.config``, the launchers — can
 resolve the live dashboard without importing ``cli``, which imports ``common``.
@@ -13,11 +13,11 @@ DASHBOARD_WEB_FUNCTION = "fastapi_app"
 
 # Set on a per-PR dashboard deploy (scripts/previews/dashboard_api.py) so it
 # serves the API without the scheduled jobs that rewrite shared metadata.
-DASHBOARD_PREVIEW_ENV_KEY = "TRAINING_GYM_DASHBOARD_PREVIEW"
+DASHBOARD_PREVIEW_ENV_KEY = "MODAL_DOJO_DASHBOARD_PREVIEW"
 DASHBOARD_VERSION_ENV_KEY = "DASHBOARD_VERSION"
 
 # Bump when the deployed dashboard frontend or backend changes.
-DASHBOARD_VERSION = 4
+DASHBOARD_VERSION = 5
 
 
 def current_dashboard_version() -> str:

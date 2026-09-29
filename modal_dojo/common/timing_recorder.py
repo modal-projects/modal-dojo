@@ -10,9 +10,9 @@ from typing import Callable, Iterator, cast
 
 from modal_dojo.common import reporting
 
-TIMING_MODE_ENV = "TRAINING_GYM_SUBSTEP_TIMING"
-TIMING_DEBUG_ENV = "TRAINING_GYM_TIMING_DEBUG"
-LOSS_TYPE_ENV = "TRAINING_GYM_LOSS_TYPE"
+TIMING_MODE_ENV = "MODAL_DOJO_SUBSTEP_TIMING"
+TIMING_DEBUG_ENV = "MODAL_DOJO_TIMING_DEBUG"
+LOSS_TYPE_ENV = "MODAL_DOJO_LOSS_TYPE"
 
 MIN_PUBLISH_INTERVAL_S = 3.0
 MAX_PHASE_INVOCATIONS = 10_000
@@ -167,7 +167,7 @@ class RoleRecorder:
                         )
             if dropped:
                 print(
-                    f"[training-gym] dropping timing phase {name!r}: "
+                    f"[modal-dojo] dropping timing phase {name!r}: "
                     f"maximum of {MAX_TIMING_PHASES} phases reached",
                     flush=True,
                 )
@@ -195,7 +195,7 @@ class RoleRecorder:
             reason = "timing_off"
         training_run_id = ""
         if reason is None:
-            training_run_id = os.environ.get("TRAINING_GYM_TRAINING_RUN_ID", "")
+            training_run_id = os.environ.get("MODAL_DOJO_TRAINING_RUN_ID", "")
             if not training_run_id:
                 reason = "no_run_id"
         if reason is None:
@@ -269,7 +269,7 @@ class RoleRecorder:
 
 
 _ACTIVE_LANE: ContextVar[RoleRecorder | None] = ContextVar(
-    "training_gym_active_lane", default=None
+    "modal_dojo_active_lane", default=None
 )
 
 

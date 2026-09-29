@@ -101,7 +101,7 @@ def store_dashboard_component(
         "filename": path.name,
         "size": len(data),
         "path": remote_path,
-        "contract": "training-gym-dashboard-component/v1",
+        "contract": "modal-dojo-dashboard-component/v1",
     }
     if training_run_id:
         manifest["training_run_id"] = training_run_id

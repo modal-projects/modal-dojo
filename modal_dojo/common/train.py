@@ -224,7 +224,7 @@ class _TrainStatusDisplay:
         self._get_console().print(
             Panel(
                 body,
-                title="[bold]Training Gym[/bold]",
+                title="[bold]Modal Dojo[/bold]",
                 title_align="left",
                 border_style="cyan",
                 padding=(1, 2),
@@ -301,7 +301,7 @@ class _TrainStatusDisplay:
                 stop.wait(interval)
 
         thread = threading.Thread(
-            target=_poll, name="training-gym-status-poller", daemon=True
+            target=_poll, name="modal-dojo-status-poller", daemon=True
         )
         self._poll_stop = stop
         self._poll_thread = thread
