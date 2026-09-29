@@ -445,6 +445,8 @@ def install_wandb_shim() -> None:
         return result
 
     def finish(*_args: Any, **_kwargs: Any) -> Any:
+        if shim.run is None:
+            return None
         try:
             return trackio.finish()
         finally:
