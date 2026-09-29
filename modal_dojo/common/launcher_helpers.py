@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import functools
 from contextlib import asynccontextmanager, contextmanager
 import inspect
 import os
@@ -23,6 +24,8 @@ from typing import Any, Callable
 
 import cloudpickle
 from modal import Image, Retries, Volume
+from modal.exception import InputCancellation, InvalidError
+from modal.experimental import get_cluster_info
 
 from modal_dojo.common import COMMON_DOJO_TAGS, modal_tag_value
 from modal_dojo.common.framework import (
@@ -723,7 +726,7 @@ async def training_run_lifecycle(run_record: TrainingRun, status_token: str = ""
 
     try:
         yield set_status
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError, InputCancellation):
         mark_run_stopped(run_record)
         raise
     except BaseException as exc:
@@ -738,6 +741,39 @@ async def training_run_lifecycle(run_record: TrainingRun, status_token: str = ""
                 await latest.save(is_async=True)
             except Exception as exc:
                 print(f"Failed to save run record: {exc}")
+
+
+def _is_head_container() -> bool:
+    try:
+        return get_cluster_info().rank == 0
+    except InvalidError:
+        return True
+
+
+def record_run_failure(training_run_id: str) -> Callable[[Callable], Callable]:
+    def decorate(train: Callable) -> Callable:
+        @functools.wraps(train)
+        async def wrapped(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return await train(*args, **kwargs)
+            except BaseException:
+                if not _is_head_container():
+                    raise
+                try:
+                    run_record = await TrainingRun.from_id(
+                        training_run_id, is_async=True
+                    )
+                except Exception as exc:
+                    print(f"Failed to load run record: {exc}")
+                else:
+                    if run_record.status is TrainingRunStatus.RUNNING:
+                        async with training_run_lifecycle(run_record):
+                            raise
+                raise
+
+        return wrapped
+
+    return decorate
 
 
 def check_training_result(result: Any, run_record: TrainingRun) -> None:

@@ -820,6 +820,7 @@ def build_miles_app(
         miles.total_nodes,
         gpu_type=miles.gpu_type,
     )
+    @shared.record_run_failure(training_run_id)
     async def train(
         modal_app_id: str = "",
         modal_app_url: str = "",

@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import modal.exception
 import pytest
 
 from modal_dojo.common.framework import Framework
-from modal_dojo.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.run import (
+    _MAX_CONSECUTIVE_TRANSIENT_ERRORS,
+    TrainingRun,
+    TrainingRunStatus,
+)
 
 
 def _run(status: TrainingRunStatus) -> TrainingRun:
@@ -138,6 +143,56 @@ def test_done_keeps_terminal_metadata_when_function_call_dies(fake_volume):
 
 
 def test_done_is_false_while_function_call_is_pending(fake_volume):
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _PendingCall()
+
+    assert run.done() is False
+    assert run.status is TrainingRunStatus.RUNNING
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        modal.exception.ConnectionError("network down"),
+        modal.exception.ResourceExhaustedError("rate limited"),
+        modal.exception.ServiceError("unavailable"),
+    ],
+)
+def test_done_is_false_when_status_check_hits_transport_error(exc, fake_volume):
+    class _FlakyCall:
+        def get(self, timeout=None):
+            del timeout
+            raise exc
+
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _FlakyCall()
+
+    assert run.done() is False
+    assert run.status is TrainingRunStatus.RUNNING
+    assert run.error is None
+
+
+def test_done_fails_after_consecutive_transient_errors(fake_volume):
+    class _FlakyCall:
+        def get(self, timeout=None):
+            del timeout
+            raise modal.exception.ServiceError("remote failed")
+
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _FlakyCall()
+
+    for _ in range(_MAX_CONSECUTIVE_TRANSIENT_ERRORS - 1):
+        assert run.done() is False
+    assert run.done() is True
+    assert run.status is TrainingRunStatus.FAILED
+    assert run.error == "remote failed"
+
+
+def test_done_is_false_when_metadata_reload_hits_transport_error(monkeypatch):
+    def _flaky_from_id(run_id):
+        raise modal.exception.ServiceError("unavailable")
+
+    monkeypatch.setattr(TrainingRun, "from_id", _flaky_from_id)
     run = _run(TrainingRunStatus.RUNNING)
     run._function_call = _PendingCall()
 
