@@ -5,12 +5,24 @@ from pathlib import Path
 import pytest
 
 from modal_training_gym.frameworks.miles.modal_helpers.patches import (
+    patch_glm_5_3_flash_fp8_device as fp8,
     patch_glm_5_3_flash_kda as kda,
     patch_glm_5_3_flash_timing as glm,
     patch_rollout_status_reporting as status,
 )
 
 SNAPSHOTS = Path(__file__).parent / "testdata/miles/glm_5_3_flash"
+
+
+def test_fp8_reader_uses_rank_device_for_weights_and_separate_scale_shards():
+    source = (SNAPSHOTS / "dequant_fp8_safetensor_io.py.input").read_text()
+    patched = fp8.patch_source(source)
+    assert patched == (SNAPSHOTS / "dequant_fp8_safetensor_io.py.output").read_text()
+    compile(patched, "dequant_fp8_safetensor_io.py", "exec")
+    assert fp8.patch_source(patched) == patched
+    assert patched.count('device=f"cuda:{torch.cuda.current_device()}"') == 2
+    with pytest.raises(ValueError, match="device anchors"):
+        fp8.patch_source(source.replace('device="cuda"', 'device="cpu"', 1))
 
 
 def test_kda_kernel_hoists_python_call_out_of_triton_jit():

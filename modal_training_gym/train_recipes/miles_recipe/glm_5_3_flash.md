@@ -24,14 +24,16 @@ supplies SGLang `9a26e749` and Megatron `e8f57451`. The Miles overlay includes
 the final SwiGLU clamp and architecture corrections missing from the original
 image. The shared image and other presets are unchanged.
 
-Two recipe-scoped adapters are necessary. The KDA patch backports the PR's
+Three recipe-scoped adapters are necessary. The KDA patch backports the PR's
 `next_power_of_2` hoist to the image's FLA 0.4.2 kernel; Triton 3.7 rejects that
 Python call inside a JIT function. The timing adapter instruments the merged
 Miles synchronous driver, logprob computation, forward/backward, and optimizer
-step because their source no longer matches the shared timing patch. Both
+step because their source no longer matches the shared timing patch. All three
 adapters fail on unexpected source changes and have golden snapshot tests.
 The timing adapter covers the synchronous preset; asynchronous training has
-not been validated with this image.
+not been validated with this image. The FP8 reader adapter explicitly selects
+each rank's current CUDA device: safetensors interprets bare `cuda` as GPU 0,
+which causes the dequantization kernel to fail on the other conversion ranks.
 
 The public checkpoint is approximately 328 GB of block-FP8 tensors. The image's
 inherited DeepSeek mbridge reader dequantizes `weight_scale_inv` tensors to

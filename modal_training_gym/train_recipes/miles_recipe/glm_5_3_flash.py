@@ -21,7 +21,11 @@ _PATCH_DIR = (
 def _image_patches() -> list[str]:
     return [
         f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
-        for name in ("patch_glm_5_3_flash_kda", "patch_glm_5_3_flash_timing")
+        for name in (
+            "patch_glm_5_3_flash_kda",
+            "patch_glm_5_3_flash_timing",
+            "patch_glm_5_3_flash_fp8_device",
+        )
     ]
 
 
