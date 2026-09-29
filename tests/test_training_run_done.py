@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from modal_dojo.common.errors import TrainingGymError
+from modal_dojo.common.errors import DojoError
 from modal_dojo.common.framework import Framework
 from modal_dojo.common.run import (
     TrainingRun,
@@ -299,7 +299,7 @@ def test_stop_refuses_run_without_modal_app(monkeypatch, fake_volume):
     run = _run(TrainingRunStatus.RUNNING)
     run.save()
 
-    with pytest.raises(TrainingGymError, match="still launching"):
+    with pytest.raises(DojoError, match="still launching"):
         run.stop()
 
     assert TrainingRun.from_id("run-1").status is TrainingRunStatus.RUNNING

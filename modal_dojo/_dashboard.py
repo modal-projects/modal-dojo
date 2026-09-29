@@ -69,7 +69,7 @@ from modal_dojo.common.dashboard_components import (
     MAX_COMPONENT_BYTES,
     DashboardComponent,
 )
-from modal_dojo.common.errors import TrainingGymError
+from modal_dojo.common.errors import DojoError
 from modal_dojo.common.run import (
     FrameworkStatusUpdate,
     TrainingRun,
@@ -1275,7 +1275,7 @@ def fastapi_app():
         run = await _get_run_or_404(training_run_id)
         try:
             stopped = await run_in_threadpool(run.stop)
-        except TrainingGymError as exc:
+        except DojoError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         except Exception as exc:
             raise HTTPException(
