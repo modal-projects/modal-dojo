@@ -39,6 +39,7 @@ Repo: https://github.com/modal-projects/modal-dojo
 ### Migration
 
 - [Migrating to the new dataset API](https://dojo.modal.dev/guides/dataset-migration)
+- [Migrating from Training Gym to Modal Dojo](https://dojo.modal.dev/guides/dojo-rename)
 
 ## Tutorials
 

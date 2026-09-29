@@ -290,6 +290,10 @@ export default defineConfig({
               label: 'Tools',
               autogenerate: { directory: 'guides/tools' },
             },
+            {
+              label: 'Migration',
+              autogenerate: { directory: 'guides/migration' },
+            },
           ],
         },
         {
