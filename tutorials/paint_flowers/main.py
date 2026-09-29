@@ -18,6 +18,12 @@
 # [Modal Sandbox](https://modal.com/docs/guide/sandboxes) and
 # [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B) compares each against the
 # reference image pool.
+#
+# ![Reward curve](https://modal-cdn.com/cdnbot/flower-reward1maaxmni_1df0871b.webp)
+#
+# <video controls autoplay muted loop style="display: block; margin: 0 auto;">
+# <source src="https://modal-cdn.com/example-paint_flowers.mp4" type="video/mp4">
+# </video>
 
 import asyncio
 import base64
@@ -166,6 +172,7 @@ eval_dataset = FlowerPromptDataset(build_prompts(combos, N_EVAL))
 # [Endpoint](https://modal.com/docs/guide/endpoints).
 
 def deploy_judge():
+    print("deploying judges...")
     judge = Endpoint.launch(
         Qwen3_6_27B(),
         unauthenticated=True,

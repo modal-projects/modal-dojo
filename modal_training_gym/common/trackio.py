@@ -403,11 +403,18 @@ def install_wandb_shim() -> None:
             )
             if value
         }
+        config = kwargs.pop("config", None)
+        if config is not None:
+            config = {
+                key: value
+                for key, value in config.items()
+                if not (isinstance(key, str) and key.startswith("_"))
+            }
         run = trackio.init(
             project=project,
             name=requested_name or None,
             group=kwargs.pop("group", None),
-            config=kwargs.pop("config", None),
+            config=config,
             resume=resume,
             embed=False,
             **routing,

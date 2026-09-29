@@ -3,13 +3,17 @@ from dataclasses import field
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
-from modal_training_gym.train_recipes.slime_recipe.recipe import SlimeRecipe
+from modal_training_gym.train_recipes.slime_recipe.recipe import (
+    SlimeLossMaskType,
+    SlimeRecipe,
+)
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class Qwen3_6_35B_Recipe(SlimeRecipe):
     """Qwen3.6-35B-A3B recipe."""
 
+    loss_mask_type: SlimeLossMaskType = "qwen3_5"
     gpu_type: str = "B300"
     colocate: bool = False
     rollout_num_gpus: int | None = 1

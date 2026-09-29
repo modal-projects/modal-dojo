@@ -69,10 +69,12 @@ teacher_model = Qwen3_5_9B()
 
 
 def deploy_models():
+    print("deploying base student endpoint...")
     base_student_deployment = Endpoint.launch(
         student_model, unauthenticated=True, recreate_if_existing=True
     )
 
+    print("deploying teacher deployment...")
     teacher_deployment = CustomDeployment.launch(
         teacher_model,
         app_name="qwen3.5-9b-teacher",
@@ -350,6 +352,7 @@ def train(config):
 
 
 def deploy_trained_model(checkpoint):
+    print("deploying trained student endpoint...")
     trained_student_deployment = Endpoint.launch(
         student_model, checkpoint, unauthenticated=True, recreate_if_existing=True
     )

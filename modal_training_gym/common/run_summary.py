@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
-from typing import Any, cast
+from typing import Any, Literal, cast
 from urllib.parse import quote
 
 from pydantic import BaseModel, Field, ValidationError, model_serializer
@@ -45,6 +45,11 @@ _STAGE_LABELS = {
     "checkpoint_save": "Saving checkpoint",
     "training": "Training",
 }
+_SFT_STAGE_LABELS = {
+    **_STAGE_LABELS,
+    "generate_rollouts": "Preparing batch",
+    "weight_sync": "Training",
+}
 _QUEUEABLE_STAGES = {"download_model", "convert_model"}
 
 
@@ -57,11 +62,16 @@ def _display_status(status: str, *, has_train_result: bool) -> str:
     return "pending"
 
 
-def _display_stage(status: str, progress: FrameworkProgress | None) -> str:
+def _display_stage(
+    status: str,
+    progress: FrameworkProgress | None,
+    training_type: Literal["sft", "rl"],
+) -> str:
     normalized = status.strip().lower()
     if not normalized:
         return ""
-    label = _STAGE_LABELS.get(normalized, normalized.replace("_", " ").title())
+    labels = _SFT_STAGE_LABELS if training_type == "sft" else _STAGE_LABELS
+    label = labels.get(normalized, normalized.replace("_", " ").title())
     if (
         normalized in _QUEUEABLE_STAGES
         and progress is not None
@@ -214,6 +224,11 @@ class RunSummary(BaseModel):
     display_stage: str = _run_list_field(
         "Stage",
         default="",
+    )
+    training_type: Literal["sft", "rl"] = _run_list_field(
+        "Type",
+        default="rl",
+        filterable=True,
     )
     framework: str = ""
     framework_status: str = ""
@@ -644,6 +659,11 @@ def build_run_summary(
     framework = _text(run.get("framework")) or "(untagged)"
     framework_status = _text(run.get("framework_status"))
     framework_progress = _framework_progress(metadata)
+    training_type: Literal["sft", "rl"] = (
+        "sft"
+        if _text(_mapping(config.get("recipe")).get("loss_type")) == "sft_loss"
+        else "rl"
+    )
     return RunSummary(
         training_run_id=training_run_id,
         run_id=training_run_id,
@@ -652,7 +672,9 @@ def build_run_summary(
             status,
             has_train_result=result_summary is not None,
         ),
-        display_stage=_display_stage(framework_status, framework_progress),
+        display_stage=_display_stage(
+            framework_status, framework_progress, training_type
+        ),
         framework=framework,
         framework_status=framework_status,
         framework_progress=framework_progress,
@@ -660,6 +682,7 @@ def build_run_summary(
         model=model,
         dataset=config_dataset,
         recipe=framework,
+        training_type=training_type,
         group_id=group_id,
         group_tags=_group_tags(metadata, group_id),
         modal_app_id=modal_app_id,

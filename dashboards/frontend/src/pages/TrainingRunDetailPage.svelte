@@ -36,7 +36,9 @@
     fetchRunAdvantages,
     fetchRunAdvantageStep,
     fetchRunLogs,
+    fetchRunMetrics,
   } from "../lib/api.js";
+  import { formatMetricValue } from "../lib/metricSeries.js";
   import { groupByRollout, rolloutIndex, rolloutScores } from "../lib/rolloutGrouping.js";
   import { normalizeMetricLinks } from "../lib/metricLinks.js";
   import { PERCENTILE_LINES, percentileRowFields } from "../lib/percentileLines.js";
@@ -195,6 +197,7 @@
   // Active tab: "summary" | "rollouts" | "logs". One-way sync with the URL:
   // init/popstate/runId read URL → activeTab; selectTab writes pushState.
   let activeTab = $state(/** @type {TabId} */ (DEFAULT_TAB));
+  let isSftRun = $derived(run?.training_type === "sft");
 
   function selectTab(tab) {
     const next = DETAIL_TABS.has(tab) ? /** @type {TabId} */ (tab) : DEFAULT_TAB;
@@ -230,6 +233,12 @@
     runId;
     if (embedded || typeof window === "undefined") return;
     activeTab = parseTabFromUrl();
+  });
+
+  $effect(() => {
+    if (!isSftRun || activeTab !== "rollouts") return;
+    activeTab = DEFAULT_TAB;
+    if (!embedded) history.replaceState({}, "", urlForTab(DEFAULT_TAB));
   });
 
   function formatMean(value) {
@@ -300,6 +309,10 @@
   // step's overall stats + quantiles) — drives the advantage fan chart.
   let advantageSteps = $state([]);
   let hasAdvantages = $derived(advantageSteps.length > 0);
+
+  let lossPoints = $state(null);
+  let lossError = $state("");
+  let lossStale = $state(false);
 
   const BUCKET_COUNT = 12;
   let activeBucket = $state(null); // histogram bucket index, or null
@@ -625,9 +638,24 @@
       const rows = await fetchRunAdvantages(runId, { signal });
       if (signal?.aborted) return;
       advantageSteps = rows;
+      return true;
     } catch {
       // Advantage data is optional (only present once the slime hook has
       // reported a step) — keep whatever we have on a transient failure.
+    }
+  }
+
+  async function loadLoss(signal) {
+    if (!runId) return;
+    try {
+      const payload = await fetchRunMetrics(runId, { signal });
+      if (signal?.aborted) return;
+      lossPoints = (payload.series?.["train/loss"] ?? []).map(([x, y, t]) => ({ x, y, t }));
+      lossStale = payload.stale ?? false;
+      lossError = "";
+      return true;
+    } catch (err) {
+      if (!signal?.aborted) lossError = String(err?.message || err);
     }
   }
 
@@ -650,22 +678,31 @@
     expandedRolloutId = null;
     expandedRollout = null;
     advantageSteps = [];
+    lossPoints = null;
+    lossError = "";
+    lossStale = false;
     closeBucket();
   });
 
-  // Load advantage distributions while the Summary tab is active; poll so new
-  // steps stream in on a running run.
   $effect(() => {
     const id = runId;
     if (!id || runMissing || activeTab !== "summary") return;
 
+    const load = isSftRun ? loadLoss : loadAdvantages;
     const controller = new AbortController();
-    void loadAdvantages(controller.signal);
-    const interval = window.setInterval(() => {
+    let finalLoadDone = false;
+    let inFlight = false;
+    const poll = async () => {
       const status = String(run?.status || "").toLowerCase();
-      if (status && status !== "running") return;
-      void loadAdvantages(controller.signal);
-    }, 5000);
+      const final = status && status !== "running" && !(isSftRun && lossStale);
+      if (inFlight || (final && finalLoadDone)) return;
+      inFlight = true;
+      const ok = await load(controller.signal);
+      inFlight = false;
+      if (final && ok) finalLoadDone = true;
+    };
+    void untrack(poll);
+    const interval = window.setInterval(poll, 5000);
 
     return () => {
       controller.abort();
@@ -681,8 +718,10 @@
     if (!id || runMissing || (tab !== "summary" && tab !== "rollouts")) return;
 
     const controller = new AbortController();
-    rolloutsLoading = true;
-    void loadRollouts(controller.signal);
+    if (!isSftRun) {
+      rolloutsLoading = true;
+      void loadRollouts(controller.signal);
+    }
     void loadTimings(controller.signal);
 
     // Poll while the run is active so new rollouts stream in.
@@ -696,7 +735,7 @@
           timingStaleFailures >= MAX_TERMINAL_TIMING_STALE_READS)
       )
         return;
-      if (!status || status === "running") {
+      if (!isSftRun && (!status || status === "running")) {
         void loadRollouts(controller.signal);
       }
       void loadTimings(controller.signal);
@@ -1316,11 +1355,15 @@
   });
 
   let rolloutKnots = $derived(rolloutTimeKnots(rolloutSummaries));
+  let lossTimestamps = $derived(
+    (lossPoints ?? []).map((p) => p.t).filter((t) => Number.isFinite(t) && t > 0),
+  );
   let chartRunStart = $derived.by(() => {
     const candidates = [
       toEpochSeconds(run?.started_at || run?.created_at),
       rolloutKnots[0]?.t,
       timelineRunOrigin,
+      lossTimestamps.length ? Math.min(...lossTimestamps) : null,
     ].filter((t) => Number.isFinite(t) && t > 0);
     return candidates.length ? Math.min(...candidates) : clockNow;
   });
@@ -1330,7 +1373,8 @@
     if (isRunning) return clockNow;
     const ended = toEpochSeconds(run?.ended_at || run?.completed_at) ?? 0;
     const last = rolloutKnots[rolloutKnots.length - 1]?.t ?? 0;
-    const stopped = Math.max(ended, last);
+    const lastLoss = lossTimestamps.length ? Math.max(...lossTimestamps) : 0;
+    const stopped = Math.max(ended, last, lastLoss);
     return stopped > chartRunStart ? stopped : clockNow;
   });
   let chartRange = $derived(
@@ -1398,6 +1442,20 @@
   }
 
   let chartStats = $derived(_seriesStats((r) => Number(r.mean) || 0));
+
+  let lossInRange = $derived(
+    (lossPoints ?? []).filter(
+      (p) =>
+        chartRange.entireRun ||
+        p.t == null ||
+        (p.t >= chartRange.start && p.t <= chartRange.end),
+    ),
+  );
+  let lossStats = $derived.by(() => {
+    if (!lossInRange.length) return null;
+    const values = lossInRange.map((p) => p.y);
+    return { min: Math.min(...values), max: Math.max(...values), latest: values[values.length - 1] };
+  });
   let rewardChartData = $derived(
     rolloutSummaries.map((r) => ({
       x: Number(r.rollout_id) || 0,
@@ -1646,7 +1704,9 @@
       tabs={[
         { value: "summary", label: "Summary" },
         { value: "metrics", label: "Metrics" },
-        { value: "rollouts", label: "Rollouts", count: rolloutSummaries.length || undefined },
+        ...(isSftRun
+          ? []
+          : [{ value: "rollouts", label: "Rollouts", count: rolloutSummaries.length || undefined }]),
         { value: "logs", label: "Logs" },
       ]}
     />
@@ -1660,7 +1720,7 @@
               <pre class="[border:1px_solid_color-mix(in_srgb,var(--red,#f87171)_45%,transparent)] rounded-[8px] bg-[color-mix(in_srgb,var(--red,#f87171)_12%,transparent)] text-(--red,#f87171) [font-family:var(--font-mono)] text-[12px] leading-[17px] m-0 max-h-[320px] overflow-auto p-[12px_14px] whitespace-pre-wrap [word-break:break-word]">{run.error_message}</pre>
             </div>
           {/if}
-          {#if showTimingSection || rolloutSummaries.length}
+          {#if showTimingSection || (isSftRun ? lossPoints?.length : rolloutSummaries.length)}
             <div class="chart-range-bar">
               <div class="chart-range-dropdown">
                 <MetricsRangeDropdown
@@ -1710,6 +1770,8 @@
                 {attemptMarkers}
                 timeRange={chartRange.entireRun ? null : chartRange}
                 onChangeTimeRange={setChartRange}
+                showOpenRollout={!isSftRun}
+                trainingType={run?.training_type}
                 onOpenRollout={(id) => {
                   selectTab("rollouts");
                   if (expandedRolloutId !== id) void toggleRolloutDetail(id);
@@ -1718,6 +1780,7 @@
               {/if}
             </div>
           {/if}
+          {#if !isSftRun}
           {#if rolloutsLoading && !rolloutSummaries.length}
             <div class="rollout-chart">
               <ChartSkeleton variant="line" height={140} showTitle />
@@ -1863,6 +1926,35 @@
                 {/each}
               </div>
             {/if}
+          {/if}
+          {:else if lossPoints === null && !lossError}
+            <div class="rollout-chart">
+              <ChartSkeleton variant="line" height={140} showTitle />
+            </div>
+          {:else if lossPoints === null}
+            <div class="detail-empty">Failed to load loss: {lossError}</div>
+          {:else if !lossPoints.length}
+            <div class="detail-empty">No loss reported yet.</div>
+          {:else}
+            <div class="rollout-chart">
+              <div class="chart-scroll">
+                <LineChart
+                  title="Loss"
+                  data={lossInRange}
+                  label="loss"
+                  formatX={(row) => `step ${row.x}`}
+                  formatY={formatMetricValue}
+                  ariaLabel="Loss chart"
+                />
+              </div>
+              {#if lossStats}
+                <div class="flex flex-wrap gap-[16px] mt-[6px] text-[11px] text-(--muted) [font-variant-numeric:tabular-nums]">
+                  <span>min {formatMetricValue(lossStats.min)}</span>
+                  <span>latest {formatMetricValue(lossStats.latest)}</span>
+                  <span>max {formatMetricValue(lossStats.max)}</span>
+                </div>
+              {/if}
+            </div>
           {/if}
         </div>
         <aside class="summary-tab-side">

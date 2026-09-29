@@ -26,7 +26,7 @@ from modal import App, Image, Secret
 from modal_training_gym.common import hf_secrets, proxy_auth_secrets
 
 
-from modal_training_gym.common.dataset import DatasetConfig, HarborDataset
+from modal_training_gym.common.dataset import DatasetConfig, HarborDataset, _SftDataset
 from modal_training_gym.common.framework import (
     mount_tools_dir,
 )
@@ -352,7 +352,9 @@ def build_slime_app(
     volume_prefix = f"slime-{type(slime).__name__.lstrip('_').lower()}"
 
     SlimeRecipe._validate_custom_model_architecture(model)
-    SlimeRecipe._validate_datasets(dataset, eval_dataset)
+    SlimeRecipe._validate_datasets(dataset, eval_dataset, loss_type=slime.loss_type)
+    if slime.loss_type == "sft_loss":
+        dataset = _SftDataset(dataset)
     dataset_path = SlimeRecipe._resolve_data_paths(dataset)
     eval_dataset_path = (
         SlimeRecipe._resolve_data_paths(eval_dataset)
@@ -628,7 +630,7 @@ def build_slime_app(
         volumes=all_volumes,
         timeout=4 * 60 * 60,
         secrets=proxy_auth_secrets() or None,
-        experimental_options={"efa_enabled": True},
+        experimental_options=shared.experimental_options(slime),
         serialized=True,
         single_use_containers=True,
         name="convert_checkpoint",
@@ -748,7 +750,7 @@ def build_slime_app(
             slime,
             framework="slime",
             secrets=train_secrets,
-            experimental_options={"efa_enabled": True},
+            experimental_options={},
         ),
     )
     @clustered_if(_use_clustered, slime.total_nodes, gpu_type=slime.gpu_type)
@@ -892,7 +894,7 @@ def build_slime_app(
                 }
             }
 
-            mode = "async" if slime.async_mode else "sync"
+            mode = "async" if slime.train_async else "sync"
             print(
                 f"Training {app_name} — {slime.total_nodes} node(s) × {gpu_spec}  ({mode})"
             )

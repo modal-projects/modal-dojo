@@ -19,6 +19,7 @@ import os
 import shlex
 import sys
 import threading
+import time
 import types
 import uuid
 from collections.abc import Mapping
@@ -120,7 +121,7 @@ class MetricMirror:
 
     def __init__(self, training_run_id: str) -> None:
         self.training_run_id = training_run_id
-        self._pending: dict[int, dict[str, float]] = {}
+        self._pending: dict[int, dict[str, Any]] = {}
         self._next_step = 0
         self._timer: threading.Timer | None = None
         self._lock = threading.Lock()
@@ -144,7 +145,9 @@ class MetricMirror:
                 self._next_step = max(self._next_step, step)
             if not metrics:
                 return
-            self._pending.setdefault(step, {}).update(metrics)
+            point = self._pending.setdefault(step, {"step": step, "metrics": {}})
+            point["metrics"].update(metrics)
+            point["time"] = time.time()
             if self._timer is None:
                 self._timer = threading.Timer(FLUSH_INTERVAL_SECONDS, self.flush)
                 self._timer.daemon = True
@@ -158,10 +161,7 @@ class MetricMirror:
             ):
                 self._timer.cancel()
             self._timer = None
-            points = [
-                {"step": step, "metrics": metrics}
-                for step, metrics in sorted(self._pending.items())
-            ]
+            points = [point for _, point in sorted(self._pending.items())]
             self._pending.clear()
         if points:
             from modal_training_gym.common.reporting import _enqueue_metric_points

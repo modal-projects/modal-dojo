@@ -7,6 +7,7 @@ from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
 from modal_training_gym.common.dataset import DatasetConfig
+from modal_training_gym.common.errors import TrainingGymConfigError
 from modal_training_gym.common.metric_mirror import DashboardMetricConfig
 from modal_training_gym.common.metrics import MetricConfig
 from modal_training_gym.common.models import ModelConfig
@@ -26,6 +27,7 @@ from modal_training_gym.train_recipes.base import (
 )
 from modal_training_gym.train_recipes.base import (
     BaseTrainRecipe,
+    _apply_loss_type_fields,
 )
 from modal_training_gym.train_recipes.gpu_allocation import (
     resolve_gpu_allocation,
@@ -250,6 +252,16 @@ class MilesRecipe(BaseTrainRecipe):
             Entropy bonus coefficient.
         calculate_per_token_loss:
             Average the loss over tokens instead of over samples.
+        loss_type:
+            ``"policy_loss"`` for RL or ``"sft_loss"`` for supervised
+            fine-tuning, which overrides conflicting RL settings.
+        loss_mask_type:
+            Chat-template loss mask for SFT. Miles choices are ``qwen``,
+            ``qwen3``, and ``distill_qwen`` (upstream default ``qwen``).
+            Emitted only under ``sft_loss`` when not the default. Miles has
+            no ``qwen3_5`` mask; presets that need it raise under SFT.
+        num_epoch:
+            Passes over the dataset. Replaces ``num_rollout`` when set.
         use_tis:
             Correct rollout and trainer mismatch with truncated importance sampling.
 
@@ -400,6 +412,7 @@ class MilesRecipe(BaseTrainRecipe):
             ``PYTHONPATH`` and NCCL settings.
         async_mode:
             Run Miles' ``train_async.py`` so rollout generation and training overlap.
+            Ignored with ``loss_type="sft_loss"``, which always runs ``train_async.py``.
         metrics:
             Metric tracker settings; expands to Miles' W&B-compatible flags.
             Defaults to the dashboard-only tracker; ``None`` disables metric
@@ -556,6 +569,8 @@ class MilesRecipe(BaseTrainRecipe):
     kl_coef: float = 0.0
     entropy_coef: float = 0.0
     calculate_per_token_loss: bool = False
+    loss_type: Literal["policy_loss", "sft_loss"] = "policy_loss"
+    loss_mask_type: Literal["qwen", "qwen3", "distill_qwen"] = "qwen"
     use_tis: bool = False
 
     # ── Dynamic sampling (DAPO) ────────────────────────────────────────────
@@ -565,6 +580,7 @@ class MilesRecipe(BaseTrainRecipe):
 
     # ── Training and optimizer ──────────────────────────────────────────────
     global_batch_size: int = 4
+    num_epoch: int | None = None
     lr: float = 1e-6
     lr_decay_style: str = "constant"
     weight_decay: float = 0.1
@@ -692,6 +708,7 @@ class MilesRecipe(BaseTrainRecipe):
     # ── Validators ───────────────────────────────────────────────────────────
 
     _SKIP_FIELDS: ClassVar[frozenset[str]] = frozenset(_MILES_SKIP)
+    sft_supported: ClassVar[bool] = True
 
     @model_validator(mode="after")
     def _resolve_callable_paths(self) -> "MilesRecipe":
@@ -831,10 +848,6 @@ class MilesRecipe(BaseTrainRecipe):
         model: ModelConfig | None = None,
     ) -> dict[str, Any]:
         fields = self._field_values()
-        if fields["save_interval"] is None and fields["save"] is not None:
-            fields["save_interval"] = self._escape_hatch_values().get(
-                "num_rollout", self.num_rollout
-            )
         if model is not None:
             self.validate_model_parallelism(model)
             for k, v in self._model_to_fields(model).items():
@@ -856,6 +869,17 @@ class MilesRecipe(BaseTrainRecipe):
                     eval_dataset_path=eval_dataset_path,
                 )
             )
+        if self.loss_type == "sft_loss" and not self.sft_supported:
+            raise TrainingGymConfigError(
+                f"{type(self).__name__} requires loss_mask_type='qwen3_5' for "
+                "SFT, but Miles only supports qwen/qwen3/distill_qwen. Use a "
+                "Slime recipe for SFT on this model."
+            )
+        _apply_loss_type_fields(
+            fields,
+            self._escape_hatch_values(),
+            sft_rollout_function="miles.rollout.sft_rollout.generate_rollout",
+        )
         if self.metrics is not None:
             fields.update(self._metrics_to_fields(self.metrics))
         out = self._emit_fields(fields)
@@ -868,6 +892,10 @@ class MilesRecipe(BaseTrainRecipe):
         return out
 
     # ── Public API ────────────────────────────────────────────────────────────
+
+    @property
+    def train_async(self) -> bool:
+        return self.async_mode or self.loss_type == "sft_loss"
 
     @classmethod
     def get_base_recipe(cls, model_config: ModelConfig) -> "MilesRecipe | None":

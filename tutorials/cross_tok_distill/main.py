@@ -59,11 +59,13 @@ student_model = Qwen3_6_35B()
 
 
 def deploy_base_models():
+    print("deploying base student endpoint...")
     base_student_deployment = Endpoint.launch(
         student_model, unauthenticated=True, recreate_if_existing=True
     )
 
     teacher_model = HFModelConfiguration(model_name="deepseek-ai/DeepSeek-V4-Flash")
+    print("deploying teacher deployment...")
     teacher_deployment = CustomDeployment.launch(
         teacher_model,
         recipe=SglangRecipe(
@@ -995,6 +997,7 @@ def train(config):
 
 
 def deploy_trained_model(checkpoint):
+    print("deploying trained student endpoint...")
     trained_student_deployment = Endpoint.launch(
         student_model, checkpoint, unauthenticated=True, recreate_if_existing=True
     )

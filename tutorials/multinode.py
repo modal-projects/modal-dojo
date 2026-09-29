@@ -144,6 +144,7 @@ def train(config):
 
 
 def deploy_trained_model(checkpoint):
+    print("deploying trained model endpoint...")
     trained_deployment = Endpoint.launch(
         model, checkpoint, unauthenticated=True, recreate_if_existing=True
     )

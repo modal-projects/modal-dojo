@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from modal_training_gym.common.dataset import (
     DatasetConfig,
+    HuggingFaceDataset,
     MultimodalDataset,
 )
 from modal_training_gym.common.models import ModelConfig
@@ -90,19 +91,38 @@ class LibriSpeechASRDataset(MultimodalDataset):
 def build_slime_validation(
     model_config: ModelConfig,
     step_count: int,
+    *,
+    loss_type: str = "policy_loss",
 ) -> tuple[SlimeRecipe, DatasetConfig]:
     """The model's base slime recipe and a dataset matching its modality.
 
     Audio models (Qwen3-ASR) need speech clips, so they get LibriSpeech;
     everything else validates against gsm8k, scored by ``deepscaler``.
+    SFT entries train on a short conversation slice instead.
     """
     recipe = SlimeRecipe.get_base_recipe(model_config)
-    recipe.rm_type = "deepscaler"
     recipe.train_function_kwargs = {
         **dict(recipe.train_function_kwargs or {}),
         "ephemeral_disk": VALIDATION_EPHEMERAL_DISK_MIB,
     }
 
+    if loss_type == "sft_loss":
+        recipe.loss_type = "sft_loss"
+        batch_size = (
+            recipe.global_batch_size
+            if recipe.global_batch_size is not None
+            else recipe.rollout_batch_size
+        )
+        n_rows = batch_size * step_count
+        return recipe, HuggingFaceDataset(
+            "HuggingFaceH4/no_robots",
+            hf_split=f"train[:{n_rows}]",
+            input_column="messages",
+            input_format="messages",
+            always_download=True,
+        )
+
+    recipe.rm_type = "deepscaler"
     if isinstance(model_config, Qwen3_ASR_1_7B):
         return recipe, LibriSpeechASRDataset(n_rows=8)
     return recipe, Gsm8kDataset(n_rows=10)

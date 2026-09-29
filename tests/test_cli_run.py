@@ -771,6 +771,7 @@ def test_run_trace_rejects_missing_and_invalid_steps(tmp_path):
         ("--model", "org/model", "model"),
         ("--dataset", "org/data", "dataset"),
         ("--recipe", "slime", "recipe"),
+        ("--training-type", "sft", "training_type"),
         ("--group", "nightly", "group_id"),
     ],
 )
@@ -815,6 +816,7 @@ def test_run_list_forwards_filters_and_prints_configured_fields_as_json():
                 "model": None,
                 "dataset": None,
                 "recipe": None,
+                "training_type": None,
                 "group_id": "nightly",
                 "since": 1784808000,
                 "limit": 3,
@@ -829,6 +831,7 @@ def test_run_list_forwards_filters_and_prints_configured_fields_as_json():
             "model": "org/model",
             "dataset": "org/data",
             "recipe": "slime",
+            "training_type": "rl",
             "group": "nightly",
             "created_at": "1970-01-01T00:01:40Z",
             "last_updated_at": "1970-01-01T00:03:20Z",

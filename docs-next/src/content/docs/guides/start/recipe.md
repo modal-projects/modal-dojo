@@ -9,6 +9,7 @@ Lastly, before we start training, we need a recipe.
 While the model and dataset dictate what will be trained, the recipe dictates how training will occur by specifying parameters for:
 
 - Hardware and parallelism
+- Training type
 - Total rollout size
 - Environment
 - Etc.
@@ -71,9 +72,37 @@ Qwen3_5_4B_Miles_Recipe(
 )
 ```
 
-## Rollouts
+## Supervised fine-tuning
 
-Each step of training involves the model generating rollouts to calculate rewards. More specifically, a random subset is taken from our dataset to prompt the model, and the model generates one or more completions for each prompt.
+For supervised fine-tuning (SFT), set `loss_type="sft_loss"`. At the moment, passing `eval_dataset` is not supported.
+
+```python
+from modal_training_gym import HuggingFaceDataset, Qwen3_0_6B, Qwen3_0_6B_Recipe, TrainConfig
+
+conversations = HuggingFaceDataset(
+    "HuggingFaceH4/no_robots",
+    input_column="messages",
+    input_format="messages",
+)
+
+TrainConfig(
+    model=Qwen3_0_6B(),
+    dataset=conversations,
+    recipe=Qwen3_0_6B_Recipe(loss_type="sft_loss", num_epoch=3),
+).train()
+```
+
+Prompt and answer datasets also work too:
+
+```python
+pairs = HuggingFaceDataset("statworx/haiku", input_column="keywords", output_column="text")
+```
+
+## Reinforcement learning
+
+### Rollouts
+
+For RL, each step of training involves the model generating rollouts to calculate rewards. More specifically, a random subset is taken from our dataset to prompt the model, and the model generates one or more completions for each prompt.
 
 The four most important parameters to specify are:
 
@@ -98,7 +127,7 @@ You'll want to start with low values to verify training works (e.g., 1, 2, 2, re
 
 The effect of these parameters on run length and cost is multiplicative; the parameters above imply a total of 10 × 8 × 4 = 320 samples taken over the course of a run.
 
-## Environment
+### Environment
 
 An environment specifies how the model acts and how its responses are rewarded. The underlying frameworks are [environment-agnostic](https://miles.radixark.com/docs/user-guide/environments), so you have full control over the environment.
 
@@ -122,6 +151,8 @@ The simplest reward functions (like the above) return binary scores for correct 
 For logging purposes, you can attach metadata to each sample for more observability in the [dashboard](https://gym.modal.dev/guides/dashboard/).
 
 When your task requires something beyond a single-turn interaction, all it takes is implementing a [custom generate](https://miles.radixark.com/docs/user-guide/generate-endpoint) function.
+
+Note that in SFT, the model simply trains on the dataset's conversations, so neither the custom generate function nor the reward function runs.
 
 ```python
 async def my_custom_generate(args, sample, sampling_params):

@@ -20,6 +20,7 @@ from modal_training_gym.common.errors import (
 from modal_training_gym.common.framework import Framework
 from modal_training_gym.common.ids import create_hash
 from modal_training_gym.common.launcher_helpers import mark_run_failed, mark_run_stopped
+from modal_training_gym.common.memory_estimate import maybe_warn_gpu_oom
 from modal_training_gym.common.modal_urls import modal_app_dashboard_url
 from modal_training_gym.common.models import ModelConfig
 from modal_training_gym.common.run import TrainingRun, metric_run_id_for_attempt
@@ -602,6 +603,7 @@ class TrainConfig:
         from modal_training_gym.common.modal_lifecycle import stop_app
         from modal_training_gym.common.status_reporter import enqueue_framework_status
 
+        maybe_warn_gpu_oom(self.recipe, self.model)
         training_run_id = self._generate_training_run_id()
         ensure_dashboard_deployed()
         framework_status_url = get_framework_status_url() or ""

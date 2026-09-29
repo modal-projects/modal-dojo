@@ -153,6 +153,10 @@
         <span class="kv-key">Status</span>
         <StatusPill status={getStatus(run)} />
       </div>
+      <div class="kv">
+        <span class="kv-key">Type</span>
+        <span class="kv-value">{(run.training_type ?? "rl").toUpperCase()}</span>
+      </div>
       {#if showFrameworkStatus(run) && run.display_stage}
         {@const progress = frameworkProgress()}
         <div class="kv">

@@ -1,13 +1,17 @@
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
-from modal_training_gym.train_recipes.slime_recipe.recipe import SlimeRecipe
+from modal_training_gym.train_recipes.slime_recipe.recipe import (
+    SlimeLossMaskType,
+    SlimeRecipe,
+)
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class Qwen3_5_9B_Recipe(SlimeRecipe):
     """Qwen3.5-9B recipe."""
 
+    loss_mask_type: SlimeLossMaskType = "qwen3_5"
     optimizer_cpu_offload: bool = True
     overlap_cpu_optimizer_d2h_h2d: bool = True
     use_precision_aware_optimizer: bool = True
