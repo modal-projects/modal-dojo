@@ -16,7 +16,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from modal.experimental import clustered
+import modal
 
 from modal_dojo.train_recipes.gpu_allocation import _normalize_gpu_type
 
@@ -42,14 +42,14 @@ def _supports_rdma(gpu_type: str) -> bool:
 def clustered_if(
     use_clustered: bool, size: int, *, gpu_type: str
 ) -> Callable[[Callable], Callable]:
-    """Return ``clustered(size, rdma=…)`` when *use_clustered*, else an identity
+    """Return ``modal.clustered(size=…, rdma=…)`` when *use_clustered*, else an identity
     decorator that registers the function as a plain ``@app.function``.
 
     RDMA/EFA is enabled only when clustered (i.e. multi-node) *and* the GPU family
     supports it (H100/H200/B200/B300/GB200).
     """
     if use_clustered:
-        return clustered(size, rdma=_supports_rdma(gpu_type))  # pyright: ignore[reportCallIssue, reportOptionalCall]
+        return modal.clustered(size=size, rdma=_supports_rdma(gpu_type))
 
     def _identity(fn: Callable) -> Callable:
         return fn
