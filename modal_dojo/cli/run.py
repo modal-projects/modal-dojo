@@ -21,6 +21,10 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from modal_dojo.common.config import (
+    DASHBOARD_CSRF_HEADER,
+    DASHBOARD_STOP_RUN_ACTION,
+)
 from modal_dojo.common.run_list import run_list_field_metadata
 from modal_dojo.common.run_summary import RunSummary
 from modal_dojo.common.time import parse_time
@@ -921,6 +925,42 @@ def run_group() -> None:
 def get_command(*, run_id: str, verbose: bool, json_output: bool) -> None:
     """Show a run's status and top-level metadata."""
     get_run(run_id=run_id, verbose=verbose, json_output=json_output)
+
+
+@run_group.command(
+    "stop",
+    help="Stop a running training run and its Modal app.",
+    epilog=(
+        "Examples:\n"
+        "  training-gym run stop brave-falcon-3fa8\n"
+        "  training-gym run stop brave-falcon-3fa8 --yes"
+    ),
+)
+@click.argument("run_id", metavar="RUN_ID")
+@yes_option
+@json_option
+def stop_command(*, run_id: str, yes: bool, json_output: bool) -> None:
+    """Stop a running training run and its Modal app."""
+    if not yes:
+        confirm_or_require_yes(f"Stop training run {run_id}?")
+    with DashboardClient() as client:
+        summary = _validate_run_summary(
+            client.post_json(
+                f"/api/runs/{quote(run_id, safe='')}/stop",
+                headers={DASHBOARD_CSRF_HEADER: DASHBOARD_STOP_RUN_ACTION},
+                not_found_error=CLIError(
+                    f"Training run {run_id!r} was not found.",
+                    error="run_not_found",
+                    exit_code=ExitCode.NOT_FOUND,
+                    run_id=run_id,
+                    hint="training-gym run list",
+                ),
+            )
+        )
+    if json_output:
+        print_json(_run_payload(summary))
+    else:
+        click.echo(f"Stopped training run {summary.run_id}.")
 
 
 @run_group.command(

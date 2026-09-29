@@ -635,3 +635,85 @@ def test_spa_html_revalidates_and_assets_are_immutable(monkeypatch, tmp_path):
         # the browser must see the failure rather than parse HTML as JavaScript.
         missing = client.get("/assets/index-gone.js")
         assert missing.status_code == 404
+
+
+def _stop_headers() -> dict[str, str]:
+    return {"X-Training-Gym-Action": "stop"}
+
+
+def test_stop_run_requires_action_header(fake_volume, monkeypatch, tmp_path):
+    _save_records()
+
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.post("/api/runs/run-route-1/stop")
+
+    assert response.status_code == 400
+
+
+def test_stop_run_stops_app_and_persists_stopped(fake_volume, monkeypatch, tmp_path):
+    _save_records()
+    stopped: list[str] = []
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app",
+        stopped.append,
+    )
+
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
+
+    assert response.status_code == 200
+    assert stopped == ["ap-route"]
+    assert response.json()["status"] == "stopped"
+    run = TrainingRun.from_id("run-route-1")
+    assert run.status.value == "stopped"
+    assert run.ended_at is not None
+
+
+def test_stop_run_conflicts_when_already_terminal(fake_volume, monkeypatch, tmp_path):
+    _save_records()
+    stopped: list[str] = []
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app",
+        stopped.append,
+    )
+
+    with _client(monkeypatch, tmp_path) as client:
+        first = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
+        second = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert stopped == ["ap-route"]
+
+
+def test_stop_run_returns_404_for_unknown_run(fake_volume, monkeypatch, tmp_path):
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.post("/api/runs/run-missing/stop", headers=_stop_headers())
+
+    assert response.status_code == 404
+
+
+def test_stop_run_conflicts_without_modal_app(fake_volume, monkeypatch, tmp_path):
+    TrainingRun(
+        training_run_id="run-launching", framework=Framework.SLIME, config={}
+    ).save()
+
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.post("/api/runs/run-launching/stop", headers=_stop_headers())
+
+    assert response.status_code == 409
+
+
+def test_stop_run_returns_502_when_app_stop_fails(fake_volume, monkeypatch, tmp_path):
+    _save_records()
+
+    def fail_stop(app_id: str) -> None:
+        raise RuntimeError("modal is down")
+
+    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", fail_stop)
+
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
+
+    assert response.status_code == 502
+    assert TrainingRun.from_id("run-route-1").status.value == "running"

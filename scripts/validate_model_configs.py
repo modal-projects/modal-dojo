@@ -35,7 +35,7 @@ from modal_dojo.common.models.validation import (
     Framework,
     _ValidationConfig,
 )
-from modal_dojo.common.modal_lifecycle import stop_app
+from modal_dojo.common.modal_lifecycle import stop_app_best_effort
 from modal_dojo.common.run import TrainingRun, TrainingRunStatus
 from modal_dojo.common.step_timing import measured_run_times
 from modal_dojo.common.wandb import WandbConfig
@@ -389,7 +389,7 @@ def run_base_training(
     try:
         train_result = launch.result(timeout=timeout)
     except BaseException:
-        stop_app(launch.modal_app_id)
+        stop_app_best_effort(launch.modal_app_id)
         raise
     training_run = TrainingRun.from_id(train_result.training_run_id)
     previous = None

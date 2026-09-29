@@ -180,10 +180,14 @@ def test_maps_http_errors(status_code, error, exit_code, mock_transport):
     assert exc_info.value.exit_code == exit_code
 
 
-def test_surfaces_dashboard_detail_for_bad_request(mock_transport):
+@pytest.mark.parametrize(
+    ("status_code", "error"),
+    [(400, "dashboard_request_failed"), (502, "dashboard_server_error")],
+)
+def test_surfaces_dashboard_detail_for_http_errors(status_code, error, mock_transport):
     mock_transport(
         lambda _request: httpx.Response(
-            400,
+            status_code,
             json={
                 "detail": (
                     "since must be epoch seconds, ISO 8601, "
@@ -200,7 +204,7 @@ def test_surfaces_dashboard_detail_for_bad_request(mock_transport):
     assert str(exc_info.value) == (
         "since must be epoch seconds, ISO 8601, or a relative time such as 24h"
     )
-    assert exc_info.value.error == "dashboard_request_failed"
+    assert exc_info.value.error == error
 
 
 def test_uses_command_specific_not_found_error(mock_transport):
@@ -328,3 +332,23 @@ def test_iter_event_stream_disables_read_timeout(mock_transport):
         "write": DEFAULT_TIMEOUT_SECONDS,
         "pool": DEFAULT_TIMEOUT_SECONDS,
     }
+
+
+def test_post_json_sends_method_and_headers(mock_transport):
+    seen = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    mock_transport(respond)
+    with DashboardClient() as client:
+        result = client.post_json(
+            "/api/runs/run-1/stop",
+            headers={"X-Training-Gym-Action": "stop"},
+        )
+
+    assert result == {"ok": True}
+    assert seen[0].method == "POST"
+    assert str(seen[0].url) == "https://example.test/api/runs/run-1/stop"
+    assert seen[0].headers["x-training-gym-action"] == "stop"

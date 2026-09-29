@@ -20,6 +20,7 @@
   import ZoomOutButton from "../components/ZoomOutButton.svelte";
   import RunMetricsPanel from "../components/RunMetricsPanel.svelte";
   import { toEpochSeconds } from "../lib/format.js";
+  import RunStopButton from "../components/RunStopButton.svelte";
   import {
     getTimeRangeParams,
     resolveTimeRange,
@@ -1654,6 +1655,14 @@
           <span>Collapse</span>
         </button>
       {/if}
+      {#key run?.run_id}
+        <RunStopButton
+          {run}
+          onStopped={(updated) => {
+            if (updated?.run_id === runId) run = updated;
+          }}
+        />
+      {/key}
       {#each metricLinks as link (link.url)}
         <a
           class="header-link metric-link inline-flex items-center gap-[6px] min-h-[32px] leading-[16px]"

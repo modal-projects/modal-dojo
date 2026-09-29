@@ -29,6 +29,8 @@ _dashboard_requires_proxy_auth = False
 _dashboard_trajectory_viewer: str | None = None
 DASHBOARD_PROXY_AUTH_PATH = "/api/proxy-auth"
 DASHBOARD_VERSION_PATH = "/api/version"
+DASHBOARD_CSRF_HEADER = "X-Training-Gym-Action"
+DASHBOARD_STOP_RUN_ACTION = "stop"
 
 # Holds DASHBOARD_PASSWORD. An empty value means the dashboard is open (no
 # auth) — that's the default so existing deployments keep working untouched.
