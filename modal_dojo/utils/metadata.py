@@ -909,12 +909,13 @@ def vol_patch_summary_fields(
 ) -> bool:
     """Update select fields of existing summary items, keyed by ``item_id_key``.
 
-    Re-reads the doc under the summary write lock, so fields written by a
-    concurrent full-item upsert survive — a stale read can only re-apply the
-    fields given, not roll back whole item bodies. Returns True when the doc
-    changed.
+    Each patch is ``{"id": ..., "set": {...}, "match": {...}}``: ``set`` fields
+    are written only when the stored item still equals every ``match`` field,
+    so a patch derived from an older snapshot can't overwrite a newer write —
+    e.g. a retried run's new ``modal_app_id``. Re-reads the doc under the
+    summary write lock. Returns True when the doc changed.
     """
-    by_id = {p.get(item_id_key): p for p in patches if p.get(item_id_key) is not None}
+    by_id = {p.get("id"): p for p in patches if p.get("id") is not None}
     if not by_id:
         return False
     with _summary_write_lock:
@@ -924,8 +925,11 @@ def vol_patch_summary_fields(
             patch = by_id.get(item.get(item_id_key))
             if patch is None:
                 continue
-            for field, value in patch.items():
-                if field != item_id_key and item.get(field) != value:
+            match = patch.get("match") or {}
+            if any(item.get(field) != value for field, value in match.items()):
+                continue
+            for field, value in (patch.get("set") or {}).items():
+                if item.get(field) != value:
                     item[field] = value
                     changed = True
         if changed:

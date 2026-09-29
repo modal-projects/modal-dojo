@@ -386,3 +386,56 @@ def test_compaction_keeps_unread_summary_when_canonical_read_fails(
     assert (
         metadata.vol_get_summary_items(MetadataStore.TRAINING_RUNS_SUMMARY) == summary
     )
+
+
+def test_patch_summary_fields_skips_mismatched_items(fake_volume):
+    metadata.vol_put_summary_items(
+        MetadataStore.TRAINING_RUNS_SUMMARY,
+        [
+            {
+                "training_run_id": "run-1",
+                "modal_app_id": "ap-new",
+                "modal_app_url": "https://modal.com/id/ap-new",
+            }
+        ],
+    )
+
+    changed = metadata.vol_patch_summary_fields(
+        MetadataStore.TRAINING_RUNS_SUMMARY,
+        [
+            {
+                "id": "run-1",
+                "match": {"modal_app_id": "ap-old"},
+                "set": {"modal_app_url": "https://modal.com/id/ap-old"},
+            }
+        ],
+        item_id_key="training_run_id",
+    )
+
+    assert changed is False
+    items = metadata.vol_get_summary_items(MetadataStore.TRAINING_RUNS_SUMMARY)
+    assert items[0]["modal_app_url"] == "https://modal.com/id/ap-new"
+
+
+def test_patch_summary_fields_updates_matching_items(fake_volume):
+    metadata.vol_put_summary_items(
+        MetadataStore.TRAINING_RUNS_SUMMARY,
+        [{"training_run_id": "run-1", "modal_app_id": "ap-1", "status": "stopped"}],
+    )
+
+    changed = metadata.vol_patch_summary_fields(
+        MetadataStore.TRAINING_RUNS_SUMMARY,
+        [
+            {
+                "id": "run-1",
+                "match": {"modal_app_id": "ap-1"},
+                "set": {"modal_app_url": "https://modal.com/id/ap-1"},
+            }
+        ],
+        item_id_key="training_run_id",
+    )
+
+    assert changed is True
+    items = metadata.vol_get_summary_items(MetadataStore.TRAINING_RUNS_SUMMARY)
+    assert items[0]["modal_app_url"] == "https://modal.com/id/ap-1"
+    assert items[0]["status"] == "stopped"

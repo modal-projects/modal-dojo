@@ -9,6 +9,7 @@ from modal_dojo.common.run import (
     TrainingRunStatus,
     mark_training_attempt_started,
 )
+from modal_dojo.utils.metadata import MetadataStore, vol_put
 
 
 def _run(status: TrainingRunStatus) -> TrainingRun:
@@ -323,6 +324,29 @@ def test_stop_reconciles_record_when_app_already_dead(monkeypatch, fake_volume):
     assert persisted.status is TrainingRunStatus.STOPPED
     assert persisted.ended_at is not None
     assert persisted.metadata["terminal_reason"] == "stopped_by_user"
+
+
+def test_stop_marks_completed_when_train_result_exists(monkeypatch, fake_volume):
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: False
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app",
+        lambda app_id: pytest.fail("stop_app should not run"),
+    )
+    run = _run(TrainingRunStatus.RUNNING)
+    run.modal_app_id = "ap-1"
+    run.started_at = 100
+    run.save()
+    vol_put(MetadataStore.TRAIN_RESULTS, "run-1", {"training_run_id": "run-1"})
+
+    assert run.stop() is True
+
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.COMPLETED
+    assert persisted.completed_at is not None
+    assert persisted.metadata.get("last_attempt_status") == "completed"
+    assert "terminal_reason" not in (persisted.metadata or {})
 
 
 def test_stop_attempts_rpc_when_liveness_unknown(monkeypatch, fake_volume):
