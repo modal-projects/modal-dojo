@@ -8,7 +8,7 @@ from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 from pydantic_core import ArgsKwargs
 
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
@@ -177,7 +177,7 @@ class Gemma4_26B_A4B_Recipe(MilesRecipe):
     @model_validator(mode="after")
     def _require_vision_reward(self) -> "Gemma4_26B_A4B_Recipe":
         if self.modality == "vision" and not self._brings_own_reward():
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"{type(self).__name__}(modality='vision') needs its own reward. "
                 "Pass custom_rm_function=... or rm_type=... to choose a built-in."
             )
@@ -186,7 +186,7 @@ class Gemma4_26B_A4B_Recipe(MilesRecipe):
     def validate_model_parallelism(self, model: "ModelConfig") -> None:
         super().validate_model_parallelism(model)
         if self.pipeline_model_parallel_size != 1:
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"{type(self).__name__} needs pipeline_model_parallel_size=1: the "
                 "Megatron bridge loads the vision tower and the tied input/output "
                 "embedding onto a single pipeline stage, so a split only fails once "

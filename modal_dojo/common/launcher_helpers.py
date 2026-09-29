@@ -25,7 +25,7 @@ from typing import Any, Callable
 import cloudpickle
 from modal import Image, Retries, Volume
 
-from modal_dojo.common import COMMON_TRAINING_GYM_TAGS, modal_tag_value
+from modal_dojo.common import COMMON_DOJO_TAGS, modal_tag_value
 from modal_dojo.common.framework import (
     Framework,
     resolve_caller_module,
@@ -243,7 +243,7 @@ def build_app_tags(
 ) -> dict[str, str]:
     """Build the Modal app tag dict for dashboard auto-discovery."""
     tags = {
-        **COMMON_TRAINING_GYM_TAGS,
+        **COMMON_DOJO_TAGS,
         "_modal_framework": framework,
         "_modal_model_name": modal_tag_value(model.model_name),
         **recipe_app_tags,

@@ -18,7 +18,7 @@ import shutil
 import tomllib
 from pathlib import Path
 
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 
 DatasetRow = dict[str, Any]
 
@@ -105,7 +105,7 @@ class DatasetConfig(ABC):
                 with open(path) as f:
                     first = f.readline().strip()
                 if not first:
-                    raise TrainingGymConfigError(f"{path!r} is empty")
+                    raise DojoConfigError(f"{path!r} is empty")
                 cols = set(json.loads(first).keys())
             else:
                 return
@@ -118,7 +118,7 @@ class DatasetConfig(ABC):
 
         missing = expected - cols
         if missing:
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"{type(self).__name__}.write() wrote {path!r} but it is "
                 f"missing required column(s) {sorted(missing)} "
                 f"(input_key={self.input_key()!r}, label_key={self.label_key()!r}). "
@@ -131,11 +131,11 @@ class DatasetConfig(ABC):
 class _SftDataset(DatasetConfig):
     def __init__(self, inner: DatasetConfig) -> None:
         if isinstance(inner, HuggingFaceDataset) and inner.input_format == "raw":
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 "input_format='raw' is not supported with loss_type='sft_loss'"
             )
         if isinstance(inner, HarborDataset):
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 "HarborDataset is not supported with loss_type='sft_loss'"
             )
         self._inner = inner
@@ -160,7 +160,7 @@ class _SftDataset(DatasetConfig):
         for row in self._inner.rows():
             messages = row.get(input_key)
             if messages is None:
-                raise TrainingGymConfigError(
+                raise DojoConfigError(
                     f"SFT row is missing a prompt in column {input_key!r}"
                 )
             if not isinstance(messages, list):
@@ -168,7 +168,7 @@ class _SftDataset(DatasetConfig):
             if not messages or messages[-1].get("role") != "assistant":
                 label = row.get(label_key) if label_key else None
                 if label in (None, ""):
-                    raise TrainingGymConfigError(
+                    raise DojoConfigError(
                         "SFT row has no label and does not end with an assistant turn"
                     )
                 messages = [*messages, {"role": "assistant", "content": str(label)}]
@@ -217,7 +217,7 @@ class HuggingFaceDataset(DatasetConfig):
         always_download: bool = False,
     ):
         if input_format not in ("text", "messages", "raw"):
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"input_format must be one of text/messages/raw, got {input_format!r}"
             )
         self.hf_repo = hf_repo
@@ -346,9 +346,7 @@ class HarborDataset(DatasetConfig):
         always_download: bool = False,
     ) -> None:
         if split not in ("all", "train", "eval"):
-            raise TrainingGymConfigError(
-                f"split must be one of all/train/eval, got {split!r}"
-            )
+            raise DojoConfigError(f"split must be one of all/train/eval, got {split!r}")
         self.split = split
         self.dataset_name = dataset_name
         self.path = path
@@ -474,13 +472,13 @@ class HarborDataset(DatasetConfig):
         elif self.task_root:
             task_root = Path(self.task_root).resolve()
         else:
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"{type(self).__name__} requires dataset_name, path, or task_root"
             )
         if not task_root.exists():
             raise FileNotFoundError(f"task root does not exist: {task_root}")
         if not task_root.is_dir():
-            raise TrainingGymConfigError(f"task root is not a directory: {task_root}")
+            raise DojoConfigError(f"task root is not a directory: {task_root}")
         return task_root
 
     def _candidate_task_dirs(self, task_root: Path) -> list[Path]:
@@ -506,7 +504,7 @@ class HarborDataset(DatasetConfig):
             rng = random.Random(self.shuffle_seed)
             rng.shuffle(task_dirs)
         if not task_dirs:
-            raise TrainingGymConfigError(f"No Harbor tasks found under {task_root}")
+            raise DojoConfigError(f"No Harbor tasks found under {task_root}")
         if self.train_size is not None:
             max_tasks = self.train_size + (self.eval_size or 0)
             task_dirs = task_dirs[:max_tasks]
@@ -523,11 +521,11 @@ class HarborDataset(DatasetConfig):
         elif metadata_path.suffix == ".toml":
             data = tomllib.loads(metadata_path.read_text(encoding="utf-8"))
         else:
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"Unsupported label metadata file type for {metadata_path}; expected .json or .toml"
             )
         if not isinstance(data, dict):
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"Label metadata must decode to an object: {metadata_path}"
             )
         return data
@@ -664,7 +662,7 @@ class MultimodalDataset(DatasetConfig):
     ) -> None:
         self.modality = modality
         if modality not in ("image", "audio", "video"):
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"modality must be one of image/audio/video, got {modality!r}"
             )
         self.media_column = media_column or f"{modality}s"
@@ -672,7 +670,7 @@ class MultimodalDataset(DatasetConfig):
             self.input_key() == self.media_column
             or self.label_key() == self.media_column
         ):
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 "media_column must differ from input_key and label_key"
             )
         self.multimodal_keys = {modality: self.media_column}
@@ -707,7 +705,7 @@ class OnlineRollout(DatasetConfig):
 
     def __init__(self, n_rows: int) -> None:
         if n_rows < 1:
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"OnlineRollout n_rows must be a positive integer; got {n_rows!r}"
             )
         self.n_rows = n_rows

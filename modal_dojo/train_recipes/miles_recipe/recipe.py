@@ -7,7 +7,7 @@ from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.dataset import DatasetConfig
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.metric_mirror import DashboardMetricConfig
 from modal_dojo.common.metrics import MetricConfig
 from modal_dojo.common.models import ModelConfig
@@ -860,7 +860,7 @@ class MilesRecipe(BaseTrainRecipe):
                 )
             )
         if self.loss_type == "sft_loss" and not self.sft_supported:
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"{type(self).__name__} requires loss_mask_type='qwen3_5' for "
                 "SFT, but Miles only supports qwen/qwen3/distill_qwen. Use a "
                 "Slime recipe for SFT on this model."

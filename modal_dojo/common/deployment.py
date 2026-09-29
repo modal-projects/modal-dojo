@@ -14,7 +14,7 @@ from modal_dojo.common.checkpoint import (
     CheckpointType,
     convert_megatron_checkpoint_to_hf,
 )
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.openai_messages import _messages_to_openai
 from modal_dojo.common.ids import create_hash
 from modal_dojo.common.modal_urls import modal_app_dashboard_url
@@ -241,7 +241,7 @@ class CustomDeployment(BaseModel):
         else:
             model_path = model.model_path or model.model_name
         if not model_path:
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"{type(model).__name__} has no model path to serve. "
                 "Set model_path or model_name."
             )
@@ -299,9 +299,7 @@ class CustomDeployment(BaseModel):
                 unauthenticated=unauthenticated,
             )
         else:
-            raise TrainingGymConfigError(
-                f"Unsupported deploy recipe: {type(recipe).__name__}"
-            )
+            raise DojoConfigError(f"Unsupported deploy recipe: {type(recipe).__name__}")
 
         app.deploy(
             environment_name=recipe.environment_name,

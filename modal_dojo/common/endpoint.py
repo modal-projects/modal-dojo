@@ -16,7 +16,7 @@ from modal_dojo.common.checkpoint import (
     convert_megatron_checkpoint_to_hf,
 )
 from modal_dojo.common.config import modal_proxy_auth_headers
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.openai_messages import _messages_to_openai
 from modal_dojo.model import ModelConfig
 
@@ -250,7 +250,7 @@ class Endpoint:
         if self.requires_proxy_auth:
             headers = modal_proxy_auth_headers()
             if not headers:
-                raise TrainingGymConfigError(
+                raise DojoConfigError(
                     "Proxy authentication requires an HTTPS Modal URL and "
                     "MODAL_KEY and MODAL_SECRET."
                 )
@@ -264,7 +264,7 @@ class Endpoint:
                 Maximum number of seconds to wait.
 
         Raises:
-            TrainingGymConfigError:
+            DojoConfigError:
                 Required proxy credentials are unavailable.
             RuntimeError:
                 The endpoint rejects proxy credentials.
@@ -323,7 +323,7 @@ class Endpoint:
             The assistant ``message`` dict.
 
         Raises:
-            TrainingGymConfigError:
+            DojoConfigError:
                 Required proxy credentials are unavailable.
             RuntimeError:
                 The endpoint rejects proxy credentials.

@@ -6,7 +6,7 @@ import pytest
 
 from modal_dojo.common.checkpoint import Checkpoint, CheckpointType
 from modal_dojo.common.dataset import HuggingFaceDataset
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.launcher_helpers import resumed_recipe
 from modal_dojo.common.models import Qwen3_5_4B
 from modal_dojo.common.train import TrainConfig
@@ -136,7 +136,7 @@ def test_hf_export_is_not_a_training_resume_checkpoint() -> None:
     config = _config(SlimeRecipe(**_RECIPE_KW), CheckpointType.hf)
 
     with pytest.raises(
-        TrainingGymConfigError,
+        DojoConfigError,
         match="Hugging Face exports are serving artifacts",
     ):
         config._prepare_recipe()

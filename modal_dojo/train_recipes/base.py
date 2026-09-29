@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.train_recipes.gpu_allocation import (
     GpuAllocation,
     resolve_gpu_allocation,
@@ -62,7 +62,7 @@ def _apply_loss_type_fields(
     if "loss_type" in hatch and (
         hatch["loss_type"] == "sft_loss" or fields["loss_type"] == "sft_loss"
     ):
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             "extra_config cannot set loss_type for SFT; "
             "set loss_type on the recipe field instead"
         )
@@ -85,14 +85,14 @@ def _apply_loss_type_fields(
         if key in hatch and hatch[key] != forced
     )
     if conflicts:
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             "extra_config conflicts with SFT-forced values for: " + ", ".join(conflicts)
         )
     fields.update(_SFT_CLI_OVERRIDES)
     hatch_global = hatch.get("global_batch_size")
     hatch_rollout = hatch.get("rollout_batch_size")
     if None not in (hatch_global, hatch_rollout) and hatch_global != hatch_rollout:
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             "extra_config global_batch_size and rollout_batch_size must match "
             f"for loss_type='sft_loss' (got {hatch_global!r} and {hatch_rollout!r})"
         )
@@ -181,7 +181,7 @@ class BaseTrainRecipe(ABC):
             The model preset, or ``None`` when no preset is registered.
 
         Raises:
-            TrainingGymConfigError:
+            DojoConfigError:
                 The recipe accepts only registered models and ``model_config`` is not
                 registered.
         """
@@ -212,7 +212,7 @@ class BaseTrainRecipe(ABC):
         loss_type: str = "policy_loss",
     ) -> None:
         if loss_type == "sft_loss" and eval_ds is not None:
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 "eval_dataset is not supported with loss_type='sft_loss'"
             )
         if eval_ds is None:
@@ -221,7 +221,7 @@ class BaseTrainRecipe(ABC):
             train_value = getattr(ds, dataset_method)()
             eval_value = getattr(eval_ds, dataset_method)()
             if train_value != eval_value:
-                raise TrainingGymConfigError(
+                raise DojoConfigError(
                     f"Training and evaluation datasets must use the same "
                     f"{dataset_method}(): got {train_value!r} and {eval_value!r}."
                 )

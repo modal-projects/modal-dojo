@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from modal_dojo.common.dataset import DatasetConfig, HuggingFaceDataset
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
@@ -28,7 +28,7 @@ def build_miles_validation(
     """
     recipe = MilesRecipe.get_base_recipe(model_config)
     if recipe is None:
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             f"no base miles recipe for model {model_config.model_name!r}, "
             "which is registered as a miles validation target"
         )

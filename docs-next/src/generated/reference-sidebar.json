@@ -25,6 +25,14 @@
       "link": "/reference/datasetconfig"
     },
     {
+      "label": "DojoConfigError",
+      "link": "/reference/dojoconfigerror"
+    },
+    {
+      "label": "DojoError",
+      "link": "/reference/dojoerror"
+    },
+    {
       "label": "Endpoint",
       "link": "/reference/endpoint"
     },
@@ -111,14 +119,6 @@
     {
       "label": "TrainingGroup",
       "link": "/reference/traininggroup"
-    },
-    {
-      "label": "TrainingGymConfigError",
-      "link": "/reference/traininggymconfigerror"
-    },
-    {
-      "label": "TrainingGymError",
-      "link": "/reference/traininggymerror"
     },
     {
       "label": "TrainingRun",
