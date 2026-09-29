@@ -13,6 +13,7 @@ from .deepseek_v41_flash import DeepSeek_V4_1_Flash
 from .gemma4_26b_a4b import Gemma4_26B_A4B
 from .glm_4_7 import GLM_4_7
 from .inkling_small import Inkling_Small, Inkling_Small_LoRA
+from .kimi_k3 import Kimi_K3
 from .moonlight_16b_a3b_instruct import Moonlight_16B_A3B_Instruct
 from .qwen3_0_6b import Qwen3_0_6B
 from .qwen3_1_7b import Qwen3_1_7B
@@ -39,6 +40,7 @@ __all__ = [
     "GLM_4_7",
     "Inkling_Small",
     "Inkling_Small_LoRA",
+    "Kimi_K3",
     "Qwen3_0_6B",
     "Qwen3_1_7B",
     "Qwen3_4B",

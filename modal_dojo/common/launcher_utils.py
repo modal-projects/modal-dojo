@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
+import sys
 from enum import Enum
 from math import lcm
 from os import PathLike
@@ -72,6 +74,49 @@ def resolve_checkpoint_ref(
     from huggingface_hub import snapshot_download
 
     return snapshot_download(ref_str, local_files_only=local_files_only)
+
+
+def prewarm_remote_code(
+    hf_path: str, environment: dict[str, str], *, required: bool = False
+) -> None:
+    """Warm the container-local remote-code cache before concurrent rank imports."""
+    cache = environment.get("HF_MODULES_CACHE")
+    if cache:
+        os.environ["HF_MODULES_CACHE"] = cache
+        os.makedirs(cache, exist_ok=True)
+        dynamic = sys.modules.get("transformers.dynamic_module_utils")
+        if dynamic is not None:  # imported before the variable was set
+            dynamic.HF_MODULES_CACHE = cache
+    try:
+        from transformers import AutoConfig, AutoTokenizer
+
+        AutoConfig.from_pretrained(hf_path, trust_remote_code=True)
+        AutoTokenizer.from_pretrained(hf_path, trust_remote_code=True)
+    except Exception as exc:
+        if required:
+            raise
+        print(f"[prewarm_remote_code] skipped for {hf_path}: {exc!r}", flush=True)
+        return
+    print(f"[prewarm_remote_code] warmed {hf_path}", flush=True)
+
+
+def materialize_remote_code(snapshot_dir: str) -> list[str]:
+    """Copy symlinked Python files so remote-code imports resolve within the snapshot."""
+    rewritten = []
+    for name in sorted(os.listdir(snapshot_dir)):
+        path = os.path.join(snapshot_dir, name)
+        if not name.endswith(".py") or not os.path.islink(path):
+            continue
+        target = os.path.realpath(path)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        shutil.copyfile(target, tmp)
+        os.replace(tmp, path)
+        rewritten.append(path)
+    if rewritten:
+        print(
+            f"[materialize_remote_code] {snapshot_dir}: {', '.join(os.path.basename(p) for p in rewritten)}"
+        )
+    return rewritten
 
 
 def _append_common_arch_args(extra_args: list[str], arch: Any) -> None:

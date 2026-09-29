@@ -24,6 +24,9 @@ from modal_dojo.common.framework import (
     mount_tools_dir,
 )
 from modal_dojo.common.launcher_utils import (
+    is_local_checkpoint_ref,
+    materialize_remote_code,
+    prewarm_remote_code,
     timing_debug_env,
 )
 from modal_dojo.common.metrics import (
@@ -489,6 +492,14 @@ def build_miles_app(
     hf_cache_volume = all_volumes[str(HF_CACHE_PATH)]
     data_volume = all_volumes[str(DATA_PATH)]
     checkpoints_volume = all_volumes[checkpoints_mount_path]
+    environment = dict(miles.environment)
+    for key in ("TRITON_CACHE_DIR", "TORCHINDUCTOR_CACHE_DIR"):
+        cache_dir = environment.get(key)
+        if cache_dir and Path(cache_dir).is_relative_to(CHECKPOINTS_PATH):
+            environment[key] = str(
+                Path(checkpoints_mount_path)
+                / Path(cache_dir).relative_to(CHECKPOINTS_PATH)
+            )
     checkpoint_dir = compute_recipe_save_root(
         miles,
         recipe_default_save_root=str(CHECKPOINTS_PATH),
@@ -505,9 +516,19 @@ def build_miles_app(
     )
     app = App(app_name, tags=tags)
     gpu_spec = f"{miles.gpu_type}:{miles.gpu_allocation.gpus_per_node}"
+    download_timeout = miles.download_timeout_seconds or 4 * 60 * 60
+    dataset_timeout = 4 * 60 * 60
+
+    def materialize_model_remote_code() -> None:
+        # Rewrite remote-code symlinks before the head commits the cache Volume.
+        if model and model.model_name and not is_local_checkpoint_ref(model.model_name):
+            materialize_remote_code(
+                resolve_checkpoint_ref(model.model_path or model.model_name)
+            )
 
     def download_inputs() -> None:
         model.download()
+        materialize_model_remote_code()
         miles.download_model()
         miles.post_process_model()
 
@@ -520,11 +541,11 @@ def build_miles_app(
         checkpoints_mount_path=checkpoints_mount_path,
         download_phase=MilesStatus.DOWNLOAD_MODEL.value,
         download=download_inputs,
-        download_timeout=4 * 60 * 60,
+        download_timeout=download_timeout,
         prepare_dataset=lambda: write_datasets(
             dataset, eval_dataset, dataset_path, eval_dataset_path
         ),
-        dataset_timeout=4 * 60 * 60,
+        dataset_timeout=dataset_timeout,
     )
 
     convert_nnodes, convert_nproc, _ = get_checkpoint_conversion_policy(
@@ -634,8 +655,10 @@ def build_miles_app(
         image=image,
         gpu=convert_gpu,
         volumes=all_volumes,
-        timeout=4 * 60 * 60,
+        timeout=miles.convert_timeout_seconds or 4 * 60 * 60,
         secrets=proxy_auth_secrets() or None,
+        # torch_dist stages each rank's shard through host RAM.
+        memory=miles.memory,
         ephemeral_disk=miles.convert_ephemeral_disk_mb,
         experimental_options=shared.experimental_options(miles),
         serialized=True,
@@ -709,12 +732,11 @@ def build_miles_app(
                 f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
             )
 
-        env = {**os.environ, **miles.environment}
+        env = {**os.environ, **environment}
         if any(arg.startswith("--pipeline-model-parallel-size ") for arg in extra_args):
             env["CONVERT_KEEP_PP1"] = "1"
         if num_nodes > 1:
             env["SKIP_RELEASE_RENAME"] = "1"
-
         print(
             f"Conversion layout: nodes={num_nodes}, nproc_per_node={nproc_per_node}, "
             f"node_rank={node_rank}"
@@ -729,6 +751,9 @@ def build_miles_app(
         )
         try:
             with heartbeat:
+                prewarm_remote_code(
+                    hf_path, env, required=miles.model_name == "kimi_k3"
+                )
                 subprocess.run(["bash", "-c", cmd], check=True, env=env)
 
                 checkpoints_volume.commit()
@@ -844,6 +869,7 @@ def build_miles_app(
                     model.prepare_runtime_cache()
 
             miles.download_model()
+            materialize_model_remote_code()
             await set_status(MilesStatus.CONVERT_MODEL)
             miles.post_process_model()
             await hf_cache_volume.commit.aio()
@@ -870,7 +896,7 @@ def build_miles_app(
                 f.write(str(time.time()))
             await checkpoints_volume.commit.aio()
         else:
-            deadline = time.time() + 4 * 60 * 60
+            deadline = time.time() + download_timeout + dataset_timeout
             while True:
                 await asyncio.gather(
                     hf_cache_volume.reload.aio(),
@@ -885,6 +911,14 @@ def build_miles_app(
                 if time.time() > deadline:
                     raise RuntimeError("Timed out waiting for head preparation marker")
                 await asyncio.sleep(5)
+
+        if model and model.model_name:
+            # Warm each node's cache before Ray imports remote code concurrently.
+            prewarm_remote_code(
+                resolve_checkpoint_ref(model.model_path or model.model_name),
+                environment,
+                required=miles.model_name == "kimi_k3",
+            )
 
         cluster.start_ray()
 
@@ -933,7 +967,7 @@ def build_miles_app(
                     run_id=metric_run_id,
                     entity=metric_entity,
                 ),
-                environment=miles.environment,
+                environment=environment,
                 substep_timing=miles.substep_timing,
                 extra_env={
                     "TRAINING_GYM_TRAINING_RUN_ID": training_run_id,

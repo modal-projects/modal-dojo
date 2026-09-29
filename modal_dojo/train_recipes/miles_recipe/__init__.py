@@ -9,6 +9,9 @@ from modal_dojo.train_recipes.miles_recipe.inkling import (
     Inkling_Small_LoRA_Recipe,
     Inkling_Small_Recipe,
 )
+from modal_dojo.train_recipes.miles_recipe.kimi_k3 import (
+    Kimi_K3_LoRA_Recipe,
+)
 from modal_dojo.train_recipes.miles_recipe.moonlight_16b_a3b import (
     Moonlight_16B_A3B_Recipe,
 )
@@ -22,6 +25,7 @@ __all__ = [
     "Gemma4_26B_A4B_Recipe",
     "Inkling_Small_Recipe",
     "Inkling_Small_LoRA_Recipe",
+    "Kimi_K3_LoRA_Recipe",
     "Moonlight_16B_A3B_Recipe",
     "Qwen3_5_4B_Miles_Recipe",
 ]

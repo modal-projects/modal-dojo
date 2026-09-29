@@ -14,7 +14,8 @@ var, hence the source patch in its wrapper).
 
 CONVERT_DEQUANT_HF_WEIGHTS=1 dequantizes DeepSeek block-scaled fp8/fp4 weights
 as mbridge reads them (see hf_block_dequant), for checkpoints that ship without
-a bf16 export.
+a bf16 export. CONVERT_DEQUANT_MXFP4=1 does the same for MXFP4
+compressed-tensors experts (see hf_mxfp4_dequant), which Kimi-K3 ships.
 
 When neither variable is set this wrapper is a transparent pass-through, apart
 from local rank 0 logging host/cgroup memory so a SIGKILLed rank can be told
@@ -107,6 +108,11 @@ def main() -> None:
         import hf_block_dequant
 
         hf_block_dequant.install()
+    if os.environ.get("CONVERT_DEQUANT_MXFP4"):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import hf_mxfp4_dequant
+
+        hf_mxfp4_dequant.install()
     exec(
         compile(src, _UPSTREAM, "exec"), {"__name__": "__main__", "__file__": _UPSTREAM}
     )
