@@ -204,6 +204,19 @@ class BaseTrainRecipe(ABC):
         safe_key = _safe_data_key(str(cache_key))
         return f"{DATA_PATH}/{safe_key}.{ds.output_format()}"
 
+    @classmethod
+    def _resolve_dataset_paths(
+        cls,
+        ds: "DatasetConfig",
+        eval_ds: "DatasetConfig | None",
+    ) -> tuple[str, str | None]:
+        dataset_path = cls._resolve_data_paths(ds)
+        if eval_ds is None:
+            return dataset_path, None
+        if eval_ds is ds:
+            return dataset_path, dataset_path
+        return dataset_path, cls._resolve_data_paths(eval_ds)
+
     @staticmethod
     def _validate_datasets(
         ds: "DatasetConfig",

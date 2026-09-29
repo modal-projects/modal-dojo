@@ -588,21 +588,35 @@ class TrainConfig:
         """Sample ``n_samples`` rollouts per ``dataset`` row without training."""
         if not isinstance(self.recipe, SlimeRecipe):
             raise DojoConfigError("evaluate() requires a Slime recipe")
+        hatch = {
+            k: v
+            for k, v in (self.recipe.extra_config or {}).items()
+            if k
+            not in (
+                "num_rollout",
+                "num_epoch",
+                "eval_interval",
+                "n_samples_per_eval_prompt",
+            )
+        }
         recipe = _dc.replace(
             self.recipe,
             num_rollout=0,
+            num_epoch=None,
             async_mode=False,
             eval_interval=1,
             n_samples_per_eval_prompt=n_samples,
             eval_config=None,
             # Megatron requires warmup < decay steps, and decay steps > 0.
             extra_config={
-                **(self.recipe.extra_config or {}),
+                **hatch,
                 "lr_decay_iters": 1,
                 "lr_warmup_iters": 0,
             },
         )
-        run = _dc.replace(self, eval_dataset=dataset, recipe=recipe).train()
+        run = _dc.replace(
+            self, dataset=dataset, eval_dataset=dataset, recipe=recipe
+        ).train()
         key = TrainingRolloutResult(
             training_run_id=run.training_run_id, rollout_id=0
         ).storage_key

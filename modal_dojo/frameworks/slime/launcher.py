@@ -355,11 +355,8 @@ def build_slime_app(
     SlimeRecipe._validate_datasets(dataset, eval_dataset, loss_type=slime.loss_type)
     if slime.loss_type == "sft_loss":
         dataset = _SftDataset(dataset)
-    dataset_path = SlimeRecipe._resolve_data_paths(dataset)
-    eval_dataset_path = (
-        SlimeRecipe._resolve_data_paths(eval_dataset)
-        if eval_dataset is not None
-        else None
+    dataset_path, eval_dataset_path = SlimeRecipe._resolve_dataset_paths(
+        dataset, eval_dataset
     )
 
     # Models that can't do THD packing (model.requires_bshd, e.g. Qwen3-ASR) must

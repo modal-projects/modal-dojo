@@ -31,9 +31,8 @@ from modal_training_gym import (
 
 # ## Get the dataset
 #
-# We'll first convert the HF dataset into Harbor tasks and create repository-disjoint
-# train/eval sets. We filter out tasks that would otherwise degrade learning or require 
-# oversampling if removed, which prolongs rollout generation.
+# Convert the HF dataset into Harbor tasks and create a repository-disjoint
+# train/eval split.
 
 HF_DATASET = "nebius/SWE-rebench-V2"
 HF_REVISION = "475dd5e8703bb5fb22dd3c60b5d038b019eba1e0"
@@ -80,14 +79,18 @@ class SWERebench(DatasetConfig):
         self,
         split: Literal["train", "eval"],
         limit: int | None = None,
-        keep: frozenset[str] | None = None,
+        id_filter: frozenset[str] | None = None,
     ):
         self.split = split
         self.limit = limit
-        self.keep = keep
+        self.id_filter = id_filter
 
     def cache_key(self) -> str:
-        keep = "all" if self.keep is None else _digest(",".join(sorted(self.keep)))[:12]
+        keep = (
+            "all"
+            if self.id_filter is None
+            else _digest(",".join(sorted(self.id_filter)))[:12]
+        )
         return f"{TASK_ROOT.name}-{self.split}-{self.limit}-{keep}"
 
     def input_key(self) -> str:
@@ -108,11 +111,19 @@ class SWERebench(DatasetConfig):
             row
             for row in rows
             if is_eval(row) == (self.split == "eval")
-            and (self.keep is None or row["metadata"]["instance_id"] in self.keep)
+            and (
+                self.id_filter is None
+                or row["metadata"]["instance_id"] in self.id_filter
+            )
         ]
         rows.sort(key=lambda row: _digest(row["metadata"]["instance_id"]))
         return rows[: self.limit]
 
+
+# ## Filter tasks
+#
+# We use `TrainConfig.evaluate` to find which tasks are either too easy or too hard,
+# and would yield zero advantage and waste rollout time.
 
 TRAIN_TASKS = 300
 PROBE_SAMPLES = 8
@@ -148,8 +159,8 @@ def probed_tasks(config: TrainConfig) -> frozenset[str]:
 
 # ## Start training
 #
-# With the [Qwen3_6_27B_Recipe](https://gym.modal.dev/reference/qwen3_6_27b_recipe)
-# recipe class, it's just that simple.
+# [Qwen3_6_27B_Recipe](https://gym.modal.dev/reference/qwen3_6_27b_recipe)
+# supplies the model defaults, but we also specify use-case dependent parameters.
 
 def build_config(dataset, eval_temperature=None):
     return TrainConfig(
@@ -240,6 +251,6 @@ def build_config(dataset, eval_temperature=None):
 
 if __name__ == "__main__":
     keep = probed_tasks(build_config(SWERebench("train", limit=TRAIN_TASKS)))
-    config = build_config(SWERebench("train", keep=keep), eval_temperature=0.6)
+    config = build_config(SWERebench("train", id_filter=keep), eval_temperature=0.6)
     run = config.launch()
     print(f"run id: {run.training_run_id}")

@@ -104,10 +104,9 @@ messages, `"messages"` for an already formatted message column, and `"raw"`
 only when the framework must not apply the model's chat template.
 
 For custom data, subclass `DatasetConfig` and implement the methods
-`input_key()`, `label_key()`, and `rows()`. `rows()` is also the interface for
-explicit local or offline loops. The default `write(path)` serializes those
-rows to JSONL; launchers create the destination directory and call `write()` to
-materialize framework input on the shared data volume. Override
+`input_key()`, `label_key()`, and `rows()`. The default `write(path)` serializes
+those rows to JSONL; launchers create the destination directory and call
+`write()` to materialize framework input on the shared data volume. Override
 `apply_chat_template()` when its default of `True` is not appropriate.
 
 `cache_key()` controls materialization reuse. Return the same stable key when
@@ -117,11 +116,12 @@ training run use a fresh path and attempt materialization independently.
 ### `TrainConfig` + recipe
 
 `TrainConfig` composes `dataset`, `model`, and a recipe (`SlimeRecipe` /
-`MilesRecipe`). It also accepts an optional, separate `eval_dataset` for the
-framework's internal evaluation loop. Offline evaluation uses
-`TrainConfig.evaluate(dataset, n_samples)` instead. Recipes carry Modal
-infra + framework CLI flags (`extra="forbid"`). Call `.train()` / `.launch()` —
-no public `build_app()`.
+`MilesRecipe`). Pass `eval_dataset` for validation testing using the underlying framework. Call `TrainConfig.evaluate(dataset, n_samples)` to score a model with
+the framework's own rollout loop without training. It returns the samples, for
+example to probe or filter tasks before training. Iterate `dataset.rows()`
+yourself when your evals require more customization.
+Recipes carry Modal infra + framework CLI flags (`extra="forbid"`). Call
+`.train()` / `.launch()` — no public `build_app()`.
 
 ```python
 cfg = TrainConfig(
