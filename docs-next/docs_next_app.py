@@ -16,6 +16,7 @@ Local development:
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import quote
 
 import modal
 
@@ -115,7 +116,8 @@ def serve():
     async def legacy_host_redirect(request: Request, call_next):
         if request.url.hostname != LEGACY_HOST:
             return await call_next(request)
-        path = request.scope["raw_path"].decode("ascii")
+        raw_path = request.scope.get("raw_path")
+        path = raw_path.decode("ascii") if raw_path else quote(request.url.path)
         query = request.url.query
         location = f"https://{CANONICAL_HOST}{path}"
         if query:

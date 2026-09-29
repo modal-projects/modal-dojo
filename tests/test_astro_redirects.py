@@ -45,6 +45,24 @@ def test_legacy_domain_redirect_preserves_url(docs_client, method, path):
     assert response.headers["location"] == f"https://dojo.modal.dev{path}"
 
 
+def test_legacy_domain_redirect_without_raw_path(tmp_path, monkeypatch):
+    dist, _ = _site(tmp_path)
+    monkeypatch.syspath_prepend(str(ROOT / "docs-next"))
+    monkeypatch.setattr(modal, "is_local", lambda: False)
+    docs = _load("docs_next_app", ROOT / "docs-next" / "docs_next_app.py")
+    monkeypatch.setattr(docs, "REMOTE_DIST", str(dist))
+    inner = docs.serve.local()
+
+    async def without_raw_path(scope, receive, send):
+        scope.pop("raw_path", None)
+        await inner(scope, receive, send)
+
+    with TestClient(without_raw_path, follow_redirects=False) as client:
+        response = client.head("https://gym.modal.dev/docs/a%20b?x=1")
+    assert response.status_code == 301
+    assert response.headers["location"] == "https://dojo.modal.dev/docs/a%20b?x=1"
+
+
 @pytest.mark.parametrize("host", ["dojo.modal.dev", "preview.modal.run"])
 def test_other_domains_serve_docs_and_keep_path_redirects(docs_client, host):
     response = docs_client.get(f"https://{host}/")
