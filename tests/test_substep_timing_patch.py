@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 TESTDATA = Path(__file__).parent / "testdata"
-FRAMEWORKS = Path(__file__).parents[1] / "modal_training_gym" / "frameworks"
+FRAMEWORKS = Path(__file__).parents[1] / "modal_dojo" / "frameworks"
 
 
 def patcher_path(framework: str) -> Path:

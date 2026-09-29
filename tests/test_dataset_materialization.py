@@ -3,13 +3,13 @@ import pickle
 
 import pytest
 
-from modal_training_gym.common.dataset import DatasetConfig, HarborDataset, _SftDataset
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.launcher_helpers import (
+from modal_dojo.common.dataset import DatasetConfig, HarborDataset, _SftDataset
+from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.launcher_helpers import (
     write_dataset_if_needed,
     write_datasets,
 )
-from modal_training_gym.train_recipes.base import BaseTrainRecipe
+from modal_dojo.train_recipes.base import BaseTrainRecipe
 
 
 class RowsDataset(DatasetConfig):

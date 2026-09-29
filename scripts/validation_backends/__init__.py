@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.models.validation import Framework
+from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.models.validation import Framework
 
 if TYPE_CHECKING:
-    from modal_training_gym.common.dataset import DatasetConfig
-    from modal_training_gym.common.models import ModelConfig
-    from modal_training_gym.train_recipes.base import BaseTrainRecipe
+    from modal_dojo.common.dataset import DatasetConfig
+    from modal_dojo.common.models import ModelConfig
+    from modal_dojo.train_recipes.base import BaseTrainRecipe
 
 
 def build_recipe_and_dataset(

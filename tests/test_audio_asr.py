@@ -8,13 +8,13 @@ import types
 
 import pytest
 
-from modal_training_gym.common.eval import AudioEvalRowResult, EvalRowResult
-from modal_training_gym.common.models.qwen3_asr_1_7b import (
+from modal_dojo.common.eval import AudioEvalRowResult, EvalRowResult
+from modal_dojo.common.models.qwen3_asr_1_7b import (
     Qwen3_ASR_1_7B,
     _prompt_user_text,
     render_prompt,
 )
-from modal_training_gym.frameworks.slime.audio_transcription_rollout import _audio_ref
+from modal_dojo.frameworks.slime.audio_transcription_rollout import _audio_ref
 
 _PLACEHOLDER = Qwen3_ASR_1_7B.audio_placeholder
 _DATA_URI = "data:audio/wav;base64," + base64.b64encode(b"RIFFxxxx").decode()

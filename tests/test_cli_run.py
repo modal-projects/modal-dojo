@@ -6,8 +6,8 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from modal_training_gym import cli as cli_module
-from modal_training_gym.cli import run as run_module
+from modal_dojo import cli as cli_module
+from modal_dojo.cli import run as run_module
 
 
 class FakeDashboardClient:

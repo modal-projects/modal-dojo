@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from modal_training_gym.frameworks.miles.phase_reporting import _hook_path_from_args
-from modal_training_gym.train_recipes.miles_recipe.recipe import MilesRecipe
+from modal_dojo.frameworks.miles.phase_reporting import _hook_path_from_args
+from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 
 def test_str_hook_is_stashed_in_extra_config() -> None:
@@ -91,7 +91,7 @@ def test_hook_lookup_never_dispatches_to_gym_wrapper() -> None:
     args = SimpleNamespace(
         extra_config={
             "custom_rollout_log_function_path": (
-                "modal_training_gym.frameworks.miles.phase_reporting.log_rollout_data"
+                "modal_dojo.frameworks.miles.phase_reporting.log_rollout_data"
             )
         }
     )

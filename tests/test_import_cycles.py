@@ -1,9 +1,9 @@
-"""Guard against import cycles anywhere in ``modal_training_gym``.
+"""Guard against import cycles anywhere in ``modal_dojo``.
 
 Every module is imported *first*, alone, in a fresh interpreter. That ordering is
 the whole point: a cycle only raises for whoever enters it first, and nothing
-else in CI ever does. ``modal_training_gym/__init__.py`` is a lazy
-``__getattr__`` shim, so ``import modal_training_gym`` pulls in no submodule at
+else in CI ever does. ``modal_dojo/__init__.py`` is a lazy
+``__getattr__`` shim, so ``import modal_dojo`` pulls in no submodule at
 all; ``compileall`` never executes an import; and by the time a test touches
 ``common.config`` the module is already in ``sys.modules``, which masks the cycle
 no matter which side is broken.
@@ -30,7 +30,7 @@ import pytest
 
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
-PKG_ROOT = REPO_ROOT / "modal_training_gym"
+PKG_ROOT = REPO_ROOT / "modal_dojo"
 
 # Modules that import slime / Megatron-LM / miles / torch at module scope, or
 # read a file that only exists in the training image. They cannot be imported
@@ -39,28 +39,28 @@ PKG_ROOT = REPO_ROOT / "modal_training_gym"
 # fails on a rename or deletion.
 REMOTE_ONLY = frozenset(
     {
-        "modal_training_gym.common.megatron_patches.patch_checkpoint_save",
-        "modal_training_gym.common.megatron_patches.patch_dist_ckpt_nofork",
-        "modal_training_gym.common.megatron_patches.patch_dist_ckpt_quantized",
-        "modal_training_gym.common.megatron_patches.patch_gdn_packed_seq",
-        "modal_training_gym.common.megatron_patches.patch_torch_load",
-        "modal_training_gym.common.megatron_patches.patch_validation",
-        "modal_training_gym.frameworks.miles.modal_helpers.hf_block_dequant",
-        "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_chat_template",
-        "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_fp4_dequant_block",
-        "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_fp8_hopper_gemm",
-        "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_processor_tokenizer",
-        "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_sglang_tree",
-        "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_vision_topk_capture",
-        "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_gemma4_vl_rollout_text",
-        "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_router_startup_timeout",
-        "modal_training_gym.frameworks.miles.modal_helpers.patches.patch_sglang_abort",
-        "modal_training_gym.frameworks.slime.modal_helpers.patches.patch_advantages",
-        "modal_training_gym.frameworks.slime.modal_helpers.patches.patch_bridge_provider_per_token_loss",
-        "modal_training_gym.frameworks.slime.modal_helpers.patches.patch_megatron_bridge",
-        "modal_training_gym.frameworks.slime.modal_helpers.patches.patch_stop_token_diagnostic",
-        "modal_training_gym.frameworks.slime.modal_helpers.patches.patch_zero_std_metrics",
-        "modal_training_gym.frameworks.slime.opd_reward",
+        "modal_dojo.common.megatron_patches.patch_checkpoint_save",
+        "modal_dojo.common.megatron_patches.patch_dist_ckpt_nofork",
+        "modal_dojo.common.megatron_patches.patch_dist_ckpt_quantized",
+        "modal_dojo.common.megatron_patches.patch_gdn_packed_seq",
+        "modal_dojo.common.megatron_patches.patch_torch_load",
+        "modal_dojo.common.megatron_patches.patch_validation",
+        "modal_dojo.frameworks.miles.modal_helpers.hf_block_dequant",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_chat_template",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_fp4_dequant_block",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_fp8_hopper_gemm",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_processor_tokenizer",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_sglang_tree",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_deepseek_v41_vision_topk_capture",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_gemma4_vl_rollout_text",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_router_startup_timeout",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_sglang_abort",
+        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_advantages",
+        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_bridge_provider_per_token_loss",
+        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_megatron_bridge",
+        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_stop_token_diagnostic",
+        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_zero_std_metrics",
+        "modal_dojo.frameworks.slime.opd_reward",
     }
 )
 
@@ -145,12 +145,12 @@ def test_no_stale_remote_only_entries() -> None:
 
 def test_discovery_covers_the_package() -> None:
     """A walk that silently stops short would make every check above vacuous."""
-    assert "modal_training_gym" in MODULES
-    assert "modal_training_gym.common.config" in MODULES  # nested module
-    assert "modal_training_gym.frameworks.slime.launcher" in MODULES  # deeply nested
+    assert "modal_dojo" in MODULES
+    assert "modal_dojo.common.config" in MODULES  # nested module
+    assert "modal_dojo.frameworks.slime.launcher" in MODULES  # deeply nested
 
     subpackages = {
-        f"modal_training_gym.{path.name}"
+        f"modal_dojo.{path.name}"
         for path in PKG_ROOT.iterdir()
         if (path / "__init__.py").exists()
     }

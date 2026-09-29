@@ -17,7 +17,7 @@
 import re
 import time
 
-from modal_training_gym import (
+from modal_dojo import (
     Endpoint,
     HuggingFaceDataset,
     Qwen3_5_4B,

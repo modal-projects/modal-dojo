@@ -17,7 +17,7 @@ The [HuggingFaceDataset](https://gym.modal.dev/reference/huggingfacedataset) cla
 For example, [statworx/haiku](https://huggingface.co/datasets/statworx/haiku) contains a `keywords` column with only a single word as input, and a `text` column that contains a ground-truth label. Since the input isn’t in the OpenAI chat completions API format, we need to set `input_format` to `text` so that the Gym can format each prompt in the dataset as a single user message.
 
 ```python
-from modal_training_gym import HuggingFaceDataset
+from modal_dojo import HuggingFaceDataset
 
 haiku_dataset = HuggingFaceDataset(
     "statworx/haiku",
@@ -73,7 +73,7 @@ modal secret create huggingface-secret HF_TOKEN=hf_...
 A [Harbor dataset](https://gym.modal.dev/reference/harbordataset) provides a series of tasks, each containing instructions, files for the coding environment, and tests.
 
 ```python
-from modal_training_gym import HarborDataset
+from modal_dojo import HarborDataset
 
 hello_dataset = HarborDataset(dataset_name="harbor/hello-world")
 ```
@@ -109,7 +109,7 @@ hello_dataset = HarborDataset(
 To use your own data, likely stored in an [external source](https://modal.com/docs/guide/cloud-bucket-mounts) or a [Modal Volume](https://modal.com/docs/guide/volumes), you simply subclass [DatasetConfig](https://gym.modal.dev/reference/datasetconfig):
 
 ```python
-from modal_training_gym import DatasetConfig
+from modal_dojo import DatasetConfig
 
 prompts = [(prompt, label), ...]  # external source
 
@@ -135,7 +135,7 @@ dataset = MyCustomDataset()
 When the [environment](https://gym.modal.dev/guides/recipe#environment) generates the prompts (i.e., no initial dataset), you must use [`OnlineRollout`](https://gym.modal.dev/reference/onlinerollout):
 
 ```python
-from modal_training_gym import OnlineRollout
+from modal_dojo import OnlineRollout
 
 recipe = Qwen3_5_4B_Recipe(
     # ...

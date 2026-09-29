@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from modal_training_gym.common.launcher_helpers import (
+from modal_dojo.common.launcher_helpers import (
     experimental_options,
     training_function_options,
 )

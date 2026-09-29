@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from modal_training_gym.common.models.qwen3_0_6b import Qwen3_0_6B
-from modal_training_gym.common.models.validation import (
+from modal_dojo.common.models.qwen3_0_6b import Qwen3_0_6B
+from modal_dojo.common.models.validation import (
     VALIDATION_CONFIGS,
     Framework,
     _ValidationConfig,
@@ -60,7 +60,7 @@ def test_registry_uses_the_packages_one_framework_enum():
     would fall through to "no validation backend" if the registry declared its
     own copy — equal by value, a different class.
     """
-    from modal_training_gym.common.framework import Framework as CanonicalFramework
+    from modal_dojo.common.framework import Framework as CanonicalFramework
 
     assert Framework is CanonicalFramework
     recipe, dataset = build_recipe_and_dataset(
@@ -208,7 +208,7 @@ def test_validation_dataset_unpickles_without_the_scripts_directory(config, tmp_
     payload = serialize(dataset)
 
     # Blocking the import is a truer stand-in for the image than trimming
-    # sys.path: modal_training_gym is installed from this same tree, so the
+    # sys.path: modal_dojo is installed from this same tree, so the
     # entry that makes the backends importable is the one it needs too.
     probe = textwrap.dedent("""
         import base64, pickle, sys
@@ -272,7 +272,7 @@ def test_framework_change_preserves_shared_class_impact():
     names = {c.name for c in VALIDATION_CONFIGS}
     miles_launcher = next(iter(FRAMEWORK_VALIDATION_HARNESS_PATHS["miles"]))
     diff = _diff_touching(
-        "modal_training_gym/common/models/base.py",
+        "modal_dojo/common/models/base.py",
         str(miles_launcher.relative_to(REPO_ROOT)),
     )
 

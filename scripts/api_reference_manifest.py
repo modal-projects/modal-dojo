@@ -4,8 +4,8 @@ import inspect
 from enum import Enum
 from typing import Any
 
-import modal_training_gym as gym
-from modal_training_gym._api_reference import is_excluded_from_api_reference
+import modal_dojo as gym
+from modal_dojo._api_reference import is_excluded_from_api_reference
 from scripts.generate_models_table import collect_model_preset_names
 
 API_REFERENCE_DENYLIST: frozenset[str] = frozenset(

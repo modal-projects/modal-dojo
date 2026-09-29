@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from modal_training_gym.common.time import parse_time
+from modal_dojo.common.time import parse_time
 
 
 NOW = datetime(2026, 7, 9, 18, 0, 0, tzinfo=UTC).timestamp()

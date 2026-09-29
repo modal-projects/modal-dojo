@@ -3,14 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from modal_training_gym.common.errors import GpuAllocationError
-from modal_training_gym.train_recipes.miles_recipe.recipe import MilesRecipe
-from modal_training_gym.train_recipes.gpu_allocation import (
+from modal_dojo.common.errors import GpuAllocationError
+from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
+from modal_dojo.train_recipes.gpu_allocation import (
     resolve_gpu_allocation,
     validate_megatron_actor_parallelism,
     validate_num_experts_divisible_by_expert_parallel_size,
 )
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 _SLIME_KW = dict(

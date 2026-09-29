@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modal_training_gym.frameworks.slime.modal_helpers.patches import (
+from modal_dojo.frameworks.slime.modal_helpers.patches import (
     patch_qwen3_5_hf_dispatch as patcher,
 )
 

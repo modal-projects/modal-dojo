@@ -46,7 +46,7 @@ We leave it ambiguous to demonstrate that when empowered with the right tools an
 Since it is just writing Python code, we can easily inspect what it wrote. First, it loaded the dataset:
 
 ```python
-from modal_training_gym import HuggingFaceDataset
+from modal_dojo import HuggingFaceDataset
 
 SYSTEM_PROMPT = (
     "You are a poet who answers every question in rhyme. Answer the question "
@@ -244,7 +244,7 @@ def rhyme_reward(response: str, reference: str) -> float:
 
 
 async def rhyme_rm(args, sample, **kwargs) -> float:
-    from modal_training_gym import Qwen3_4B
+    from modal_dojo import Qwen3_4B
 
     model = Qwen3_4B()
     response = model.parse_response(getattr(sample, "response", "") or "")
@@ -255,8 +255,8 @@ async def rhyme_rm(args, sample, **kwargs) -> float:
 Then, it wrote the training code:
 
 ```python
-from modal_training_gym import Qwen3_4B, TrainConfig
-from modal_training_gym.train_recipes.slime_recipe import Qwen3_4B_Recipe
+from modal_dojo import Qwen3_4B, TrainConfig
+from modal_dojo.train_recipes.slime_recipe import Qwen3_4B_Recipe
 
 
 def _image_overlay(image):

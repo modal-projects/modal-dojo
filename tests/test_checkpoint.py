@@ -4,21 +4,21 @@ from dataclasses import dataclass
 import modal
 import pytest
 
-from modal_training_gym.common import checkpoint as checkpoint_mod
-from modal_training_gym.common.checkpoint import (
+from modal_dojo.common import checkpoint as checkpoint_mod
+from modal_dojo.common.checkpoint import (
     Checkpoint,
     CheckpointType,
     convert_megatron_checkpoint_to_hf,
     volume_relative_path,
 )
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.framework import Framework
-from modal_training_gym.common.launcher_helpers import (
+from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.framework import Framework
+from modal_dojo.common.launcher_helpers import (
     compute_recipe_save_root,
     compute_save_root,
 )
-from modal_training_gym.common.models import ModelConfig, Qwen3_5_4B
-from modal_training_gym.common.run import TrainingRun, set_checkpoint_location
+from modal_dojo.common.models import ModelConfig, Qwen3_5_4B
+from modal_dojo.common.run import TrainingRun, set_checkpoint_location
 
 
 class _CheckpointVolume:

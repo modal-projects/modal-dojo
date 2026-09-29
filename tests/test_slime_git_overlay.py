@@ -1,6 +1,6 @@
 import pytest
 
-from modal_training_gym.frameworks.slime.launcher import (
+from modal_dojo.frameworks.slime.launcher import (
     SLIME_ROOT,
     _SLIME_EXTERNAL_PATCHES_B64,
     _SLIME_ROOT_PATCHES_B64,
@@ -10,7 +10,7 @@ from modal_training_gym.frameworks.slime.launcher import (
     _PATCH_SUBSTEP_TIMING_B64,
     _slime_git_overlay_command,
 )
-from modal_training_gym.train_recipes.slime_recipe import Qwen3_6_27B_Recipe
+from modal_dojo.train_recipes.slime_recipe import Qwen3_6_27B_Recipe
 
 
 REPOSITORY = "https://github.com/modal-projects/slime.git"
