@@ -24,7 +24,7 @@ from pydantic import (
     field_validator,
 )
 
-from modal_dojo.common.errors import TrainingGymError
+from modal_dojo.common.errors import DojoError
 from modal_dojo.common.framework import Framework
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.status import FrameworkStatus, resolve_framework_status
@@ -421,7 +421,7 @@ class TrainingRun(BaseModel):
             ``True`` if the run was stopped, ``False`` if it had already finished.
 
         Raises:
-            TrainingGymError: The run has no Modal app yet.
+            DojoError: The run has no Modal app yet.
         """
         from modal_dojo.common.modal_lifecycle import app_live_status, stop_app
 
@@ -429,7 +429,7 @@ class TrainingRun(BaseModel):
         if record.status is not TrainingRunStatus.RUNNING:
             return False
         if not record.modal_app_id:
-            raise TrainingGymError(
+            raise DojoError(
                 "Run is still launching; retry once its Modal app has started."
             )
         # A confirmed-dead app needs no stop RPC — the record update below is
