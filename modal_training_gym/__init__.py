@@ -56,6 +56,11 @@ _EXPORTS = {
         "Gemma4_26B_A4B_Recipe",
     ),
     "GLM_4_7": ("modal_training_gym.common.models", "GLM_4_7"),
+    "GLM_5_3_Flash_LoRA": ("modal_training_gym.common.models", "GLM_5_3_Flash_LoRA"),
+    "GLM_5_3_Flash_LoRA_Recipe": (
+        "modal_training_gym.train_recipes.miles_recipe",
+        "GLM_5_3_Flash_LoRA_Recipe",
+    ),
     "GLM_5_3_Flash": ("modal_training_gym.common.models", "GLM_5_3_Flash"),
     "GLM_5_3_Flash_Recipe": (
         "modal_training_gym.train_recipes.miles_recipe",
@@ -206,6 +211,8 @@ __all__ = [
     "Gemma4_26B_A4B_Recipe",
     "GLM_4_7",
     "GLM_5_3_Flash",
+    "GLM_5_3_Flash_LoRA",
+    "GLM_5_3_Flash_LoRA_Recipe",
     "GLM_5_3_Flash_Recipe",
     "GLM_4_7_Recipe",
     "HarborDataset",
