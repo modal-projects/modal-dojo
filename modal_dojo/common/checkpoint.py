@@ -17,7 +17,6 @@ from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.run import TrainingRun
 from modal_dojo.common.torch_dist_checkpoint import (
     TORCH_DIST_TRACKER_NAME,
-    is_complete_torch_dist_checkpoint,
     parse_torch_dist_iteration,
     parse_torch_dist_tracker,
 )
@@ -134,20 +133,11 @@ def _list_checkpoints(
         name = _entry_name(entry)
         if not name.startswith("iter_") or name.endswith("_hf"):
             continue
-        child_rel = f"{rel}/{name}" if rel else name
-        try:
-            child_names = {
-                _entry_name(child)
-                for child in volume.iterdir(child_rel, recursive=False)
-            }
-        except (FileNotFoundError, NotFoundError):
-            child_names = set()
         iteration = parse_torch_dist_iteration(name)
         if (
             tracker_iteration is None
             or iteration is None
             or iteration > tracker_iteration
-            or not is_complete_torch_dist_checkpoint(child_names)
         ):
             continue
         checkpoints.append(
