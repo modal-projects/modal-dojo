@@ -52,7 +52,6 @@ class GLM_5_3_Flash_Recipe(MilesRecipe):
     tensor_model_parallel_size: int = 8
     pipeline_model_parallel_size: int = 4
     expert_model_parallel_size: int = 8
-    expert_tensor_parallel_size: int = 1
     sequence_parallel: bool = True
     decoder_first_pipeline_num_layers: int = 11
     decoder_last_pipeline_num_layers: int = 12
@@ -82,7 +81,6 @@ class GLM_5_3_Flash_Recipe(MilesRecipe):
     n_samples_per_prompt: int = 8
     global_batch_size: int = 32
     rollout_temperature: float = 0.8
-    rollout_max_response_len: int = 4096
     rm_type: str | None = "math"
     balance_data: bool = True
     skip_eval_before_train: bool = True
