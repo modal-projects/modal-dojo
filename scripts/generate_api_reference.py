@@ -35,7 +35,7 @@ from modal_dojo.cli import entrypoint_cli
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = ROOT / "docs-next" / "src" / "content" / "docs" / "reference"
 SIDEBAR_PATH = ROOT / "docs-next" / "src" / "generated" / "reference-sidebar.json"
-CLI_PROG = "training-gym"
+CLI_PROG = "modal-dojo"
 
 
 _SPHINX_ROLE = re.compile(r":(?:class|meth|func|attr|mod|exc|data|const):`([^`]+)`")

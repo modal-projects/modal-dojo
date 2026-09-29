@@ -1,4 +1,4 @@
-"""Modal-style Click help and command classes for training-gym. Ported over almost entirely from Modal's helpers."""
+"""Modal-style Click help and command classes for modal-dojo. Ported over almost entirely from Modal's helpers."""
 
 from __future__ import annotations
 

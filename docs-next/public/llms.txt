@@ -7,7 +7,7 @@ The library takes care of infrastructure concerns such as cluster topology, Ray/
 To get started, you can go through the [Quickstart](https://gym.modal.dev/#quickstart) section below, or paste the prompt below into your favorite agent:
 
 ```txt
-Install the `training-gym` library. Then, install the skill bundle into the local project with `training-gym skills install`. Finally, tell the user that they can ask you to do something like: "Walk through tutorials/rl_basics.py and train Qwen3.5-4B to write 5-7-5 haikus from statworx/haiku."
+Install the `modal-dojo` library. Then, install the skill bundle into the local project with `modal-dojo skills install`. Finally, tell the user that they can ask you to do something like: "Walk through tutorials/rl_basics.py and train Qwen3.5-4B to write 5-7-5 haikus from statworx/haiku."
 ```
 
 Docs: https://gym.modal.dev/

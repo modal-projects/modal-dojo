@@ -251,7 +251,7 @@ def test_run_get_missing_run_returns_not_found_without_fetching_rollouts():
 
     assert result.exit_code == 3
     assert "Training run 'missing' was not found." in result.stderr
-    assert "training-gym run list" in result.stderr
+    assert "modal-dojo run list" in result.stderr
     assert FakeDashboardClient.requests == [("/api/runs/missing", None)]
 
 
@@ -305,7 +305,7 @@ def test_run_logs_help_documents_modes_and_filters():
     for flag in ("--follow", "--since", "--until", "--tail", "--search", "--json"):
         assert flag in result.stdout
     assert "RUN_ID" in result.stdout
-    assert "training-gym run logs brave-falcon-3fa8 --follow" in result.stdout
+    assert "modal-dojo run logs brave-falcon-3fa8 --follow" in result.stdout
 
 
 def test_run_logs_fetches_recent_filtered_entries():
@@ -469,7 +469,7 @@ def test_run_trace_help_documents_flags_and_examples():
     assert "RUN_ID" in result.stdout
     for flag in ("--out", "--step", "--dry-run", "--yes", "--force", "--json"):
         assert flag in result.stdout
-    assert "training-gym run trace brave-falcon-3fa8" in result.stdout
+    assert "modal-dojo run trace brave-falcon-3fa8" in result.stdout
 
 
 def test_run_trace_dry_run_filters_steps_without_downloading(tmp_path):

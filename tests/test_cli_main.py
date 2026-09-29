@@ -243,7 +243,7 @@ def test_expected_errors_use_declared_exit_code(runner, monkeypatch):
             "offline",
             error="dashboard_unreachable",
             exit_code=ExitCode.BACKEND,
-            hint="training-gym open",
+            hint="modal-dojo open",
         )
 
     monkeypatch.setattr("modal_dojo.cli.setup.setup", fail)
@@ -256,7 +256,7 @@ def test_expected_errors_use_declared_exit_code(runner, monkeypatch):
     assert result.exit_code == ExitCode.BACKEND
     assert result.stdout == ""
     assert "offline" in result.stderr
-    assert "training-gym open" in result.stderr
+    assert "modal-dojo open" in result.stderr
 
 
 def test_main_renders_structured_json_errors(monkeypatch, capsys):
@@ -265,7 +265,7 @@ def test_main_renders_structured_json_errors(monkeypatch, capsys):
             "Run run_8f2a was not found.",
             error="run_not_found",
             exit_code=ExitCode.NOT_FOUND,
-            hint="training-gym run list --since 7d",
+            hint="modal-dojo run list --since 7d",
             run_id="run_8f2a",
         )
 
@@ -278,7 +278,7 @@ def test_main_renders_structured_json_errors(monkeypatch, capsys):
         "error": "run_not_found",
         "run_id": "run_8f2a",
         "message": "Run run_8f2a was not found.",
-        "hint": "training-gym run list --since 7d",
+        "hint": "modal-dojo run list --since 7d",
     }
 
 

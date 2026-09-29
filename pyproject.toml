@@ -34,7 +34,7 @@ exclude = ["dashboards/frontend/node_modules", "dashboards/frontend/dist"]
 "skills" = "skills"
 
 [project.scripts]
-training-gym = "modal_dojo.cli:main"
+modal-dojo = "modal_dojo.cli:main"
 
 [dependency-groups]
 ci = [

@@ -1,7 +1,7 @@
 """Deploy the training-gym dashboard to Modal.
 
 Usage (CLI):
-    training-gym setup
+    modal-dojo setup
 
 What this does:
 1. Provisions a ``_training-gym-modal-creds`` Modal Secret containing
@@ -88,7 +88,7 @@ def setup(
         print("Deploying dashboard with proxy authentication enabled.")
     else:
         print("This dashboard will not have proxy authentication enabled.")
-        print("If you would like to enable it, run `training-gym setup --proxy-auth`.")
+        print("If you would like to enable it, run `modal-dojo setup --proxy-auth`.")
         print()
 
     if trajectory_viewer_path:
@@ -101,7 +101,7 @@ def setup(
     if require_proxy_auth and not has_proxy_auth_token:
         print(
             "WARNING: Dashboard proxy auth requires MODAL_KEY and MODAL_SECRET. "
-            "Run `training-gym set-proxy-auth` or export both variables."
+            "Run `modal-dojo set-proxy-auth` or export both variables."
         )
 
     if not dashboard.ensure_creds_secret(interactive=interactive):
@@ -178,7 +178,7 @@ def ensure_proxy_auth(interactive: bool = True, force: bool = False) -> bool:
             print(
                 "Skipping proxy-auth setup. Create a pair at "
                 "https://modal.com/settings/proxy-auth-tokens and re-run "
-                "`training-gym set-proxy-auth`, or export MODAL_KEY / "
+                "`modal-dojo set-proxy-auth`, or export MODAL_KEY / "
                 "MODAL_SECRET yourself."
             )
             return False
@@ -210,7 +210,7 @@ def set_proxy_auth() -> bool:
     """Interactively (re)set the saved proxy-auth token pair.
 
     Thin wrapper over :func:`ensure_proxy_auth` with ``force=True`` so an
-    existing pair is replaced — exposed as ``training-gym set-proxy-auth``.
+    existing pair is replaced — exposed as ``modal-dojo set-proxy-auth``.
     """
     return ensure_proxy_auth(interactive=True, force=True)
 
@@ -290,7 +290,7 @@ def open_dashboard() -> str | None:
     if not web_url:
         print(
             "No deployed training-gym dashboard found. "
-            "Run `training-gym setup` to deploy it first."
+            "Run `modal-dojo setup` to deploy it first."
         )
         return None
 
@@ -344,6 +344,6 @@ def ensure_dashboard_deployed() -> str | None:
         print(
             f"WARNING: could not ensure the training-gym dashboard is deployed: "
             f"{exc}. Continuing without dashboard status reporting; run "
-            "`training-gym setup` to deploy it manually."
+            "`modal-dojo setup` to deploy it manually."
         )
         return None

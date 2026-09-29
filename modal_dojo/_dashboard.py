@@ -183,7 +183,7 @@ def _build_image() -> modal.Image:
         if not viewer_path.is_file():
             raise FileNotFoundError(
                 "Configured trajectory viewer does not exist: "
-                f"{viewer_path}. Run `training-gym setup --trajectory-viewer PATH` "
+                f"{viewer_path}. Run `modal-dojo setup --trajectory-viewer PATH` "
                 "with a Svelte component file."
             )
         base = base.add_local_file(
@@ -331,7 +331,7 @@ def ensure_creds_secret(interactive: bool = False) -> bool:
     successfully created it from ``~/.modal.toml``. Returns False if we
     can't find creds and ``interactive`` is False (or the user skipped).
 
-    Called both from ``training-gym setup`` and at module-load of this file
+    Called both from ``modal-dojo setup`` and at module-load of this file
     so that ``modal deploy dashboards/app.py`` works without any prior
     setup step — as long as the user has a valid ``~/.modal.toml``.
     """
@@ -1849,7 +1849,7 @@ def fastapi_app():
             if client is None:
                 yield (
                     "event: error\n"
-                    f"data: {json.dumps({'error': 'No Modal credentials configured. Run training-gym setup.'})}\n\n"
+                    f"data: {json.dumps({'error': 'No Modal credentials configured. Run modal-dojo setup.'})}\n\n"
                 )
                 return
 
@@ -2023,7 +2023,7 @@ def fastapi_app():
         if client is None:
             raise HTTPException(
                 status_code=503,
-                detail="No Modal credentials configured. Run training-gym setup.",
+                detail="No Modal credentials configured. Run modal-dojo setup.",
             )
 
         req = api_pb2.AppFetchLogsRequest(

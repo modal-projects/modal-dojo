@@ -1,4 +1,4 @@
-"""Stable, machine-readable errors for the training-gym CLI."""
+"""Stable, machine-readable errors for the modal-dojo CLI."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import click
 
 
 class ExitCode(IntEnum):
-    """Process exit codes shared by every training-gym subcommand."""
+    """Process exit codes shared by every modal-dojo subcommand."""
 
     SUCCESS = 0
     ERROR = 1  # An unexpected or otherwise unclassified failure occurred.

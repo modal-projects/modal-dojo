@@ -80,7 +80,7 @@ metrics = TrackioConfig.deploy_to_modal(project="my-rl-project")
 Just like the [main dashboard](https://gym.modal.dev/guides/dashboard), the Trackio dashboard is unauthenticated unless you set a password:
 
 ```bash
-training-gym set-password
+modal-dojo set-password
 ```
 
 Note that unlike the main dashboard, this will not redeploy the Trackio dashboard. I.e., you'll have to rerun `deploy_to_modal()` after changing it.

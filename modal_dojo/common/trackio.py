@@ -71,7 +71,7 @@ class TrackioConfig(MetricConfig):
         The app, Volume, and write-token Secret are reused on subsequent calls
         with the same names. Ingestion and dashboard mutations require the write
         token stored in the Secret. Reads are open unless a dashboard password
-        was set with ``training-gym set-password``, which gates this dashboard
+        was set with ``modal-dojo set-password``, which gates this dashboard
         behind the same HTTP Basic Auth as the observability dashboard.
         """
         volume_name = volume_name or f"{app_name}-data"
