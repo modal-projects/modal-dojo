@@ -58,7 +58,7 @@ class DashboardClient:
                 "Dashboard URL is not configured.",
                 error="dashboard_not_configured",
                 exit_code=ExitCode.BACKEND,
-                hint="training-gym setup",
+                hint="modal-dojo setup",
             )
 
         parsed = urlsplit(configured_url)
@@ -67,7 +67,7 @@ class DashboardClient:
                 "Configured dashboard URL must use HTTP or HTTPS.",
                 error="dashboard_configuration_invalid",
                 exit_code=ExitCode.BACKEND,
-                hint="training-gym setup",
+                hint="modal-dojo setup",
             )
 
         dashboard_password = (
@@ -125,7 +125,7 @@ class DashboardClient:
                 "Could not connect to the dashboard.",
                 error="dashboard_unreachable",
                 exit_code=ExitCode.BACKEND,
-                hint="training-gym setup",
+                hint="modal-dojo setup",
             ) from exc
 
         if response.status_code == 404 and not_found_error is not None:
@@ -216,8 +216,8 @@ class DashboardClient:
                 error="authentication_failed",
                 exit_code=ExitCode.AUTH,
                 hint=(
-                    "Run `training-gym set-proxy-auth` for Modal proxy auth, "
-                    "or `training-gym set-password` for dashboard Basic Auth."
+                    "Run `modal-dojo set-proxy-auth` for Modal proxy auth, "
+                    "or `modal-dojo set-password` for dashboard Basic Auth."
                 ),
             )
         if status_code == 404:
@@ -225,7 +225,7 @@ class DashboardClient:
                 "The deployed dashboard does not support this resource.",
                 error="dashboard_resource_not_found",
                 exit_code=ExitCode.BACKEND,
-                hint="training-gym setup",
+                hint="modal-dojo setup",
             )
         if status_code >= 500:
             raise CLIError(

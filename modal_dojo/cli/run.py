@@ -296,7 +296,7 @@ def download_run_traces(
         error="run_not_found",
         exit_code=ExitCode.NOT_FOUND,
         run_id=run_id,
-        hint="training-gym run list",
+        hint="modal-dojo run list",
     )
 
     with DashboardClient() as client:
@@ -585,7 +585,7 @@ def get_run(*, run_id: str, verbose: bool, json_output: bool) -> None:
         error="run_not_found",
         exit_code=ExitCode.NOT_FOUND,
         run_id=run_id,
-        hint="training-gym run list",
+        hint="modal-dojo run list",
     )
     with DashboardClient() as client:
         summary = _validate_run_summary(
@@ -639,7 +639,7 @@ def show_run_params(*, run_id: str, json_output: bool) -> None:
         error="run_not_found",
         exit_code=ExitCode.NOT_FOUND,
         run_id=run_id,
-        hint="training-gym run list",
+        hint="modal-dojo run list",
     )
     with DashboardClient() as client:
         summary = _validate_run_summary(
@@ -768,7 +768,7 @@ def show_run_logs(
         error="run_not_found",
         exit_code=ExitCode.NOT_FOUND,
         run_id=run_id,
-        hint="training-gym run list",
+        hint="modal-dojo run list",
     )
 
     with DashboardClient() as client:
@@ -906,8 +906,8 @@ def run_group() -> None:
     help="Show a run's status and top-level metadata.",
     epilog=(
         "Examples:\n"
-        "  training-gym run get brave-falcon-3fa8\n"
-        "  training-gym run get brave-falcon-3fa8 --verbose"
+        "  modal-dojo run get brave-falcon-3fa8\n"
+        "  modal-dojo run get brave-falcon-3fa8 --verbose"
     ),
 )
 @click.argument("run_id")
@@ -928,8 +928,8 @@ def get_command(*, run_id: str, verbose: bool, json_output: bool) -> None:
     help="Show a run's framework training recipe.",
     epilog=(
         "Examples:\n"
-        "  training-gym run params brave-falcon-3fa8\n"
-        "  training-gym run params brave-falcon-3fa8 --json"
+        "  modal-dojo run params brave-falcon-3fa8\n"
+        "  modal-dojo run params brave-falcon-3fa8 --json"
     ),
 )
 @click.argument("run_id")
@@ -944,8 +944,8 @@ def params_command(*, run_id: str, json_output: bool) -> None:
     help="Show logs for a training run.",
     epilog=(
         "Examples:\n"
-        "  training-gym run logs brave-falcon-3fa8 --follow\n"
-        "  training-gym run logs brave-falcon-3fa8 --since 30m -j"
+        "  modal-dojo run logs brave-falcon-3fa8 --follow\n"
+        "  modal-dojo run logs brave-falcon-3fa8 --since 30m -j"
     ),
 )
 @click.argument("run_id")
@@ -1011,10 +1011,10 @@ def logs_command(
     help="Download agent traces for a run.",
     epilog=(
         "Examples:\n"
-        "  training-gym run trace brave-falcon-3fa8 --out ./traces --step 4-100:2\n"
-        "  training-gym run trace brave-falcon-3fa8 --out ./traces "
+        "  modal-dojo run trace brave-falcon-3fa8 --out ./traces --step 4-100:2\n"
+        "  modal-dojo run trace brave-falcon-3fa8 --out ./traces "
         "--step 1,4,9 --dry-run\n"
-        "  training-gym run trace brave-falcon-3fa8 --out ./traces --yes"
+        "  modal-dojo run trace brave-falcon-3fa8 --out ./traces --yes"
     ),
 )
 @click.argument("run_id")
@@ -1066,8 +1066,8 @@ def trace_command(
     ),
     epilog=(
         "Examples:\n"
-        "  training-gym run list --status failed --since 24h\n"
-        "  training-gym run list --status completed "
+        "  modal-dojo run list --status failed --since 24h\n"
+        "  modal-dojo run list --status completed "
         "--group nightly-tau-bench -j"
     ),
 )

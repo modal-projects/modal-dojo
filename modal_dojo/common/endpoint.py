@@ -286,7 +286,7 @@ class Endpoint:
                 if response.status_code in {401, 403}:
                     raise RuntimeError(
                         f"Endpoint {self.endpoint_name} rejected proxy authentication. "
-                        "Run `training-gym set-proxy-auth` and retry."
+                        "Run `modal-dojo set-proxy-auth` and retry."
                     )
                 if response.status_code not in {404, 429, 500, 502, 503, 504}:
                     response.raise_for_status()

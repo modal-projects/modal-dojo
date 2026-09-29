@@ -1,6 +1,6 @@
 """User-local config persisted at ``~/.training-gym.toml``.
 
-Populated by ``training-gym setup``; read by the slime launcher (and any other
+Populated by ``modal-dojo setup``; read by the slime launcher (and any other
 caller) to look up where to POST phase reports and other client-side defaults.
 """
 
@@ -32,7 +32,7 @@ DASHBOARD_VERSION_PATH = "/api/version"
 
 # Holds DASHBOARD_PASSWORD. An empty value means the dashboard is open (no
 # auth) — that's the default so existing deployments keep working untouched.
-# Set a real value via ``training-gym set-password``.
+# Set a real value via ``modal-dojo set-password``.
 DASHBOARD_PASSWORD_SECRET_NAME = "_training-gym-dashboard-password"
 
 

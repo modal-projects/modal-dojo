@@ -19,7 +19,7 @@ when_to_use: >-
 - If the user asks for one stage, perform only that stage and stop at its
   natural terminal condition. A status request does not authorize a relaunch;
   a diagnosis request does not authorize a fix.
-- Use the `training-gym` CLI as the normal observability interface. Escalate to
+- Use the `modal-dojo` CLI as the normal observability interface. Escalate to
   raw Modal commands only when CLI evidence cannot explain an infrastructure
   problem.
 
@@ -49,7 +49,7 @@ At every proof, smoke, and full-run monitoring stage, use `run trace` to pull
 traces for completed steps:
 
 ```bash
-training-gym run trace <run-id> --out ./traces --step <steps> --yes
+modal-dojo run trace <run-id> --out ./traces --step <steps> --yes
 ```
 
 Read both the prompts and responses in the downloaded traces. Confirm that the
@@ -61,7 +61,7 @@ advancing to the next stage.
 Launch a fresh one-step run and monitor its new run ID:
 
 ```bash
-training-gym run get <run-id> --verbose
+modal-dojo run get <run-id> --verbose
 ```
 
 Monitor `run get` periodically rather than merely waiting on the launch

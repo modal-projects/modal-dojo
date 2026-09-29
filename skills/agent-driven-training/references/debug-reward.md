@@ -6,7 +6,7 @@ volatile, or improving suspiciously fast.
 ## Characterize the trajectory
 
 ```bash
-training-gym run get <run-id> --verbose
+modal-dojo run get <run-id> --verbose
 ```
 
 Compare the baseline, early steps, recent steps, sample counts, and variance.
@@ -42,7 +42,7 @@ noise, declines, or is otherwise uninformative, stop the run instead of waiting
 for completion. Do not stop on a single noisy point or an algorithm-expected plateau, 
 but do not keep a healthy yet ineffective job alive only because it has not failed.
 
-To stop it, use `training-gym run get <run-id>` to obtain the Modal 
+To stop it, use `modal-dojo run get <run-id>` to obtain the Modal
 app ID, then:
 
 ```bash
@@ -58,7 +58,7 @@ Choose baseline, anomalous, transition, and recent steps based on the observed
 reward trajectory, then download their traces after a dry-run:
 
 ```bash
-training-gym run trace <run-id> --out ./traces --step <steps>
+modal-dojo run trace <run-id> --out ./traces --step <steps>
 ```
 
 ## Classify samples

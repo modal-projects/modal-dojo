@@ -216,7 +216,7 @@ class _TrainStatusDisplay:
             body.add_row(
                 "Dashboard",
                 Text(
-                    f"(run `training-gym setup` to populate {self.config_path})",
+                    f"(run `modal-dojo setup` to populate {self.config_path})",
                     style="yellow",
                 ),
             )

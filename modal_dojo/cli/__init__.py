@@ -1,4 +1,4 @@
-"""CLI entry point: ``training-gym <command>``."""
+"""CLI entry point: ``modal-dojo <command>``."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = entrypoint_cli.main(
             args=args,
-            prog_name="training-gym",
+            prog_name="modal-dojo",
             standalone_mode=False,
         )
         return int(result) if isinstance(result, int) else int(ExitCode.SUCCESS)

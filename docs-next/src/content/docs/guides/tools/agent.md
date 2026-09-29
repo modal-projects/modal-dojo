@@ -10,17 +10,17 @@ This guide demonstrates how to effectively use agents with the Gym by getting Cl
 
 ## Set up
 
-First, we'll install the `training-gym` CLI:
+First, we'll install the `modal-dojo` CLI:
 
 ```bash
 pip install -q git+https://github.com/modal-projects/training-gym.git@main
-training-gym --help
+modal-dojo --help
 ```
 
 Then, we'll install the provided skills into our current project:
 
 ```bash
-training-gym skills install
+modal-dojo skills install
 ```
 
 The main skill agents should use is `agent-driven-training`, which lays out the RL training lifecycle:
@@ -308,28 +308,28 @@ Throughout the run, the agent used the following commands to:
 - Confirm a run was launched successfully:
 
 ```bash
-training-gym run list --since 2h --json
+modal-dojo run list --since 2h --json
 ```
 
 - See the progress of a run in more detail:
 
 ```bash
-training-gym run get <run-id> --verbose --json
+modal-dojo run get <run-id> --verbose --json
 ```
 
 - Inspect the logs of a failing or hanging run:
 
 ```bash
-training-gym run logs <run-id> --json
-training-gym run logs <run-id> --follow --json
-training-gym run logs <run-id> --search "checkpoint" --json
+modal-dojo run logs <run-id> --json
+modal-dojo run logs <run-id> --follow --json
+modal-dojo run logs <run-id> --search "checkpoint" --json
 ```
 
 - Observe the raw model responses:
 
 ```bash
-training-gym run trace <run-id> --out ./traces --dry-run --json
-training-gym run trace <run-id> --out ./traces --yes --json
+modal-dojo run trace <run-id> --out ./traces --dry-run --json
+modal-dojo run trace <run-id> --out ./traces --yes --json
 ```
 
 ## Results

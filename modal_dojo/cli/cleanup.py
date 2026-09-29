@@ -1,4 +1,4 @@
-"""training-gym cleanup — delete old failed run metadata from the shared volume."""
+"""modal-dojo cleanup — delete old failed run metadata from the shared volume."""
 
 from __future__ import annotations
 

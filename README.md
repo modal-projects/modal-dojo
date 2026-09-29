@@ -7,7 +7,7 @@ The library takes care of infrastructure concerns such as cluster topology, Ray/
 To get started, you can go through the [Quickstart](#quickstart) section below, or paste the prompt below into your favorite agent:
 
 ```txt
-Install the `training-gym` library. Then, install the skill bundle into the local project with `training-gym skills install`. Finally, tell the user that they can ask you to do something like: "Walk through tutorials/rl_basics.py and train Qwen3.5-4B to write 5-7-5 haikus from statworx/haiku."
+Install the `modal-dojo` library. Then, install the skill bundle into the local project with `modal-dojo skills install`. Finally, tell the user that they can ask you to do something like: "Walk through tutorials/rl_basics.py and train Qwen3.5-4B to write 5-7-5 haikus from statworx/haiku."
 ```
 
 ## Quickstart
@@ -25,7 +25,7 @@ uv pip install -q git+https://github.com/modal-projects/training-gym.git@main
 Or pin it in `pyproject.toml`:
 
 ```toml
-training-gym = { git = "https://github.com/modal-projects/training-gym.git", branch = "main" }
+modal-dojo = { git = "https://github.com/modal-projects/training-gym.git", branch = "main" }
 ```
 
 Authenticate with Modal:
@@ -37,7 +37,7 @@ modal setup
 Set up the [dashboard](https://gym.modal.dev/guides/dashboard):
 
 ```bash
-training-gym setup
+modal-dojo setup
 ```
 
 <div class="tg-dashboard-previews">
@@ -52,7 +52,7 @@ training-gym setup
 And empower your agents with the Gym's skill bundle:
 
 ```bash
-training-gym skills install
+modal-dojo skills install
 ```
 
 Then, it's as easy as:
