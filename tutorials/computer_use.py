@@ -242,6 +242,7 @@ model = Qwen3_VL_8B()
 
 
 def deploy_base_model():
+    print("deploying base model deployment...")
     base_deployment = CustomDeployment.launch(
         model,
         unauthenticated=True,
@@ -332,6 +333,7 @@ def train(config):
 
 
 def deploy_trained_model(checkpoint):
+    print("deploying trained model deployment...")
     trained_deployment = CustomDeployment.launch(
         model,
         checkpoint=checkpoint,

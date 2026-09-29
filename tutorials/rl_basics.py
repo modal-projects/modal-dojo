@@ -45,6 +45,7 @@ model = Qwen3_5_4B()
 
 
 def deploy_base_model():
+    print("deploying base model endpoint...")
     base_deployment = Endpoint.launch(
         model, unauthenticated=True, recreate_if_existing=True
     )
@@ -249,6 +250,7 @@ def train(config):
 
 
 def deploy_trained_model(checkpoint):
+    print("deploying trained model endpoint...")
     trained_deployment = Endpoint.launch(
         model, checkpoint, unauthenticated=True, recreate_if_existing=True
     )
@@ -313,6 +315,7 @@ def continue_training(checkpoint):
 
 
 def deploy_continued_model(new_checkpoint):
+    print("deploying continued model endpoint...")
     new_deployment = Endpoint.launch(
         model, new_checkpoint, unauthenticated=True, recreate_if_existing=True
     )
