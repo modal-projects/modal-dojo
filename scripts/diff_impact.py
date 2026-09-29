@@ -28,12 +28,8 @@ from scripts.tutorial_index import TutorialEntry, load_tutorial_index
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TUTORIAL_SRC_ROOT = REPO_ROOT / "tutorials"
 MODEL_PACKAGE_ROOT = REPO_ROOT / "modal_dojo" / "common" / "models"
-SLIME_RECIPE_PACKAGE_ROOT = (
-    REPO_ROOT / "modal_dojo" / "train_recipes" / "slime_recipe"
-)
-MILES_RECIPE_PACKAGE_ROOT = (
-    REPO_ROOT / "modal_dojo" / "train_recipes" / "miles_recipe"
-)
+SLIME_RECIPE_PACKAGE_ROOT = REPO_ROOT / "modal_dojo" / "train_recipes" / "slime_recipe"
+MILES_RECIPE_PACKAGE_ROOT = REPO_ROOT / "modal_dojo" / "train_recipes" / "miles_recipe"
 
 VALIDATION_BACKEND_ROOT = REPO_ROOT / "scripts" / "validation_backends"
 

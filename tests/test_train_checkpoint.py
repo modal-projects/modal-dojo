@@ -155,8 +155,7 @@ def test_slime_conversion_uses_wrapper_with_expected_environment() -> None:
     source = inspect.getsource(build_slime_app)
 
     assert (
-        "modal_dojo.frameworks.slime.modal_helpers.convert_hf_to_torch_dist"
-        in source
+        "modal_dojo.frameworks.slime.modal_helpers.convert_hf_to_torch_dist" in source
     )
     assert (
         'convert_script = f"{SLIME_ROOT}/tools/convert_hf_to_torch_dist.py"'
@@ -216,8 +215,7 @@ def test_miles_conversion_uses_wrapper_with_expected_environment() -> None:
     source = inspect.getsource(build_miles_app)
 
     assert (
-        "modal_dojo.frameworks.miles.modal_helpers.convert_hf_to_torch_dist"
-        in source
+        "modal_dojo.frameworks.miles.modal_helpers.convert_hf_to_torch_dist" in source
     )
     assert (
         'convert_script = f"{MILES_ROOT}/tools/convert_hf_to_torch_dist.py"'
