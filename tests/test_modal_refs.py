@@ -6,7 +6,7 @@ import cloudpickle
 import modal
 import pytest
 
-from modal_training_gym.common.modal_refs import (
+from modal_dojo.common.modal_refs import (
     ModalCaptureError,
     _reduce_modal_sandbox,
     register_modal_cloudpickle_reducers,

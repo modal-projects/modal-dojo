@@ -15,7 +15,7 @@ While the model and dataset dictate what will be trained, the recipe dictates ho
 - Etc.
 
 ```python
-from modal_training_gym import Qwen3_5_4B_Recipe
+from modal_dojo import Qwen3_5_4B_Recipe
 
 recipe = Qwen3_5_4B_Recipe()
 ```
@@ -59,7 +59,7 @@ Qwen3_5_4B_Recipe(
 You can also tune how model computations are parallelized and sharded across multiple GPUs. These parameters can be difficult to determine and may differ for each model, so we provide defaults in each model’s recipe. However, if you’re experiencing out-of-memory errors or want complete control over how your GPUs are utilized, you can manually set these yourself:
 
 ```python
-from modal_training_gym import Qwen3_5_4B_Miles_Recipe
+from modal_dojo import Qwen3_5_4B_Miles_Recipe
 
 Qwen3_5_4B_Miles_Recipe(
     # ...
@@ -77,7 +77,7 @@ Qwen3_5_4B_Miles_Recipe(
 For supervised fine-tuning (SFT), set `loss_type="sft_loss"`. At the moment, passing `eval_dataset` is not supported.
 
 ```python
-from modal_training_gym import HuggingFaceDataset, Qwen3_0_6B, Qwen3_0_6B_Recipe, TrainConfig
+from modal_dojo import HuggingFaceDataset, Qwen3_0_6B, Qwen3_0_6B_Recipe, TrainConfig
 
 conversations = HuggingFaceDataset(
     "HuggingFaceH4/no_robots",

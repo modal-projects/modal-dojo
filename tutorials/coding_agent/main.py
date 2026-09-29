@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from modal_training_gym import (
+from modal_dojo import (
     DatasetConfig,
     Qwen3_6_27B,
     Qwen3_6_27B_Recipe,

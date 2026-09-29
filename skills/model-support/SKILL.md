@@ -1,7 +1,7 @@
 ---
 name: model-support
 description: Use when adding, debugging, validating, or productionizing support for a new base model or
-  model-specific recipe in modal-training-gym, especially Slime and Miles recipes and model configs.
+  model-specific recipe in modal-dojo, especially Slime and Miles recipes and model configs.
 ---
 
 ## Adding a new model config

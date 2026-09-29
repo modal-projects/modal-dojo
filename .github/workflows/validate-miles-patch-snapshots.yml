@@ -4,8 +4,8 @@ on:
   pull_request:
     paths:
       - ".github/workflows/validate-miles-patch-snapshots.yml"
-      - "modal_training_gym/frameworks/miles/launcher.py"
-      - "modal_training_gym/train_recipes/miles_recipe/recipe.py"
+      - "modal_dojo/frameworks/miles/launcher.py"
+      - "modal_dojo/train_recipes/miles_recipe/recipe.py"
       - "scripts/fetch_miles_patch_snapshots.py"
       - "tests/testdata/miles/*.input"
 

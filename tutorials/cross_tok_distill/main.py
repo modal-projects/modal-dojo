@@ -36,15 +36,15 @@ from env import (
     to_json_schema,
     tool_schemas_to_openai,
 )
-from modal_training_gym import (
+from modal_dojo import (
     CustomDeployment,
     Endpoint,
     Qwen3_6_35B,
     SglangRecipe,
     TrainConfig,
 )
-from modal_training_gym.common.models.base import HFModelConfiguration, ToolCall
-from modal_training_gym.train_recipes.slime_recipe import Qwen3_6_35B_Recipe
+from modal_dojo.common.models.base import HFModelConfiguration, ToolCall
+from modal_dojo.train_recipes.slime_recipe import Qwen3_6_35B_Recipe
 
 # ## Deploy the base models
 #
@@ -474,7 +474,7 @@ async def cross_tokenizer_reward(args, sample, **kwargs):
     import random
 
     import aiohttp
-    from modal_training_gym.common.deployment import _modal_proxy_auth_headers
+    from modal_dojo.common.deployment import _modal_proxy_auth_headers
 
     tokenizer = _tokenizer("Qwen/Qwen3.6-35B-A3B")
     resp_len = max(1, sample.response_length)

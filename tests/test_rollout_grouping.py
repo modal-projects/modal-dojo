@@ -3,13 +3,13 @@ from typing import Any
 
 import pytest
 
-from modal_training_gym.common.sample import Sample
-from modal_training_gym.common.training_rollout import (
+from modal_dojo.common.sample import Sample
+from modal_dojo.common.training_rollout import (
     TrainingRolloutResult,
     TrainingRolloutSample,
     TrainingRolloutSummary,
 )
-from modal_training_gym.frameworks.slime import phase_reporting as pr
+from modal_dojo.frameworks.slime import phase_reporting as pr
 
 
 EPISODES = [(0.0, 1), (1.0, 2), (2.0, 3), (3.0, 4)]

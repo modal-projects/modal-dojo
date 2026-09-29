@@ -107,10 +107,10 @@ The failure modes are silent, so check the rendered prompt before believing a ba
 ## Registration checklist (Phase 4)
 
 Wiring a new `<Model>` + `<Model>_Recipe` (usually plus `<Model>_LoRA_Recipe`) requires edits in all of:
-1. `modal_training_gym/common/models/<model>.py` + export in `common/models/__init__.py` (import + `__all__`).
-2. `modal_training_gym/train_recipes/miles_recipe/<model>.py` + export in `miles_recipe/__init__.py` (import + `__all__`) — export every variant.
-3. Top-level `modal_training_gym/__init__.py`: add to `_EXPORTS` (lazy map) **and** `__all__`.
+1. `modal_dojo/common/models/<model>.py` + export in `common/models/__init__.py` (import + `__all__`).
+2. `modal_dojo/train_recipes/miles_recipe/<model>.py` + export in `miles_recipe/__init__.py` (import + `__all__`) — export every variant.
+3. Top-level `modal_dojo/__init__.py`: add to `_EXPORTS` (lazy map) **and** `__all__`.
 4. `MilesRecipe.get_base_recipe` (recipe.py): add the `model_name → Recipe()` branch. Without it the model gets no preset and every caller must pass a recipe explicitly.
 5. `common/models/validation.py: VALIDATION_CONFIGS`: `_ValidationConfig("<Name>", <Model>, Framework.MILES)`. Step 4 is a prerequisite — `build_miles_validation` raises if `get_base_recipe` returns `None` — and the dataset it picks is DAPO-Math-17k, so a non-math recipe needs that backend widened.
 
-Verify with: `uv run -m compileall`, `uv run ruff check <files>`, `uv run pytest tests/test_miles_recipe_hooks.py tests/test_miles_runtime_env.py tests/test_miles_patches.py`, and a quick `python -c "from modal_training_gym import <Model>, <Model>_Recipe; r=<Model>_Recipe(); print(r.gpu_allocation.summary())"` — instantiating the recipe runs the GPU-allocation and parallelism validators, catching bad TP/PP/EP/node math before any Modal run.
+Verify with: `uv run -m compileall`, `uv run ruff check <files>`, `uv run pytest tests/test_miles_recipe_hooks.py tests/test_miles_runtime_env.py tests/test_miles_patches.py`, and a quick `python -c "from modal_dojo import <Model>, <Model>_Recipe; r=<Model>_Recipe(); print(r.gpu_allocation.summary())"` — instantiating the recipe runs the GPU-allocation and parallelism validators, catching bad TP/PP/EP/node math before any Modal run.

@@ -6,7 +6,7 @@ import io
 
 import pytest
 
-from modal_training_gym.utils import metadata
+from modal_dojo.utils import metadata
 
 
 class _Method:

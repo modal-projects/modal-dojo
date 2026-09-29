@@ -8,18 +8,18 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from modal_training_gym import _dashboard
-from modal_training_gym.common import reporting
-from modal_training_gym.common.framework import Framework
-from modal_training_gym.common.run import TrainingRun
-from modal_training_gym.common.step_timing import RoleTimingRecord
-from modal_training_gym.common.train_result import (
+from modal_dojo import _dashboard
+from modal_dojo.common import reporting
+from modal_dojo.common.framework import Framework
+from modal_dojo.common.run import TrainingRun
+from modal_dojo.common.step_timing import RoleTimingRecord
+from modal_dojo.common.train_result import (
     save_train_result_blob,
     train_result_payload,
 )
-from modal_training_gym.common.training_rollout import TrainingRolloutResult
-from modal_training_gym.utils import metadata
-from modal_training_gym.utils.metadata import MetadataStore
+from modal_dojo.common.training_rollout import TrainingRolloutResult
+from modal_dojo.utils import metadata
+from modal_dojo.utils.metadata import MetadataStore
 
 
 def _client(monkeypatch, tmp_path) -> TestClient:

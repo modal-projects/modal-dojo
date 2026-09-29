@@ -2,7 +2,7 @@ from pathlib import Path
 import inspect
 import sys
 
-import modal_training_gym as gym
+import modal_dojo as gym
 import pytest
 import yaml
 

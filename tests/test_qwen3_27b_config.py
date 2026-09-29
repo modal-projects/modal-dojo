@@ -1,15 +1,15 @@
 import pytest
 
-from modal_training_gym import (
+from modal_dojo import (
     Qwen3_6_27B,
     Qwen3_6_27B_Recipe,
     Qwen3_8_27B,
     Qwen3_8_27B_Recipe,
 )
-from modal_training_gym.frameworks.slime.modal_helpers.utils import (
+from modal_dojo.frameworks.slime.modal_helpers.utils import (
     get_checkpoint_conversion_policy,
 )
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 @pytest.mark.parametrize(

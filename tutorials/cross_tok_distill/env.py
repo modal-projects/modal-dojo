@@ -10,8 +10,8 @@ from typing import Any, Callable
 
 from transformers import AutoTokenizer
 
-from modal_training_gym.common.dataset import DatasetConfig
-from modal_training_gym.common.models.base import ToolCall
+from modal_dojo.common.dataset import DatasetConfig
+from modal_dojo.common.models.base import ToolCall
 
 
 @cache

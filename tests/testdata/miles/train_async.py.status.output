@@ -3,7 +3,7 @@ import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
 try:
-    from modal_training_gym.frameworks.miles.phase_reporting import (
+    from modal_dojo.frameworks.miles.phase_reporting import (
         report_step_event as _tg_report,
     )
 except ImportError:

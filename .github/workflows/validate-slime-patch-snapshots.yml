@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/validate-slime-patch-snapshots.yml"
-      - "modal_training_gym/frameworks/slime/launcher.py"
+      - "modal_dojo/frameworks/slime/launcher.py"
       - "scripts/fetch_slime_patch_snapshots.py"
       - "tests/testdata/slime/*.input"
 

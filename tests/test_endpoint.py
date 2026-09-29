@@ -12,11 +12,11 @@ import modal
 import pytest
 from modal.cli.endpoint import create as modal_endpoint_create
 
-from modal_training_gym.common import endpoint as endpoint_module
-from modal_training_gym.common.checkpoint import Checkpoint, CheckpointType
-from modal_training_gym.common.endpoint import Endpoint
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.models import ModelConfig
+from modal_dojo.common import endpoint as endpoint_module
+from modal_dojo.common.checkpoint import Checkpoint, CheckpointType
+from modal_dojo.common.endpoint import Endpoint
+from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.models import ModelConfig
 
 
 class _FakeClock:

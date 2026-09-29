@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from modal_training_gym import cli as cli_module
-from modal_training_gym.cli.skills import (
+from modal_dojo import cli as cli_module
+from modal_dojo.cli.skills import (
     _bundled_skills,
 )
 
@@ -49,7 +49,7 @@ def test_wheel_contains_bundled_skill(tmp_path):
     wheel = next(tmp_path.glob("*.whl"))
     with zipfile.ZipFile(wheel) as archive:
         for skill_name in _bundled_skills():
-            packaged_prefix = f"modal_training_gym/_skills/{skill_name}/"
+            packaged_prefix = f"modal_dojo/_skills/{skill_name}/"
             packaged_contents = {
                 Path(name.removeprefix(packaged_prefix)): archive.read(name)
                 for name in archive.namelist()
