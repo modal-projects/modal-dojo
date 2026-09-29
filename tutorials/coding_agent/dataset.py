@@ -34,7 +34,7 @@ from modal_training_gym.train_recipes.base import DATA_PATH
 SPLIT_SEED = 0
 TRAIN_SPLIT_SIZES = (4, 100, 300, 1000)
 EVAL_SPLIT_FRACTION = 0.2
-EVAL_SPLIT_SIZES = (4,)
+EVAL_SPLIT_SIZES = (4, 800)
 
 MIN_TRAIN_TASK_GROUPS_PER_LANGUAGE = 2
 MIXED_CRITERION = "fully_gradeable_and_0_lt_solved_lt_n_samples"
@@ -424,9 +424,9 @@ def _mixed_remote(
     return str(path), provenance
 
 
-def probe(root: Path):
+def build_probe_config(root: Path):
     config = runpy.run_path(str(Path(__file__).with_name("main.py")))["config"]
-    dataset = type(config.dataset)(root / "train-300.jsonl")
+    dataset = type(config.dataset)(root / "train-1000.jsonl")
     recipe = replace(
         config.recipe,
         num_rollout=0,
@@ -440,11 +440,16 @@ def probe(root: Path):
                 "temperature": 1.0,
                 "top_p": 1.0,
             },
-            "datasets": [{"name": "train-300", "path": str(dataset.path)}],
+            "datasets": [{"name": "train-1000", "path": str(dataset.path)}],
         },
     )
-    run = replace(config, dataset=dataset, recipe=recipe).train()
-    return run, recipe.save_debug_rollout_data.format(rollout_id="eval_0")
+    return replace(config, dataset=dataset, recipe=recipe)
+
+
+def probe(root: Path):
+    config = build_probe_config(root)
+    run = config.train()
+    return run, config.recipe.save_debug_rollout_data.format(rollout_id="eval_0")
 
 
 def main() -> None:
@@ -495,11 +500,12 @@ def main() -> None:
             volume_name=volume_name,
         )
     print("\n".join(f"{name}: {count}" for name, count in counts.items()))
-    if counts.get("train-300") != 300:
-        raise RuntimeError(
-            "Preparation did not produce train-300; at least 300 training tasks "
-            "must remain after splitting."
-        )
+    for subset, size in (("train-1000", 1000), ("eval-800", 800)):
+        if counts.get(subset) != size:
+            raise RuntimeError(
+                f"Preparation did not produce {subset}; at least {size} "
+                f"{subset.split('-')[0]} tasks must remain after splitting."
+            )
 
     run, probe_dump = probe(Path(root))
     location = checkpoint_location(run)
@@ -514,7 +520,7 @@ def main() -> None:
     with app.run():
         path, provenance = remote.remote(
             root,
-            source="train-300",
+            source="train-1000",
             recipe=DEFAULT_MIXED_RECIPE_SLUG,
             probe_dump=probe_dump,
             n_samples=8,

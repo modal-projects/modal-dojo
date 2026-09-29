@@ -20,6 +20,9 @@ from modal_training_gym import (
     Qwen3_6_27B_Recipe,
     TrainConfig,
 )
+from modal_training_gym.frameworks.slime.modal_helpers.patches.patch_entropy_no_grad import (
+    image_patch_command,
+)
 
 from tutorials.coding_agent.dataset import (
     DATA_VOLUME_NAME,
@@ -31,9 +34,13 @@ from tutorials.coding_agent.dataset import (
 #
 # We must first convert SWE-rebench into Harbor tasks, and split/sample
 # the data to create balanced, repository-disjoint train/eval sets. We also run
-# 8 episodes per task on 300 training tasks, without updating the model. We keep
+# 8 episodes per task on 1,000 training tasks, without updating the model. We keep
 # tasks with a mix of successes and failures, so that we only train on tasks
-# with useful GRPO learning signal.
+# with useful GRPO learning signal. The resulting training set has fewer than
+# 1,000 tasks; evaluation uses a separate, fixed sample of 800 held-out tasks.
+# The full-run probe used here selected 240 training tasks from those 1,000
+# candidates. That count is an observed result, not a fixed output size: a new
+# probe can select a different number of tasks.
 # Since this is verbose, we have a
 # [separate preprocessing script](https://github.com/modal-projects/training-gym/blob/main/tutorials/coding_agent/dataset.py).
 #
@@ -46,8 +53,8 @@ from tutorials.coding_agent.dataset import (
 DATASET_ROOT = "swe_rebench_v2"
 DATA_ROOT = Path("/data") / DATASET_ROOT
 
-TRAIN_SUBSET = "train-300-mixed-reward-qwen3-6-27b-agentic-n8"
-EVAL_SUBSETS = ("eval",)
+TRAIN_SUBSET = "train-1000-mixed-reward-qwen3-6-27b-agentic-n8"
+EVAL_SUBSETS = ("eval-800",)
 
 class AgentTaskDataset(DatasetConfig):
     def __init__(self, path: Path):
@@ -69,6 +76,21 @@ class AgentTaskDataset(DatasetConfig):
                     yield json.loads(line)
 
 # ## Start training
+#
+# This is the full experiment configuration: up to 500 updates, each using
+# 32 task prompts with 8 episodes per prompt (256 trajectories). It evaluates
+# all 800 held-out tasks once before training and every 5 updates, with one
+# episode per task. Training and evaluation repositories are disjoint.
+#
+# Once preprocessing has produced the mixed training set and eval-800, run:
+#
+# ```bash
+# uv run -m tutorials.coding_agent.main
+# ```
+#
+# This requests 48 H200 GPUs: 16 for training and 32 for rollouts. For the exact
+# dataset filenames, recorded run IDs, and reuse instructions, see the
+# [full-run guide](https://github.com/modal-projects/training-gym/blob/helena/coding-agent-tutorial-full/tutorials/coding_agent/README.md).
 #
 # With the [Qwen3_6_27B_Recipe](https://gym.modal.dev/reference/qwen3_6_27b_recipe)
 # recipe class, it's just that simple.
@@ -96,6 +118,8 @@ config = TrainConfig(
             "ASYNC_RL_REWARD_SHAPE": "binary",
         },
         image_run_commands=[
+            # Keep entropy telemetry without saving its unused backward tensors.
+            image_patch_command(),
             "apt-get update && apt-get install -y --no-install-recommends "
             "rdma-core libibverbs1 ibverbs-providers",
             "uv pip install --system modal==1.5.5 mini-swe-agent datasets",

@@ -1,0 +1,89 @@
+# Extracted from modal-projects/slime 3585d4a7eb1a5c108810238b47c37d3107d0a2ba
+def get_log_probs_and_entropy(
+    logits: torch.Tensor,
+    *,
+    args: Namespace,
+    unconcat_tokens: list[torch.Tensor],
+    total_lengths: list[int],
+    response_lengths: list[int],
+    with_entropy: bool = False,
+    non_loss_data: bool = True,
+    top_p_token_ids: list[list[int]] | None = None,
+    top_p_token_offsets: list[list[int]] | None = None,
+) -> dict[str, list[torch.Tensor]]:
+    """Compute per-token log-probabilities (and optionally entropy) on responses.
+
+    Computes on the **full** logits ``[T, V]`` tensor at once (instead of
+    per-sample slicing) so backward traverses ``[T, V]`` only once, then
+    extracts per-sample response portions.
+
+    When ``entropy_coef == 0``, entropy is computed under ``torch.no_grad()``
+    to avoid retaining the computation graph and to skip cloning.
+    """
+    assert non_loss_data
+    assert logits.dtype == torch.float32, f"{logits.dtype}"
+    assert len(logits.shape) == 3, f"{logits.shape}"
+    assert logits.size(0) == 1, f"{logits.shape}"
+    logits = logits.squeeze(0)
+
+    # Apply rollout temperature scaling to logits to match rollout-time log-probs.
+    rollout_temperature = getattr(args, "rollout_temperature", 1.0)
+    if rollout_temperature != 1.0:
+        logits = logits / rollout_temperature
+    logits = logits.contiguous()
+    T = logits.size(0)
+    device = logits.device
+    tp_group = mpu.get_tensor_model_parallel_group()
+    chunk_size = args.log_probs_chunk_size
+
+    # --- build full shifted-token target tensor ---
+    full_tokens = _build_shifted_tokens(T, device, unconcat_tokens, total_lengths, response_lengths, args.allgather_cp)
+
+    # --- build top-p nucleus keep-mask (logprob only; entropy stays unmasked) ---
+    top_p_keep_mask = None
+    if top_p_token_ids is not None and top_p_token_offsets is not None:
+        top_p_keep_mask = _build_topp_keep_mask(
+            T,
+            logits.size(-1),
+            device,
+            top_p_token_ids,
+            top_p_token_offsets,
+            total_lengths,
+            response_lengths,
+            args.allgather_cp,
+        )
+
+    # --- compute on full [T,V] logits at once via calculate_log_probs_and_entropy ---
+    log_prob_full, entropy_full = calculate_log_probs_and_entropy(
+        logits,
+        full_tokens,
+        tp_group,
+        with_entropy=with_entropy,
+        chunk_size=chunk_size,
+        log_prob_keep_mask=top_p_keep_mask,
+    )
+    log_prob_full = log_prob_full.squeeze(-1)  # [T, 1] -> [T]
+
+    # --- extract per-sample response portions ---
+    log_probs_list, entropy_list = _extract_per_sample(
+        log_prob_full,
+        entropy_full,
+        total_lengths,
+        response_lengths,
+        args.allgather_cp,
+    )
+
+    res = {"log_probs": log_probs_list}
+    if with_entropy:
+        res["entropy"] = entropy_list
+
+    # we need to turn the all gather kv into zigzag ring attn kv
+    if args.allgather_cp:
+        _allgather_cp_redistribute(
+            res,
+            logits_local_len=T,
+            total_lengths=total_lengths,
+            response_lengths=response_lengths,
+        )
+
+    return torch.empty((0,), device=device), res
