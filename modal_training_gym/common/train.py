@@ -85,7 +85,9 @@ def _convert_checkpoint_on_cache_miss(
     hf_path = app.resolve_checkpoint.remote(**call_kwargs)
     if hf_path is None:
         return False
-    app.convert_checkpoint.remote(hf_path=hf_path, **call_kwargs)
+    # A durable call survives a lost synchronous invocation connection while
+    # conversion runs. Still wait for completion before spawning training.
+    app.convert_checkpoint.spawn(hf_path=hf_path, **call_kwargs).get()
     return True
 
 
@@ -684,11 +686,13 @@ class TrainConfig:
                             else (MilesStatus.DOWNLOAD_MODEL, MilesStatus.CONVERT_MODEL)
                         )
                         _set_status(download_status, is_active=False)
-                        app.download.remote(
+                        # Downloads can take hours; use a durable invocation
+                        # while preserving the setup-before-training ordering.
+                        app.download.spawn(
                             training_run_id=training_run_id,
                             framework_status_url=framework_status_url,
                             framework_status_token=framework_status_token,
-                        )
+                        ).get()
                         if needs_conversion:
                             _set_status(convert_status, is_active=False)
                             _convert_checkpoint_on_cache_miss(
