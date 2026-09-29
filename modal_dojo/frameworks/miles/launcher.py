@@ -57,7 +57,6 @@ from modal_dojo.common.launcher_helpers import (
     register_recipe_functions,
     report_phase,
     start_training_cluster,
-    download_model_if_needed,
     write_datasets,
 )
 from modal_dojo.common.status_reporter import flush as flush_status_reporter
@@ -864,7 +863,7 @@ def build_miles_app(
         async def _prepare_shared_inputs() -> None:
             await set_status(MilesStatus.DOWNLOAD_MODEL)
             if model:
-                download_model_if_needed(model)
+                model.download()
                 if hasattr(model, "prepare_runtime_cache"):
                     model.prepare_runtime_cache()
 

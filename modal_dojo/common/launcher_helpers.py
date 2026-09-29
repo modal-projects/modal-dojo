@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from pathlib import Path
 from contextlib import asynccontextmanager, contextmanager
 import inspect
 import os
@@ -393,21 +392,6 @@ def write_dataset_if_needed(dataset: Any, path: str) -> bool:
         raise
     os.replace(tmp, path)
     return True
-
-
-def download_model_if_needed(model: Any, *, always: bool = False) -> None:
-    """Download unless cached; ``always`` repatches an already-cached snapshot."""
-
-    def has_files(path: Path) -> bool:
-        return path.exists() and (not path.is_dir() or any(path.iterdir()))
-
-    hub = HF_CACHE_PATH / "hub" / f"models--{model.model_name.replace('/', '--')}"
-    local = getattr(model, "model_path", None)
-    cached = has_files(hub / "snapshots") and (not local or has_files(Path(local)))
-    if not cached:
-        print(f"Downloading model {model.model_name}...")
-    if always or not cached:
-        model.download()
 
 
 def write_datasets(
