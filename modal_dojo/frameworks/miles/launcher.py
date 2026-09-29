@@ -737,8 +737,6 @@ def build_miles_app(
             env["CONVERT_KEEP_PP1"] = "1"
         if num_nodes > 1:
             env["SKIP_RELEASE_RENAME"] = "1"
-        prewarm_remote_code(hf_path, env, required=miles.model_name == "kimi_k3")
-
         print(
             f"Conversion layout: nodes={num_nodes}, nproc_per_node={nproc_per_node}, "
             f"node_rank={node_rank}"
@@ -753,6 +751,9 @@ def build_miles_app(
         )
         try:
             with heartbeat:
+                prewarm_remote_code(
+                    hf_path, env, required=miles.model_name == "kimi_k3"
+                )
                 subprocess.run(["bash", "-c", cmd], check=True, env=env)
 
                 checkpoints_volume.commit()
