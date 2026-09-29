@@ -71,6 +71,9 @@
   // The list payload carries only the fields the table renders, so the drawer
   // fetches the run's full record (config and all) when it opens.
   let drawerDetail = $state(null);
+  // Bumped by local updates (e.g. a stop response) so a fetch issued before
+  // them can't overwrite newer data when it resolves.
+  let drawerDetailGen = 0;
   // Set only when the server says the run is gone. The list holds one page, so
   // a run being absent from it means nothing — the drawer renders from the
   // detail fetch for runs deep-linked or scrolled past.
@@ -82,8 +85,10 @@
     drawerRunMissing = false;
     if (!runId) return;
     const controller = new AbortController();
+    const gen = ++drawerDetailGen;
     fetchRun(runId, { signal: controller.signal })
       .then((detail) => {
+        if (gen !== drawerDetailGen) return;
         if (detail) drawerDetail = detail;
         else drawerRunMissing = true;
       })
@@ -531,7 +536,10 @@
               run={selectedRun}
               compact
               onStopped={(updated) => {
-                if (updated?.run_id === drawerRunId) drawerDetail = updated;
+                if (updated?.run_id === drawerRunId) {
+                  drawerDetailGen++;
+                  drawerDetail = updated;
+                }
               }}
             />
           {/key}

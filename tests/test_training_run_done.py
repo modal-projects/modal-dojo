@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-
 from modal_dojo.common.errors import TrainingGymError
 from modal_dojo.common.framework import Framework
-from modal_dojo.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.run import (
+    TrainingRun,
+    TrainingRunStatus,
+    mark_training_attempt_started,
+)
 
 
 def _run(status: TrainingRunStatus) -> TrainingRun:
@@ -309,3 +312,20 @@ def test_save_keeps_stored_stopped_status(fake_volume):
     assert persisted.ended_at == 200
     assert persisted.error_message is None
     assert persisted.metadata["terminal_reason"] == "stopped_by_user"
+
+
+def test_save_lets_retry_overwrite_stopped_status(fake_volume):
+    stopped = _run(TrainingRunStatus.STOPPED)
+    stopped.ended_at = 200
+    stopped.metadata = {"terminal_reason": "stopped_by_user", "attempt_count": 1}
+    stopped.save()
+
+    retry = TrainingRun.from_id("run-1")
+    mark_training_attempt_started(retry, started_at=300)
+    retry.save()
+
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.RUNNING
+    assert persisted.ended_at is None
+    assert "terminal_reason" not in persisted.metadata
+    assert persisted.metadata["attempt_count"] == 2

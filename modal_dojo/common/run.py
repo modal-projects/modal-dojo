@@ -677,9 +677,21 @@ class TrainingRun(BaseModel):
                     merged_components.pop(name, None)
                     merged_components[name] = current_components[name]
                 merged_metadata["dashboard_components"] = merged_components
+
+            def _attempt_count(value: object) -> int:
+                try:
+                    return int(value or 0)
+                except (TypeError, ValueError):
+                    return 0
+
+            # A retry legitimately writes RUNNING over a stored STOPPED
+            # record; only same-or-older-attempt writers (which are stale)
+            # have the stored terminal fields forced back onto the payload.
             if (
                 isinstance(stored, dict)
                 and stored.get("status") == TrainingRunStatus.STOPPED.value
+                and _attempt_count(merged_metadata.get("attempt_count"))
+                <= _attempt_count(stored_metadata.get("attempt_count"))
             ):
                 for key in (
                     "status",
