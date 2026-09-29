@@ -6,7 +6,7 @@
 #
 # When tuning RL runs, finding the optimal set of hyperparameters is time-consuming
 # and error-prone if not properly guided or documented. This is made a first-class
-# operation in the Gym so you can move faster and spend less.
+# operation in the Modal Dojo so you can move faster and spend less.
 
 import re
 

@@ -168,7 +168,7 @@ export default defineConfig({
   site: 'https://gym.modal.dev',
   integrations: [
     starlight({
-      title: 'Training Gym',
+      title: 'Modal Dojo',
       favicon: '/modal-logo.svg',
       description:
         'Open-source Python SDK for GRPO and RL post-training of LLMs on Modal GPU clusters — tutorials, API reference, and runnable examples.',
@@ -205,7 +205,7 @@ export default defineConfig({
           content: JSON.stringify({
             '@context': 'https://schema.org',
             '@type': 'WebSite',
-            name: 'Training Gym',
+            name: 'Modal Dojo',
             url: 'https://gym.modal.dev',
             description:
               'Open-source Python SDK for GRPO and RL post-training of LLMs on Modal GPU clusters.',

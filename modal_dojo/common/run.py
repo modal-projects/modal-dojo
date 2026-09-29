@@ -102,7 +102,7 @@ class TrainingRun(BaseModel):
         config: Serialized train config captured at launch.
         dataset_id: Dataset id materialized for this run.
         deployment_id: Linked deployment id, when the run served a model.
-        status: Modal Dojo-level run status.
+        status: Modal Modal Dojo-level run status.
         framework_status: Latest phase reported by the framework.
         created_at: Unix time the record was created.
         started_at: Unix time training started.

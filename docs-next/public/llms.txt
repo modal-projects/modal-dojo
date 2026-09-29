@@ -1,6 +1,6 @@
-# Training Gym
+# Modal Dojo
 
-Modal Training Gym is an open-source Python SDK for RL post-training on [Modal](https://modal.com).
+Modal Dojo is an open-source Python SDK for RL post-training on [Modal](https://modal.com).
 
 The library takes care of infrastructure concerns such as cluster topology, Ray/NCCL bring-up, volume mounts, checkpointing, and serving for eval and rollouts, so you (or your agent!) can focus on training models.
 
@@ -28,7 +28,7 @@ Repo: https://github.com/modal-projects/training-gym
 - [Choosing a base model](https://gym.modal.dev/guides/model)
 - [Getting your data](https://gym.modal.dev/guides/dataset)
 - [Cooking with a recipe](https://gym.modal.dev/guides/recipe)
-- [Training in the Gym](https://gym.modal.dev/guides/training)
+- [Training in the Modal Dojo](https://gym.modal.dev/guides/training)
 
 ### Tools
 

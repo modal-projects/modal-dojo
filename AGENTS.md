@@ -33,8 +33,8 @@ uv run scripts/generate_models_table.py         # regenerate
 uv run scripts/generate_models_table.py --check # CI freshness check
 
 # Deploy
-# IMPORTANT: These commands are only for development of the gym itself.
-# Consumers of the gym should use `modal-dojo setup` instead.
+# IMPORTANT: These commands are only for development of the Modal Dojo itself.
+# Consumers of the Modal Dojo should use `modal-dojo setup` instead.
 # Features such as requiring proxy authentication only work with the CLI
 # and will stop working if the dashboard is deployed with `modal deploy`.
 uv run modal deploy docs-next/docs_next_app.py        # docs site → gym.modal.dev
@@ -124,7 +124,7 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
   below are the only available skills.
 - For training lifecycle work, read `skills/agent-driven-training/SKILL.md`
   before acting. This includes launching, monitoring, inspecting, diagnosing,
-  continuing, or promoting a Training Gym run.
+  continuing, or promoting a Modal Dojo run.
 - For raw Modal infrastructure work, read
   `skills/modal-infrastructure/SKILL.md` before acting. Use it for apps,
   containers, volumes, scheduling, image builds, caches, and endpoint

@@ -1,4 +1,4 @@
-# Training Gym docs site
+# Modal Dojo docs site
 
 The [gym.modal.dev](https://gym.modal.dev) docs are a
 [Starlight](https://starlight.astro.build/) site on Astro, packaged as a

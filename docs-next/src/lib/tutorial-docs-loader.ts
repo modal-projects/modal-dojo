@@ -287,7 +287,7 @@ export function tutorialDocsLoader(): Loader {
   }
 
   return {
-    name: 'training-gym-tutorial-docs-loader',
+    name: 'modal-dojo-tutorial-docs-loader',
     async load(context) {
       const parseData = context.parseData.bind(context);
       context.parseData = async (args) => {

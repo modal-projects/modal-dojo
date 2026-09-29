@@ -1,6 +1,6 @@
 # Bundled agent skills
 
-This directory is the registry for agent skills distributed by Training Gym.
+This directory is the registry for agent skills distributed by Modal Dojo.
 The package build includes the complete directory, and
 `modal-dojo skills install` discovers each direct child containing a
 `SKILL.md` file.

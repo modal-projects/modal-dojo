@@ -49,7 +49,7 @@ from modal_dojo.train_recipes.slime_recipe import Qwen3_6_35B_Recipe
 # ## Deploy the base models
 #
 # First, we'll deploy the teacher and base models to derive a baseline.
-# You'll notice that even if the Gym doesn't have a native model class for a model you want to use,
+# You'll notice that even if the Modal Dojo doesn't have a native model class for a model you want to use,
 # you can just use [HFModelConfiguration](https://gym.modal.dev/reference/hfmodelconfiguration)!
 
 STUDENT_READY_TIMEOUT = 15 * 60
