@@ -656,6 +656,10 @@ def fastapi_app():
     async def proxy_auth_status() -> bool:
         return os.environ.get(DASHBOARD_REQUIRES_PROXY_AUTH_ENV_KEY, "false") == "true"
 
+    @web.get("/api/mutations-allowed")
+    async def mutations_allowed_status() -> bool:
+        return mutations_allowed
+
     @web.get(DASHBOARD_VERSION_PATH)
     async def version() -> str:
         return os.environ.get(DASHBOARD_VERSION_ENV_KEY, "")

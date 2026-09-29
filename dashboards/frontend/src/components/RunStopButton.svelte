@@ -1,12 +1,20 @@
 <script>
+  import { onMount } from "svelte";
   import { CircleStop } from "lucide-svelte";
-  import { stopRun } from "../lib/api.js";
+  import { fetchMutationsAllowed, stopRun } from "../lib/api.js";
 
   let { run, onStopped, compact = false } = $props();
 
   let stopping = $state(false);
   let stopError = $state("");
+  // Open dashboards refuse /stop; hide the button there rather than
+  // presenting an action that always fails.
+  let canStop = $state(true);
   const label = $derived(stopping ? "Stopping…" : "Stop run");
+
+  onMount(async () => {
+    canStop = await fetchMutationsAllowed();
+  });
 
   async function confirmStop() {
     if (stopping || !run?.run_id) return;
@@ -25,7 +33,7 @@
   }
 </script>
 
-{#if run?.status === "running"}
+{#if canStop && run?.status === "running"}
   {#if stopError}
     <span class="stop-run-error" title={stopError}>Stop failed</span>
   {/if}

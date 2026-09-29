@@ -665,6 +665,7 @@ def test_stop_run_refused_on_open_dashboard(fake_volume, monkeypatch, tmp_path):
     )
 
     with _client(monkeypatch, tmp_path, open_dashboard=True) as client:
+        assert client.get("/api/mutations-allowed").json() is False
         response = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
 
     assert response.status_code == 403
@@ -681,6 +682,7 @@ def test_stop_run_stops_app_and_persists_stopped(fake_volume, monkeypatch, tmp_p
     )
 
     with _client(monkeypatch, tmp_path) as client:
+        assert client.get("/api/mutations-allowed").json() is True
         response = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
 
     assert response.status_code == 200
