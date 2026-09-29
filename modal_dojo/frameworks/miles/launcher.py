@@ -492,11 +492,8 @@ def build_miles_app(
     MilesRecipe._validate_datasets(dataset, eval_dataset, loss_type=miles.loss_type)
     if miles.loss_type == "sft_loss":
         dataset = _SftDataset(dataset)
-    dataset_path = MilesRecipe._resolve_data_paths(dataset)
-    eval_dataset_path = (
-        MilesRecipe._resolve_data_paths(eval_dataset)
-        if eval_dataset is not None
-        else None
+    dataset_path, eval_dataset_path = MilesRecipe._resolve_dataset_paths(
+        dataset, eval_dataset
     )
 
     _caller_module, caller_script = resolve_caller_context()

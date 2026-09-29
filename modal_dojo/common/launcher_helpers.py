@@ -57,6 +57,7 @@ from modal_dojo.train_recipes.base import (
     CHECKPOINTS_PATH,
     DATA_PATH,
     HF_CACHE_PATH,
+    BaseTrainRecipe,
 )
 
 
@@ -283,7 +284,7 @@ def report_phase(
 def register_recipe_functions(
     app: Any,
     image: Image,
-    recipe: Any,
+    recipe: BaseTrainRecipe,
     *,
     hf_cache_volume: Volume,
     data_volume: Volume,
