@@ -13,7 +13,7 @@ This guide demonstrates how to effectively use agents with the Modal Dojo by get
 First, we'll install the `modal-dojo` CLI:
 
 ```bash
-pip install -q git+https://github.com/modal-projects/training-gym.git@main
+pip install -q git+https://github.com/modal-projects/modal-dojo.git@main
 modal-dojo --help
 ```
 

@@ -9,8 +9,8 @@ const showTutorialCta =
   entry.id.replace(/^\/+/, '').startsWith('tutorials/') && Boolean(runCommand);
 const commands = showTutorialCta
   ? [
-      'git clone https://github.com/modal-projects/training-gym',
-      'cd training-gym',
+      'git clone https://github.com/modal-projects/modal-dojo',
+      'cd modal-dojo',
       runCommand,
     ]
   : [];

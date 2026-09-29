@@ -221,7 +221,7 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/modal-projects/training-gym',
+          href: 'https://github.com/modal-projects/modal-dojo',
         },
       ],
       // Code blocks mirror the main Modal docs site (modal.com/docs): shiki's

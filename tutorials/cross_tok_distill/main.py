@@ -240,7 +240,7 @@ def trajectory_reward(
 
 # ## Get the dataset
 #
-# The [dataset preprocessing code](https://github.com/modal-projects/training-gym/blob/main/tutorials/cross_tok_distill/env.py)
+# The [dataset preprocessing code](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/cross_tok_distill/env.py)
 # is verbose, so we simply instantiate the datasets here.
 
 dataset_config = BfclMultiTurnConfig(eval_tail=30)

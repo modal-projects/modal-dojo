@@ -19,13 +19,13 @@ Requirements:
 Install the package directly:
 
 ```bash
-uv pip install -q git+https://github.com/modal-projects/training-gym.git@main
+uv pip install -q git+https://github.com/modal-projects/modal-dojo.git@main
 ```
 
 Or pin it in `pyproject.toml`:
 
 ```toml
-modal-dojo = { git = "https://github.com/modal-projects/training-gym.git", branch = "main" }
+modal-dojo = { git = "https://github.com/modal-projects/modal-dojo.git", branch = "main" }
 ```
 
 Authenticate with Modal:
