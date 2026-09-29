@@ -516,6 +516,8 @@ def build_miles_app(
     )
     app = App(app_name, tags=tags)
     gpu_spec = f"{miles.gpu_type}:{miles.gpu_allocation.gpus_per_node}"
+    download_timeout = miles.download_timeout_seconds or 4 * 60 * 60
+    dataset_timeout = 4 * 60 * 60
 
     def materialize_model_remote_code() -> None:
         # Rewrite remote-code symlinks before the head commits the cache Volume.
@@ -539,11 +541,11 @@ def build_miles_app(
         checkpoints_mount_path=checkpoints_mount_path,
         download_phase=MilesStatus.DOWNLOAD_MODEL.value,
         download=download_inputs,
-        download_timeout=miles.download_timeout_seconds or 4 * 60 * 60,
+        download_timeout=download_timeout,
         prepare_dataset=lambda: write_datasets(
             dataset, eval_dataset, dataset_path, eval_dataset_path
         ),
-        dataset_timeout=4 * 60 * 60,
+        dataset_timeout=dataset_timeout,
     )
 
     convert_nnodes, convert_nproc, _ = get_checkpoint_conversion_policy(
@@ -735,7 +737,7 @@ def build_miles_app(
             env["CONVERT_KEEP_PP1"] = "1"
         if num_nodes > 1:
             env["SKIP_RELEASE_RENAME"] = "1"
-        prewarm_remote_code(hf_path, env)
+        prewarm_remote_code(hf_path, env, required=miles.model_name == "kimi_k3")
 
         print(
             f"Conversion layout: nodes={num_nodes}, nproc_per_node={nproc_per_node}, "
@@ -893,7 +895,7 @@ def build_miles_app(
                 f.write(str(time.time()))
             await checkpoints_volume.commit.aio()
         else:
-            deadline = time.time() + 4 * 60 * 60
+            deadline = time.time() + download_timeout + dataset_timeout
             while True:
                 await asyncio.gather(
                     hf_cache_volume.reload.aio(),
@@ -914,6 +916,7 @@ def build_miles_app(
             prewarm_remote_code(
                 resolve_checkpoint_ref(model.model_path or model.model_name),
                 environment,
+                required=miles.model_name == "kimi_k3",
             )
 
         cluster.start_ray()

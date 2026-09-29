@@ -76,7 +76,9 @@ def resolve_checkpoint_ref(
     return snapshot_download(ref_str, local_files_only=local_files_only)
 
 
-def prewarm_remote_code(hf_path: str, environment: dict[str, str]) -> None:
+def prewarm_remote_code(
+    hf_path: str, environment: dict[str, str], *, required: bool = False
+) -> None:
     """Warm the container-local remote-code cache before concurrent rank imports."""
     cache = environment.get("HF_MODULES_CACHE")
     if cache:
@@ -90,7 +92,9 @@ def prewarm_remote_code(hf_path: str, environment: dict[str, str]) -> None:
 
         AutoConfig.from_pretrained(hf_path, trust_remote_code=True)
         AutoTokenizer.from_pretrained(hf_path, trust_remote_code=True)
-    except Exception as exc:  # noqa: BLE001 - warm-up only
+    except Exception as exc:
+        if required:
+            raise
         print(f"[prewarm_remote_code] skipped for {hf_path}: {exc!r}", flush=True)
         return
     print(f"[prewarm_remote_code] warmed {hf_path}", flush=True)
