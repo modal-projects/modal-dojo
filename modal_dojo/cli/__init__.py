@@ -13,7 +13,7 @@ from .builtin import (
     set_proxy_auth_command,
     setup_command,
 )
-from .commands import _TrainingGymGroup
+from .commands import _DojoGroup
 from .errors import CLIError, ExitCode
 from .output import print_error, print_json
 from .run import run_group
@@ -21,7 +21,7 @@ from .skills import skills_group
 
 
 @click.group(
-    cls=_TrainingGymGroup,
+    cls=_DojoGroup,
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 def entrypoint_cli() -> None:

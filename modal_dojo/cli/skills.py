@@ -9,7 +9,7 @@ from pathlib import Path
 
 import click
 
-from .commands import _TrainingGymGroup
+from .commands import _DojoGroup
 from .errors import CLIError
 
 
@@ -264,7 +264,7 @@ def install_skills(*, project_dir: Path | None, force: bool) -> tuple[Path, ...]
     return tuple(destination for _, destination in installed_destinations)
 
 
-@click.group("skills", cls=_TrainingGymGroup)
+@click.group("skills", cls=_DojoGroup)
 def skills_group() -> None:
     """Manage agent skills."""
 

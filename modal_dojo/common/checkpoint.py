@@ -12,7 +12,7 @@ import modal
 from modal import Volume
 from modal.exception import NotFoundError
 
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.run import TrainingRun
 from modal_dojo.common.torch_dist_checkpoint import (
@@ -70,13 +70,11 @@ def require_within_volume_mount(path: str, mount_path: str) -> tuple[str, str]:
     normalized_path = posixpath.normpath(path)
     normalized_mount = posixpath.normpath(mount_path)
     if not posixpath.isabs(normalized_path) or not posixpath.isabs(normalized_mount):
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             f"Path {path!r} and Volume mount {mount_path!r} must be absolute POSIX paths."
         )
     if posixpath.commonpath([normalized_path, normalized_mount]) != normalized_mount:
-        raise TrainingGymConfigError(
-            f"Path {path!r} is outside Volume mount {mount_path!r}."
-        )
+        raise DojoConfigError(f"Path {path!r} is outside Volume mount {mount_path!r}.")
     return normalized_path, normalized_mount
 
 
@@ -204,7 +202,7 @@ def convert_megatron_checkpoint_to_hf(
 
     checkpoints_volume_name = checkpoint.checkpoints_volume_name
     if checkpoints_volume_name in (None, ""):
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             "Cannot convert checkpoint without checkpoints volume metadata."
         )
     checkpoints_mount_path = (
@@ -234,7 +232,7 @@ def convert_megatron_checkpoint_to_hf(
 
     model_ref = model.model_name or model.model_path
     if model_ref in (None, ""):
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             "Cannot convert a megatron checkpoint without model_name or model_path."
         )
 

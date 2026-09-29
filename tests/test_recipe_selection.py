@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from modal_dojo.common.dataset import HuggingFaceDataset
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.launcher_utils import (
     get_checkpoint_conversion_policy,
     prepare_launch_config,
@@ -289,7 +289,7 @@ def test_sft_none_global_batch_size_uses_rollout_batch_size() -> None:
 
 def test_miles_qwen35_sft_raises() -> None:
     recipe = Qwen3_5_4B_Miles_Recipe(loss_type="sft_loss")
-    with pytest.raises(TrainingGymConfigError, match="qwen3_5"):
+    with pytest.raises(DojoConfigError, match="qwen3_5"):
         recipe.cli_args(dataset=_dataset())
 
 
@@ -308,7 +308,7 @@ def test_sft_extra_config_conflicting_batches_raise() -> None:
         loss_type="sft_loss",
         extra_config={"global_batch_size": 8, "rollout_batch_size": 4},
     )
-    with pytest.raises(TrainingGymConfigError, match="must match"):
+    with pytest.raises(DojoConfigError, match="must match"):
         recipe.cli_args(dataset=_dataset())
 
 
@@ -319,23 +319,17 @@ def test_sft_extra_config_conflicting_batches_raise() -> None:
         (
             "sft_loss",
             "sft_loss",
-            pytest.raises(
-                TrainingGymConfigError, match="loss_type on the recipe field"
-            ),
+            pytest.raises(DojoConfigError, match="loss_type on the recipe field"),
         ),
         (
             "policy_loss",
             "sft_loss",
-            pytest.raises(
-                TrainingGymConfigError, match="loss_type on the recipe field"
-            ),
+            pytest.raises(DojoConfigError, match="loss_type on the recipe field"),
         ),
         (
             "sft_loss",
             "custom_loss",
-            pytest.raises(
-                TrainingGymConfigError, match="loss_type on the recipe field"
-            ),
+            pytest.raises(DojoConfigError, match="loss_type on the recipe field"),
         ),
         ("policy_loss", "custom_loss", nullcontext()),
     ],
@@ -352,7 +346,7 @@ def test_extra_config_loss_type_raises(
 @pytest.mark.parametrize(
     ("colocate", "expectation"),
     [
-        (True, pytest.raises(TrainingGymConfigError, match="colocate")),
+        (True, pytest.raises(DojoConfigError, match="colocate")),
         (False, nullcontext()),
     ],
 )

@@ -30,7 +30,7 @@ from modal_dojo.common.training_rollout import (
 )
 
 from .client import DashboardClient
-from .commands import _TrainingGymGroup
+from .commands import _DojoGroup
 from .errors import CLIError, ExitCode
 from .options import confirm_or_require_yes, json_option, yes_option
 from .output import print_json, print_renderable, print_table
@@ -896,7 +896,7 @@ def list_runs(
         )
 
 
-@click.group("run", cls=_TrainingGymGroup)
+@click.group("run", cls=_DojoGroup)
 def run_group() -> None:
     """Inspect and manage runs."""
 

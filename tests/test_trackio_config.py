@@ -10,7 +10,7 @@ from importlib.util import find_spec
 from typing import Any
 
 from modal_dojo.common.metrics import apply_metric_image
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.trackio import (
     TrackioConfig,
     install_wandb_shim,
@@ -364,7 +364,7 @@ def test_a_custom_token_secret_is_not_guessed_at(monkeypatch):
     """
     _stub_discovery(monkeypatch, secret_exists=False)
 
-    with pytest.raises(TrainingGymConfigError, match="custom modal_secret_name"):
+    with pytest.raises(DojoConfigError, match="custom modal_secret_name"):
         resolve_trackio_destination(TrackioConfig(project="rl"))
 
 
@@ -378,7 +378,7 @@ def test_a_failed_resolution_leaves_the_config_untouched(monkeypatch):
     config = TrackioConfig(project="rl")
 
     _stub_discovery(monkeypatch, secret_exists=False)
-    with pytest.raises(TrainingGymConfigError):
+    with pytest.raises(DojoConfigError):
         resolve_trackio_destination(config)
 
     assert config.server_url == ""
@@ -436,10 +436,10 @@ def test_no_destination_and_nothing_deployed_is_refused(monkeypatch):
         "modal_dojo.common.trackio.deployed_trackio_url",
         lambda app_name="training-gym-trackio": None,
     )
-    with pytest.raises(TrainingGymConfigError, match="no destination"):
+    with pytest.raises(DojoConfigError, match="no destination"):
         resolve_trackio_destination(TrackioConfig(project="rl"))
 
     # The in-container assertion still holds for anything that slips through.
-    with pytest.raises(TrainingGymConfigError, match="no destination"):
+    with pytest.raises(DojoConfigError, match="no destination"):
         require_trackio_destination(TrackioConfig(project="rl"))
     require_trackio_destination(TrackioConfig(project="rl", server_url="https://x"))

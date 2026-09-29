@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Self
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.metric_mirror import mirror_log
 from modal_dojo.common.metrics import MetricConfig
 
@@ -305,7 +305,7 @@ def resolve_trackio_destination(
         return
     url = deployed_trackio_url(app_name)
     if not url:
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             f"TrackioConfig(project={config.project!r}) has no destination and no "
             f"{app_name!r} server is deployed. Run TrackioConfig.deploy_to_modal() "
             "once, or set space_id= or server_url=."
@@ -316,7 +316,7 @@ def resolve_trackio_destination(
         # modal_secret_name), so confirm it exists before adopting it.
         candidate = f"_{app_name}-write-token"
         if not _secret_exists(candidate):
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 f"Found the {app_name!r} Trackio server at {url} but no "
                 f"{candidate!r} Secret. If it was deployed with a custom "
                 "modal_secret_name, pass the config deploy_to_modal() returned, "
@@ -334,7 +334,7 @@ def require_trackio_destination(config: TrackioConfig) -> None:
     """In-container check that a destination was resolved before launch."""
     if has_trackio_destination(config):
         return
-    raise TrainingGymConfigError(
+    raise DojoConfigError(
         f"TrackioConfig(project={config.project!r}) reached the training "
         "container with no destination; metrics would be lost."
     )

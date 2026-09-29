@@ -14,8 +14,8 @@ from pydantic.dataclasses import dataclass
 from modal_dojo.common.checkpoint import Checkpoint, CheckpointType
 from modal_dojo.common.dataset import DatasetConfig, OnlineRollout
 from modal_dojo.common.errors import (
-    TrainingGymConfigError,
-    TrainingGymError,
+    DojoConfigError,
+    DojoError,
 )
 from modal_dojo.common.framework import Framework
 from modal_dojo.common.ids import create_hash
@@ -39,7 +39,7 @@ from modal_dojo.utils.metadata import MetadataStore, vol_put
 
 def _megatron_load_dir(checkpoint: Checkpoint) -> str:
     if checkpoint.checkpoint_type != CheckpointType.megatron:
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             "Training can only resume from a Megatron checkpoint; "
             "Hugging Face exports are serving artifacts."
         )
@@ -369,7 +369,7 @@ class TrainConfig:
             return
         path = (self.recipe.extra_config or {}).get("custom_generate_function_path")
         if self.recipe.custom_generate_function is None and not isinstance(path, str):
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 "OnlineRollout requires recipe.custom_generate_function or "
                 "recipe.extra_config['custom_generate_function_path']"
             )
@@ -431,9 +431,7 @@ class TrainConfig:
                 name=training_run_id,
                 group_id=self.group_id,
             )
-        raise TrainingGymConfigError(
-            f"Unknown training recipe: {type(recipe).__name__}"
-        )
+        raise DojoConfigError(f"Unknown training recipe: {type(recipe).__name__}")
 
     # ── Run-record helpers ─────────────────────────────────────────────────
 
@@ -443,16 +441,14 @@ class TrainConfig:
             return Framework.SLIME
         if isinstance(self.recipe, MilesRecipe):
             return Framework.MILES
-        raise TrainingGymConfigError(
-            f"Unknown training recipe: {type(self.recipe).__name__}"
-        )
+        raise DojoConfigError(f"Unknown training recipe: {type(self.recipe).__name__}")
 
     def _initializing_status(self) -> FrameworkStatus:
         if self.framework is Framework.SLIME:
             return SlimeStatus.INITIALIZING
         if self.framework is Framework.MILES:
             return MilesStatus.INITIALIZING
-        raise TrainingGymConfigError(f"Unknown training framework: {self.framework}")
+        raise DojoConfigError(f"Unknown training framework: {self.framework}")
 
     def _build_config_summary(self, training_run_id: str) -> dict[str, Any]:
         """Framework-specific TrainingRun.config summary."""
@@ -717,7 +713,7 @@ class TrainConfig:
                 if isinstance(exc, KeyboardInterrupt) or app is None:
                     _terminalize_launch(run_record, exc)
                     raise
-                error = TrainingGymError(
+                error = DojoError(
                     f'Setup of Modal app "{app.name}" was interrupted before training '
                     "could begin. Relaunch your TrainConfig to try again."
                 )

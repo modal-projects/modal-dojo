@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.dataset import DatasetRow
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.ids import create_hash
 from modal_dojo.utils.metadata import MetadataStore, vol_get, vol_put
 
@@ -345,7 +345,7 @@ class EvalConfig:
                     return raw
             return raw
 
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             "EvalConfig.build_prompt() could not resolve a prompt column. "
             "Set EvalConfig.prompt_column or dataset.input_column, or include one of "
             "['prompt', 'input', 'instruction', 'question'] in dataset rows."
@@ -361,7 +361,7 @@ class EvalConfig:
         from modal_dojo.cli.setup import ensure_dashboard_deployed
 
         if max_concurrency < 1:
-            raise TrainingGymConfigError("max_concurrency must be >= 1")
+            raise DojoConfigError("max_concurrency must be >= 1")
 
         ensure_dashboard_deployed()
 
@@ -500,7 +500,7 @@ def _sandbox_resource(
         return (min(default_request, value), value)
     if policy == "ignore":
         return None
-    raise TrainingGymConfigError(
+    raise DojoConfigError(
         f"invalid resource policy {policy!r}; expected one of {RESOURCE_POLICIES}"
     )
 

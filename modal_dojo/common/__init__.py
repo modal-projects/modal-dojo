@@ -1,7 +1,7 @@
 """Common cross-framework utilities and compatibility re-exports.
 
 Exports shared constants + helpers used by every framework package. Each
-framework's launcher merges ``COMMON_TRAINING_GYM_TAGS`` with its own
+framework's launcher merges ``COMMON_DOJO_TAGS`` with its own
 ``_modal_framework`` tag and the user's ``config.app_tags`` when constructing
 its ``modal.App``.
 """
@@ -23,7 +23,7 @@ from modal_dojo.utils.metadata import (
     vol_put,
 )
 
-COMMON_TRAINING_GYM_TAGS: dict[str, str] = {
+COMMON_DOJO_TAGS: dict[str, str] = {
     "training": "True",
     "source": "training-gym",
     "_modal_job_type": "training",
@@ -89,7 +89,7 @@ def proxy_auth_secrets() -> list:
 
 
 __all__ = [
-    "COMMON_TRAINING_GYM_TAGS",
+    "COMMON_DOJO_TAGS",
     "GPUType",
     "MetadataStore",
     "ModalCaptureError",

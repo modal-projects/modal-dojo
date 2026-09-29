@@ -9,7 +9,7 @@ from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.dataset import DatasetConfig
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.metric_mirror import DashboardMetricConfig
 from modal_dojo.common.metrics import MetricConfig
 from modal_dojo.common.models import (
@@ -610,25 +610,23 @@ class SlimeRecipe(BaseTrainRecipe):
         repository = self.slime_git_repository
         revision = self.slime_git_revision
         if bool(repository) != bool(revision):
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 "slime_git_repository and slime_git_revision must be set together"
             )
         if self.local_slime and repository:
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 "local_slime and slime_git_repository are mutually exclusive"
             )
         if repository:
             parsed = urlparse(repository)
             if parsed.scheme != "https" or not parsed.netloc:
-                raise TrainingGymConfigError(
-                    "slime_git_repository must be a public HTTPS URL"
-                )
+                raise DojoConfigError("slime_git_repository must be a public HTTPS URL")
             if parsed.username or parsed.password:
-                raise TrainingGymConfigError(
+                raise DojoConfigError(
                     "slime_git_repository must not contain credentials"
                 )
             if not re.fullmatch(r"[0-9a-fA-F]{40}", revision or ""):
-                raise TrainingGymConfigError(
+                raise DojoConfigError(
                     "slime_git_revision must be a full 40-character commit SHA"
                 )
             object.__setattr__(self, "slime_git_revision", revision.lower())
@@ -686,7 +684,7 @@ class SlimeRecipe(BaseTrainRecipe):
         m: "ModelConfig",
     ) -> "ModelArchitecture":
         if m.architecture is None:
-            raise TrainingGymConfigError(
+            raise DojoConfigError(
                 "SlimeRecipe requires a ModelArchitecture on the attached "
                 "ModelConfig. Set `architecture = ModelArchitecture(...)` "
                 "on your subclass."
@@ -714,13 +712,13 @@ class SlimeRecipe(BaseTrainRecipe):
             input_key = dataset.input_key()
             label_key = dataset.label_key()
             if not input_key:
-                raise TrainingGymConfigError(
+                raise DojoConfigError(
                     f"{type(dataset).__name__}.input_key() is unset. Slime requires a "
                     "column name (e.g. 'messages' for chat data, 'text' for raw "
                     "prompts). Implement `input_key()` on your DatasetConfig subclass."
                 )
             if label_key and label_key == input_key:
-                raise TrainingGymConfigError(
+                raise DojoConfigError(
                     f"{type(dataset).__name__}: input_key() and label_key() are both "
                     f"{input_key!r}; they must name distinct columns."
                 )
@@ -933,6 +931,6 @@ class SlimeRecipe(BaseTrainRecipe):
             return Qwen3_6_27B_Recipe()
         if model_config.model_name == "Qwen/Qwen3.8-27B":
             return Qwen3_8_27B_Recipe()
-        raise TrainingGymConfigError(
+        raise DojoConfigError(
             f"no base slime recipe for model {model_config.model_name!r}"
         )

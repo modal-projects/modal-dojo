@@ -6,10 +6,10 @@ from pathlib import Path
 
 import click
 
-from .commands import _TrainingGymCommand
+from .commands import _DojoCommand
 
 
-@click.command("setup", cls=_TrainingGymCommand)
+@click.command("setup", cls=_DojoCommand)
 @click.option(
     "--proxy-auth",
     is_flag=True,
@@ -65,7 +65,7 @@ def setup_command(
         setup(require_proxy_auth=proxy_auth, trajectory_viewer=trajectory_viewer)
 
 
-@click.command("open", cls=_TrainingGymCommand)
+@click.command("open", cls=_DojoCommand)
 def open_command() -> None:
     """Open the dashboard."""
     from .setup import open_dashboard
@@ -73,7 +73,7 @@ def open_command() -> None:
     open_dashboard()
 
 
-@click.command("set-proxy-auth", cls=_TrainingGymCommand)
+@click.command("set-proxy-auth", cls=_DojoCommand)
 def set_proxy_auth_command() -> None:
     """Store Modal proxy-auth credentials.
 
@@ -85,7 +85,7 @@ def set_proxy_auth_command() -> None:
     set_proxy_auth()
 
 
-@click.command("set-password", cls=_TrainingGymCommand)
+@click.command("set-password", cls=_DojoCommand)
 @click.option(
     "--password",
     default=None,
@@ -99,7 +99,7 @@ def set_password_command(password: str | None) -> None:
     set_password(password=password)
 
 
-@click.command("cleanup", cls=_TrainingGymCommand)
+@click.command("cleanup", cls=_DojoCommand)
 @click.option(
     "--older-than-days",
     type=int,

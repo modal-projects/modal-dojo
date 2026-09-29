@@ -4,7 +4,7 @@ import pickle
 import pytest
 
 from modal_dojo.common.dataset import DatasetConfig, HarborDataset, _SftDataset
-from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.launcher_helpers import (
     write_dataset_if_needed,
     write_datasets,
@@ -114,15 +114,15 @@ def test_eval_dataset_fields_must_match_training_dataset():
         def apply_chat_template(self) -> bool:
             return False
 
-    with pytest.raises(TrainingGymConfigError, match="same input_key"):
+    with pytest.raises(DojoConfigError, match="same input_key"):
         BaseTrainRecipe._validate_datasets(
             RowsDataset("train"), OtherInputDataset("eval")
         )
-    with pytest.raises(TrainingGymConfigError, match="same label_key"):
+    with pytest.raises(DojoConfigError, match="same label_key"):
         BaseTrainRecipe._validate_datasets(
             RowsDataset("train"), OtherLabelDataset("eval")
         )
-    with pytest.raises(TrainingGymConfigError, match="same apply_chat_template"):
+    with pytest.raises(DojoConfigError, match="same apply_chat_template"):
         BaseTrainRecipe._validate_datasets(
             RowsDataset("train"), OtherChatTemplateDataset("eval")
         )
@@ -204,12 +204,12 @@ def test_sft_dataset_formats_rows(messages, expected):
 
 @pytest.mark.parametrize("row", [{"messages": "hi", "label": ""}, {"label": "hello"}])
 def test_sft_dataset_rejects_incomplete_rows(row):
-    with pytest.raises(TrainingGymConfigError, match="SFT row"):
+    with pytest.raises(DojoConfigError, match="SFT row"):
         list(_SftDataset(PairDataset(row)).rows())
 
 
 def test_sft_rejects_eval_dataset():
-    with pytest.raises(TrainingGymConfigError, match="eval_dataset"):
+    with pytest.raises(DojoConfigError, match="eval_dataset"):
         BaseTrainRecipe._validate_datasets(
             RowsDataset("a"), RowsDataset("b"), loss_type="sft_loss"
         )
@@ -222,9 +222,9 @@ def test_failed_write_cleanup_preserves_committed_destination(tmp_path):
         def write(self, dest: str) -> None:
             self.write_count += 1
             RowsDataset("peer", "peer").write(path)
-            raise TrainingGymConfigError("boom")
+            raise DojoConfigError("boom")
 
-    with pytest.raises(TrainingGymConfigError, match="boom"):
+    with pytest.raises(DojoConfigError, match="boom"):
         write_dataset_if_needed(RaceDataset("train"), path)
     assert json.loads((tmp_path / "train.jsonl").read_text()) == {
         "prompt": "peer",

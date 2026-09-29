@@ -115,7 +115,7 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
 - Python 3.12 is pinned. Modal's `serialized=True` requires local ↔ remote Python version match.
 - Modal Secrets `huggingface-secret` (HF_TOKEN) and `wandb-secret` (WANDB_API_KEY) are optional: HF auth is only needed for gated/rate-limited Hub access, and `wandb-secret` only when a `WandbConfig` is passed.
 - Custom SGLang and vLLM deployments (`CustomDeployment.launch()`) are public by default (`unauthenticated=True`). Pass `unauthenticated=False` to require Modal proxy auth (export `MODAL_KEY` (`wk-…`) / `MODAL_SECRET` (`ws-…`) in the launching shell, or eval/`generate`/teacher calls return HTTP 401). For calls from remote workers (custom rm/reward fns) to authenticated endpoints, also forward the pair into the worker via a `modal.Secret` — the driver shell env doesn't reach them.
-- Every framework's Modal app is tagged with `_modal_framework`, `_modal_job_type=training`, and metric provider/project/group for dashboard auto-discovery (see `common/__init__.py: COMMON_TRAINING_GYM_TAGS`).
+- Every framework's Modal app is tagged with `_modal_framework`, `_modal_job_type=training`, and metric provider/project/group for dashboard auto-discovery (see `common/__init__.py: COMMON_DOJO_TAGS`).
 
 ## Agent skills
 
