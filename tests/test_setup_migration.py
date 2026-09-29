@@ -234,3 +234,20 @@ def test_auth_lookup_uses_only_explicit_url(paths, monkeypatch):
     assert not requested
     with pytest.raises(TypeError):
         config.get_dashboard_proxy_auth()
+
+
+def test_setup_warns_about_old_skills_without_modifying_them(
+    paths, deployment, monkeypatch, capsys
+):
+    root = paths[0].parent
+    (root / ".git").mkdir()
+    old = root / ".agents/skills/training-gym-overview"
+    old.mkdir(parents=True)
+    (old / "SKILL.md").write_text("old instructions")
+    nested = root / "src"
+    nested.mkdir()
+    monkeypatch.chdir(nested)
+    cli_setup_module.setup(interactive=False)
+    assert "modal-dojo skills install --force" in capsys.readouterr().err
+    assert (old / "SKILL.md").read_text() == "old instructions"
+    assert not (root / ".agents/skills/modal-dojo-overview").exists()

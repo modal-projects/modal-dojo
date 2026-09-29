@@ -310,7 +310,7 @@ def test_skills_install_restores_existing_skill_when_replace_fails(
         ["skills", "install", "--force"],
     )
 
-    assert result.exit_code == 1
+    assert result.exit_code == 0
     assert "simulated install failure" in result.stderr
     assert (destination / "SKILL.md").read_text() == "customized\n"
 
@@ -342,3 +342,94 @@ def test_skills_install_requires_git_repo_without_project_dir(monkeypatch, tmp_p
 
     assert result.exit_code == 2
     assert "Could not find a Git repository" in result.stderr
+
+
+def _legacy_skill(project_root):
+    old = project_root / ".agents/skills/training-gym-overview"
+    old.mkdir(parents=True)
+    (old / "SKILL.md").write_text("old instructions")
+    link = project_root / ".claude/skills/training-gym-overview"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(old, target_is_directory=True)
+    return old, link
+
+
+def test_legacy_skills_warn_without_force(tmp_path):
+    old, link = _legacy_skill(tmp_path)
+    result = CliRunner().invoke(
+        cli_module.entrypoint_cli, ["skills", "install", "--project-dir", str(tmp_path)]
+    )
+    assert result.exit_code == 0, result.exception
+    assert "training-gym-overview was renamed to modal-dojo-overview" in result.stderr
+    assert "modal-dojo skills install --force" in result.stderr
+    assert old.is_dir() and link.is_symlink()
+
+
+def test_force_removes_legacy_skills_and_is_repeatable(tmp_path):
+    old, link = _legacy_skill(tmp_path)
+    for _ in range(2):
+        result = CliRunner().invoke(
+            cli_module.entrypoint_cli,
+            ["skills", "install", "--force", "--project-dir", str(tmp_path)],
+        )
+        assert result.exit_code == 0, result.exception
+        assert not old.exists() and not link.is_symlink()
+        new = tmp_path / ".agents/skills/modal-dojo-overview"
+        assert (new / "SKILL.md").is_file()
+        assert (tmp_path / ".claude/skills/modal-dojo-overview").resolve() == new
+
+
+def test_failed_replacement_link_logs_error(tmp_path, monkeypatch, capsys):
+    from modal_dojo.cli import skills
+    from modal_dojo.cli.errors import CLIError
+
+    old, link = _legacy_skill(tmp_path)
+
+    def fail(*args, **kwargs):
+        raise CLIError("link failed", error="skill_install_failed")
+
+    monkeypatch.setattr(skills, "_install_claude_link", fail)
+    skills.install_skills(project_dir=tmp_path, force=True)
+    assert not old.exists() and not link.is_symlink()
+    assert "failed" in capsys.readouterr().err
+
+
+def test_failed_replacement_install_logs_error(tmp_path, monkeypatch, capsys):
+    from modal_dojo.cli import skills
+    from modal_dojo.cli.errors import CLIError
+
+    old, link = _legacy_skill(tmp_path)
+
+    def fail(*args, **kwargs):
+        raise CLIError("copy failed", error="skill_install_failed")
+
+    monkeypatch.setattr(skills, "_install_canonical_skill", fail)
+    skills.install_skills(project_dir=tmp_path, force=True)
+    assert not old.exists() and not link.is_symlink()
+    assert "failed" in capsys.readouterr().err
+
+
+def test_legacy_symlink_cleanup_does_not_delete_target(tmp_path):
+    from modal_dojo.cli import skills
+
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "SKILL.md").write_text("keep")
+    old = tmp_path / ".agents/skills/training-gym-overview"
+    old.parent.mkdir(parents=True)
+    old.symlink_to(external, target_is_directory=True)
+    skills.install_skills(project_dir=tmp_path, force=True)
+    assert not old.is_symlink()
+    assert (external / "SKILL.md").read_text() == "keep"
+
+
+def test_cleanup_does_not_follow_claude_parent_symlink(tmp_path):
+    from modal_dojo.cli import skills
+
+    old, link = _legacy_skill(tmp_path)
+    original = tmp_path / ".claude"
+    external = tmp_path / "external-claude"
+    original.rename(external)
+    original.symlink_to(external, target_is_directory=True)
+    skills.install_skills(project_dir=tmp_path, force=True)
+    assert not old.exists() and link.is_symlink()

@@ -85,6 +85,9 @@ def setup(
 
     from modal_dojo.cli.output import print_note
 
+    from .skills import warn_legacy_skills
+
+    warn_legacy_skills()
     copied = migrate_config()
     saved_url = get_dashboard_url()
     try:
