@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Reusable building blocks for Modal multi-node training examples"
 requires-python = ">=3.12"
 dependencies = [
-    "modal==1.5.5",
+    "modal==1.6.0",
     "click>=8.2,<9",
     "cloudpickle",
     "datasets",
