@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 
 from modal.exception import (
     ConnectionError as ModalConnectionError,
+    InternalError,
     NotFoundError,
     ResourceExhaustedError,
     ServiceError,
@@ -53,10 +54,10 @@ TRAINING_RUNS_STORE_NAME = MetadataStore.TRAINING_RUNS.value
 CHECKPOINT_LOCATION_METADATA_KEY = "checkpoint_location"
 _TRANSIENT_MODAL_ERRORS = (
     ModalConnectionError,
+    InternalError,
     ResourceExhaustedError,
     ServiceError,
 )
-_MAX_CONSECUTIVE_TRANSIENT_ERRORS = 5
 
 
 class FrameworkStatusUpdate(BaseModel):
@@ -175,7 +176,6 @@ class TrainingRun(BaseModel):
     _metadata_loaded_keys: set[str] | None = PrivateAttr(default=None)
     _dashboard_component_updates: set[str] = PrivateAttr(default_factory=set)
     _closed: bool = PrivateAttr(default=False)
-    _consecutive_transient_errors: int = PrivateAttr(default=0)
 
     @field_serializer("source_model")
     def _serialize_source_model(self, value: Any) -> dict[str, Any] | None:
@@ -239,14 +239,8 @@ class TrainingRun(BaseModel):
         try:
             call.get(timeout=0)
             return True, None
-        except TimeoutError:
-            self._consecutive_transient_errors = 0
+        except (TimeoutError, *_TRANSIENT_MODAL_ERRORS):
             return False, None
-        except _TRANSIENT_MODAL_ERRORS as exc:
-            self._consecutive_transient_errors += 1
-            if self._consecutive_transient_errors < _MAX_CONSECUTIVE_TRANSIENT_ERRORS:
-                return False, None
-            return True, exc
         except Exception as exc:
             return True, exc
 
