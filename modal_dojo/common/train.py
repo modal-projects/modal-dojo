@@ -568,14 +568,14 @@ class TrainConfig:
         Returns:
             The completed training run.
         """
-        from modal_dojo.common.modal_lifecycle import stop_app
+        from modal_dojo.common.modal_lifecycle import stop_app_best_effort
 
         launch = self.launch(show_output=show_output)
         try:
             return launch.result(stop_app_on_success=True)
         except BaseException:
             if not self.detach and launch.modal_app_id:
-                stop_app(launch.modal_app_id)
+                stop_app_best_effort(launch.modal_app_id)
             raise
 
     def launch(
@@ -596,7 +596,7 @@ class TrainConfig:
             get_framework_status_url,
         )
 
-        from modal_dojo.common.modal_lifecycle import stop_app
+        from modal_dojo.common.modal_lifecycle import stop_app_best_effort
         from modal_dojo.common.status_reporter import enqueue_framework_status
 
         from modal_dojo.common.config import require_migrated_config
@@ -712,7 +712,7 @@ class TrainConfig:
             if function_call is None:
                 app_id = run_record.modal_app_id or (app.app_id if app else "")
                 if app_id:
-                    stop_app(app_id)
+                    stop_app_best_effort(app_id)
                 if isinstance(exc, KeyboardInterrupt) or app is None:
                     _terminalize_launch(run_record, exc)
                     raise

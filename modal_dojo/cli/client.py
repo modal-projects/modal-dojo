@@ -96,6 +96,41 @@ class DashboardClient:
         timeout: float | httpx.Timeout | None = None,
     ) -> Any:
         """GET a dashboard-relative path and decode its JSON response."""
+        return self._request_json(
+            "GET",
+            path,
+            params=params,
+            not_found_error=not_found_error,
+            timeout=timeout,
+        )
+
+    def post_json(
+        self,
+        path: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        not_found_error: CLIError | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> Any:
+        """POST to a dashboard-relative path and decode its JSON response."""
+        return self._request_json(
+            "POST",
+            path,
+            headers=headers,
+            not_found_error=not_found_error,
+            timeout=timeout,
+        )
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: QueryParams | None = None,
+        headers: Mapping[str, str] | None = None,
+        not_found_error: CLIError | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> Any:
         parsed_path = urlsplit(path)
         if parsed_path.scheme or parsed_path.netloc:
             raise CLIError(
@@ -109,9 +144,11 @@ class DashboardClient:
             else None
         )
         try:
-            response = self._client.get(
+            response = self._client.request(
+                method,
                 path.lstrip("/"),
                 params=query,
+                headers=headers,
                 timeout=DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout,
             )
         except httpx.TimeoutException as exc:
@@ -227,13 +264,6 @@ class DashboardClient:
                 exit_code=ExitCode.BACKEND,
                 hint="modal-dojo setup",
             )
-        if status_code >= 500:
-            raise CLIError(
-                f"Dashboard returned HTTP {status_code}.",
-                error="dashboard_server_error",
-                exit_code=ExitCode.BACKEND,
-                status_code=status_code,
-            )
         if status_code >= 400:
             try:
                 payload = response.json()
@@ -246,7 +276,11 @@ class DashboardClient:
                     if isinstance(detail, str)
                     else f"Dashboard returned HTTP {status_code}."
                 ),
-                error="dashboard_request_failed",
+                error=(
+                    "dashboard_server_error"
+                    if status_code >= 500
+                    else "dashboard_request_failed"
+                ),
                 exit_code=ExitCode.BACKEND,
                 status_code=status_code,
             )

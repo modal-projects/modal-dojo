@@ -50,8 +50,10 @@ from starlette.requests import Request
 # must resolve from this module's globals.
 from modal_dojo.common.advantage_distribution import AdvantageDistribution
 from modal_dojo.common.config import (
+    DASHBOARD_CSRF_HEADER,
     DASHBOARD_PASSWORD_SECRET_NAME,
     DASHBOARD_PROXY_AUTH_PATH,
+    DASHBOARD_STOP_RUN_ACTION,
     DASHBOARD_VERSION_PATH,
     dashboard_requires_proxy_auth,
     get_dashboard_trajectory_viewer,
@@ -67,6 +69,7 @@ from modal_dojo.common.dashboard_components import (
     MAX_COMPONENT_BYTES,
     DashboardComponent,
 )
+from modal_dojo.common.errors import TrainingGymError
 from modal_dojo.common.run import (
     FrameworkStatusUpdate,
     TrainingRun,
@@ -1230,6 +1233,34 @@ def fastapi_app():
         except KeyError:
             result = None
         return build_run_summary(run.model_dump(mode="json"), result)
+
+    @web.post("/api/runs/{training_run_id}/stop", response_model=RunSummary)
+    async def stop_run(training_run_id: str, request: Request):
+        if request.headers.get(DASHBOARD_CSRF_HEADER) != DASHBOARD_STOP_RUN_ACTION:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Header {DASHBOARD_CSRF_HEADER}: "
+                    f"{DASHBOARD_STOP_RUN_ACTION} is required"
+                ),
+            )
+        run = await _get_run_or_404(training_run_id)
+        try:
+            stopped = await run_in_threadpool(run.stop)
+        except TrainingGymError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Could not stop Modal app {run.modal_app_id}: {exc}",
+            )
+        if not stopped:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Training run {training_run_id!r} is already {run.status.value}",
+            )
+        invalidate_cache("runs")
+        return await get_run(training_run_id)
 
     def _component_manifest(
         run: TrainingRun, component_type: str, digest: str | None = None

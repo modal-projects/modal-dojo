@@ -15,7 +15,9 @@ class FakeDashboardClient:
     payloads: dict[str, object] = {}
     streams: dict[str, list[tuple[str, str]]] = {}
     not_found_paths: set[str] = set()
+    post_errors: dict[str, Exception] = {}
     requests: list[tuple[str, dict[str, object]]] = []
+    post_requests: list[tuple[str, dict[str, str] | None]] = []
     timeouts: list[tuple[str, float | None]] = []
 
     def __enter__(self):
@@ -27,6 +29,14 @@ class FakeDashboardClient:
     def get_json(self, path, *, params=None, not_found_error=None, timeout=None):
         self.requests.append((path, params))
         self.timeouts.append((path, timeout))
+        if path in self.not_found_paths and not_found_error is not None:
+            raise not_found_error
+        return self.payloads.get(path, self.payload)
+
+    def post_json(self, path, *, headers=None, not_found_error=None, timeout=None):
+        self.post_requests.append((path, headers))
+        if path in self.post_errors:
+            raise self.post_errors[path]
         if path in self.not_found_paths and not_found_error is not None:
             raise not_found_error
         return self.payloads.get(path, self.payload)
@@ -44,7 +54,9 @@ def fake_dashboard(monkeypatch):
     FakeDashboardClient.payloads = {}
     FakeDashboardClient.streams = {}
     FakeDashboardClient.not_found_paths = set()
+    FakeDashboardClient.post_errors = {}
     FakeDashboardClient.requests = []
+    FakeDashboardClient.post_requests = []
     FakeDashboardClient.timeouts = []
     monkeypatch.setattr(run_module, "DashboardClient", FakeDashboardClient)
 
@@ -67,6 +79,51 @@ def _summary(**overrides):
     }
     value.update(overrides)
     return value
+
+
+def test_run_stop_posts_and_reports():
+    FakeDashboardClient.payloads = {
+        "/api/runs/run-1/stop": _summary(status="stopped", display_status="stopped"),
+    }
+
+    result = CliRunner().invoke(
+        cli_module.entrypoint_cli, ["run", "stop", "run-1", "--yes"]
+    )
+
+    assert result.exit_code == 0
+    assert result.output.strip() == "Stopped training run run-1."
+    assert FakeDashboardClient.post_requests == [
+        ("/api/runs/run-1/stop", {"X-Training-Gym-Action": "stop"})
+    ]
+
+
+def test_run_stop_missing_run():
+    FakeDashboardClient.not_found_paths = {"/api/runs/missing/stop"}
+
+    result = CliRunner().invoke(
+        cli_module.entrypoint_cli, ["run", "stop", "missing", "--yes"]
+    )
+
+    assert result.exit_code == 3
+    assert "Training run 'missing' was not found." in result.output
+
+
+def test_run_stop_surfaces_conflict_detail():
+    FakeDashboardClient.post_errors = {
+        "/api/runs/run-1/stop": run_module.CLIError(
+            "Run is still launching; retry once its Modal app has started.",
+            error="dashboard_request_failed",
+            exit_code=run_module.ExitCode.BACKEND,
+            status_code=409,
+        ),
+    }
+
+    result = CliRunner().invoke(
+        cli_module.entrypoint_cli, ["run", "stop", "run-1", "--yes"]
+    )
+
+    assert result.exit_code == run_module.ExitCode.BACKEND
+    assert "Run is still launching" in result.output
 
 
 @pytest.mark.parametrize(
