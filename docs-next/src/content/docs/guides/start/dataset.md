@@ -14,7 +14,7 @@ Here, we’ll focus primarily on the former, and in the [next guide](https://gym
 
 The [HuggingFaceDataset](https://gym.modal.dev/reference/huggingfacedataset) class handles all the subtle ways in which datasets differ.
 
-For example, [statworx/haiku](https://huggingface.co/datasets/statworx/haiku) contains a `keywords` column with only a single word as input, and a `text` column that contains a ground-truth label. Since the input isn’t in the OpenAI chat completions API format, we need to set `input_format` to `text` so that the Gym can format each prompt in the dataset as a single user message.
+For example, [statworx/haiku](https://huggingface.co/datasets/statworx/haiku) contains a `keywords` column with only a single word as input, and a `text` column that contains a ground-truth label. Since the input isn’t in the OpenAI chat completions API format, we need to set `input_format` to `text` so that the Modal Dojo can format each prompt in the dataset as a single user message.
 
 ```python
 from modal_dojo import HuggingFaceDataset
@@ -62,7 +62,7 @@ eval_dataset = HuggingFaceDataset(
 )
 ```
 
-If a dataset is gated, you can create a [Modal Secret](https://modal.com/docs/guide/secrets) named `huggingface-secret` that the Gym will auto-detect:
+If a dataset is gated, you can create a [Modal Secret](https://modal.com/docs/guide/secrets) named `huggingface-secret` that the Modal Dojo will auto-detect:
 
 ```bash
 modal secret create huggingface-secret HF_TOKEN=hf_...

@@ -8,7 +8,7 @@ Always read the common gotchas.
 
 First try looking for the existing model running on slime. You can find examples in [slime model scripts](https://github.com/THUDM/slime/tree/main/scripts/models) or [slime examples](https://github.com/THUDM/slime/tree/main/examples). If you cannot find an existing model, find the model with the most similar architecture. Reference huggingface for model architecture.
 
-**Check image/version compatibility FIRST — it is the most common blocker.** The gym pins the slime image by digest (`SLIME_IMAGE` in `modal_dojo/frameworks/slime/launcher.py`). A model added to slime *after* that image was built will not run on it. Verify:
+**Check image/version compatibility FIRST — it is the most common blocker.** The Modal Dojo pins the slime image by digest (`SLIME_IMAGE` in `modal_dojo/frameworks/slime/launcher.py`). A model added to slime *after* that image was built will not run on it. Verify:
 - **When support landed upstream** — date the model script / plugin / bridge via the GitHub API:
   `curl -s "https://api.github.com/repos/THUDM/slime/commits?path=scripts/models/<model>.sh&per_page=5"` (also check `slime_plugins/models/...` and any `slime_plugins/mbridge/...`).
 - **When the pinned image was built** — map the `SLIME_IMAGE` digest to its nightly tag/date on Docker Hub:
@@ -57,7 +57,7 @@ Create a doc describing the slime config changes, and justify any patches you ha
 
 Slime by default use mbridge (`megatron_to_hf_mode=""`) instead of bridge (`megatron_to_hf_mode="bridge"`), which requires it to preconvert the weights. To determine if we should use bridge mode or mbridge, look upstream at the slime codebase at what was used for similar models.
 
-## How the recipe maps to CLI flags (add flags without touching gym code)
+## How the recipe maps to CLI flags (add flags without touching Modal Dojo code)
 
 `SlimeRecipe.cli_args` emits `--<field-name-with-dashes> <value>` for **every dataclass field** not listed in `_SLIME_SKIP` (recipe.py). So the way to add an arbitrary slime/sglang flag is simply to **declare it as a field on your recipe subclass** — no edits to `recipe.py` or the launcher. `glm_4_7.py` does exactly this for its `sglang_*` and perf flags. Rules `cli_args` follows:
 - `True` → bare flag (`--foo`); `False` / `None` / `""` → omitted entirely. So default an unwanted flag to `None`/`False`/`""`.

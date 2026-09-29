@@ -5,12 +5,12 @@
 #
 # # Getting started with RL
 #
-# This tutorial introduces some core features of the Training Gym by walking through
+# This tutorial introduces some core features of the Modal Dojo by walking through
 # a simple example of Reinforcement Learning with Verifiable Rewards (RLVR), a
 # foundational method of RL post-training. Here, we teach
 # [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B)
 # how to write correct haikus. Step by step, we'll show the foundations of running
-# training jobs on the Gym.
+# training jobs on the Modal Dojo.
 
 import nltk
 from nltk.corpus import cmudict
@@ -190,7 +190,7 @@ async def haiku_rm(args, sample, **kwargs) -> float:
 
 # ## Train the model
 #
-# Finally, onto the training. The Gym supports both the
+# Finally, onto the training. The Modal Dojo supports both the
 # [Slime](https://github.com/THUDM/slime) and
 # [Miles](https://github.com/radixark/miles) frameworks.
 # Here, we use Slime for demonstration purposes.

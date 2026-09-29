@@ -4,16 +4,16 @@ order: 0
 
 # Agent-driven training
 
-Agents are particularly useful when you need to validate hypotheses or run many experiments in parallel. However, they are less effective when forced to create and sift through thousands of lines of configuration files and training scripts. The Training Gym solves this with an intuitive API, a CLI for maximum observability into the run status, and skills that teach agents best practices such as smoking runs and tactics for debugging.
+Agents are particularly useful when you need to validate hypotheses or run many experiments in parallel. However, they are less effective when forced to create and sift through thousands of lines of configuration files and training scripts. The Modal Dojo solves this with an intuitive API, a CLI for maximum observability into the run status, and skills that teach agents best practices such as smoking runs and tactics for debugging.
 
-This guide demonstrates how to effectively use agents with the Gym by getting Claude to post-train a model of its choosing to respond only in [rhyme](https://open.spotify.com/episode/5txYOHA44zWiSgNK623Epp).
+This guide demonstrates how to effectively use agents with the Modal Dojo by getting Claude to post-train a model of its choosing to respond only in [rhyme](https://open.spotify.com/episode/5txYOHA44zWiSgNK623Epp).
 
 ## Set up
 
 First, we'll install the `modal-dojo` CLI:
 
 ```bash
-pip install -q git+https://github.com/modal-projects/training-gym.git@main
+pip install -q git+https://github.com/modal-projects/modal-dojo.git@main
 modal-dojo --help
 ```
 

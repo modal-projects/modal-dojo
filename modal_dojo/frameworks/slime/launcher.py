@@ -241,7 +241,7 @@ def _overlay_slime_source(image: "Image", slime: SlimeRecipe) -> "Image":
 
     # The pinned source replaced /root/slime after the base-image patches ran.
     # Fail if required patches no longer apply rather than run an incompatible
-    # fork with silently missing Training Gym behavior.
+    # fork with silently missing Modal Dojo behavior.
     return image.run_commands(*_patch_commands(_SLIME_ROOT_PATCHES_B64))
 
 

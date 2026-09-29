@@ -2,7 +2,7 @@ from pathlib import Path
 import inspect
 import sys
 
-import modal_dojo as gym
+import modal_dojo
 import pytest
 import yaml
 
@@ -96,7 +96,7 @@ def test_homepage_frontmatter_is_order_only(tmp_path: Path) -> None:
     generate_starlight(tmp_path)
     text = (tmp_path / "index.md").read_text()
     assert _frontmatter_lines(text) == ["order: 0"]
-    assert "\n# Training Gym\n" in text
+    assert "\n# Modal Dojo\n" in text
 
 
 def test_authored_pages_use_order_and_h1() -> None:
@@ -140,7 +140,7 @@ def test_collect_guides_orders_by_section_then_order() -> None:
 
 def test_readme_heading_and_intro_skips_badges_and_rewrites_anchors() -> None:
     markdown = (
-        "# Training Gym\n"
+        "# Modal Dojo\n"
         "\n"
         "[![ci](https://img.shields.io/badge/ci-ok)](https://example.com)\n"
         "\n"
@@ -151,7 +151,7 @@ def test_readme_heading_and_intro_skips_badges_and_rewrites_anchors() -> None:
         "## Quickstart\n"
     )
     assert _readme_heading_and_intro(markdown) == (
-        "Training Gym",
+        "Modal Dojo",
         "First paragraph with a "
         "[Quickstart](https://gym.modal.dev/#quickstart).\n\n"
         "Second paragraph.",
@@ -219,18 +219,18 @@ def test_public_api_reference_coverage() -> None:
     documented = {entry["class_name"] for entry in API_REFERENCE_MANIFEST}
     public = {
         name
-        for name in gym.__all__
+        for name in modal_dojo.__all__
         if name not in API_REFERENCE_DENYLIST
         and (
-            inspect.isclass(getattr(gym, name))
-            or inspect.isfunction(getattr(gym, name))
-            or inspect.isroutine(getattr(gym, name))
+            inspect.isclass(getattr(modal_dojo, name))
+            or inspect.isfunction(getattr(modal_dojo, name))
+            or inspect.isroutine(getattr(modal_dojo, name))
         )
     }
     assert documented == public
     assert documented.isdisjoint(API_REFERENCE_DENYLIST)
-    assert "parse_qwen3_response" not in gym.__all__
-    assert "METADATA_VOLUME_NAME" not in gym.__all__
+    assert "parse_qwen3_response" not in modal_dojo.__all__
+    assert "METADATA_VOLUME_NAME" not in modal_dojo.__all__
 
 
 def test_registered_presets_are_exported_and_sidebar_excluded() -> None:
@@ -249,9 +249,9 @@ def test_registered_presets_are_exported_and_sidebar_excluded() -> None:
     model_presets = collect_model_preset_names()
     registered = {name for name, *_ in iter_registered_recipes()}
 
-    assert registered <= set(gym.__all__)
+    assert registered <= set(modal_dojo.__all__)
     assert registered <= documented
-    assert model_presets & set(gym.__all__) <= excluded
+    assert model_presets & set(modal_dojo.__all__) <= excluded
     assert excluded.isdisjoint(labels)
     assert {
         "SlimeRecipe",
@@ -274,7 +274,7 @@ def test_eval_classes_are_not_documented() -> None:
     assert documented.isdisjoint(API_REFERENCE_DENYLIST)
     assert labels.isdisjoint(API_REFERENCE_DENYLIST)
     for name in API_REFERENCE_DENYLIST:
-        assert inspect.isclass(getattr(gym, name))
+        assert inspect.isclass(getattr(modal_dojo, name))
     assert "MetadataStore" in API_REFERENCE_DENYLIST
     assert {"extract_code", "score_in_sandbox"} <= documented
     assert {"extract_code", "score_in_sandbox"}.isdisjoint(API_REFERENCE_DENYLIST)
@@ -287,16 +287,16 @@ def test_function_pages_use_getdoc() -> None:
     from generate_api_reference import generate_function_page
 
     entries = {entry["class_name"]: entry for entry in API_REFERENCE_MANIFEST}
-    doc = inspect.getdoc(gym.extract_code)
+    doc = inspect.getdoc(modal_dojo.extract_code)
     assert doc
-    page = generate_function_page(gym.extract_code, entries["extract_code"], 0)
+    page = generate_function_page(modal_dojo.extract_code, entries["extract_code"], 0)
     assert doc.splitlines()[0] in page
 
 
 def test_package_exports_match_all() -> None:
-    assert set(gym._EXPORTS) == set(gym.__all__)
-    assert "parse_qwen3_response" not in gym._EXPORTS
-    assert "METADATA_VOLUME_NAME" not in gym._EXPORTS
+    assert set(modal_dojo._EXPORTS) == set(modal_dojo.__all__)
+    assert "parse_qwen3_response" not in modal_dojo._EXPORTS
+    assert "METADATA_VOLUME_NAME" not in modal_dojo._EXPORTS
 
 
 def test_api_reference_sidebar_lists_classes_before_functions() -> None:
@@ -335,12 +335,12 @@ def test_excluded_preset_pages_omit_attributes() -> None:
     ):
         entry = entries[name]
         assert entry.get("sidebar_excluded")
-        page = generate_class_page(getattr(gym, name), entry, 0)
+        page = generate_class_page(getattr(modal_dojo, name), entry, 0)
         assert "**Attributes**" not in page
     for name in ("SlimeRecipe", "MilesRecipe", "SglangRecipe"):
         entry = entries[name]
         assert not entry.get("sidebar_excluded")
-        page = generate_class_page(getattr(gym, name), entry, 0)
+        page = generate_class_page(getattr(modal_dojo, name), entry, 0)
         assert "**Attributes**" in page
 
 
@@ -353,7 +353,7 @@ def test_api_reference_overview_has_descriptions() -> None:
     missing = [
         entry["class_name"]
         for entry in API_REFERENCE_MANIFEST
-        if not _class_lede(getattr(gym, entry["class_name"]))
+        if not _class_lede(getattr(modal_dojo, entry["class_name"]))
     ]
     assert missing == []
 

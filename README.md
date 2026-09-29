@@ -1,6 +1,6 @@
-# Training Gym
+# Modal Dojo
 
-Modal Training Gym is an open-source Python SDK for RL post-training on [Modal](https://modal.com).
+Modal Dojo is an open-source Python SDK for RL post-training on [Modal](https://modal.com).
 
 The library takes care of infrastructure concerns such as cluster topology, Ray/NCCL bring-up, volume mounts, checkpointing, and serving for eval and rollouts, so you (or your agent!) can focus on training models.
 
@@ -19,13 +19,13 @@ Requirements:
 Install the package directly:
 
 ```bash
-uv pip install -q git+https://github.com/modal-projects/training-gym.git@main
+uv pip install -q git+https://github.com/modal-projects/modal-dojo.git@main
 ```
 
 Or pin it in `pyproject.toml`:
 
 ```toml
-modal-dojo = { git = "https://github.com/modal-projects/training-gym.git", branch = "main" }
+modal-dojo = { git = "https://github.com/modal-projects/modal-dojo.git", branch = "main" }
 ```
 
 Authenticate with Modal:
@@ -42,14 +42,14 @@ modal-dojo setup
 
 <div class="tg-dashboard-previews">
   <span>
-    <img src="./assets/homepage.gif" alt="Training runs list in the Training Gym dashboard" width="100%" />
+    <img src="./assets/homepage.gif" alt="Training runs list in the Modal Dojo dashboard" width="100%" />
   </span>
   <span>
-    <img src="./assets/longrun.gif" alt="Long-running training run details in the Training Gym dashboard" width="100%" />
+    <img src="./assets/longrun.gif" alt="Long-running training run details in the Modal Dojo dashboard" width="100%" />
   </span>
 </div>
 
-And empower your agents with the Gym's skill bundle:
+And empower your agents with the Modal Dojo's skill bundle:
 
 ```bash
 modal-dojo skills install

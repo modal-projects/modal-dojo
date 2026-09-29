@@ -2,7 +2,7 @@
 order: 3
 ---
 
-# Training in the Gym
+# Training in the Modal Dojo
 
 Once you have your model, dataset, and training recipe, you're ready to start training:
 
@@ -19,7 +19,7 @@ print(f"Modal App: {run.modal_app_id}")
 print(f"Modal App URL: {run.modal_app_url}")
 ```
 
-The training run will continue in the background entirely on Modal-managed infrastructure, so sit back and relax! At any time, you can easily observe its progress on the [Gym dashboard](https://gym.modal.dev/guides/dashboard) or with the [CLI](https://gym.modal.dev/reference/cli).
+The training run will continue in the background entirely on Modal-managed infrastructure, so sit back and relax! At any time, you can easily observe its progress on the [Modal Dojo dashboard](https://gym.modal.dev/guides/dashboard) or with the [CLI](https://gym.modal.dev/reference/cli).
 
 ## Handling checkpoints
 

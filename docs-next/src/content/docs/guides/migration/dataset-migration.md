@@ -4,7 +4,7 @@ order: 0
 
 # Migrating to the new dataset API
 
-New versions of the Training Gym feature a reworked `DatasetConfig` API that is simpler and easier to customize. This guide breaks down the breaking changes so you can migrate your existing datasets to the new API.
+New versions of the Modal Dojo feature a reworked `DatasetConfig` API that is simpler and easier to customize. This guide breaks down the breaking changes so you can migrate your existing datasets to the new API.
 
 ## Training and evaluation datasets are now separate
 
@@ -92,9 +92,9 @@ class ExampleDataset(DatasetConfig):
 
 You then implement these additional methods to migrate other aspects of your dataset's behavior:
 
-* `apply_chat_template()` replaces the `apply_chat_template` field. It returns a boolean that controls whether the Gym should tokenize your prompts using your model's chat template. The default implementation returns `True`, but you can override this and return `False` if you are passing in a raw prompt for a custom generation function.
+* `apply_chat_template()` replaces the `apply_chat_template` field. It returns a boolean that controls whether the Modal Dojo should tokenize your prompts using your model's chat template. The default implementation returns `True`, but you can override this and return `False` if you are passing in a raw prompt for a custom generation function.
 * `write(path)` allows you to override how datasets are written to disk, which is useful if your existing dataset had custom logic in `prepare()`. If you implement `write(path)`, you should also implement `output_format()` to return either `jsonl` or `parquet`, then write your dataset in that format to the given `path`.
-* `cache_key()` lets you customize where your dataset is cached for future runs. Return a stable string for the Gym to cache your dataset, or return `None` to always regenerate your dataset for each training run.
+* `cache_key()` lets you customize where your dataset is cached for future runs. Return a stable string for the Modal Dojo to cache your dataset, or return `None` to always regenerate your dataset for each training run.
 
 These fields have been removed:
 

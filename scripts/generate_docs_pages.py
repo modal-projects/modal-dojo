@@ -7,7 +7,7 @@ import re
 import subprocess
 from pathlib import Path, PurePosixPath
 
-REPO_URL = "https://github.com/modal-projects/training-gym"
+REPO_URL = "https://github.com/modal-projects/modal-dojo"
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_STARLIGHT_DIR = ROOT / "docs-next" / "src" / "content" / "docs"
 
@@ -61,7 +61,7 @@ def current_ref() -> str:
 REF = current_ref()
 BLOB_BASE = f"{REPO_URL}/blob/{REF}"
 TREE_BASE = f"{REPO_URL}/tree/{REF}"
-RAW_BASE = f"https://raw.githubusercontent.com/modal-projects/training-gym/{REF}"
+RAW_BASE = f"https://raw.githubusercontent.com/modal-projects/modal-dojo/{REF}"
 
 
 def convert_github_callouts(markdown: str) -> str:
@@ -127,7 +127,7 @@ def rewrite_links(
 
 
 _RAW_ASSET_PREFIX = (
-    "https://raw.githubusercontent.com/modal-projects/training-gym/main/assets/"
+    "https://raw.githubusercontent.com/modal-projects/modal-dojo/main/assets/"
 )
 
 

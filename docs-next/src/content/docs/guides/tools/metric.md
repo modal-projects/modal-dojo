@@ -65,7 +65,7 @@ When launching a [hyperparameter sweep](https://gym.modal.dev/tutorials/param_sw
 
 ## Trackio
 
-[Trackio](https://huggingface.co/docs/trackio) is an open-source W&B alternative which you can deploy on Modal or on a Hugging Face Space. You can even self-host! Training Gym installs it in the training image and routes the framework's metric calls to it whenever a recipe uses `TrackioConfig`; scalars also appear in the dashboard's Metrics tab.
+[Trackio](https://huggingface.co/docs/trackio) is an open-source W&B alternative which you can deploy on Modal or on a Hugging Face Space. You can even self-host! Modal Dojo installs it in the training image and routes the framework's metric calls to it whenever a recipe uses `TrackioConfig`; scalars also appear in the dashboard's Metrics tab.
 
 ### Deploy on Modal
 

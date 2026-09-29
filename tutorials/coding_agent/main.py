@@ -35,7 +35,7 @@ from tutorials.coding_agent.dataset import (
 # tasks with a mix of successes and failures, so that we only train on tasks
 # with useful GRPO learning signal.
 # Since this is verbose, we have a
-# [separate preprocessing script](https://github.com/modal-projects/training-gym/blob/main/tutorials/coding_agent/dataset.py).
+# [separate preprocessing script](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/coding_agent/dataset.py).
 #
 # Run with:
 #

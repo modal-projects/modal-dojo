@@ -1,6 +1,6 @@
 # Failure signatures
 
-Use this reference when a Training Gym run fails or appears hung.
+Use this reference when a Modal Dojo run fails or appears hung.
 
 ## Collect evidence
 

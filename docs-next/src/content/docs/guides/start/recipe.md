@@ -20,7 +20,7 @@ from modal_dojo import Qwen3_5_4B_Recipe
 recipe = Qwen3_5_4B_Recipe()
 ```
 
-We provide optimized recipes for all supported models in the Training Gym, but note that they are easily extensible to fit whatever use case you may have. Under the hood, each recipe is backed by one of two backend frameworks: [Miles](https://github.com/radixark/miles) or [Slime](https://github.com/THUDM/slime). All recipes allow you to specify framework-native parameters using the corresponding recipe fields.
+We provide optimized recipes for all supported models in the Modal Dojo, but note that they are easily extensible to fit whatever use case you may have. Under the hood, each recipe is backed by one of two backend frameworks: [Miles](https://github.com/radixark/miles) or [Slime](https://github.com/THUDM/slime). All recipes allow you to specify framework-native parameters using the corresponding recipe fields.
 
 This guide will focus on the most important ones. However, you can see the full lists for each of the base classes (i.e., [MilesRecipe](https://gym.modal.dev/reference/milesrecipe) and [SlimeRecipe](https://gym.modal.dev/reference/slimerecipe)).
 
@@ -38,7 +38,7 @@ recipe = Qwen3_5_4B_Recipe(
 )
 ```
 
-The Gym runs your training workloads across one or more nodes on Modal, each with one or more GPUs. Smaller models (i.e., tens of billions of parameters) can be trained on a single node, while larger models may require a [multi-node cluster](https://modal.com/docs/guide/multi-node-training).
+The Modal Dojo runs your training workloads across one or more nodes on Modal, each with one or more GPUs. Smaller models (i.e., tens of billions of parameters) can be trained on a single node, while larger models may require a [multi-node cluster](https://modal.com/docs/guide/multi-node-training).
 
 Each recipe automatically provisions the smallest cluster shape that will work, but you may want to increase this to maximize throughput. You can choose any type from [Modal’s supported GPUs](https://modal.com/docs/guide/gpu#picking-a-gpu). Also, note that you may not actually need (or even want!) multiple nodes: we suggest setting `actor_num_gpus_per_node` to the [maximum amount](https://modal.com/docs/guide/gpu#specifying-gpu-count) to minimize unnecessary communication between nodes.
 

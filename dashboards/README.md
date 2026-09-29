@@ -1,6 +1,6 @@
 # Dashboard
 
-Self-hosted observability dashboard for Training Gym. Aggregates training
+Self-hosted observability dashboard for Modal Dojo. Aggregates training
 runs and eval results from the `training-gym-metadata` Modal Volume into
 a single Svelte SPA served by a Modal ASGI endpoint.
 

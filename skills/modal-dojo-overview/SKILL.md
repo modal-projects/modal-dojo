@@ -1,5 +1,5 @@
 ---
-name: training-gym-overview
+name: modal-dojo-overview
 description: >-
   Explains modal-dojo repository architecture:
   package layout, TrainConfig, models, datasets, recipes, framework internals,
@@ -11,7 +11,7 @@ when_to_use: >-
   configs, shared internals, or repository structure.
 ---
 
-# Training Gym Overview
+# Modal Dojo Overview
 
 One-stop reference for agents asked to build, modify, or validate tutorials
 and examples in this repo. Pairs with
