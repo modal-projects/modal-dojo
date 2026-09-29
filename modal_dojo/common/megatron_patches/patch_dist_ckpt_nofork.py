@@ -5,7 +5,7 @@ does ``mp.get_context("fork"); ctx.Process(...); p.start()``. From a
 multithreaded CUDA/Ray actor that ``os.fork()`` raises
 ``BlockingIOError: [Errno 11] Resource temporarily unavailable`` (EAGAIN)
 on the final checkpoint save. ``--dist-ckpt-workers`` landed in the same
-PR that deleted this function, so the gym cannot pass the flag.
+PR that deleted this function, so Modal Dojo cannot pass the flag.
 
 Executed at image-build time via ``python3 <this file>``.
 """

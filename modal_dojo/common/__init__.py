@@ -25,7 +25,7 @@ from modal_dojo.utils.metadata import (
 
 COMMON_DOJO_TAGS: dict[str, str] = {
     "training": "True",
-    "source": "training-gym",
+    "source": "modal-dojo",
     "_modal_job_type": "training",
 }
 

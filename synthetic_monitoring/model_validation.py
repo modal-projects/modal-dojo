@@ -1,4 +1,4 @@
-"""Weekly synthetic monitoring for training-gym model validation.
+"""Weekly synthetic monitoring for modal-dojo model validation.
 
 Test it out with:
 

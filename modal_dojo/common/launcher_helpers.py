@@ -223,9 +223,9 @@ async def start_training_cluster(
 
     modal_app_id = modal_app_id or os.environ.get("MODAL_APP_ID", "")
     if framework_status_url:
-        os.environ["TRAINING_GYM_FRAMEWORK_STATUS_URL"] = framework_status_url
+        os.environ["MODAL_DOJO_FRAMEWORK_STATUS_URL"] = framework_status_url
     if framework_status_token:
-        os.environ["TRAINING_GYM_FRAMEWORK_STATUS_TOKEN"] = framework_status_token
+        os.environ["MODAL_DOJO_FRAMEWORK_STATUS_TOKEN"] = framework_status_token
     await asyncio.gather(*(volume.reload.aio() for volume in volumes))
 
     cluster = ModalRayCluster()
@@ -349,7 +349,7 @@ def ship_recipe_callables(
         ),
         "rollout_function": None,
         **{
-            attr: f"training_gym_{attr}_path"
+            attr: f"modal_dojo_{attr}_path"
             for attr in (
                 "custom_rollout_log_function",
                 "custom_eval_rollout_log_function",
@@ -761,26 +761,26 @@ def check_training_result(result: Any, run_record: TrainingRun) -> None:
 def training_reporting_env(
     recipe: Any, model: Any, app_name: str, framework_status_url: str
 ) -> dict[str, str]:
-    status_url = os.environ.get("TRAINING_GYM_FRAMEWORK_STATUS_URL") or (
+    status_url = os.environ.get("MODAL_DOJO_FRAMEWORK_STATUS_URL") or (
         framework_status_url or ""
     )
     if not status_url:
         print(
             "WARNING: no dashboard URL passed to train() and no "
-            "TRAINING_GYM_FRAMEWORK_STATUS_URL set inside the "
+            "MODAL_DOJO_FRAMEWORK_STATUS_URL set inside the "
             "container. Phase reporting is disabled for this run."
         )
     parser = getattr(model, "response_parser", None) if model is not None else None
     module = getattr(parser, "__module__", "")
     name = getattr(parser, "__qualname__", "") or getattr(parser, "__name__", "")
     return {
-        "TRAINING_GYM_APP_NAME": app_name,
-        "TRAINING_GYM_TOTAL_STEPS": str(recipe.num_rollout),
-        "TRAINING_GYM_LOSS_TYPE": recipe.loss_type,
-        "TRAINING_GYM_RESPONSE_PARSER_PATH": f"{module}.{name}"
+        "MODAL_DOJO_APP_NAME": app_name,
+        "MODAL_DOJO_TOTAL_STEPS": str(recipe.num_rollout),
+        "MODAL_DOJO_LOSS_TYPE": recipe.loss_type,
+        "MODAL_DOJO_RESPONSE_PARSER_PATH": f"{module}.{name}"
         if module and name
         else "",
-        "TRAINING_GYM_CAPTURE_TRACE": "1" if recipe.capture_trace else "",
-        "TRAINING_GYM_TRACE_SAMPLE_LIMIT": str(recipe.trace_sample_limit),
-        "TRAINING_GYM_FRAMEWORK_STATUS_URL": status_url,
+        "MODAL_DOJO_CAPTURE_TRACE": "1" if recipe.capture_trace else "",
+        "MODAL_DOJO_TRACE_SAMPLE_LIMIT": str(recipe.trace_sample_limit),
+        "MODAL_DOJO_FRAMEWORK_STATUS_URL": status_url,
     }

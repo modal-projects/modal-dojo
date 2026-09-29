@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 # Canonical mount point for `modal_dojo/tools/` inside every framework
 # image. Framework-agnostic helpers shell out to scripts at this path, so it
 # must exist on every launcher's image.
-TOOLS_REMOTE_PATH = "/opt/training-gym/tools"
+TOOLS_REMOTE_PATH = "/opt/modal-dojo/tools"
 
 # Local path to the tools directory. Shipped with the package so
 # `mount_tools_dir` works from an editable install or a `pip install`ed copy.

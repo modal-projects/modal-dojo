@@ -418,7 +418,7 @@ def build_ray_runtime_env(
     env_vars: dict[str, str] = {
         "no_proxy": f"127.0.0.1,{head_addr}",
         "MASTER_ADDR": head_addr,
-        "TRAINING_GYM_SUBSTEP_TIMING": substep_timing,
+        "MODAL_DOJO_SUBSTEP_TIMING": substep_timing,
     }
     env_vars.update(environment)
     # Tracker identity and credentials must match the preflight configuration.
@@ -428,7 +428,7 @@ def build_ray_runtime_env(
     if framework_status_token:
         # Applied after `environment` so a recipe override can't blank the
         # dashboard auth token by accident.
-        env_vars["TRAINING_GYM_FRAMEWORK_STATUS_TOKEN"] = framework_status_token
+        env_vars["MODAL_DOJO_FRAMEWORK_STATUS_TOKEN"] = framework_status_token
     return {"env_vars": env_vars}
 
 
@@ -970,8 +970,8 @@ def build_miles_app(
                 environment=environment,
                 substep_timing=miles.substep_timing,
                 extra_env={
-                    "TRAINING_GYM_TRAINING_RUN_ID": training_run_id,
-                    "TRAINING_GYM_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
+                    "MODAL_DOJO_TRAINING_RUN_ID": training_run_id,
+                    "MODAL_DOJO_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
                     **shared.training_reporting_env(
                         miles, model, app_name, framework_status_url
                     ),

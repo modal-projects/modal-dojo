@@ -1,4 +1,4 @@
-# PATCHED_TRAINING_GYM_TIMING_PREAMBLE: bootstrap substep-timing recorder
+# PATCHED_MODAL_DOJO_TIMING_PREAMBLE: bootstrap substep-timing recorder
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
@@ -388,7 +388,7 @@ class MegatronTrainRayActor(TrainRayActor):
         store_prefix: str = "",
     ) -> dict[str, list[torch.Tensor]]:
 
-        # PATCHED_TRAINING_GYM_TIMING_COMPUTE_LOG_PROBS
+        # PATCHED_MODAL_DOJO_TIMING_COMPUTE_LOG_PROBS
         with _tg_time_phase('compute_log_probs'):
             with timer(f"{store_prefix}log_probs"):
                 return forward_only(
@@ -402,7 +402,7 @@ class MegatronTrainRayActor(TrainRayActor):
                 )
 
     def train(self, rollout_id: int, rollout_data_ref: Box, external_data=None):
-        # PATCHED_TRAINING_GYM_TIMING_RECORDER
+        # PATCHED_MODAL_DOJO_TIMING_RECORDER
         with _tg_mrec(rollout_id, 'critic' if self.role == 'critic' else 'actor'):
             if self.args.debug_rollout_only:
                 return None
@@ -420,7 +420,7 @@ class MegatronTrainRayActor(TrainRayActor):
                 result = None
 
             if self.args.offload_train:
-                # PATCHED_TRAINING_GYM_TIMING_TRAINER_FINALIZE
+                # PATCHED_MODAL_DOJO_TIMING_TRAINER_FINALIZE
                 with _tg_time_phase('trainer_finalize'):
                     del rollout_data
                     self.sleep()
@@ -561,7 +561,7 @@ class MegatronTrainRayActor(TrainRayActor):
 
             self.prof.step(rollout_id=rollout_id)
 
-        # PATCHED_TRAINING_GYM_TIMING_TRAINER_FINALIZE
+        # PATCHED_MODAL_DOJO_TIMING_TRAINER_FINALIZE
         with _tg_time_phase('trainer_finalize'):
             train_dump_utils.save_debug_train_data(self.args, rollout_id=rollout_id, rollout_data=rollout_data)
 

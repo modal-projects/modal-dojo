@@ -1,4 +1,4 @@
-"""Qwen3-ASR-1.7B as a gym model.
+"""Qwen3-ASR-1.7B as a Modal Dojo model.
 
 Qwen3-ASR is an audio-only ASR model served by SGLang on
 ``/v1/audio/transcriptions``. Its text backbone is a dense Qwen3-1.7B; the audio
@@ -82,7 +82,7 @@ class Qwen3_ASR_1_7B(HFModelConfiguration):
         if backend is None:
             return  # no fast tokenizer to write
         backend.save(target)
-        print(f"[training-gym] Wrote router-loadable tokenizer.json -> {target}")
+        print(f"[modal-dojo] Wrote router-loadable tokenizer.json -> {target}")
 
 
 @functools.lru_cache(maxsize=None)

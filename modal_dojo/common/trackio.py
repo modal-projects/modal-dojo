@@ -20,8 +20,8 @@ from modal_dojo.common.metrics import MetricConfig
 
 _DEFAULT_TRACKIO_VERSION = "0.34.0"
 _DEFAULT_MODAL_APP_NAME = "training-gym-trackio"
-_RUN_NAME_ENV = "TRAINING_GYM_TRACKIO_RUN_NAME"
-_SHIM_MARKER = "_training_gym_trackio_adapter"
+_RUN_NAME_ENV = "MODAL_DOJO_TRACKIO_RUN_NAME"
+_SHIM_MARKER = "_modal_dojo_trackio_adapter"
 
 
 @dataclass
@@ -223,7 +223,7 @@ def _deploy_modal_dashboard(
             ):
                 return Response(
                     status_code=401,
-                    headers={"WWW-Authenticate": 'Basic realm="training-gym"'},
+                    headers={"WWW-Authenticate": 'Basic realm="modal-dojo"'},
                 )
             return await call_next(request)
 

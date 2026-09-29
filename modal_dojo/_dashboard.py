@@ -1,4 +1,4 @@
-"""Self-contained training-gym dashboard app.
+"""Self-contained modal-dojo dashboard app.
 
 The image builds the frontend from ``dashboards/frontend`` in a repo
 checkout, or the copy the wheel ships at ``modal_dojo/_frontend``.
@@ -135,7 +135,7 @@ class TimingFileCache(TypedDict):
 
 
 DASHBOARD_REQUIRES_PROXY_AUTH_ENV_KEY = "DASHBOARD_REQUIRES_PROXY_AUTH"
-TIMING_DEBUG_ENV = "TRAINING_GYM_TIMING_DEBUG"
+TIMING_DEBUG_ENV = "MODAL_DOJO_TIMING_DEBUG"
 DASHBOARD_COMPONENT_VOLUME_MOUNT = "/mnt/training-gym-dashboard-overlay"
 dashboard_component_volume = modal.Volume.from_name(
     DASHBOARD_OVERLAY_VOLUME_NAME, create_if_missing=True
@@ -235,7 +235,7 @@ PASSWORD_EXEMPT_PATHS = frozenset(
 )
 
 # Only ever the *expected* side of a comparison, so publishing it is safe.
-_MISSING_TOKEN_DUMMY = "training-gym-missing-token-dummy-never-issued"
+_MISSING_TOKEN_DUMMY = "modal-dojo-missing-token-dummy-never-issued"
 
 # Suffix on the metric chunk files this container writes (one per process).
 METRIC_WRITER_ID = _secrets.token_hex(4)
@@ -458,7 +458,7 @@ __COMPONENT__
 const __target = document.getElementById("viewer");
 let __mounted = null;
 function __post(message) {
-  window.parent.postMessage({ trainingGymDashboardComponent: true, ...message }, "*");
+  window.parent.postMessage({ modalDojoDashboardComponent: true, ...message }, "*");
 }
 function __render(props) {
   if (__mounted && typeof __mounted.unmount === "function") __mounted.unmount();
@@ -469,7 +469,7 @@ function __render(props) {
 window.addEventListener("message", (event) => {
   if (event.source !== window.parent) return;
   const data = event.data;
-  if (!data || data.trainingGymDashboardComponent !== true || data.type !== "props") return;
+  if (!data || data.modalDojoDashboardComponent !== true || data.type !== "props") return;
   try {
     __render(data.props);
     __post({ type: "rendered" });
@@ -638,7 +638,7 @@ def fastapi_app():
             if not _password_ok(request.headers.get("Authorization")):
                 return Response(
                     status_code=401,
-                    headers={"WWW-Authenticate": 'Basic realm="training-gym"'},
+                    headers={"WWW-Authenticate": 'Basic realm="modal-dojo"'},
                 )
         return await call_next(request)
 

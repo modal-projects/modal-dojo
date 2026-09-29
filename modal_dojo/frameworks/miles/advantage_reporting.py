@@ -30,7 +30,7 @@ def _warn_once(exc: Exception) -> None:
         return
     _warned_compute_failure = True
     print(
-        f"[training-gym] advantage-distribution reporting disabled: {exc!r}",
+        f"[modal-dojo] advantage-distribution reporting disabled: {exc!r}",
         flush=True,
     )
 

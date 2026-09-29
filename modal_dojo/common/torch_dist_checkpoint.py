@@ -121,7 +121,7 @@ class _TorchDistributed:
 def commit_latest_checkpoint_volume() -> None:
     import torch.distributed as dist
 
-    volume_name = os.environ.get("TRAINING_GYM_CHECKPOINTS_VOLUME_NAME")
+    volume_name = os.environ.get("MODAL_DOJO_CHECKPOINTS_VOLUME_NAME")
     barrier = dist.barrier if dist.is_initialized() else lambda: None
     commit_checkpoint_volume_across_ranks(
         volume_name,

@@ -7,7 +7,7 @@ the dashboard's ``/api/framework-status`` endpoint.
 
 The dashboard URL is resolved at enqueue time from:
 1. Explicit ``url`` argument
-2. ``TRAINING_GYM_FRAMEWORK_STATUS_URL`` env var (propagated into remote
+2. ``MODAL_DOJO_FRAMEWORK_STATUS_URL`` env var (propagated into remote
    containers/workers; the source of truth is ``~/.training-gym.toml`` on the
    user's machine, which can't be read remotely)
 3. ``~/.training-gym.toml`` via :mod:`modal_dojo.common.config`
@@ -34,7 +34,7 @@ _QUEUE: Queue[dict[str, Any] | None] = Queue(maxsize=512)
 _STARTED = False
 _LOCK = threading.Lock()
 _DEFAULT_TIMEOUT_SECONDS = 2.0
-_STATUS_TOKEN_ENV = "TRAINING_GYM_FRAMEWORK_STATUS_TOKEN"
+_STATUS_TOKEN_ENV = "MODAL_DOJO_FRAMEWORK_STATUS_TOKEN"
 
 
 def _resolve_url() -> str:
@@ -58,7 +58,7 @@ def _ensure_worker() -> None:
         if _STARTED:
             return
         thread = threading.Thread(
-            target=_worker, name="training-gym-status-reporter", daemon=True
+            target=_worker, name="modal-dojo-status-reporter", daemon=True
         )
         thread.start()
         _STARTED = True

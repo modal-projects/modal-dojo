@@ -75,7 +75,7 @@ def build_vllm_serve_app(
         volumes[mount] = checkpoints_volume
 
     tags = {
-        "_modal_source": "training-gym",
+        "_modal_source": "modal-dojo",
         "_modal_job_type": "serving",
         "_modal_framework": "vllm-serve",
     }
@@ -108,7 +108,7 @@ def build_vllm_serve_app(
                 hf_config_path = os.path.join(model_path, "config.json")
                 if not os.path.exists(hf_config_path):
                     print(
-                        "[training-gym] Converting checkpoint from mt to hf for serving."
+                        "[modal-dojo] Converting checkpoint from mt to hf for serving."
                     )
 
             cmd = [

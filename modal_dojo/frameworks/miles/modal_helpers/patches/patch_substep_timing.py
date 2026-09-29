@@ -17,12 +17,13 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-PREAMBLE_MARKER = "PATCHED_TRAINING_GYM_TIMING_PREAMBLE"
-RECORDER_MARKER = "PATCHED_TRAINING_GYM_TIMING_RECORDER"
+
+PREAMBLE_MARKER = "PATCHED_MODAL_DOJO_TIMING_PREAMBLE"
+RECORDER_MARKER = "PATCHED_MODAL_DOJO_TIMING_RECORDER"
 
 
 def phase_marker(phase: str) -> str:
-    return f"PATCHED_TRAINING_GYM_TIMING_{phase.upper()}"
+    return f"PATCHED_MODAL_DOJO_TIMING_{phase.upper()}"
 
 
 PREAMBLE = (
@@ -578,7 +579,7 @@ def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
                 "    if args.eval_interval is not None and args.start_rollout_id == 0 and not args.skip_eval_before_train:\n"
                 "        if not args.eval_uses_snapshots:\n"
                 "            with _tg_role('driver', None) as _tg_rec:\n"
-                "                # PATCHED_TRAINING_GYM_TIMING_EVALUATE_ROLLOUTS\n"
+                "                # PATCHED_MODAL_DOJO_TIMING_EVALUATE_ROLLOUTS\n"
                 "                with _tg_rec.phase('evaluate_rollouts'):\n"
                 "                    await eval_dispatcher.dispatch(0, hf_dir=args.hf_checkpoint)\n"
                 "        else:\n"
@@ -592,7 +593,7 @@ def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
             (
                 "        if should_run_periodic_action(rollout_id, args.eval_interval, num_rollout_per_epoch, args.num_rollout):\n"
                 "            if not args.eval_uses_snapshots:\n"
-                "                # PATCHED_TRAINING_GYM_TIMING_EVALUATE_ROLLOUTS_END\n"
+                "                # PATCHED_MODAL_DOJO_TIMING_EVALUATE_ROLLOUTS_END\n"
                 "                with _tg_rec.phase('evaluate_rollouts_end'):\n"
                 "                    await eval_dispatcher.dispatch(rollout_id, force=rollout_id == args.num_rollout - 1)\n"
                 "            else:\n"
@@ -606,7 +607,7 @@ def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
         drain = "    await eval_dispatcher.drain()\n"
         replacement = (
             "    with _tg_role('driver', None) as _tg_rec:\n"
-            "        # PATCHED_TRAINING_GYM_TIMING_EVALUATE_ROLLOUTS_END\n"
+            "        # PATCHED_MODAL_DOJO_TIMING_EVALUATE_ROLLOUTS_END\n"
             "        with _tg_rec.phase('evaluate_rollouts_end'):\n"
             "            await eval_dispatcher.drain()\n"
         )

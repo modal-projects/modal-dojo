@@ -1,4 +1,4 @@
-# PATCHED_TRAINING_GYM_TIMING_PREAMBLE: bootstrap substep-timing recorder
+# PATCHED_MODAL_DOJO_TIMING_PREAMBLE: bootstrap substep-timing recorder
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
@@ -173,7 +173,7 @@ class RolloutManager:
     # -------------------------- data generation -----------------------------
 
     async def generate(self, rollout_id):
-        # PATCHED_TRAINING_GYM_TIMING_RECORDER
+        # PATCHED_MODAL_DOJO_TIMING_RECORDER
         with _tg_role('rollout', rollout_id):
             start_time = time.time()
             self.rollout_id = rollout_id
@@ -183,13 +183,13 @@ class RolloutManager:
             dashboard_hooks.register_engines(self.servers)
             if (get_buffer_length := getattr(self.data_source, "get_buffer_length", None)) is not None:
                 dashboard_hooks.report_data_buffer(get_buffer_length())
-            # PATCHED_TRAINING_GYM_TIMING_GENERATE_SAMPLES
+            # PATCHED_MODAL_DOJO_TIMING_GENERATE_SAMPLES
             with _tg_time_phase('generate_samples'):
                 with timer("rollout"):
                     data, metadata, metrics = await self._get_rollout_data(rollout_id=rollout_id)
             save_debug_rollout_data(self.args, data, rollout_id=rollout_id, evaluation=False, metadata=metadata)
             log_rollout_data(rollout_id, self.args, data, metrics, time.time() - start_time)
-            # PATCHED_TRAINING_GYM_TIMING_REWARD_POST_PROCESS
+            # PATCHED_MODAL_DOJO_TIMING_REWARD_POST_PROCESS
             with _tg_time_phase('reward_post_process'):
                 data = convert_samples_to_train_data(
                     self.args,

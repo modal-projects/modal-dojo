@@ -1,4 +1,4 @@
-# PATCHED_TRAINING_GYM_TIMING_PREAMBLE: bootstrap substep-timing recorder
+# PATCHED_MODAL_DOJO_TIMING_PREAMBLE: bootstrap substep-timing recorder
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
@@ -288,7 +288,7 @@ async def generate_and_rm(
             # Check sample.generate_function_path for per-sample custom_generate_function_path (e.g., from eval dataset config)
             custom_func_path = getattr(sample, "generate_function_path", None) or args.custom_generate_function_path
 
-            # PATCHED_TRAINING_GYM_TIMING_SAMPLE_GENERATION
+            # PATCHED_MODAL_DOJO_TIMING_SAMPLE_GENERATION
             with _tg_time_phase('sample_generation'):
                 if custom_func_path is not None:
                     custom_generate_func = load_function(custom_func_path)
@@ -320,7 +320,7 @@ async def generate_and_rm(
             return sample
         # Some custom generate paths may have already filled the reward.
         if sample.reward is None:
-            # PATCHED_TRAINING_GYM_TIMING_REWARD
+            # PATCHED_MODAL_DOJO_TIMING_REWARD
             with _tg_time_phase('reward'):
                 with trace_span(sample, "reward_model"):
                     sample.reward = await async_rm(args, sample)

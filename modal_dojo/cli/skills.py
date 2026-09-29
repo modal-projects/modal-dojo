@@ -1,4 +1,4 @@
-"""Install Training Gym agent skills into a project."""
+"""Install Modal Dojo agent skills into a project."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def _bundled_skills_path() -> Path:
         if candidate.is_dir() and any(candidate.glob("*/SKILL.md")):
             return candidate
     raise CLIError(
-        "The bundled Training Gym skills are unavailable.",
+        "The bundled Modal Dojo skills are unavailable.",
         error="skills_not_bundled",
         hint="Reinstall modal-dojo and try again.",
     )

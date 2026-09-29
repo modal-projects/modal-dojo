@@ -1,4 +1,4 @@
-# PATCHED_TRAINING_GYM_TIMING_PREAMBLE: bootstrap substep-timing recorder
+# PATCHED_MODAL_DOJO_TIMING_PREAMBLE: bootstrap substep-timing recorder
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
@@ -677,7 +677,7 @@ def train_one_step(
 
     # Forward pass.
     forward_backward_func = get_forward_backward_func()
-    # PATCHED_TRAINING_GYM_TIMING_FORWARD_BACKWARD
+    # PATCHED_MODAL_DOJO_TIMING_FORWARD_BACKWARD
     with _tg_time_phase('forward_backward'):
         losses_reduced = forward_backward_func(
             forward_step_func=_wrap_forward_step_with_microbatch_pbar(forward_step, microbatch_pbar),
@@ -711,7 +711,7 @@ def train_one_step(
         check_mtp_only_grad(model, step_id)
 
     if valid_step:
-        # PATCHED_TRAINING_GYM_TIMING_OPTIMIZER_STEP
+        # PATCHED_MODAL_DOJO_TIMING_OPTIMIZER_STEP
         with _tg_time_phase('optimizer_step'):
             # Update parameters.
             update_successful, grad_norm, num_zeros_in_grad = optimizer.step()
@@ -721,7 +721,7 @@ def train_one_step(
             assert update_successful
             opt_param_scheduler.step(increment=step_global_batch_size)
 
-    # PATCHED_TRAINING_GYM_TIMING_TRAIN_STEP_FINALIZE
+    # PATCHED_MODAL_DOJO_TIMING_TRAIN_STEP_FINALIZE
     with _tg_time_phase('train_step_finalize'):
         # release grad
         for model_chunk in model:

@@ -17,12 +17,13 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-PREAMBLE_MARKER = "PATCHED_TRAINING_GYM_TIMING_PREAMBLE"
-RECORDER_MARKER = "PATCHED_TRAINING_GYM_TIMING_RECORDER"
+
+PREAMBLE_MARKER = "PATCHED_MODAL_DOJO_TIMING_PREAMBLE"
+RECORDER_MARKER = "PATCHED_MODAL_DOJO_TIMING_RECORDER"
 
 
 def phase_marker(phase: str) -> str:
-    return f"PATCHED_TRAINING_GYM_TIMING_{phase.upper()}"
+    return f"PATCHED_MODAL_DOJO_TIMING_{phase.upper()}"
 
 
 PREAMBLE = (

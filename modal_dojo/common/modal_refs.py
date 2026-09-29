@@ -18,7 +18,7 @@ def register_modal_cloudpickle_reducers() -> None:
     """Make Modal's reference handles cloudpickle by reference.
 
     Modal's lazy ``from_name``/``from_id`` handles close over local loader
-    functions that the standard pickler cannot serialize. Training Gym still
+    functions that the standard pickler cannot serialize. Modal Dojo still
     needs cloudpickle for inline user callbacks, so register reducers that
     preserve normal Modal syntax while reconstructing those handles from
     Modal's public APIs inside the remote container.
@@ -59,7 +59,7 @@ def _reduce_modal_app_named_handle(value: Any):
     if not isinstance(app_name, str) or not isinstance(name, str):
         raise ModalCaptureError(
             f"Only name-based {type(value).__name__} handles can be captured in "
-            f"Training Gym callbacks. Use modal.{type(value).__name__}.from_name(...) "
+            f"Modal Dojo callbacks. Use modal.{type(value).__name__}.from_name(...) "
             "or create the handle inside the callback."
         )
     return _restore_modal_app_named_handle, (
@@ -80,7 +80,7 @@ def _reduce_modal_named_handle(value: Any):
     if not isinstance(name, str):
         raise ModalCaptureError(
             f"Only name-based {type(value).__name__} handles can be captured in "
-            f"Training Gym callbacks. Use modal.{type(value).__name__}.from_name(...) "
+            f"Modal Dojo callbacks. Use modal.{type(value).__name__}.from_name(...) "
             "or create the handle inside the callback."
         )
     return _restore_modal_named_handle, (
@@ -116,7 +116,7 @@ def _reduce_modal_volume(volume: Any):
     if not isinstance(name, str):
         raise ModalCaptureError(
             "Only name-based or id-based Volume handles can be captured in "
-            "Training Gym callbacks. Use modal.Volume.from_name(...), "
+            "Modal Dojo callbacks. Use modal.Volume.from_name(...), "
             "modal.Volume.from_id(...), or create the Volume inside the callback."
         )
     create_if_missing = bool(closure.get("create_if_missing", False))
@@ -138,7 +138,7 @@ def _reduce_modal_secret(secret: Any):
     name = getattr(original, "_name", None) or closure.get("name")
     if not isinstance(name, str):
         raise ModalCaptureError(
-            "Only name-based Secret handles can be captured in Training Gym "
+            "Only name-based Secret handles can be captured in Modal Dojo "
             "callbacks. Use modal.Secret.from_name(...) or create the Secret "
             "inside the callback. Secret.from_dict(...) and "
             "Secret.from_local_environ(...) are intentionally not serialized "
@@ -156,7 +156,7 @@ def _reduce_modal_sandbox(sandbox: Any):
     sandbox_id = _object_id(original) or closure.get("sandbox_id")
     if not isinstance(sandbox_id, str):
         raise ModalCaptureError(
-            "Only id-based Sandbox handles can be captured in Training Gym "
+            "Only id-based Sandbox handles can be captured in Modal Dojo "
             "callbacks. Use modal.Sandbox.from_id(...), capture a running "
             "Sandbox returned by Modal, or create the Sandbox inside the callback."
         )
@@ -173,7 +173,7 @@ def _reduce_modal_id_handle(value: Any):
     if not isinstance(object_id, str):
         raise ModalCaptureError(
             f"Only id-based {type(value).__name__} handles can be captured in "
-            f"Training Gym callbacks. Use modal.{type(value).__name__}.from_id(...) "
+            f"Modal Dojo callbacks. Use modal.{type(value).__name__}.from_id(...) "
             "or create the handle inside the callback."
         )
     return _restore_modal_id_handle, (_public_modal_class_name(value), object_id)

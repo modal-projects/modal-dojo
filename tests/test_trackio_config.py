@@ -33,8 +33,8 @@ def test_trackio_config_is_provider_specific_without_provider_or_label_fields():
     assert PublicTrackioConfig is TrackioConfig
     assert {field.name for field in fields(config)}.isdisjoint({"provider", "label"})
     assert config.runtime_env(run_id="run-a2") == {
-        "TRAINING_GYM_METRIC_PROVIDER": "trackio",
-        "TRAINING_GYM_TRACKIO_RUN_NAME": "run-a2",
+        "MODAL_DOJO_METRIC_PROVIDER": "trackio",
+        "MODAL_DOJO_TRACKIO_RUN_NAME": "run-a2",
         "TRACKIO_SPACE_ID": "modal-labs/training-metrics",
         "TRACKIO_BUCKET_ID": "modal-labs/training-metrics",
     }
@@ -125,11 +125,11 @@ def test_trackio_image_installs_trackio_and_the_metric_bootstrap():
     assert image.packages == ["trackio==0.34.0"]
     assert len(image.commands) == 1
     assert "_training_gym_metric_mirror.pth" in image.commands[0]
-    assert "TRAINING_GYM_METRIC_PROVIDER" in image.commands[0]
+    assert "MODAL_DOJO_METRIC_PROVIDER" in image.commands[0]
 
 
 def test_trackio_package_version_is_configurable():
-    """A pinned default, but bumpable without waiting on a Training Gym release."""
+    """A pinned default, but bumpable without waiting on a Modal Dojo release."""
     image = _FakeImage()
     apply_metric_image(image, TrackioConfig(TRACKIO_PACKAGE_VERSION="0.35.0"))
 
@@ -193,7 +193,7 @@ def test_trackio_wandb_adapter_covers_the_framework_surface(monkeypatch):
         "wandb.sdk.lib.runid",
     ):
         monkeypatch.delitem(sys.modules, module_name, raising=False)
-    monkeypatch.setenv("TRAINING_GYM_TRACKIO_RUN_NAME", "training-run-a2")
+    monkeypatch.setenv("MODAL_DOJO_TRACKIO_RUN_NAME", "training-run-a2")
     monkeypatch.setenv("TRACKIO_SPACE_ID", "modal-labs/training-metrics")
     monkeypatch.setenv("TRACKIO_SERVER_URL", "https://metrics.example.com")
     monkeypatch.setenv("TRACKIO_BUCKET_ID", "modal-labs/training-metrics")
@@ -287,7 +287,7 @@ def _install_shim_with_contextvar_trackio(monkeypatch):
         "wandb.sdk.lib.runid",
     ):
         monkeypatch.delitem(sys.modules, module_name, raising=False)
-    monkeypatch.setenv("TRAINING_GYM_TRACKIO_RUN_NAME", "training-run-a2")
+    monkeypatch.setenv("MODAL_DOJO_TRACKIO_RUN_NAME", "training-run-a2")
     install_wandb_shim()
     return logged
 

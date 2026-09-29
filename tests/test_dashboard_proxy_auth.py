@@ -348,7 +348,7 @@ def test_slime_reporting_posts_include_proxy_auth_headers(config_path, monkeypat
     config.save_proxy_auth("wk-test", "ws-test")
     monkeypatch.delenv("MODAL_KEY", raising=False)
     monkeypatch.delenv("MODAL_SECRET", raising=False)
-    monkeypatch.setenv("TRAINING_GYM_FRAMEWORK_STATUS_TOKEN", "run-token")
+    monkeypatch.setenv("MODAL_DOJO_FRAMEWORK_STATUS_TOKEN", "run-token")
     requests = _capture_report(reporting, monkeypatch)
     reporting._post(
         {

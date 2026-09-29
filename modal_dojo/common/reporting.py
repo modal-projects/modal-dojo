@@ -90,12 +90,12 @@ def _arg_value(args: Any, key: str) -> Any:
 def _run_context(args: Any) -> dict[str, Any]:
     return {
         "training_run_id": _arg_value(args, "training_run_id")
-        or _arg_value(args, "training_gym_training_run_id")
-        or os.environ.get("TRAINING_GYM_TRAINING_RUN_ID", "")
+        or _arg_value(args, "modal_dojo_training_run_id")
+        or os.environ.get("MODAL_DOJO_TRAINING_RUN_ID", "")
         or "",
         "app_name": _arg_value(args, "app_name")
-        or _arg_value(args, "training_gym_app_name")
-        or os.environ.get("TRAINING_GYM_APP_NAME", "")
+        or _arg_value(args, "modal_dojo_app_name")
+        or os.environ.get("MODAL_DOJO_APP_NAME", "")
         or "",
         "modal_app_id": os.environ.get("MODAL_APP_ID", ""),
     }
@@ -110,11 +110,11 @@ def _positive_int(value: Any) -> int | None:
 
 
 def _total_steps(args: Any) -> int | None:
-    for key in ("num_rollout", "training_gym_total_steps"):
+    for key in ("num_rollout", "modal_dojo_total_steps"):
         total = _positive_int(_arg_value(args, key))
         if total is not None:
             return total
-    return _positive_int(os.environ.get("TRAINING_GYM_TOTAL_STEPS"))
+    return _positive_int(os.environ.get("MODAL_DOJO_TOTAL_STEPS"))
 
 
 def _step_progress(args: Any, rollout_id: int | None = None) -> dict[str, Any]:
@@ -134,7 +134,7 @@ def _step_progress(args: Any, rollout_id: int | None = None) -> dict[str, Any]:
 
 def _phase_url() -> str:
     return (
-        os.environ.get("TRAINING_GYM_FRAMEWORK_STATUS_URL", "")
+        os.environ.get("MODAL_DOJO_FRAMEWORK_STATUS_URL", "")
         or os.environ.get(PHASE_REPORT_URL_ENV, "")
     ).strip()
 
@@ -158,7 +158,7 @@ def _advantage_url() -> str:
 
 def _report_token() -> str:
     return (
-        os.environ.get("TRAINING_GYM_FRAMEWORK_STATUS_TOKEN", "")
+        os.environ.get("MODAL_DOJO_FRAMEWORK_STATUS_TOKEN", "")
         or os.environ.get(PHASE_REPORT_TOKEN_ENV, "")
     ).strip()
 
@@ -172,7 +172,7 @@ def _ensure_worker(*, allow_during_drain: bool = False) -> None:
             return
         thread = threading.Thread(
             target=_worker,
-            name="training-gym-phase-reporter",
+            name="modal-dojo-phase-reporter",
             daemon=True,
         )
         thread.start()
@@ -245,7 +245,7 @@ def _enqueue_timing(payload: dict[str, Any], *, final: bool = False) -> None:
         "_timeout": _ROLLOUT_TIMEOUT_SECONDS,
         "_retry_count": 3 if final else 0,
         "_retry_delay": 1.0,
-        "_timing_debug": os.environ.get("TRAINING_GYM_TIMING_DEBUG") == "1",
+        "_timing_debug": os.environ.get("MODAL_DOJO_TIMING_DEBUG") == "1",
         **payload,
     }
     key = (str(payload.get("training_run_id", "")), str(payload.get("storage_key", "")))
@@ -261,14 +261,14 @@ def _enqueue_timing(payload: dict[str, Any], *, final: bool = False) -> None:
     except Full:
         if final:
             print(
-                f"[training-gym] timing final queue full; retaining {key} for "
+                f"[modal-dojo] timing final queue full; retaining {key} for "
                 "process-exit retry",
                 flush=True,
             )
     except Exception:
         if final:
             print(
-                f"[training-gym] failed to enqueue timing final {key}; retaining "
+                f"[modal-dojo] failed to enqueue timing final {key}; retaining "
                 "it for process-exit retry",
                 flush=True,
             )
@@ -305,7 +305,7 @@ def _requeue_timing_retry(payload: dict[str, Any], retries: int) -> None:
     except Full:
         if payload.get("final", False):
             print(
-                "[training-gym] timing retry queue full; retaining final for "
+                "[modal-dojo] timing retry queue full; retaining final for "
                 "process-exit retry",
                 flush=True,
             )
@@ -518,7 +518,7 @@ def _retry_unacknowledged_timing_finals() -> None:
             _REPORT_QUEUE.put_nowait(item)
         except Full:
             print(
-                f"[training-gym] timing final retry queue full for {key}",
+                f"[modal-dojo] timing final retry queue full for {key}",
                 flush=True,
             )
 

@@ -260,11 +260,11 @@ def modal_proxy_auth_headers() -> dict[str, str]:
 def get_framework_status_url() -> str | None:
     """Resolve the framework-status endpoint URL, or ``None``.
 
-    The ``TRAINING_GYM_FRAMEWORK_STATUS_URL`` env var takes precedence when set,
+    The ``MODAL_DOJO_FRAMEWORK_STATUS_URL`` env var takes precedence when set,
     so callers on the driver and inside remote containers resolve the same
     endpoint; otherwise the URL is derived from the saved dashboard URL.
     """
-    override = os.environ.get("TRAINING_GYM_FRAMEWORK_STATUS_URL", "").strip()
+    override = os.environ.get("MODAL_DOJO_FRAMEWORK_STATUS_URL", "").strip()
     if override:
         return override
     base = get_dashboard_url()

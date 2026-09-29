@@ -91,7 +91,7 @@ def build_sglang_serve_app(
     startup_timeout = recipe.startup_timeout
 
     tags = {
-        "_modal_source": "training-gym",
+        "_modal_source": "modal-dojo",
         "_modal_job_type": "serving",
         "_modal_framework": "sglang-serve",
     }
@@ -152,7 +152,7 @@ def build_sglang_serve_app(
                 successful_requests=2,
                 request_timeout=60.0,
             )
-            print(f"[training-gym] SGLang serving {served_model_name} ready.")
+            print(f"[modal-dojo] SGLang serving {served_model_name} ready.")
 
         @modal.exit()
         def stop(self):
