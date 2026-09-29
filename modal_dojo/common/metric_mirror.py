@@ -56,7 +56,7 @@ class DashboardMetricConfig(MetricConfig):
         exp_name: Run display name.
     """
 
-    project: str = "training-gym"
+    project: str = "modal-dojo"
     group: str = ""
     exp_name: str = ""
     disable_random_suffix: bool = True
@@ -328,7 +328,7 @@ def install_wandb_shim() -> None:
         shim.run = DashboardRun(
             run_id,
             str(kwargs.get("name") or run_id),
-            str(kwargs.get("project", args[0] if args else "") or "training-gym"),
+            str(kwargs.get("project", args[0] if args else "") or "modal-dojo"),
             kwargs.get("config"),
         )
         shim.config = shim.run.config

@@ -60,7 +60,7 @@ def _modal_proxy_auth_headers() -> dict[str, str]:
 
     Reads the Modal proxy-auth token pair (``wk-``/``ws-``) from ``MODAL_KEY`` /
     ``MODAL_SECRET`` and returns them as ``Modal-Key`` / ``Modal-Secret`` headers.
-    Falls back to the pair persisted in ``~/.training-gym.toml`` (written by
+    Falls back to the pair persisted in ``~/.modal-dojo.toml`` (written by
     ``modal-dojo setup``) when the env vars are unset. Returns an empty dict
     when neither source provides them, so endpoints without proxy auth are
     unaffected.

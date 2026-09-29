@@ -19,10 +19,10 @@ TEMPLATE = (REPO_ROOT / "scripts/previews/nginx/dashboard.conf").read_text()
 
 def test_conf_proxies_api_to_the_prs_own_backend():
     conf = render_dashboard_conf(
-        TEMPLATE, "https://ws--training-gym-dashboard-pr-489-fastapi-app.modal.run"
+        TEMPLATE, "https://ws--modal-dojo-dashboard-pr-489-fastapi-app.modal.run"
     )
 
-    host = "ws--training-gym-dashboard-pr-489-fastapi-app.modal.run"
+    host = "ws--modal-dojo-dashboard-pr-489-fastapi-app.modal.run"
     assert f"proxy_pass https://{host};" in conf
     assert f"proxy_set_header Host {host};" in conf
     assert "__API_HOST__" not in conf
@@ -68,5 +68,5 @@ def test_cleanup_tolerates_a_missing_app_but_not_a_failing_one():
 
 
 def test_backend_app_name_is_per_pr():
-    assert app_name(489) == "training-gym-dashboard-pr-489"
+    assert app_name(489) == "modal-dojo-dashboard-pr-489"
     assert app_name(489) != app_name(490)

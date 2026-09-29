@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import os
 
-DASHBOARD_APP_NAME = "training-gym-dashboard"
+DASHBOARD_APP_NAME = "modal-dojo-dashboard"
+LEGACY_DASHBOARD_APP_NAME = "training-gym-dashboard"
 DASHBOARD_WEB_FUNCTION = "fastapi_app"
 
 # Set on a per-PR dashboard deploy (scripts/previews/dashboard_api.py) so it
@@ -17,7 +18,7 @@ DASHBOARD_PREVIEW_ENV_KEY = "MODAL_DOJO_DASHBOARD_PREVIEW"
 DASHBOARD_VERSION_ENV_KEY = "DASHBOARD_VERSION"
 
 # Bump when the deployed dashboard frontend or backend changes.
-DASHBOARD_VERSION = 5
+DASHBOARD_VERSION = 6
 
 
 def current_dashboard_version() -> str:
@@ -39,7 +40,7 @@ class DashboardLookupUnknown(Exception):
     """Modal lookup of the dashboard app failed before not-found could be observed."""
 
 
-def deployed_dashboard_url() -> str | None:
+def deployed_dashboard_url(app_name: str = DASHBOARD_APP_NAME) -> str | None:
     """Return the live dashboard web URL if its app is deployed, else ``None``.
 
     Raises ``DashboardLookupUnknown`` when lookup fails before that can
@@ -49,7 +50,7 @@ def deployed_dashboard_url() -> str | None:
     from modal.exception import NotFoundError
 
     try:
-        fn = modal.Function.from_name(DASHBOARD_APP_NAME, DASHBOARD_WEB_FUNCTION)
+        fn = modal.Function.from_name(app_name, DASHBOARD_WEB_FUNCTION)
         fn.hydrate()
         url = fn.get_web_url()
     except NotFoundError:

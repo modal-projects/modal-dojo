@@ -37,7 +37,10 @@ def setup_command(
     trajectory_viewer: Path | None,
     no_trajectory_viewer: bool,
 ) -> None:
-    """Deploy the dashboard."""
+    """Deploy the dashboard and migrate legacy Gym configuration if needed.
+
+    Existing authentication is preserved unless an auth flag is supplied.
+    """
     if proxy_auth and no_proxy_auth:
         raise click.UsageError(
             "--proxy-auth and --no-proxy-auth cannot be used together."
@@ -47,22 +50,20 @@ def setup_command(
             "--trajectory-viewer and --no-trajectory-viewer cannot be used together."
         )
 
-    from .setup import setup
-    from modal_dojo.common.config import get_dashboard_proxy_auth
+    from .setup import ProxyAuthMode, setup
 
-    if not proxy_auth and not no_proxy_auth:
-        if get_dashboard_proxy_auth() is True:
-            raise click.UsageError(
-                "The deployed dashboard uses proxy auth. "
-                "Pass either --proxy-auth or --no-proxy-auth explicitly."
-            )
+    selected_auth = ProxyAuthMode.UNSPECIFIED
+    if proxy_auth:
+        selected_auth = ProxyAuthMode.REQUIRE
+    elif no_proxy_auth:
+        selected_auth = ProxyAuthMode.DISABLE
 
     if no_trajectory_viewer:
-        setup(require_proxy_auth=proxy_auth, reset_trajectory_viewer=True)
+        setup(proxy_auth=selected_auth, reset_trajectory_viewer=True)
     elif trajectory_viewer is None:
-        setup(require_proxy_auth=proxy_auth)
+        setup(proxy_auth=selected_auth)
     else:
-        setup(require_proxy_auth=proxy_auth, trajectory_viewer=trajectory_viewer)
+        setup(proxy_auth=selected_auth, trajectory_viewer=trajectory_viewer)
 
 
 @click.command("open", cls=_DojoCommand)

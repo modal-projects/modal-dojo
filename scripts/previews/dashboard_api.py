@@ -30,7 +30,7 @@ WEB_FUNCTION = "fastapi_app"
 
 
 def app_name(pr_number: int) -> str:
-    return f"training-gym-dashboard-pr-{pr_number}"
+    return f"modal-dojo-dashboard-pr-{pr_number}"
 
 
 def deploy(pr_number: int) -> str:

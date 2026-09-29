@@ -4,6 +4,8 @@ import json
 from unittest.mock import Mock
 
 import pytest
+
+from modal_dojo.cli.setup import ProxyAuthMode
 from click.testing import CliRunner
 
 from modal_dojo import cli as cli_module
@@ -75,14 +77,14 @@ def test_setup_dispatches_to_existing_function(runner, monkeypatch):
 
     assert result.exit_code == 0
     assert result.stderr == ""
-    setup.assert_called_once_with(require_proxy_auth=False)
+    setup.assert_called_once_with(proxy_auth=ProxyAuthMode.UNSPECIFIED)
 
 
 @pytest.mark.parametrize(
     ("flag", "expected"),
     [
-        ("--proxy-auth", True),
-        ("--no-proxy-auth", False),
+        ("--proxy-auth", ProxyAuthMode.REQUIRE),
+        ("--no-proxy-auth", ProxyAuthMode.DISABLE),
     ],
 )
 def test_setup_preserves_proxy_auth_choice(runner, monkeypatch, flag, expected):
@@ -92,7 +94,7 @@ def test_setup_preserves_proxy_auth_choice(runner, monkeypatch, flag, expected):
     result = runner.invoke(cli_module.entrypoint_cli, ["setup", flag])
 
     assert result.exit_code == 0
-    setup.assert_called_once_with(require_proxy_auth=expected)
+    setup.assert_called_once_with(proxy_auth=expected)
 
 
 def test_setup_rejects_both_proxy_auth_flags(runner):
@@ -105,9 +107,7 @@ def test_setup_rejects_both_proxy_auth_flags(runner):
     assert "cannot be used together" in result.stderr
 
 
-def test_setup_prompts_for_explicit_choice_after_authenticated_deploy(
-    runner, monkeypatch
-):
+def test_setup_delegates_auth_inheritance(runner, monkeypatch):
     setup = Mock()
     monkeypatch.setattr("modal_dojo.cli.setup.setup", setup)
     monkeypatch.setattr(
@@ -116,9 +116,8 @@ def test_setup_prompts_for_explicit_choice_after_authenticated_deploy(
 
     result = runner.invoke(cli_module.entrypoint_cli, ["setup"])
 
-    assert result.exit_code == 2
-    assert "--proxy-auth or --no-proxy-auth" in result.stderr
-    setup.assert_not_called()
+    assert result.exit_code == 0
+    setup.assert_called_once_with(proxy_auth=ProxyAuthMode.UNSPECIFIED)
 
 
 def test_open_dispatches_to_existing_function(runner, monkeypatch):
