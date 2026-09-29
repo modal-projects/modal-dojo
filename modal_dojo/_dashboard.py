@@ -614,7 +614,7 @@ def fastapi_app():
         summary_items_from_payload,
         vol_get,
         vol_get_summary_items_healed,
-        vol_put_summary_items,
+        vol_patch_summary_fields,
     )
 
     web = FastAPI()
@@ -661,6 +661,10 @@ def fastapi_app():
     cache_entries: dict[str, tuple[float, list[JsonDict], float]] = {
         key: (0.0, [], 0.0) for key in cache_keys
     }
+    # Bumped by ``invalidate_cache``. ``refresh_cache`` only installs a fresh
+    # expiry when the generation is unchanged since its load began, so a
+    # refresh racing an invalidation cannot re-pin stale data for another TTL.
+    cache_generations = {key: 0 for key in cache_keys}
 
     TIMING_CACHE_MAX_RUNS = 64
     TIMING_CACHE_TTL_S = 15.0
@@ -919,14 +923,20 @@ def fastapi_app():
             expires_at, values, loaded_at = cache_entries[key]
             if now < expires_at:
                 return values
+            generation = cache_generations[key]
             try:
                 values = await loader()
-                cache_entries[key] = (now + cache_ttl_seconds, values, now)
             except Exception:
                 # Keep serving the last known data and back off so a slow/failing
                 # loader (e.g. a heavy summary rebuild) can't be retried on every
                 # request — it must never block or break the endpoint.
-                cache_entries[key] = (now + cache_ttl_seconds, values, loaded_at)
+                if cache_generations[key] == generation:
+                    cache_entries[key] = (now + cache_ttl_seconds, values, loaded_at)
+                return values
+            # An invalidation during the load means the fetched data may
+            # predate it; leave the entry expired so the next read rebuilds.
+            if cache_generations[key] == generation:
+                cache_entries[key] = (now + cache_ttl_seconds, values, now)
             return values
 
     def invalidate_cache(key: str) -> None:
@@ -935,6 +945,7 @@ def fastapi_app():
         # blocking on a cold rebuild.
         _expires_at, values, loaded_at = cache_entries[key]
         cache_entries[key] = (0.0, values, loaded_at)
+        cache_generations[key] += 1
 
     async def get_cached_list(key: str, loader: SummaryLoader) -> list[JsonDict]:
         now = time.monotonic()
@@ -1044,10 +1055,27 @@ def fastapi_app():
         items = await run_in_threadpool(vol_get_summary_items_healed, summary_store)
         if not items:
             return []
-        items, changed = add_modal_app_urls(items)
+        healed, changed = add_modal_app_urls(items)
         if changed:
-            await run_in_threadpool(vol_put_summary_items, summary_store, items)
-        return items
+            # Persist only the healed field. Item bodies here can be stale
+            # relative to a concurrent upsert, so writing them back whole
+            # would roll fields like status back to the older snapshot.
+            await run_in_threadpool(
+                vol_patch_summary_fields,
+                summary_store,
+                [
+                    {
+                        "training_run_id": new["training_run_id"],
+                        "modal_app_url": new["modal_app_url"],
+                    }
+                    for old, new in zip(items, healed)
+                    if new.get("training_run_id")
+                    and new.get("modal_app_url")
+                    and old.get("modal_app_url") != new.get("modal_app_url")
+                ],
+                item_id_key="training_run_id",
+            )
+        return healed
 
     async def load_runs() -> list[JsonDict]:
         run_records = await load_list_summary(MetadataStore.TRAINING_RUNS_SUMMARY)

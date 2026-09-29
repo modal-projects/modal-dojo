@@ -27,7 +27,7 @@
 
 {#if run?.status === "running"}
   {#if stopError}
-    <span class="stop-run-error" title={stopError}>Stop failed</span>
+    <span class="stop-run-error" title={stopError}>{stopError}</span>
   {/if}
   <button
     class={compact

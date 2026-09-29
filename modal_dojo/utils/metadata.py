@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import threading
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +19,11 @@ T = TypeVar("T")
 
 METADATA_VOLUME_NAME = "training-gym-metadata"
 _READ_CONCURRENCY = 16
+
+# Serializes read-modify-write cycles on summary docs within the process, so a
+# field-scoped patch can't interleave mid-flight with a full-item upsert.
+# Modal volumes have no CAS, so cross-process races remain possible.
+_summary_write_lock = threading.Lock()
 
 
 @exclude_from_api_reference
@@ -886,10 +892,45 @@ def vol_upsert_summary_item(
 
         return _run()
 
-    items = vol_get_summary_items(store, key=key, payload_key=payload_key) or []
-    if not items:
-        items = _canonical_items_for(store, item_id_key)
-    vol_put_summary_items(store, _merge(items), key=key, payload_key=payload_key)
+    with _summary_write_lock:
+        items = vol_get_summary_items(store, key=key, payload_key=payload_key) or []
+        if not items:
+            items = _canonical_items_for(store, item_id_key)
+        vol_put_summary_items(store, _merge(items), key=key, payload_key=payload_key)
+
+
+def vol_patch_summary_fields(
+    store: MetadataStore | str,
+    patches: Iterable[dict[str, Any]],
+    *,
+    item_id_key: str,
+    key: str = SUMMARY_KEY,
+    payload_key: str = SUMMARY_ITEMS_KEY,
+) -> bool:
+    """Update select fields of existing summary items, keyed by ``item_id_key``.
+
+    Re-reads the doc under the summary write lock, so fields written by a
+    concurrent full-item upsert survive — a stale read can only re-apply the
+    fields given, not roll back whole item bodies. Returns True when the doc
+    changed.
+    """
+    by_id = {p.get(item_id_key): p for p in patches if p.get(item_id_key) is not None}
+    if not by_id:
+        return False
+    with _summary_write_lock:
+        items = vol_get_summary_items(store, key=key, payload_key=payload_key) or []
+        changed = False
+        for item in items:
+            patch = by_id.get(item.get(item_id_key))
+            if patch is None:
+                continue
+            for field, value in patch.items():
+                if field != item_id_key and item.get(field) != value:
+                    item[field] = value
+                    changed = True
+        if changed:
+            vol_put_summary_items(store, items, key=key, payload_key=payload_key)
+        return changed
 
 
 def vol_put_with_summary(

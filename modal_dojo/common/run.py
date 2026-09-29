@@ -423,7 +423,7 @@ class TrainingRun(BaseModel):
         Raises:
             TrainingGymError: The run has no Modal app yet.
         """
-        from modal_dojo.common.modal_lifecycle import stop_app
+        from modal_dojo.common.modal_lifecycle import app_live_status, stop_app
 
         record = TrainingRun.from_id(self.training_run_id)
         if record.status is not TrainingRunStatus.RUNNING:
@@ -432,7 +432,10 @@ class TrainingRun(BaseModel):
             raise TrainingGymError(
                 "Run is still launching; retry once its Modal app has started."
             )
-        stop_app(record.modal_app_id)
+        # A confirmed-dead app needs no stop RPC — the record update below is
+        # enough to reconcile it. Unknown liveness still attempts the stop.
+        if app_live_status(record.modal_app_id) is not False:
+            stop_app(record.modal_app_id)
         finished_at = int(time.time())
         record.status = TrainingRunStatus.STOPPED
         record.ended_at = finished_at
