@@ -153,7 +153,7 @@ def test_readme_heading_and_intro_skips_badges_and_rewrites_anchors() -> None:
     assert _readme_heading_and_intro(markdown) == (
         "Modal Dojo",
         "First paragraph with a "
-        "[Quickstart](https://gym.modal.dev/#quickstart).\n\n"
+        "[Quickstart](https://dojo.modal.dev/#quickstart).\n\n"
         "Second paragraph.",
     )
 
@@ -176,9 +176,9 @@ def test_render_groups_guides_by_section() -> None:
     assert start < tools < migration
     assert text.index("[Model]", start) < text.index("[Dataset]", start) < tools
     assert intro in text
-    assert "https://gym.modal.dev/guides/model)" in text
-    assert "https://gym.modal.dev/guides/dataset)" in text
-    assert "https://gym.modal.dev/guides/wandb-integration)" in text
+    assert "https://dojo.modal.dev/guides/model)" in text
+    assert "https://dojo.modal.dev/guides/dataset)" in text
+    assert "https://dojo.modal.dev/guides/wandb-integration)" in text
     assert "/guides/start/" not in text
     assert "/guides/tools/" not in text
     for line in text.splitlines():

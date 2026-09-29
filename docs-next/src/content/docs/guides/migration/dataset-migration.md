@@ -157,7 +157,7 @@ If your `input_format` is set to `text`, you will need to update your evaluation
 Finally, some fields and methods have been replaced or renamed:
 
 * `always_prepare` has been renamed to `always_download`.
-* `n_rows` has been removed. You should migrate to [Hugging Face's native slicing syntax instead.](https://gym.modal.dev/guides/dataset#hugging-face)
+* `n_rows` has been removed. You should migrate to [Hugging Face's native slicing syntax instead.](https://dojo.modal.dev/guides/dataset#hugging-face)
 
 ## Using the new HarborDataset API
 

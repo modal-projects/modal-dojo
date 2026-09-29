@@ -6,10 +6,53 @@ import subprocess
 import sys
 from pathlib import Path
 
+import modal
+import pytest
+from fastapi.testclient import TestClient
+
 ROOT = Path(__file__).resolve().parents[1]
 STUB = '<meta http-equiv="refresh" content="0;url=/guides/start/model/">'
 PAGE = "<html><title>Start</title></html>"
 TARGET = "/guides/start/model/"
+
+
+@pytest.fixture
+def docs_client(tmp_path, monkeypatch):
+    dist, _ = _site(tmp_path)
+    (dist / "index.html").write_text(PAGE)
+    monkeypatch.syspath_prepend(str(ROOT / "docs-next"))
+    monkeypatch.setattr(modal, "is_local", lambda: False)
+    docs = _load("docs_next_app", ROOT / "docs-next" / "docs_next_app.py")
+    monkeypatch.setattr(docs, "REMOTE_DIST", str(dist))
+    with TestClient(docs.serve.local(), follow_redirects=False) as client:
+        yield client
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/",
+        "/guides",
+        "/guides/start/model/",
+        "/missing?x=1&x=2&next=%2Fguides",
+        "/files/a%2Fb%20c?value=%23hash",
+    ],
+)
+def test_legacy_domain_redirect_preserves_url(docs_client, method, path):
+    response = docs_client.request(method, f"https://gym.modal.dev{path}")
+    assert response.status_code == 301
+    assert response.headers["location"] == f"https://dojo.modal.dev{path}"
+
+
+@pytest.mark.parametrize("host", ["dojo.modal.dev", "preview.modal.run"])
+def test_other_domains_serve_docs_and_keep_path_redirects(docs_client, host):
+    response = docs_client.get(f"https://{host}/")
+    assert response.status_code == 200
+    assert response.text == PAGE
+    response = docs_client.get(f"https://{host}/guides?source=test")
+    assert response.status_code == 302
+    assert response.headers["location"] == f"{TARGET}?source=test"
 
 
 def _load(name: str, path: Path):

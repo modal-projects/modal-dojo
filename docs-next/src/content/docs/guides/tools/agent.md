@@ -31,7 +31,7 @@ The main skill agents should use is `agent-driven-training`, which lays out the 
 - Inspect actual model outputs to verify that higher rewards induce the intended behavior.
 - Investigate suspicious reward trends to prevent [reward hacking](https://en.wikipedia.org/wiki/Reward_hacking).
 
-To learn more about the CLI and the provided skills, see the [reference page](https://gym.modal.dev/reference/cli).
+To learn more about the CLI and the provided skills, see the [reference page](https://dojo.modal.dev/reference/cli).
 
 ## Let it cook
 
@@ -66,7 +66,7 @@ rhyme_dataset = HuggingFaceDataset(
 )
 ```
 
-Next, it defined the reward function. Here, we care about the model's ability to both rhyme and answer the user's question. As our [intro tutorial](https://gym.modal.dev/tutorials/rl_basics) shows, NLTK’s [CMU Pronouncing Dictionary](https://github.com/prosegrinder/python-cmudict) is a useful library for measuring the former.
+Next, it defined the reward function. Here, we care about the model's ability to both rhyme and answer the user's question. As our [intro tutorial](https://dojo.modal.dev/tutorials/rl_basics) shows, NLTK’s [CMU Pronouncing Dictionary](https://github.com/prosegrinder/python-cmudict) is a useful library for measuring the former.
 
 <details>
 <summary>What's going on here</summary>
@@ -336,8 +336,8 @@ modal-dojo run trace <run-id> --out ./traces --yes --json
 
 <video controls playsinline width="100%">
   <source src="/agent-driven-training-rhyme.mp4" type="video/mp4">
-  <source src="https://gym.modal.dev/agent-driven-training-rhyme.mp4" type="video/mp4">
-  <a href="https://gym.modal.dev/agent-driven-training-rhyme.mp4">Watch the agent-driven training demo.</a>
+  <source src="https://dojo.modal.dev/agent-driven-training-rhyme.mp4" type="video/mp4">
+  <a href="https://dojo.modal.dev/agent-driven-training-rhyme.mp4">Watch the agent-driven training demo.</a>
 </video>
 
 After 46 minutes of training, the model makes all responses [rhyme](#1) [damn well](#2) while still [answering the user](#3).

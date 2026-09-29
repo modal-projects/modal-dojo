@@ -35,7 +35,7 @@ from modal_dojo import (
 # production-ready LLM inference endpoint on Modal's managed infrastructure. It supports both
 # open model weights in addition to custom fine tunes, sourced from either a Hugging Face repo or a
 # [Modal Volume](https://modal.com/docs/guide/volumes). To use it, we provide a
-# [class](https://gym.modal.dev/reference/endpoint) to instantiate one programatically.
+# [class](https://dojo.modal.dev/reference/endpoint) to instantiate one programatically.
 #
 # It will take a moment to download the model weights onto a Modal Volume and boot containers past the
 # [cold-start](https://modal.com/docs/guide/cold-start#what-is-a-cold-start).
@@ -122,7 +122,7 @@ def score_haiku(response: str) -> float:
 # this is because the task is sufficiently out-of-distribution, and no existing dataset
 # will serve your needs.
 #
-# See the [DatasetConfig](https://gym.modal.dev/reference/datasetconfig)
+# See the [DatasetConfig](https://dojo.modal.dev/reference/datasetconfig)
 # documentation for a deeper dive.
 
 train_dataset = HuggingFaceDataset(

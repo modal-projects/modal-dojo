@@ -46,6 +46,9 @@ image = (
 
 app = modal.App("training-gym-docs", image=image)
 
+CANONICAL_HOST = "dojo.modal.dev"
+LEGACY_HOST = "gym.modal.dev"
+
 
 def cache_control_value(path: str, content_type: str) -> str | None:
     if path.startswith("/_astro/"):
@@ -61,7 +64,7 @@ def cache_control_value(path: str, content_type: str) -> str | None:
 
 @app.function(min_containers=1)
 @modal.concurrent(max_inputs=100)
-@modal.asgi_app(custom_domains=["gym.modal.dev"])
+@modal.asgi_app(custom_domains=[CANONICAL_HOST, LEGACY_HOST])
 def serve():
     from fastapi import FastAPI, Request, Response
     from fastapi.middleware.gzip import GZipMiddleware
@@ -106,6 +109,18 @@ def serve():
         query = request.url.query
         location = f"{target}?{query}" if query else target
         return RedirectResponse(url=location, status_code=redirect_status(path))
+
+    # Registered last so legacy requests redirect before any path rewrites.
+    @web.middleware("http")
+    async def legacy_host_redirect(request: Request, call_next):
+        if request.url.hostname != LEGACY_HOST:
+            return await call_next(request)
+        path = request.scope["raw_path"].decode("ascii")
+        query = request.url.query
+        location = f"https://{CANONICAL_HOST}{path}"
+        if query:
+            location += f"?{query}"
+        return RedirectResponse(url=location, status_code=301)
 
     web.mount("/", StaticFiles(directory=REMOTE_DIST, html=True), name="static")
 

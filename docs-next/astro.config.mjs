@@ -165,7 +165,7 @@ export default defineConfig({
     remarkPlugins: [remarkMath, remarkStripPageTitle],
     rehypePlugins: [rehypeKatex, rehypeTableWrapper],
   },
-  site: 'https://gym.modal.dev',
+  site: 'https://dojo.modal.dev',
   integrations: [
     starlight({
       title: 'Modal Dojo',
@@ -177,7 +177,7 @@ export default defineConfig({
       head: [
         {
           tag: 'meta',
-          attrs: { property: 'og:image', content: 'https://gym.modal.dev/og-image.png' },
+          attrs: { property: 'og:image', content: 'https://dojo.modal.dev/og-image.png' },
         },
         {
           tag: 'meta',
@@ -193,7 +193,7 @@ export default defineConfig({
         },
         {
           tag: 'meta',
-          attrs: { name: 'twitter:image', content: 'https://gym.modal.dev/og-image.png' },
+          attrs: { name: 'twitter:image', content: 'https://dojo.modal.dev/og-image.png' },
         },
         {
           tag: 'meta',
@@ -206,7 +206,7 @@ export default defineConfig({
             '@context': 'https://schema.org',
             '@type': 'WebSite',
             name: 'Modal Dojo',
-            url: 'https://gym.modal.dev',
+            url: 'https://dojo.modal.dev',
             description:
               'Open-source Python SDK for GRPO and RL post-training of LLMs on Modal GPU clusters.',
             publisher: {
