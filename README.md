@@ -111,7 +111,7 @@ For a step-by-step walkthrough, see the [Getting started tutorial](https://gym.m
 | Family | Models |
 |---|---|
 | DeepSeek | <ul><li>[DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash)</li></ul> |
-| GLM | <ul><li>[GLM-4.7](https://huggingface.co/zai-org/GLM-4.7)</li></ul> |
+| GLM | <ul><li>[GLM-4.7](https://huggingface.co/zai-org/GLM-4.7)</li><li>[GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash)</li></ul> |
 | Gemma | <ul><li>[gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it)</li></ul> |
 | Inkling | <ul><li>[Inkling-Small](https://huggingface.co/thinkingmachines/Inkling-Small)</li></ul> |
 | Moonlight | <ul><li>[Moonlight-16B-A3B-Instruct](https://huggingface.co/moonshotai/Moonlight-16B-A3B-Instruct)</li></ul> |
