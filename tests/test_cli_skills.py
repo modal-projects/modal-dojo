@@ -310,7 +310,7 @@ def test_skills_install_restores_existing_skill_when_replace_fails(
         ["skills", "install", "--force"],
     )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     assert "simulated install failure" in result.stderr
     assert (destination / "SKILL.md").read_text() == "customized\n"
 
@@ -404,7 +404,8 @@ def test_failed_replacement_install_logs_error(tmp_path, monkeypatch, capsys):
         raise CLIError("copy failed", error="skill_install_failed")
 
     monkeypatch.setattr(skills, "_install_canonical_skill", fail)
-    skills.install_skills(project_dir=tmp_path, force=True)
+    with pytest.raises(CLIError, match="Failed to install skills"):
+        skills.install_skills(project_dir=tmp_path, force=True)
     assert not old.exists() and not link.is_symlink()
     assert "failed" in capsys.readouterr().err
 
@@ -433,3 +434,34 @@ def test_cleanup_does_not_follow_claude_parent_symlink(tmp_path):
     original.symlink_to(external, target_is_directory=True)
     skills.install_skills(project_dir=tmp_path, force=True)
     assert not old.exists() and link.is_symlink()
+
+
+def test_install_failure_continues_other_skills_and_exits_nonzero(
+    tmp_path, monkeypatch
+):
+    from modal_dojo.cli import skills
+    from modal_dojo.cli.errors import CLIError
+
+    original = skills._install_canonical_skill
+    attempted = []
+
+    def fail_one(*args, **kwargs):
+        attempted.append(kwargs["skill_name"])
+        if kwargs["skill_name"] == SKILL_NAME:
+            raise CLIError("copy failed", error="skill_install_failed")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(skills, "_install_canonical_skill", fail_one)
+    result = CliRunner().invoke(
+        cli_module.entrypoint_cli,
+        [
+            "skills",
+            "install",
+            "--project-dir",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "copy failed" in result.stderr
+    assert set(attempted) == set(_bundled_skills())
+    assert (tmp_path / ".agents/skills/modal-dojo-overview/SKILL.md").is_file()

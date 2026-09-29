@@ -251,3 +251,35 @@ def test_setup_warns_about_old_skills_without_modifying_them(
     assert "modal-dojo skills install --force" in capsys.readouterr().err
     assert (old / "SKILL.md").read_text() == "old instructions"
     assert not (root / ".agents/skills/modal-dojo-overview").exists()
+
+
+def test_current_dashboard_does_not_require_legacy_lookup(
+    paths, deployment, monkeypatch
+):
+    looked_up = []
+
+    def lookup(*args):
+        looked_up.append(args)
+        if args:
+            raise DashboardLookupUnknown()
+        return "https://new.test"
+
+    monkeypatch.setattr(cli_setup_module, "deployed_dashboard_url", lookup)
+    monkeypatch.setattr(config, "get_dashboard_proxy_auth", lambda url: True)
+    assert cli_setup_module.setup(interactive=False) == "https://new.test"
+    assert looked_up == [()]
+    assert deployment[1] == [(True, None)]
+
+
+def test_unknown_legacy_lookup_without_current_dashboard_blocks_deploy(
+    paths, deployment, monkeypatch
+):
+    def lookup(*args):
+        if args:
+            raise DashboardLookupUnknown()
+        return None
+
+    monkeypatch.setattr(cli_setup_module, "deployed_dashboard_url", lookup)
+    with pytest.raises(ValueError, match="discover"):
+        cli_setup_module.setup(interactive=False)
+    assert not deployment[1]

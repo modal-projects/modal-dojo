@@ -283,6 +283,7 @@ def install_skills(*, project_dir: Path | None, force: bool) -> tuple[Path, ...]
         project_root / SKILLS_DIRECTORY / skill_name for skill_name in skills
     )
     installed_destinations: list[tuple[str, Path]] = []
+    failed_skills: list[str] = []
 
     for (skill_name, source), destination in zip(
         skills.items(), destinations, strict=True
@@ -295,6 +296,8 @@ def install_skills(*, project_dir: Path | None, force: bool) -> tuple[Path, ...]
                 force=force,
             )
         except CLIError as exc:
+            if exc.error != "skill_destination_exists":
+                failed_skills.append(skill_name)
             click.echo(f"Skipped {skill_name}: {exc.format_message()}", err=True)
             continue
 
@@ -307,6 +310,11 @@ def install_skills(*, project_dir: Path | None, force: bool) -> tuple[Path, ...]
     for skill_name, destination in installed_destinations:
         _ensure_claude_compatibility(
             project_root, destination, skill_name=skill_name, force=force
+        )
+    if failed_skills:
+        raise CLIError(
+            f"Failed to install skills: {', '.join(failed_skills)}",
+            error="skill_install_failed",
         )
     return tuple(destination for _, destination in installed_destinations)
 

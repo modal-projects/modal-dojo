@@ -92,7 +92,7 @@ def setup(
     saved_url = get_dashboard_url()
     try:
         new_url = deployed_dashboard_url()
-        old_url = deployed_dashboard_url(LEGACY_DASHBOARD_APP_NAME)
+        old_url = None if new_url else deployed_dashboard_url(LEGACY_DASHBOARD_APP_NAME)
     except DashboardLookupUnknown as exc:
         raise ValueError(
             "Could not discover existing dashboards. Check Modal credentials/network and rerun modal-dojo setup."
