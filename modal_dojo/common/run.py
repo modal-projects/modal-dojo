@@ -434,17 +434,28 @@ class TrainingRun(BaseModel):
             )
         # A confirmed-dead app needs no stop RPC — the record update below is
         # enough to reconcile it. Unknown liveness still attempts the stop.
-        if app_live_status(record.modal_app_id) is not False:
+        app_dead = app_live_status(record.modal_app_id) is False
+        if not app_dead:
             stop_app(record.modal_app_id)
         finished_at = int(time.time())
-        record.status = TrainingRunStatus.STOPPED
+        # If the app is already gone because training finished — a result blob
+        # exists — the stale running record means completed, not stopped.
+        completed = app_dead and _train_result_exists(record.training_run_id)
+        record.status = (
+            TrainingRunStatus.COMPLETED if completed else TrainingRunStatus.STOPPED
+        )
         record.ended_at = finished_at
+        if completed:
+            record.completed_at = record.completed_at or finished_at
         if record.started_at:
             record.duration_seconds = max(0, finished_at - record.started_at)
         metadata = dict(record.metadata or {})
-        metadata["terminal_reason"] = reason
+        if not completed:
+            metadata["terminal_reason"] = reason
         record.metadata = metadata
-        mark_training_attempt_finished(record, status="stopped", ended_at=finished_at)
+        mark_training_attempt_finished(
+            record, status="completed" if completed else "stopped", ended_at=finished_at
+        )
         record.save()
         self._closed = True
         self._reload()
@@ -945,6 +956,19 @@ def mark_training_attempt_finished(
     metadata["last_attempt_status"] = status
     metadata["last_attempt_ended_at"] = ended_at
     run.metadata = metadata
+
+
+def _train_result_exists(training_run_id: str) -> bool:
+    """True when a train result blob was persisted for the run.
+
+    Best-effort: a transient store error falls back to False so it never
+    blocks an explicit stop.
+    """
+    try:
+        vol_get(MetadataStore.TRAIN_RESULTS, training_run_id)
+        return True
+    except Exception:
+        return False
 
 
 def record_resume_checkpoint(

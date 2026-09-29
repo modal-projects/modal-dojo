@@ -1066,11 +1066,13 @@ def fastapi_app():
                 summary_store,
                 [
                     {
-                        "training_run_id": new["training_run_id"],
-                        "modal_app_url": new["modal_app_url"],
+                        "id": new["training_run_id"],
+                        "match": {"modal_app_id": new["modal_app_id"]},
+                        "set": {"modal_app_url": new["modal_app_url"]},
                     }
                     for old, new in zip(items, healed)
                     if new.get("training_run_id")
+                    and new.get("modal_app_id")
                     and new.get("modal_app_url")
                     and old.get("modal_app_url") != new.get("modal_app_url")
                 ],
