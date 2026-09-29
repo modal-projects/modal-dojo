@@ -81,7 +81,6 @@ from modal_training_gym.frameworks.miles.modal_helpers.utils import (
 MILES_ROOT = "/root/miles"
 # Editable install location of sglang inside the miles images.
 SGLANG_ROOT = "/sgl-workspace/sglang"
-SYSTEM_LIB_DIR = "/usr/lib/x86_64-linux-gnu"
 # Disagg multi-node mooncake needs matching libibverbs/libmlx5. The apt
 # reinstall strips NCCL NET plugins, so 2-node SGLang dies in
 # ncclCommInitRank ("invalid usage" / "Failed to initialize any NET
@@ -396,14 +395,6 @@ def _build_miles_base_image(
     return image
 
 
-def _compose_ld_library_path() -> str:
-    parts = [SYSTEM_LIB_DIR]
-    for part in os.environ.get("LD_LIBRARY_PATH", "").split(":"):
-        if part and part not in parts:
-            parts.append(part)
-    return ":".join(parts)
-
-
 def build_ray_runtime_env(
     *,
     head_addr: str,
@@ -415,22 +406,15 @@ def build_ray_runtime_env(
 ) -> dict:
     """Runtime env for the Ray job that runs miles.
 
-    Ray workers do not pick up the container's linker path on their own, and
-    without it the Megatron actor can resolve a libibverbs that does not match
-    the image's libmlx5 and die importing mooncake. The system lib dir is put
-    in front for that reason; the rest is read from the container, so whatever
-    the image exports — including any wheel-shipped nvidia lib dirs — is
-    carried through. Composing it here rather than in an ``image_env`` entry
-    keeps it independent of whether the base image exports ``LD_LIBRARY_PATH``
-    in its own ``ENV``: a Dockerfile ``$LD_LIBRARY_PATH`` expands to an empty
-    string when it does not, which would drop those dirs and leave a trailing
-    empty entry that the loader reads as the working directory. A recipe can
-    still override the whole thing through ``environment``.
+    Ray workers inherit the container's ``LD_LIBRARY_PATH``. On EFA workers
+    Modal puts its host-mounted ``/opt/amazon`` lib dirs first there, which
+    the aws-ofi-nccl plugin needs to resolve the host libfabric rather than
+    an older copy in the image. A recipe can override it through
+    ``environment``.
     """
     env_vars: dict[str, str] = {
         "no_proxy": f"127.0.0.1,{head_addr}",
         "MASTER_ADDR": head_addr,
-        "LD_LIBRARY_PATH": _compose_ld_library_path(),
         "TRAINING_GYM_SUBSTEP_TIMING": substep_timing,
     }
     env_vars.update(environment)
