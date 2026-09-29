@@ -18,7 +18,7 @@ from contextlib import nullcontext
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from modal.exception import ExecutionError
+from modal.exception import ExecutionError, InputCancellation, ServiceError
 
 from modal_dojo.common import run as run_mod
 from modal_dojo.common.framework import Framework
@@ -42,6 +42,8 @@ from modal_dojo.utils.metadata import MetadataStore
         (None, "completed"),
         (RuntimeError("worker failed"), "failed"),
         (KeyboardInterrupt(), "stopped"),
+        (asyncio.CancelledError(), "stopped"),
+        (InputCancellation(), "stopped"),
     ],
 )
 def test_training_lifecycle_persists_terminal_state(
@@ -98,6 +100,34 @@ def test_training_lifecycle_persists_terminal_state(
         assert model.model_path == "/checkpoints/run"
     if isinstance(error, RuntimeError):
         assert "worker failed" in saved.error_message
+
+
+@pytest.mark.parametrize(
+    "rank, expected",
+    [
+        (None, run_mod.TrainingRunStatus.FAILED),
+        (0, run_mod.TrainingRunStatus.FAILED),
+        (1, run_mod.TrainingRunStatus.RUNNING),
+    ],
+)
+def test_record_run_failure_persists_errors_raised_before_lifecycle(
+    fake_volume, monkeypatch, rank, expected
+):
+    if rank is not None:
+        monkeypatch.setattr(
+            launcher_helpers, "get_cluster_info", lambda: Mock(rank=rank)
+        )
+    run_mod.TrainingRun(
+        training_run_id="startup", framework=Framework.SLIME, config={}
+    ).save()
+
+    @launcher_helpers.record_run_failure("startup")
+    async def train():
+        raise ServiceError("volume reload failed")
+
+    with pytest.raises(ServiceError):
+        asyncio.run(train())
+    assert run_mod.TrainingRun.from_id("startup").status is expected
 
 
 @pytest.mark.parametrize("fw", list(Framework))

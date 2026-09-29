@@ -5,6 +5,7 @@ It is used to track the training run and its results.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import math
 import inspect
@@ -14,7 +15,12 @@ from collections.abc import Awaitable, Callable, Sequence
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from modal.exception import NotFoundError
+from modal.exception import (
+    ConnectionError as ModalConnectionError,
+    NotFoundError,
+    ResourceExhaustedError,
+    ServiceError,
+)
 from pydantic import (
     BaseModel,
     Field,
@@ -45,6 +51,12 @@ if TYPE_CHECKING:
 
 TRAINING_RUNS_STORE_NAME = MetadataStore.TRAINING_RUNS.value
 CHECKPOINT_LOCATION_METADATA_KEY = "checkpoint_location"
+_TRANSIENT_MODAL_ERRORS = (
+    ModalConnectionError,
+    ResourceExhaustedError,
+    ServiceError,
+)
+_MAX_CONSECUTIVE_TRANSIENT_ERRORS = 5
 
 
 class FrameworkStatusUpdate(BaseModel):
@@ -163,6 +175,7 @@ class TrainingRun(BaseModel):
     _metadata_loaded_keys: set[str] | None = PrivateAttr(default=None)
     _dashboard_component_updates: set[str] = PrivateAttr(default_factory=set)
     _closed: bool = PrivateAttr(default=False)
+    _consecutive_transient_errors: int = PrivateAttr(default=0)
 
     @field_serializer("source_model")
     def _serialize_source_model(self, value: Any) -> dict[str, Any] | None:
@@ -216,7 +229,7 @@ class TrainingRun(BaseModel):
         self.metrics = stored.metrics
         self.error_message = stored.error_message
 
-    def _function_call_outcome(self) -> tuple[bool, BaseException | None]:
+    def _function_call_outcome(self) -> tuple[bool, Exception | None]:
         if self._function_call is None and not self.function_call_id:
             return False, None
         try:
@@ -227,8 +240,14 @@ class TrainingRun(BaseModel):
             call.get(timeout=0)
             return True, None
         except TimeoutError:
+            self._consecutive_transient_errors = 0
             return False, None
-        except BaseException as exc:
+        except _TRANSIENT_MODAL_ERRORS as exc:
+            self._consecutive_transient_errors += 1
+            if self._consecutive_transient_errors < _MAX_CONSECUTIVE_TRANSIENT_ERRORS:
+                return False, None
+            return True, exc
+        except Exception as exc:
             return True, exc
 
     def checkpoints(self) -> list["Checkpoint"]:
@@ -290,7 +309,8 @@ class TrainingRun(BaseModel):
 
         Does not stop the Modal app.
         """
-        self._reload()
+        with contextlib.suppress(*_TRANSIENT_MODAL_ERRORS):
+            self._reload()
         if self.status is not TrainingRunStatus.RUNNING:
             return True
         finished, exc = self._function_call_outcome()
