@@ -1,9 +1,7 @@
-"""Extend Miles' cell tick timeout for the initial weights backup.
-
-Kimi-K3's first release_memory_occupation copies frozen weights to host RAM
-and exceeds the hardcoded 120-second timeout on eight-GPU nodes.
-
-Executed at image-build time via ``python3 <this file>``.
+"""
+image: radixark/miles:dev-202609251434
+commit: https://github.com/radixark/miles/commit/41c5e38b94ea23677de93b01a4a77d55677a8f09
+file: miles/miles/ray/rollout/inference_controller.py::CELL_TICK_TIMEOUT_SECONDS
 """
 
 import pathlib

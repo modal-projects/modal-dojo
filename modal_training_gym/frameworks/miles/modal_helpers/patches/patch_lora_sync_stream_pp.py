@@ -1,10 +1,7 @@
-"""Stream the LoRA adapter across PP one stage at a time during weight sync.
-
-Gathering the full adapter on every trainer rank exhausts colocated GPU memory.
-Yield each stage after its broadcast and release it before gathering the next.
-All ranks retain the same collective order and export the same tensor set.
-
-Executed at image-build time via ``python3 <this file>``.
+"""
+image: radixark/miles:dev-202609251434
+commit: https://github.com/radixark/miles/commit/41c5e38b94ea23677de93b01a4a77d55677a8f09
+file: miles/miles/backends/megatron_utils/update_weight/hf_weight_iterator.py::MegatronHfWeightIteratorBase._iter_hf_adapter_units
 """
 
 import pathlib

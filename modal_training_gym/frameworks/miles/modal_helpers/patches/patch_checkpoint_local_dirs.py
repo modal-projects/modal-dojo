@@ -1,7 +1,7 @@
-"""Create checkpoint directories in every writer's Modal Volume mount.
-
-Rank zero's directory creation is not immediately visible on other nodes.
-Create it locally after rank-zero preparation, inside write-error collection.
+"""
+image: radixark/miles:dev-202609251434
+commit: https://github.com/radixark/miles/commit/41c5e38b94ea23677de93b01a4a77d55677a8f09
+file: miles/miles/backends/training_utils/checkpoint_io.py::write_checkpoint_dir
 """
 
 from pathlib import Path

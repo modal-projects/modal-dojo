@@ -1,7 +1,8 @@
-"""Release exported LoRA buffers before SGLang applies the complete adapter.
-
-Drop the last exported view, then collect IPC and allocator caches after the
-Gloo barrier, before end_weight_update allocates normalized LoRA tensors.
+"""
+image: radixark/miles:dev-202609251434
+commit: https://github.com/radixark/miles/commit/41c5e38b94ea23677de93b01a4a77d55677a8f09
+file: miles/miles/backends/training_utils/weight_update/updater.py::WeightUpdater.update_weights
+file: miles/miles/backends/training_utils/weight_update/protocols/cuda_ipc.py::UpdateWeightFromTensor
 """
 
 from pathlib import Path
