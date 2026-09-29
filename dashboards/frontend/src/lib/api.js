@@ -1,5 +1,6 @@
 const SERVER = "/api";
 
+
 async function getErrorFromResponse(res) {
   let detail = res.statusText;
   try {
@@ -73,18 +74,6 @@ export async function fetchRun(trainingRunId, { signal } = {}) {
   return await readJson(res, "run detail");
 }
 
-// Whether the deployment permits mutations (password or proxy auth). Open
-// dashboards refuse /stop, so the UI hides the button rather than failing
-// every click. Fail-open: on an unknown answer the backend still enforces.
-export async function fetchMutationsAllowed() {
-  try {
-    const res = await fetch(`${SERVER}/mutations-allowed`);
-    return res.ok ? !!(await res.json()) : true;
-  } catch {
-    return true;
-  }
-}
-
 export async function stopRun(trainingRunId) {
   const res = await fetch(
     `${SERVER}/runs/${encodeURIComponent(trainingRunId)}/stop`,
@@ -115,14 +104,16 @@ export async function fetchEvals({ signal } = {}) {
 
 export async function fetchTrainResult(trainingRunId) {
   const res = await fetch(
-    `${SERVER}/train-results/${encodeURIComponent(trainingRunId)}`,
+    `${SERVER}/train-results/${encodeURIComponent(trainingRunId)}`
   );
   if (!res.ok) return null;
   return await res.json();
 }
 
 export async function fetchEvalDetail(evalId) {
-  const res = await fetch(`${SERVER}/evals/${encodeURIComponent(evalId)}`);
+  const res = await fetch(
+    `${SERVER}/evals/${encodeURIComponent(evalId)}`
+  );
   if (!res.ok) return null;
   return await res.json();
 }
@@ -145,9 +136,7 @@ export async function fetchRunRollouts(trainingRunId, { signal } = {}) {
         item.episode_count == null ? null : Number(item.episode_count) || 0,
       mean: typeof item.mean === "number" ? item.mean : Number(item.mean) || 0,
       reward_stats:
-        item.reward_stats && typeof item.reward_stats === "object"
-          ? item.reward_stats
-          : null,
+        item.reward_stats && typeof item.reward_stats === "object" ? item.reward_stats : null,
       rollout_time: Number.isFinite(Number(item.rollout_time))
         ? Number(item.rollout_time)
         : null,
@@ -183,8 +172,7 @@ export async function fetchRunLogs(
   if (search) params.set("search", search);
   const qs = params.toString();
   const res = await fetch(
-    `${SERVER}/runs/${encodeURIComponent(trainingRunId)}/logs` +
-      (qs ? `?${qs}` : ""),
+    `${SERVER}/runs/${encodeURIComponent(trainingRunId)}/logs` + (qs ? `?${qs}` : ""),
     { signal },
   );
   if (!res.ok) {
@@ -232,10 +220,7 @@ export async function fetchRunTimings(trainingRunId, { signal } = {}) {
 
 // Scalar metrics mirrored from wandb/trackio: `{ series: { key: [[step, value], ...] }, stale }`.
 export async function fetchRunMetrics(trainingRunId, { signal } = {}) {
-  const res = await fetch(
-    `${SERVER}/runs/${encodeURIComponent(trainingRunId)}/metrics`,
-    { signal },
-  );
+  const res = await fetch(`${SERVER}/runs/${encodeURIComponent(trainingRunId)}/metrics`, { signal });
   if (!res.ok) throw new Error(await getErrorFromResponse(res));
   return await res.json();
 }

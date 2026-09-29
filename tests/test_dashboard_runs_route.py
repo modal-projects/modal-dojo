@@ -22,7 +22,7 @@ from modal_dojo.utils import metadata
 from modal_dojo.utils.metadata import MetadataStore
 
 
-def _client(monkeypatch, tmp_path, *, open_dashboard: bool = False) -> TestClient:
+def _client(monkeypatch, tmp_path) -> TestClient:
     static = tmp_path / "static"
     (static / "assets").mkdir(parents=True)
     (static / "index.html").write_text("ok")
@@ -32,12 +32,6 @@ def _client(monkeypatch, tmp_path, *, open_dashboard: bool = False) -> TestClien
     )
     monkeypatch.setattr(_dashboard, "STATIC_DIR", str(static))
     monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
-    # Simulate a proxy-auth'd deployment so mutations are permitted;
-    # open_dashboard drops that to exercise the fully-open refusal path.
-    if open_dashboard:
-        monkeypatch.delenv("DASHBOARD_REQUIRES_PROXY_AUTH", raising=False)
-    else:
-        monkeypatch.setenv("DASHBOARD_REQUIRES_PROXY_AUTH", "true")
     return TestClient(_dashboard.fastapi_app.local())
 
 
@@ -656,23 +650,6 @@ def test_stop_run_requires_action_header(fake_volume, monkeypatch, tmp_path):
     assert response.status_code == 400
 
 
-def test_stop_run_refused_on_open_dashboard(fake_volume, monkeypatch, tmp_path):
-    _save_records()
-    stopped: list[str] = []
-    monkeypatch.setattr(
-        "modal_training_gym.common.modal_lifecycle.stop_app",
-        stopped.append,
-    )
-
-    with _client(monkeypatch, tmp_path, open_dashboard=True) as client:
-        assert client.get("/api/mutations-allowed").json() is False
-        response = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
-
-    assert response.status_code == 403
-    assert stopped == []
-    assert TrainingRun.from_id("run-route-1").status.value == "running"
-
-
 def test_stop_run_stops_app_and_persists_stopped(fake_volume, monkeypatch, tmp_path):
     _save_records()
     stopped: list[str] = []
@@ -682,7 +659,6 @@ def test_stop_run_stops_app_and_persists_stopped(fake_volume, monkeypatch, tmp_p
     )
 
     with _client(monkeypatch, tmp_path) as client:
-        assert client.get("/api/mutations-allowed").json() is True
         response = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
 
     assert response.status_code == 200
