@@ -215,6 +215,9 @@ def test_wait_all_closes_each_run_when_that_run_is_done(monkeypatch, fake_volume
 def test_stop_stops_app_and_persists_record(monkeypatch, fake_volume):
     stopped: list[str] = []
     monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
+    )
+    monkeypatch.setattr(
         "modal_dojo.common.modal_lifecycle.stop_app",
         stopped.append,
     )
@@ -238,6 +241,9 @@ def test_stop_stops_app_and_persists_record(monkeypatch, fake_volume):
 
 
 def test_stop_keeps_stored_config_over_stale_handle(monkeypatch, fake_volume):
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
+    )
     monkeypatch.setattr(
         "modal_dojo.common.modal_lifecycle.stop_app", lambda app_id: None
     )
@@ -270,6 +276,10 @@ def test_stop_is_noop_for_terminal_run(monkeypatch, fake_volume):
 
 
 def test_stop_does_not_persist_when_app_stop_fails(monkeypatch, fake_volume):
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
+    )
+
     def fail_stop(app_id: str) -> None:
         raise RuntimeError("modal is down")
 
@@ -293,6 +303,41 @@ def test_stop_refuses_run_without_modal_app(monkeypatch, fake_volume):
         run.stop()
 
     assert TrainingRun.from_id("run-1").status is TrainingRunStatus.RUNNING
+
+
+def test_stop_reconciles_record_when_app_already_dead(monkeypatch, fake_volume):
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: False
+    )
+    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", calls.append)
+    run = _run(TrainingRunStatus.RUNNING)
+    run.modal_app_id = "ap-1"
+    run.started_at = 100
+    run.save()
+
+    assert run.stop() is True
+
+    assert calls == []
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.STOPPED
+    assert persisted.ended_at is not None
+    assert persisted.metadata["terminal_reason"] == "stopped_by_user"
+
+
+def test_stop_attempts_rpc_when_liveness_unknown(monkeypatch, fake_volume):
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: None
+    )
+    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", calls.append)
+    run = _run(TrainingRunStatus.RUNNING)
+    run.modal_app_id = "ap-1"
+    run.save()
+
+    assert run.stop() is True
+    assert calls == ["ap-1"]
+    assert TrainingRun.from_id("run-1").status is TrainingRunStatus.STOPPED
 
 
 def test_save_keeps_stored_stopped_status(fake_volume):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from queue import Queue
 from types import SimpleNamespace
@@ -654,6 +655,9 @@ def test_stop_run_stops_app_and_persists_stopped(fake_volume, monkeypatch, tmp_p
     _save_records()
     stopped: list[str] = []
     monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
+    )
+    monkeypatch.setattr(
         "modal_dojo.common.modal_lifecycle.stop_app",
         stopped.append,
     )
@@ -672,6 +676,9 @@ def test_stop_run_stops_app_and_persists_stopped(fake_volume, monkeypatch, tmp_p
 def test_stop_run_conflicts_when_already_terminal(fake_volume, monkeypatch, tmp_path):
     _save_records()
     stopped: list[str] = []
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
+    )
     monkeypatch.setattr(
         "modal_dojo.common.modal_lifecycle.stop_app",
         stopped.append,
@@ -706,6 +713,9 @@ def test_stop_run_conflicts_without_modal_app(fake_volume, monkeypatch, tmp_path
 
 def test_stop_run_returns_502_when_app_stop_fails(fake_volume, monkeypatch, tmp_path):
     _save_records()
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
+    )
 
     def fail_stop(app_id: str) -> None:
         raise RuntimeError("modal is down")
@@ -717,3 +727,50 @@ def test_stop_run_returns_502_when_app_stop_fails(fake_volume, monkeypatch, tmp_
 
     assert response.status_code == 502
     assert TrainingRun.from_id("run-route-1").status.value == "running"
+
+
+def test_stop_invalidation_survives_inflight_runs_refresh(
+    fake_volume, monkeypatch, tmp_path
+):
+    _save_records()
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app", lambda app_id: None
+    )
+
+    real_load = metadata.vol_get_summary_items_healed
+    stale_items = real_load(MetadataStore.TRAINING_RUNS_SUMMARY)
+    entered = threading.Event()
+    release = threading.Event()
+    calls: list[MetadataStore] = []
+
+    def stale_once(store: MetadataStore) -> list[dict]:
+        if store is not MetadataStore.TRAINING_RUNS_SUMMARY:
+            return real_load(store)
+        calls.append(store)
+        if len(calls) > 1:
+            return real_load(store)
+        entered.set()
+        release.wait(timeout=30)
+        return stale_items
+
+    monkeypatch.setattr(metadata, "vol_get_summary_items_healed", stale_once)
+
+    with _client(monkeypatch, tmp_path) as client:
+        # The very first list load blocks in the slow loader; the stop that
+        # lands while it is in flight must not be overwritten by its stale
+        # payload once it resumes.
+        listing = threading.Thread(target=client.get, args=("/api/runs",))
+        listing.start()
+        assert entered.wait(timeout=30)
+        response = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
+        release.set()
+        listing.join(timeout=30)
+
+        assert response.status_code == 200
+        statuses = {
+            run["run_id"]: run["status"] for run in client.get("/api/runs").json()
+        }
+        assert statuses["run-route-1"] == "stopped"
