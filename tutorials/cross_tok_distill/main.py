@@ -5,7 +5,7 @@
 #
 # # On-policy distillation across model families
 #
-# In the [last OPD tutorial](https://gym.modal.dev/tutorials/on_policy_distillation),
+# In the [last OPD tutorial](https://dojo.modal.dev/tutorials/on_policy_distillation),
 # we saw how same-family OPD minimizes reverse-KL on shared token IDs. However, if you
 # wanted to use a teacher model from another model family, you'll quickly find out that
 # they don't share a vocabulary, so reverse-KL on raw token logprobs is undefined.
@@ -50,7 +50,7 @@ from modal_dojo.train_recipes.slime_recipe import Qwen3_6_35B_Recipe
 #
 # First, we'll deploy the teacher and base models to derive a baseline.
 # You'll notice that even if the Modal Dojo doesn't have a native model class for a model you want to use,
-# you can just use [HFModelConfiguration](https://gym.modal.dev/reference/hfmodelconfiguration)!
+# you can just use [HFModelConfiguration](https://dojo.modal.dev/reference/hfmodelconfiguration)!
 
 STUDENT_READY_TIMEOUT = 15 * 60
 TEACHER_READY_TIMEOUT = 30 * 60

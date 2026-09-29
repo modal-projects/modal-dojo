@@ -16,7 +16,7 @@
   import logoSvg from "./lib/logo.svg";
   import { fmtDuration } from "./lib/format.js";
   import { createSidebarCollapsedState } from "./lib/sidebarCollapsed.svelte.js";
-  const DOCS_URL = "https://gym.modal.dev";
+  const DOCS_URL = "https://dojo.modal.dev";
 
   // The server filters, sorts and pages the run list, so `runs` only holds the
   // rows the page asked for and every total comes from `runCounts`.

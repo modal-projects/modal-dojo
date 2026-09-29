@@ -37,7 +37,7 @@ uv run scripts/generate_models_table.py --check # CI freshness check
 # Consumers of the Modal Dojo should use `modal-dojo setup` instead.
 # Features such as requiring proxy authentication only work with the CLI
 # and will stop working if the dashboard is deployed with `modal deploy`.
-uv run modal deploy docs-next/docs_next_app.py        # docs site → gym.modal.dev
+uv run modal deploy docs-next/docs_next_app.py        # docs site → dojo.modal.dev
 uv run modal deploy dashboards/app.py                  # observability dashboard
 
 # Validate model configs / map a diff to affected tutorials

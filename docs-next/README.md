@@ -1,11 +1,12 @@
 # Modal Dojo docs site
 
-The [gym.modal.dev](https://gym.modal.dev) docs are a
+The [dojo.modal.dev](https://dojo.modal.dev) docs are a
 [Starlight](https://starlight.astro.build/) site on Astro, packaged as a
 Modal ASGI app so a `modal deploy` of `docs_next_app.py` is the production
 host.
 
-That deploy is `gym.modal.dev`.
+That deploy serves `dojo.modal.dev` and keeps `gym.modal.dev` attached for
+HTTP 301 redirects to the same path and query string on `https://dojo.modal.dev`.
 
 ## Dev
 
@@ -28,7 +29,7 @@ npm run preview    # serves dist/ on http://localhost:4321
 uv run modal deploy docs-next/docs_next_app.py
 ```
 
-That deploy is `gym.modal.dev`.
+That deploy is `dojo.modal.dev`.
 
 ## Layout
 

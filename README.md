@@ -34,7 +34,7 @@ Authenticate with Modal:
 modal setup
 ```
 
-Set up the [dashboard](https://gym.modal.dev/guides/dashboard):
+Set up the [dashboard](https://dojo.modal.dev/guides/dashboard):
 
 ```bash
 modal-dojo setup
@@ -101,7 +101,7 @@ if __name__ == "__main__":
 ```
 <!-- END QUICKSTART -->
 
-For a step-by-step walkthrough, see the [Getting started tutorial](https://gym.modal.dev/tutorials/rl_basics).
+For a step-by-step walkthrough, see the [Getting started tutorial](https://dojo.modal.dev/tutorials/rl_basics).
 
 ## Supported models
 
