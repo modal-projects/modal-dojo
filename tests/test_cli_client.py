@@ -5,12 +5,12 @@ import base64
 import httpx
 import pytest
 
-from modal_training_gym.cli import client as client_module
-from modal_training_gym.cli.client import (
+from modal_dojo.cli import client as client_module
+from modal_dojo.cli.client import (
     DEFAULT_TIMEOUT_SECONDS,
     DashboardClient,
 )
-from modal_training_gym.cli.errors import CLIError, ExitCode
+from modal_dojo.cli.errors import CLIError, ExitCode
 
 
 @pytest.fixture(autouse=True)

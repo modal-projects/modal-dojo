@@ -7,22 +7,22 @@ import types
 
 import pytest
 
-from modal_training_gym.common import metric_mirror, reporting
-from modal_training_gym.common.metric_mirror import (
+from modal_dojo.common import metric_mirror, reporting
+from modal_dojo.common.metric_mirror import (
     DashboardMetricConfig,
     MetricMirror,
     flatten_numeric,
     install_wandb_shim,
     patch_wandb_module,
 )
-from modal_training_gym.common.metrics import (
+from modal_dojo.common.metrics import (
     apply_metric_image,
     metric_runtime_env,
     metric_secrets,
     preflight_metric,
 )
-from modal_training_gym.common.trackio import TrackioConfig
-from modal_training_gym.common.wandb import WandbConfig
+from modal_dojo.common.trackio import TrackioConfig
+from modal_dojo.common.wandb import WandbConfig
 
 
 class _Tensor:
@@ -265,8 +265,8 @@ def test_dashboard_config_needs_no_secrets_or_preflight():
 
 
 def test_recipes_default_to_the_dashboard_and_none_opts_out():
-    from modal_training_gym.train_recipes.miles_recipe.recipe import MilesRecipe
-    from modal_training_gym.train_recipes.slime_recipe.recipe import SlimeRecipe
+    from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
+    from modal_dojo.train_recipes.slime_recipe.recipe import SlimeRecipe
 
     for recipe_cls in (SlimeRecipe, MilesRecipe):
         assert isinstance(recipe_cls().metrics, DashboardMetricConfig)
@@ -387,7 +387,7 @@ def test_tee_patches_run_log_and_keeps_calling_wandb(isolated_wandb, sent):
 
 
 def test_trackio_shim_mirrors(isolated_wandb, sent, monkeypatch):
-    from modal_training_gym.common import trackio as trackio_module
+    from modal_dojo.common import trackio as trackio_module
 
     logged = []
     fake_trackio = types.SimpleNamespace(

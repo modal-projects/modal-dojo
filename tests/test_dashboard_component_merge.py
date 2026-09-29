@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from modal_training_gym.common import dashboard_components as components_mod
-from modal_training_gym.common import run as run_mod
-from modal_training_gym.common.framework import Framework
-from modal_training_gym.common.run import TrainingRun
+from modal_dojo.common import dashboard_components as components_mod
+from modal_dojo.common import run as run_mod
+from modal_dojo.common.framework import Framework
+from modal_dojo.common.run import TrainingRun
 
 
 def _manifest(name: str, digest: str) -> dict[str, str]:

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`modal-training-gym` is a pip-installable Python package that provides framework-aware launchers for distributed training on Modal's multi-node GPU clusters. The current entrypoint is `TrainConfig` + a recipe (`SlimeRecipe` / `MilesConfig`), then `.train()` / `.launch()` — the package handles image construction, cluster topology, Ray/NCCL bring-up, volume mounts, and checkpointing.
+`modal-dojo` is a pip-installable Python package that provides framework-aware launchers for distributed training on Modal's multi-node GPU clusters. The current entrypoint is `TrainConfig` + a recipe (`SlimeRecipe` / `MilesConfig`), then `.train()` / `.launch()` — the package handles image construction, cluster topology, Ray/NCCL bring-up, volume mounts, and checkpointing.
 
 ## Commands
 
@@ -14,14 +14,14 @@ uv sync                              # install deps (Python 3.12 required)
 uv run pre-commit install            # register local hooks
 
 # Lint (ruff — tutorials/ is excluded via pyproject.toml)
-uv run ruff check modal_training_gym/
-uv run ruff format --check modal_training_gym/
+uv run ruff check modal_dojo/
+uv run ruff format --check modal_dojo/
 
 # Type check
-uv run pyright modal_training_gym/    # if pyright is available
+uv run pyright modal_dojo/    # if pyright is available
 
 # Compile check (no GPU needed)
-uv run -m compileall modal_training_gym/ tutorials/
+uv run -m compileall modal_dojo/ tutorials/
 
 # Docs (Astro/Starlight site at docs-next/)
 uv run scripts/generate_all.py --skip-build   # regen models table and docs pages
@@ -88,7 +88,7 @@ One registry, one script, one workflow, across every framework.
 
 ### Cloudpickle caller resolution
 
-Launchers use `resolve_caller_module()` (in `common/framework.py`) to find the user's tutorial module by walking the stack past `modal_training_gym.*` frames. This enables cloudpickle to serialize inline `DatasetConfig`/`ModelConfig` subclasses by value to remote containers.
+Launchers use `resolve_caller_module()` (in `common/framework.py`) to find the user's tutorial module by walking the stack past `modal_dojo.*` frames. This enables cloudpickle to serialize inline `DatasetConfig`/`ModelConfig` subclasses by value to remote containers.
 
 ### TrainingRun persistence
 
@@ -104,7 +104,7 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
 
 ### Dashboard
 
-`dashboards/app.py` is a Modal app with a Svelte frontend (built at image-build time). Training runs and evals write metadata to a shared Modal Volume (`training-gym-metadata`) via `modal_training_gym.utils.metadata`. The ASGI endpoint serves the pre-built SPA + JSON APIs (`/api/runs`, `/api/train-results`, `/api/evals`) that read summary JSON from the volume on demand.
+`dashboards/app.py` is a Modal app with a Svelte frontend (built at image-build time). Training runs and evals write metadata to a shared Modal Volume (`training-gym-metadata`) via `modal_dojo.utils.metadata`. The ASGI endpoint serves the pre-built SPA + JSON APIs (`/api/runs`, `/api/train-results`, `/api/evals`) that read summary JSON from the volume on demand.
 
 ## Working rules
 

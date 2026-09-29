@@ -25,7 +25,7 @@ import requests
 import soundfile as sf
 from datasets import Audio, load_dataset
 
-from modal_training_gym import (
+from modal_dojo import (
     CustomDeployment,
     MultimodalDataset,
     Qwen3_ASR_1_7B,

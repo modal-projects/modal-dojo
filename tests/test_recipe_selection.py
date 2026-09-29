@@ -8,39 +8,39 @@ from typing import Any
 
 import pytest
 
-from modal_training_gym.common.dataset import HuggingFaceDataset
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.launcher_utils import (
+from modal_dojo.common.dataset import HuggingFaceDataset
+from modal_dojo.common.errors import TrainingGymConfigError
+from modal_dojo.common.launcher_utils import (
     get_checkpoint_conversion_policy,
     prepare_launch_config,
 )
-from modal_training_gym.common.models import Qwen3_4B
-from modal_training_gym.common.models.validation import Framework, _ValidationConfig
-from modal_training_gym.common.train import TrainConfig
-from modal_training_gym.train_recipes.base import SAVE_AT_EPOCH_ENDS_ONLY
-from modal_training_gym.train_recipes.gpu_allocation import (
+from modal_dojo.common.models import Qwen3_4B
+from modal_dojo.common.models.validation import Framework, _ValidationConfig
+from modal_dojo.common.train import TrainConfig
+from modal_dojo.train_recipes.base import SAVE_AT_EPOCH_ENDS_ONLY
+from modal_dojo.train_recipes.gpu_allocation import (
     validate_megatron_actor_parallelism,
 )
-from modal_training_gym.train_recipes.miles_recipe import MilesRecipe
-from modal_training_gym.train_recipes.miles_recipe.gemma4_26b_a4b import (
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+from modal_dojo.train_recipes.miles_recipe.gemma4_26b_a4b import (
     Gemma4_26B_A4B_Recipe,
 )
-from modal_training_gym.train_recipes.miles_recipe.inkling import Inkling_Small_Recipe
-from modal_training_gym.train_recipes.miles_recipe.moonlight_16b_a3b import (
+from modal_dojo.train_recipes.miles_recipe.inkling import Inkling_Small_Recipe
+from modal_dojo.train_recipes.miles_recipe.moonlight_16b_a3b import (
     Moonlight_16B_A3B_Recipe,
 )
-from modal_training_gym.train_recipes.miles_recipe.qwen3_5_4b import (
+from modal_dojo.train_recipes.miles_recipe.qwen3_5_4b import (
     Qwen3_5_4B_Miles_Recipe,
 )
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
-from modal_training_gym.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
-from modal_training_gym.train_recipes.slime_recipe.qwen3_5_0_8b import (
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
+from modal_dojo.train_recipes.slime_recipe.qwen3_5_0_8b import (
     Qwen3_5_0_8B_Recipe,
 )
 
 _RECIPE_PACKAGES = (
-    "modal_training_gym.train_recipes.slime_recipe",
-    "modal_training_gym.train_recipes.miles_recipe",
+    "modal_dojo.train_recipes.slime_recipe",
+    "modal_dojo.train_recipes.miles_recipe",
 )
 
 _BASE_RECIPE = {

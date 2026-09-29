@@ -8,9 +8,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from modal_training_gym.common.metrics import apply_metric_image
-from modal_training_gym.common.wandb import WandbConfig, preflight_wandb
-from modal_training_gym.frameworks.slime.launcher import (
+from modal_dojo.common.metrics import apply_metric_image
+from modal_dojo.common.wandb import WandbConfig, preflight_wandb
+from modal_dojo.frameworks.slime.launcher import (
     _preflight_wandb as _slime_preflight_wandb,
 )
 
@@ -108,8 +108,8 @@ def test_slime_preflight_delegates_to_common(monkeypatch):
 
 
 def test_wandb_config_uses_the_provider_neutral_recipe_field():
-    from modal_training_gym import MetricConfig, Qwen3_4B_Recipe
-    from modal_training_gym.common.launcher_helpers import build_app_tags
+    from modal_dojo import MetricConfig, Qwen3_4B_Recipe
+    from modal_dojo.common.launcher_helpers import build_app_tags
 
     with pytest.raises(TypeError, match="abstract"):
         MetricConfig()
@@ -140,7 +140,7 @@ def test_wandb_config_uses_the_provider_neutral_recipe_field():
 def test_wandb_credentials_use_environment_instead_of_cli(
     monkeypatch, config_key, environment_key
 ):
-    from modal_training_gym.common.metrics import metric_cli_fields
+    from modal_dojo.common.metrics import metric_cli_fields
 
     monkeypatch.setenv("WANDB_API_KEY", environment_key)
     metric = WandbConfig(project="test", key=config_key)

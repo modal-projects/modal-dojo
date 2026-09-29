@@ -3,11 +3,11 @@
 ``custom_rm`` returns the teacher ``/generate`` JSON as ``sample.reward`` until
 post-process. Gym's rollout reporter snapshots samples in that window, so hooks
 must stash ``metadata["shaped_reward"] = float(...)`` and score extraction
-maps that onto gym :class:`~modal_training_gym.common.sample.Sample.score`.
+maps that onto gym :class:`~modal_dojo.common.sample.Sample.score`.
 """
 
-from modal_training_gym.common.sample import Sample
-from modal_training_gym.common.sample_extraction import (
+from modal_dojo.common.sample import Sample
+from modal_dojo.common.sample_extraction import (
     _sample_score,
     _sample_to_dict,
 )

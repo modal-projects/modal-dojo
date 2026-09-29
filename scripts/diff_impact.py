@@ -27,13 +27,9 @@ from scripts.tutorial_index import TutorialEntry, load_tutorial_index
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TUTORIAL_SRC_ROOT = REPO_ROOT / "tutorials"
-MODEL_PACKAGE_ROOT = REPO_ROOT / "modal_training_gym" / "common" / "models"
-SLIME_RECIPE_PACKAGE_ROOT = (
-    REPO_ROOT / "modal_training_gym" / "train_recipes" / "slime_recipe"
-)
-MILES_RECIPE_PACKAGE_ROOT = (
-    REPO_ROOT / "modal_training_gym" / "train_recipes" / "miles_recipe"
-)
+MODEL_PACKAGE_ROOT = REPO_ROOT / "modal_dojo" / "common" / "models"
+SLIME_RECIPE_PACKAGE_ROOT = REPO_ROOT / "modal_dojo" / "train_recipes" / "slime_recipe"
+MILES_RECIPE_PACKAGE_ROOT = REPO_ROOT / "modal_dojo" / "train_recipes" / "miles_recipe"
 
 VALIDATION_BACKEND_ROOT = REPO_ROOT / "scripts" / "validation_backends"
 
@@ -45,9 +41,9 @@ SHARED_VALIDATION_HARNESS_PATHS = frozenset(
         REPO_ROOT / "scripts" / "validate_model_configs.py",
         REPO_ROOT / "scripts" / "diff_impact.py",
         VALIDATION_BACKEND_ROOT / "__init__.py",
-        REPO_ROOT / "modal_training_gym" / "common" / "models" / "validation.py",
-        REPO_ROOT / "modal_training_gym" / "common" / "train.py",
-        REPO_ROOT / "modal_training_gym" / "common" / "train_result.py",
+        REPO_ROOT / "modal_dojo" / "common" / "models" / "validation.py",
+        REPO_ROOT / "modal_dojo" / "common" / "train.py",
+        REPO_ROOT / "modal_dojo" / "common" / "train_result.py",
     }
 )
 
@@ -57,13 +53,13 @@ SHARED_VALIDATION_HARNESS_PATHS = frozenset(
 FRAMEWORK_VALIDATION_HARNESS_PATHS: dict[str, frozenset[Path]] = {
     "slime": frozenset(
         {
-            REPO_ROOT / "modal_training_gym" / "frameworks" / "slime" / "launcher.py",
+            REPO_ROOT / "modal_dojo" / "frameworks" / "slime" / "launcher.py",
             VALIDATION_BACKEND_ROOT / "slime.py",
         }
     ),
     "miles": frozenset(
         {
-            REPO_ROOT / "modal_training_gym" / "frameworks" / "miles" / "launcher.py",
+            REPO_ROOT / "modal_dojo" / "frameworks" / "miles" / "launcher.py",
             VALIDATION_BACKEND_ROOT / "miles.py",
         }
     ),
@@ -114,14 +110,14 @@ def _base_recipe_for(framework, model_config):
     that gate PRs never imports the miles recipes — a broken miles recipe must
     not be able to fail every pull request.
     """
-    from modal_training_gym.common.models.validation import Framework
+    from modal_dojo.common.models.validation import Framework
 
     if framework is Framework.SLIME:
-        from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
+        from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
         return SlimeRecipe.get_base_recipe(model_config)
     if framework is Framework.MILES:
-        from modal_training_gym.train_recipes.miles_recipe import MilesRecipe
+        from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
         return MilesRecipe.get_base_recipe(model_config)
     raise ValueError(f"no base recipe lookup for framework {framework!r}")
@@ -137,7 +133,7 @@ def _model_index() -> tuple[dict[str, frozenset[str]], dict[str, frozenset[str]]
     returns from ``get_base_recipe`` gate that model, so a change to either
     re-validates it.
     """
-    from modal_training_gym.common.models.validation import _ValidationConfig
+    from modal_dojo.common.models.validation import _ValidationConfig
 
     class_to_models: dict[str, set[str]] = defaultdict(set)
     framework_to_models: dict[str, set[str]] = defaultdict(set)
@@ -157,7 +153,7 @@ def _model_index() -> tuple[dict[str, frozenset[str]], dict[str, frozenset[str]]
 def affected_models(diff_text: str) -> tuple[str, ...]:
     """Model names (validate ``--model`` args) impacted by a diff.
 
-    Importing ``modal_training_gym`` is deferred to here so the tutorial-only
+    Importing ``modal_dojo`` is deferred to here so the tutorial-only
     paths through ``analyze_diff`` stay import-free.
     """
     changed_paths = _paths_from_diff(diff_text)

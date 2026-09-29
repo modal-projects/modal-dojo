@@ -18,13 +18,13 @@ import time
 
 from datasets import load_dataset
 
-from modal_training_gym import (
+from modal_dojo import (
     DatasetConfig,
     Endpoint,
     GLM_4_7,
     TrainConfig,
 )
-from modal_training_gym.train_recipes.slime_recipe import GLM_4_7_Recipe
+from modal_dojo.train_recipes.slime_recipe import GLM_4_7_Recipe
 
 # ## Set up
 #

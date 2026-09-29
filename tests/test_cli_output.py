@@ -7,7 +7,7 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from modal_training_gym.cli import options, output
+from modal_dojo.cli import options, output
 
 
 def test_console_adapts_to_terminal_width(monkeypatch):

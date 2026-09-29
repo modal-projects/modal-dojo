@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from modal_training_gym.common.dataset import OnlineRollout
+from modal_dojo.common.dataset import OnlineRollout
 
 
 def test_online_rollout_rows() -> None:

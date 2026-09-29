@@ -1,13 +1,13 @@
 ---
 name: training-gym-overview
 description: >-
-  Explains modal-training-gym repository architecture:
+  Explains modal-dojo repository architecture:
   package layout, TrainConfig, models, datasets, recipes, framework internals,
   cloudpickle caller resolution, tutorial generation, and shared tools. Use
   when modifying or explaining repository internals, not for running or
   debugging a normal training lifecycle.
 when_to_use: >-
-  User edits or asks about modal_training_gym/ code, tutorials, framework
+  User edits or asks about modal_dojo/ code, tutorials, framework
   configs, shared internals, or repository structure.
 ---
 
@@ -21,15 +21,15 @@ validation).
 
 ## What this repo is
 
-`modal-training-gym` is a pip-installable Python package plus a catalog of
+`modal-dojo` is a pip-installable Python package plus a catalog of
 runnable training tutorials on Modal's multi-node GPU cluster product. End
-users `pip install modal-training-gym` once, then import framework-specific
+users `pip install modal-dojo` once, then import framework-specific
 launchers from their own scripts or notebooks.
 
 ## Top-level layout
 
 ```
-modal_training_gym/         <- installable package
+modal_dojo/         <- installable package
 ├── common/                 <- cross-framework pure data + helpers
 │   ├── dataset.py          <- dataset abstraction + built-in sources
 │   ├── models/             <- ModelConfig hierarchy (see below)
@@ -55,7 +55,7 @@ Each entry is both the runnable tutorial and the source for its docs page.
 ### `ModelConfig` / `HFModelConfiguration`
 
 Model identity + optional architecture + optional local path + a
-`download()` method. Found in `modal_training_gym/common/models/`.
+`download()` method. Found in `modal_dojo/common/models/`.
 
 ```python
 class ModelConfig:                       # base; abstract download
@@ -86,7 +86,7 @@ actionable `ValueError` if a user attaches a model with
 
 ### `DatasetConfig`
 
-In `modal_training_gym/common/dataset.py`. Instantiate built-in sources such
+In `modal_dojo/common/dataset.py`. Instantiate built-in sources such
 as `HuggingFaceDataset` directly:
 
 ```python
@@ -136,7 +136,7 @@ run = cfg.train()
 
 Launchers walk the call stack via
 `common.framework.resolve_caller_module()` to find the true user-tutorial
-module (skipping `modal_training_gym.*` frames) and register that module
+module (skipping `modal_dojo.*` frames) and register that module
 for cloudpickle by-value inlining -- this is how a user's inline
 `DatasetConfig` / `ModelConfig` subclasses survive serialization to
 the remote container.
@@ -149,20 +149,20 @@ the remote container.
 
 ## The `tools/` shared directory
 
-Any cross-framework script lives at `modal_training_gym/tools/`. Every
+Any cross-framework script lives at `modal_dojo/tools/`. Every
 launcher mounts this directory at **`/opt/training-gym/tools`** on its
 remote image(s) via `common.framework.mount_tools_dir`, so scripts are at a
 predictable path regardless of which framework's container calls them.
 Framework-agnostic `ModelConfig.download` overrides use this path.
 
-To add a new tool: drop the script in `modal_training_gym/tools/`, commit.
+To add a new tool: drop the script in `modal_dojo/tools/`, commit.
 It's automatically mounted via `add_local_dir(TOOLS_LOCAL_PATH,
 remote_path=TOOLS_REMOTE_PATH, copy=True)` on every framework image.
 
 ## Adding a new model
 
 1. **Create the per-model module** at
-   `modal_training_gym/common/models/<name>.py`:
+   `modal_dojo/common/models/<name>.py`:
 
    ```python
    from .base import HFModelConfiguration, ModelArchitecture
@@ -187,7 +187,7 @@ remote_path=TOOLS_REMOTE_PATH, copy=True)` on every framework image.
 3. **Verify** with a one-liner smoke (or an analogous snippet):
 
    ```python
-   from modal_training_gym.common.models import MyModel
+   from modal_dojo.common.models import MyModel
    m = MyModel()
    assert m.model_name == "org/repo"
    ```
@@ -216,7 +216,7 @@ remote_path=TOOLS_REMOTE_PATH, copy=True)` on every framework image.
    #
    # One-paragraph description of what this trains.
 
-   from modal_training_gym import TrainConfig
+   from modal_dojo import TrainConfig
 
    run = TrainConfig(...).train()
    ```
@@ -244,7 +244,7 @@ inline:
 
 ```python
 from huggingface_hub import snapshot_download
-from modal_training_gym import ModelArchitecture, ModelConfig
+from modal_dojo import ModelArchitecture, ModelConfig
 
 
 class MyTinyModel(ModelConfig):
@@ -268,7 +268,7 @@ existing slime tutorials for full examples.
 Always follow the tiered policy in
 [example-validation](../example-validation/SKILL.md):
 
-- **Tier 0 (local compile)** -- `uv run -m compileall modal_training_gym/`.
+- **Tier 0 (local compile)** -- `uv run -m compileall modal_dojo/`.
 - **Tier 1 (cheap drift checks):** Local instantiation smoke across the
   affected frameworks. No GPU.
 - **Tier 2 (scheduled smoke)** -- one remote `modal run --detach` that
@@ -295,19 +295,19 @@ tutorial only. Don't expand to all tutorials on a single change.
   the internal `_build_app` path) delegate to the launcher, meaning
   `inspect.stack()[1]` inside `build_<f>_app` is not the tutorial.
   Launchers use `resolve_caller_module()` to walk past
-  `modal_training_gym.*` frames. Never use raw `inspect.stack()[1]` here.
+  `modal_dojo.*` frames. Never use raw `inspect.stack()[1]` here.
 - **Secrets for gated models and W&B**. Hugging Face auth is only needed for
   gated or rate-limited Hub access. Pass `WandbConfig` only when you want W&B.
 - **Do not add framework-specific quirks to `TrainConfig`** that only matter
   for one model. Put those in the model's `download` override and
-  make the tool script live in `modal_training_gym/tools/`.
+  make the tool script live in `modal_dojo/tools/`.
 
 ## Common file references
 
-- Adding/modifying a model -> `modal_training_gym/common/models/`.
-- Adding/modifying a framework -> `modal_training_gym/frameworks/<name>/`.
-- Cross-framework scripts -> `modal_training_gym/tools/`.
-- Cross-framework helpers -> `modal_training_gym/common/framework.py`.
+- Adding/modifying a model -> `modal_dojo/common/models/`.
+- Adding/modifying a framework -> `modal_dojo/frameworks/<name>/`.
+- Cross-framework scripts -> `modal_dojo/tools/`.
+- Cross-framework helpers -> `modal_dojo/common/framework.py`.
 - Tutorial sources live in `tutorials/*.py` or `tutorials/<name>/main.py`;
   their docs loader is `docs-next/src/lib/tutorial-docs-loader.ts`.
 - Tests -> `tests/test_*.py`, run via `uv run tests/<file>.py`.

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from modal_training_gym.frameworks.miles import launcher
-from modal_training_gym.frameworks.miles.launcher import build_ray_runtime_env
-from modal_training_gym.train_recipes.miles_recipe import MilesRecipe
+from modal_dojo.frameworks.miles import launcher
+from modal_dojo.frameworks.miles.launcher import build_ray_runtime_env
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
 
 @pytest.fixture

@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from modal_training_gym import HuggingFaceDataset, MultimodalDataset, SlimeRecipe
+from modal_dojo import HuggingFaceDataset, MultimodalDataset, SlimeRecipe
 
 _RECIPE_KW = dict(
     gpu_type="H100",

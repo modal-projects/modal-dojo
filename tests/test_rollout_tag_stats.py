@@ -8,8 +8,8 @@ dashboard can chart them over rollouts without a fixed schema.
 
 import pytest
 
-from modal_training_gym.common.sample import Sample
-from modal_training_gym.common.training_rollout import TrainingRolloutResult
+from modal_dojo.common.sample import Sample
+from modal_dojo.common.training_rollout import TrainingRolloutResult
 
 
 def _single(v):

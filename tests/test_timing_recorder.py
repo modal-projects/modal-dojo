@@ -5,10 +5,10 @@ import time
 from queue import Queue
 from types import ModuleType
 
-from modal_training_gym.common import reporting
-from modal_training_gym.common import timing_recorder
-from modal_training_gym.common.step_timing import RoleTimingRecord
-from modal_training_gym.common.timing_recorder import RoleRecorder
+from modal_dojo.common import reporting
+from modal_dojo.common import timing_recorder
+from modal_dojo.common.step_timing import RoleTimingRecord
+from modal_dojo.common.timing_recorder import RoleRecorder
 
 
 def _configure(monkeypatch):

@@ -6,13 +6,13 @@ from types import ModuleType
 
 import pytest
 
-from modal_training_gym.common.launcher_helpers import (
+from modal_dojo.common.launcher_helpers import (
     mount_caller_source,
     ship_callable,
 )
-from modal_training_gym.common.launcher_helpers import ship_recipe_callables
-from modal_training_gym.train_recipes.miles_recipe import MilesRecipe
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.common.launcher_helpers import ship_recipe_callables
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 _WRAPPED_HOOKS = (

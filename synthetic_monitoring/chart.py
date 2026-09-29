@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from modal_training_gym.common.step_timing import Substep
+from modal_dojo.common.step_timing import Substep
 
 if TYPE_CHECKING:
     from scripts.validate_model_configs import ValidationResult

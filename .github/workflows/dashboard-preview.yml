@@ -6,7 +6,7 @@ on:
     paths:
       - ".github/workflows/dashboard-preview.yml"
       - "dashboards/**"
-      - "modal_training_gym/_dashboard.py"
+      - "modal_dojo/_dashboard.py"
       - "scripts/previews/**"
 
 permissions:

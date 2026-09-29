@@ -44,7 +44,7 @@ For a component that belongs to one run, attach it after launch instead of
 changing the global dashboard setup:
 
 ```python
-from modal_training_gym import DashboardComponent, TrainingRun
+from modal_dojo import DashboardComponent, TrainingRun
 
 run = TrainingRun.from_id("bristled-pine-a7c3e91d4b")
 run.add_dashboard_component(

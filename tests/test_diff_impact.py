@@ -6,11 +6,11 @@ from scripts.tutorial_index import TutorialEntry
 
 def test_model_file_diff_does_not_infer_tutorial_relationships() -> None:
     diff = (
-        "diff --git a/modal_training_gym/common/models/qwen3_5_9b.py "
-        "b/modal_training_gym/common/models/qwen3_5_9b.py\n"
+        "diff --git a/modal_dojo/common/models/qwen3_5_9b.py "
+        "b/modal_dojo/common/models/qwen3_5_9b.py\n"
         "index 1234567..89abcde 100644\n"
-        "--- a/modal_training_gym/common/models/qwen3_5_9b.py\n"
-        "+++ b/modal_training_gym/common/models/qwen3_5_9b.py\n"
+        "--- a/modal_dojo/common/models/qwen3_5_9b.py\n"
+        "+++ b/modal_dojo/common/models/qwen3_5_9b.py\n"
         "@@ -1,3 +1,3 @@\n"
     )
 

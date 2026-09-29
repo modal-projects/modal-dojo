@@ -22,7 +22,7 @@ from pathlib import Path
 
 import modal
 
-from modal_training_gym.common.dashboard import DASHBOARD_PREVIEW_ENV_KEY
+from modal_dojo.common.dashboard import DASHBOARD_PREVIEW_ENV_KEY
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DASHBOARD_APP_PATH = REPO_ROOT / "dashboards" / "app.py"

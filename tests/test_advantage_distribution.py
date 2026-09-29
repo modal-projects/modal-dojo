@@ -15,12 +15,12 @@ rename can't silently break injection.
 
 import math
 
-from modal_training_gym.common.advantage_distribution import (
+from modal_dojo.common.advantage_distribution import (
     distribution_stats,
     merge_shards,
     summarize_steps,
 )
-from modal_training_gym.frameworks.slime import phase_reporting as pr
+from modal_dojo.frameworks.slime import phase_reporting as pr
 
 
 # ── _advantage_samples_payload ───────────────────────────────────────────────
@@ -170,7 +170,7 @@ def test_summarize_steps_one_row_per_rollout():
 def test_patch_anchor_targets_existing_reporter():
     """The injected call must name a function that actually exists, so a rename
     surfaces here instead of as a silent no-op patch in the container."""
-    from modal_training_gym.frameworks.slime.modal_helpers.patches import (
+    from modal_dojo.frameworks.slime.modal_helpers.patches import (
         patch_advantage_distribution as patch,
     )
 
