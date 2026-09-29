@@ -217,25 +217,18 @@ class _ListingVolume:
     ) -> None:
         self.tree = tree
         self.files = files or {}
+        self.iterdir_calls: list[str] = []
 
     def iterdir(self, path: str, *, recursive: bool = False):
         del recursive
         key = path.rstrip("/") or "."
+        self.iterdir_calls.append(key)
         return list(self.tree.get(key, []))
 
     def read_file(self, path: str):
         if path not in self.files:
             raise FileNotFoundError(path)
         return [self.files[path]]
-
-
-def _complete_iter_files(name: str) -> list[_DirEntry]:
-    child_key = f"run-1/{name}"
-    return [
-        _DirEntry(f"{child_key}/common.pt"),
-        _DirEntry(f"{child_key}/shard.distcp"),
-        _DirEntry(f"{child_key}/.metadata"),
-    ]
 
 
 def _run_with_checkpoint_location() -> TrainingRun:
@@ -255,9 +248,7 @@ def _run_with_checkpoint_location() -> TrainingRun:
     return run
 
 
-def test_run_lists_complete_megatron_iter_at_or_before_tracker(
-    monkeypatch, fake_volume
-) -> None:
+def test_run_lists_megatron_iter_at_or_before_tracker(monkeypatch, fake_volume) -> None:
     run = _run_with_checkpoint_location()
     volume = _ListingVolume(
         {
@@ -266,15 +257,6 @@ def test_run_lists_complete_megatron_iter_at_or_before_tracker(
                 _DirEntry("iter_0000002", is_directory=True),
                 _DirEntry("iter_0000003", is_directory=True),
                 _DirEntry("iter_0000004_hf", is_directory=True),
-            ],
-            "run-1/iter_0000001": _complete_iter_files("iter_0000001"),
-            "run-1/iter_0000002": [
-                _DirEntry("run-1/iter_0000002/common.pt"),
-                _DirEntry("run-1/iter_0000002/shard.distcp"),
-            ],
-            "run-1/iter_0000003": _complete_iter_files("iter_0000003"),
-            "run-1/iter_0000004_hf": [
-                _DirEntry("run-1/iter_0000004_hf/config.json"),
             ],
         },
         files={"run-1/latest_checkpointed_iteration.txt": b"1\n"},
@@ -298,7 +280,6 @@ def test_run_hides_checkpoints_without_tracker(monkeypatch, fake_volume) -> None
     volume = _ListingVolume(
         {
             "run-1": [_DirEntry("iter_0000001", is_directory=True)],
-            "run-1/iter_0000001": _complete_iter_files("iter_0000001"),
         }
     )
     monkeypatch.setattr(
@@ -330,7 +311,6 @@ def test_latest_checkpoint_sees_location_written_after_launch(
     volume = _ListingVolume(
         {
             "run-1": [_DirEntry("iter_0000001", is_directory=True)],
-            "run-1/iter_0000001": _complete_iter_files("iter_0000001"),
         },
         files={"run-1/latest_checkpointed_iteration.txt": b"1\n"},
     )
@@ -342,3 +322,27 @@ def test_latest_checkpoint_sees_location_written_after_launch(
 
     assert checkpoint is not None
     assert checkpoint.name == "iter_0000001"
+
+
+def test_list_checkpoints_makes_one_iterdir_regardless_of_n(
+    monkeypatch, fake_volume
+) -> None:
+    run = _run_with_checkpoint_location()
+    volume = _ListingVolume(
+        {
+            "run-1": [
+                _DirEntry(f"iter_{i:07d}", is_directory=True) for i in range(1, 6)
+            ],
+        },
+        files={"run-1/latest_checkpointed_iteration.txt": b"5\n"},
+    )
+    monkeypatch.setattr(
+        checkpoint_mod.Volume, "from_name", lambda *args, **kwargs: volume
+    )
+
+    checkpoints = run.checkpoints()
+
+    assert [checkpoint.name for checkpoint in checkpoints] == [
+        f"iter_{i:07d}" for i in range(1, 6)
+    ]
+    assert volume.iterdir_calls == ["run-1"]
