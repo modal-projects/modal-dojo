@@ -5,6 +5,7 @@ It is used to track the training run and its results.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import math
 import inspect
@@ -14,7 +15,13 @@ from collections.abc import Awaitable, Callable, Sequence
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from modal.exception import NotFoundError
+from modal.exception import (
+    ConnectionError as ModalConnectionError,
+    InternalError,
+    NotFoundError,
+    ResourceExhaustedError,
+    ServiceError,
+)
 from pydantic import (
     BaseModel,
     Field,
@@ -45,6 +52,12 @@ if TYPE_CHECKING:
 
 TRAINING_RUNS_STORE_NAME = MetadataStore.TRAINING_RUNS.value
 CHECKPOINT_LOCATION_METADATA_KEY = "checkpoint_location"
+_TRANSIENT_MODAL_ERRORS = (
+    ModalConnectionError,
+    InternalError,
+    ResourceExhaustedError,
+    ServiceError,
+)
 
 
 class FrameworkStatusUpdate(BaseModel):
@@ -216,7 +229,7 @@ class TrainingRun(BaseModel):
         self.metrics = stored.metrics
         self.error_message = stored.error_message
 
-    def _function_call_outcome(self) -> tuple[bool, BaseException | None]:
+    def _function_call_outcome(self) -> tuple[bool, Exception | None]:
         if self._function_call is None and not self.function_call_id:
             return False, None
         try:
@@ -226,9 +239,9 @@ class TrainingRun(BaseModel):
         try:
             call.get(timeout=0)
             return True, None
-        except TimeoutError:
+        except (TimeoutError, *_TRANSIENT_MODAL_ERRORS):
             return False, None
-        except BaseException as exc:
+        except Exception as exc:
             return True, exc
 
     def checkpoints(self) -> list["Checkpoint"]:
@@ -290,7 +303,8 @@ class TrainingRun(BaseModel):
 
         Does not stop the Modal app.
         """
-        self._reload()
+        with contextlib.suppress(*_TRANSIENT_MODAL_ERRORS):
+            self._reload()
         if self.status is not TrainingRunStatus.RUNNING:
             return True
         finished, exc = self._function_call_outcome()
