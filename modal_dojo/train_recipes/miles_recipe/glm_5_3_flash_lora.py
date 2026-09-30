@@ -59,7 +59,7 @@ def _image_commands() -> list[str]:
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
-    """GLM-5.3-Flash rank-16 bridge LoRA on three nodes of eight B300 GPUs."""
+    """GLM-5.3-Flash rank-16 bridge LoRA on three nodes of eight H200 GPUs."""
 
     model_config_class: ClassVar[type[ModelConfig]] = GLM_5_3_Flash_LoRA
     docker_image: str = (
@@ -72,7 +72,7 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     miles_model_name: str = "glm5.3-flash"
     model_name: str = "glm5_next"
 
-    gpu_type: str = "B300"
+    gpu_type: str = "H200"
     memory: tuple[int, int] = (1024, 2 * 1024 * 1024)
     actor_num_nodes: int = 3
     actor_num_gpus_per_node: int = 8
