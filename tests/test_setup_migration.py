@@ -527,7 +527,7 @@ def test_invalid_confirmation_reprompts(monkeypatch, answer):
 
     calls = []
     monkeypatch.setattr(migration, "migrate", lambda **kwargs: calls.append(kwargs))
-    result = CliRunner().invoke(entrypoint_cli, ["migrate"], input=answer + "\nno\n")
+    result = CliRunner().invoke(entrypoint_cli, ["migrate"], input=answer + "\nn\n")
     assert result.exit_code == 0
     assert not calls
 
