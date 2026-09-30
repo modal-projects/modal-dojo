@@ -968,28 +968,16 @@ button.tg-header__nav-link:focus-visible {
 }
 
 .tg-dashboard-previews {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  gap: 0.75rem;
   margin: 1.5rem 0 2rem;
 }
 
-.tg-dashboard-previews span {
+.tg-dashboard-previews video {
   display: block;
-  aspect-ratio: 1224 / 720;
-  overflow: hidden;
+  width: 100%;
+  height: auto;
   border: 1px solid var(--tg-border);
   border-radius: 0.375rem;
   background: var(--tg-panel);
-}
-
-.tg-dashboard-previews img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform: scale(1.04);
 }
 
 .sl-markdown-content h2 {
@@ -1727,10 +1715,6 @@ dialog {
 
   .tg-header__menu {
     display: block;
-  }
-
-  .tg-dashboard-previews {
-    grid-template-columns: 1fr;
   }
 
   .tg-header site-search.tg-header__search button[data-open-modal] {
