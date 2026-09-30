@@ -90,6 +90,7 @@ from modal_dojo.common.metric_series import (
     RunMetrics,
     metric_series,
     metric_series_store,
+    metric_step_keys,
 )
 from modal_dojo.common.step_timing import (
     RoleTimingRecord,
@@ -1515,7 +1516,8 @@ def fastapi_app():
                 except Exception:
                     stale = True
             series = metric_series(entry.metrics, MAX_POINTS_PER_KEY)
-        return JSONResponse({"series": series, "stale": stale})
+            step_keys = metric_step_keys(entry.metrics)
+        return JSONResponse({"series": series, "step_keys": step_keys, "stale": stale})
 
     # ── Training rollouts ────────────────────────────────────────────────
 

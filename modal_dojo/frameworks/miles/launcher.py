@@ -106,8 +106,10 @@ _PATCH_ROLLOUT_STATUS_B64 = encode_patch(
 )
 _PATCH_ADVANTAGE_DIST_B64 = encode_patch("patch_advantage_distribution", _MILES_PATCHES)
 _PATCH_SUBSTEP_TIMING_B64 = encode_patch("patch_substep_timing", _MILES_PATCHES)
+_PATCH_ZERO_STD_B64 = encode_patch("patch_zero_std_metrics", _MILES_PATCHES)
 
 _REPORTING_PATCH_COMMANDS = (
+    f"echo {_PATCH_ZERO_STD_B64} | base64 -d | python3",
     f"echo {_PATCH_ROLLOUT_STATUS_B64} | base64 -d | python3",
     f"echo {_PATCH_ADVANTAGE_DIST_B64} | base64 -d | python3",
 )

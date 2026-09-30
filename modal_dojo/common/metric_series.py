@@ -30,6 +30,7 @@ class MetricPoint(BaseModel):
     step: int = Field(ge=0, le=100_000_000)
     metrics: dict[str, float] = Field(default_factory=dict)
     time: float | None = None
+    step_key: str | None = None
 
 
 class MetricPointsBatch(BaseModel):
@@ -56,6 +57,8 @@ class RunMetrics:
         self.table: StepTable = {}
         self.written: dict[int, dict[str, float]] = {}
         self.times: dict[int, float] = {}
+        self.metric_times: dict[int, dict[str, float | None]] = {}
+        self.step_keys: dict[int, dict[str, str | None]] = {}
 
     def _stamp(self, step: int, at: float) -> None:
         self.times[step] = max(at, self.times.get(step, at))
@@ -70,6 +73,12 @@ class RunMetrics:
                 self.written.setdefault(point.step, {}).update(
                     dict.fromkeys(point.metrics, now)
                 )
+                self.metric_times.setdefault(point.step, {}).update(
+                    dict.fromkeys(point.metrics, point.time)
+                )
+                self.step_keys.setdefault(point.step, {}).update(
+                    dict.fromkeys(point.metrics, point.step_key)
+                )
                 if point.time is not None:
                     self._stamp(point.step, point.time)
                 touched.add(chunk_key(point.step))
@@ -81,6 +90,8 @@ class RunMetrics:
             "steps": {str(s): self.table[s] for s in steps},
             "written": {str(s): self.written.get(s, {}) for s in steps},
             "times": {str(s): self.times[s] for s in steps if s in self.times},
+            "metric_times": {str(s): self.metric_times.get(s, {}) for s in steps},
+            "step_keys": {str(s): self.step_keys.get(s, {}) for s in steps},
         }
 
     def load_chunk(self, payload: Mapping[str, Any]) -> None:
@@ -93,6 +104,8 @@ class RunMetrics:
         written = written if isinstance(written, Mapping) else {}
         times = payload.get("times")
         times = times if isinstance(times, Mapping) else {}
+        metric_times = payload.get("metric_times", {})
+        step_keys = payload.get("step_keys", {})
         for raw_step, metrics in steps.items():
             if not (
                 isinstance(metrics, Mapping) and metrics and str(raw_step).isdigit()
@@ -111,6 +124,14 @@ class RunMetrics:
                 if key not in mine or at > mine_at.get(key, -1.0):
                     mine[key] = value
                     mine_at[key] = at
+                    # Legacy chunks have only a row timestamp. Read them as
+                    # written; worker identity/axis cannot be recovered safely.
+                    self.metric_times.setdefault(step, {})[key] = metric_times.get(
+                        raw_step, {}
+                    ).get(key, times.get(raw_step))
+                    self.step_keys.setdefault(step, {})[key] = step_keys.get(
+                        raw_step, {}
+                    ).get(key)
 
 
 def downsample(rows: list[list[Any]], max_points: int) -> list[list[Any]]:
@@ -134,5 +155,23 @@ def metric_series(
     by_key: dict[str, list[list[float | None]]] = {}
     for step in sorted(run.table):
         for key, value in run.table[step].items():
-            by_key.setdefault(key, []).append([step, value, run.times.get(step)])
+            by_key.setdefault(key, []).append(
+                [
+                    step,
+                    value,
+                    run.metric_times.get(step, {}).get(key, run.times.get(step)),
+                ]
+            )
     return {key: downsample(rows, max_points) for key, rows in sorted(by_key.items())}
+
+
+def metric_step_keys(run: RunMetrics) -> dict[str, str | None]:
+    """Axis labels for each series; no inferred training axes for legacy data."""
+    axes: dict[str, set[str | None]] = {}
+    for step, metrics in run.table.items():
+        for key in metrics:
+            axes.setdefault(key, set()).add(run.step_keys.get(step, {}).get(key))
+    return {
+        key: next(iter(values)) if len(values) == 1 else None
+        for key, values in axes.items()
+    }

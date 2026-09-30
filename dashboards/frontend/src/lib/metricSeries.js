@@ -3,6 +3,11 @@
 // Keys without a `/` prefix land in the same panel group W&B uses for them.
 export const UNGROUPED = "Charts";
 
+export function metricAxisLabel(stepKey) {
+  return ({ "train/step": "Training step", "rollout/step": "Rollout step", "eval/step": "Evaluation step" })[stepKey]
+    ?? stepKey ?? "Logging step";
+}
+
 // `[{ name, keys }]`, filtered by a case-insensitive substring search,
 // ungrouped keys first, then groups and keys alphabetically.
 export function groupMetricKeys(keys, search = "") {

@@ -14,7 +14,7 @@ from typing import Any, ClassVar, Self
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from modal_dojo.common.errors import DojoConfigError
-from modal_dojo.common.metric_mirror import mirror_log
+from modal_dojo.common.metric_mirror import mirror_define_metric, mirror_log
 from modal_dojo.common.metrics import MetricConfig
 
 
@@ -461,7 +461,7 @@ def install_wandb_shim() -> None:
     shim.finish = finish
     shim.save = save
     shim.login = lambda **kwargs: True
-    shim.define_metric = lambda *args, **kwargs: None
+    shim.define_metric = mirror_define_metric
     shim.__getattr__ = lambda name: getattr(trackio, name)
 
     util: Any = types.ModuleType("wandb.util")
