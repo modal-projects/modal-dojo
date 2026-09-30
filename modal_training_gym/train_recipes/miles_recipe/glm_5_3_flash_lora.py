@@ -63,7 +63,8 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     """Experimental rank-16 bridge LoRA on three nodes of eight B300 GPUs.
 
     Ports upstream's 24-H200 topology and DAPO settings. The pinned companion
-    PRs are required; full-model validation on Modal is pending.
+    PRs are required. Two GSM8K steps passed on 24 H200s; B300 validation
+    remains pending.
     """
 
     model_config_class: ClassVar[type[ModelConfig]] = GLM_5_3_Flash_LoRA
