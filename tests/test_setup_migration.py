@@ -268,8 +268,8 @@ def test_cli_migrate_flags(monkeypatch):
         (["--proxy-auth"], ProxyAuthMode.REQUIRE),
         (["--no-proxy-auth"], ProxyAuthMode.DISABLE),
     ]:
-        result = CliRunner().invoke(entrypoint_cli, ["migrate", *flag], input="yes\n")
-        assert result.exit_code == 0, result.exception
+        result = CliRunner().invoke(entrypoint_cli, ["migrate", *flag], input="y\n")
+        assert result.exit_code == 0, result.output
         assert calls[-1] == {"proxy_auth": mode, "force": False}
     assert (
         CliRunner()
