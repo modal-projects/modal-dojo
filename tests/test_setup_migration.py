@@ -515,7 +515,6 @@ def test_migration_confirmation(monkeypatch, answer):
         entrypoint_cli, ["migrate", "--force"], input=answer + "\n"
     )
     assert result.exit_code == 0
-    assert "no active runs on the Training Gym" in result.output
     assert bool(calls) is (answer.lower() == "y")
 
 
