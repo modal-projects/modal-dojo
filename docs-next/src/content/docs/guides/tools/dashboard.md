@@ -89,7 +89,7 @@ You'll see:
 
 ## Logs
 
-The Logs tab streams every worker's logs — live while the run is going, stored once it finishes:
+The Logs tab streams every worker's logs live while the run is going, and stores them once the run finishes:
 
 ![Logs tab with annotated components](https://modal-cdn.com/cdnbot/dashboard-run-logse6vmv22__f0e67d65.webp)
 
