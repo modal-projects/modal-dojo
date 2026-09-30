@@ -44,11 +44,8 @@ To migrate your configuration and deploy a new `dojo-dashboard` with an updated 
 modal-dojo migrate
 ```
 
-The live check reads the training-run summary directly without iterating the volume; evaluations and evaluation results are ignored.
-
 The command will stop old dashboards, move your config file, rename any volumes, and redeploy Modal Dojo apps using their new names.
 
 ## Metrics
 
 If you're using Weights & Biases or Trackio, the default project name is now `modal-dojo`.
-If the training-run summary is missing or malformed, migration stops. Restore or rebuild the summary before retrying, or manually verify that no training runs are active and run `modal-dojo migrate --force`. The flag skips only the live-run check; all other migration checks remain enabled. Keep the summary current and avoid concurrent launches during migration.
