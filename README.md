@@ -1,8 +1,6 @@
 # Modal Dojo
 
-Modal Dojo is an open-source Python SDK for RL post-training on [Modal](https://modal.com).
-
-The library takes care of infrastructure concerns such as cluster topology, Ray/NCCL bring-up, volume mounts, checkpointing, and serving for eval and rollouts, so you (or your agent!) can focus on training models.
+Modal Dojo is an open-source library to get started with production-grade LLM training on [Modal](https://modal.com).
 
 To get started, you can go through the [Quickstart](#quickstart) section below, or paste the prompt below into your favorite agent:
 
@@ -41,12 +39,10 @@ modal-dojo setup
 ```
 
 <div class="tg-dashboard-previews">
-  <span>
-    <img src="./assets/homepage.gif" alt="Training runs list in the Modal Dojo dashboard" width="100%" />
-  </span>
-  <span>
-    <img src="./assets/longrun.gif" alt="Long-running training run details in the Modal Dojo dashboard" width="100%" />
-  </span>
+  <video autoplay muted loop playsinline width="100%">
+    <source src="https://modal-cdn.com/cdnbot/dashboard-4k_8aec4747.webm" type="video/webm">
+    <a href="https://modal-cdn.com/cdnbot/dashboard-4k_8aec4747.webm">Watch the Modal Dojo dashboard walkthrough.</a>
+  </video>
 </div>
 
 And empower your agents with the Modal Dojo's skill bundle:

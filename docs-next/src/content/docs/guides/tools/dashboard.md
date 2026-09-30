@@ -30,7 +30,7 @@ modal-dojo set-password
 
 The landing page lists every training run in your workspace:
 
-![Training runs list with annotated components](/observability_dashboard_1_annotated.png)
+![Training runs list with annotated components](https://modal-cdn.com/cdnbot/dashboard-runskimjjce8_c68fd1d6.webp)
 
 You can easily see:
 
@@ -41,7 +41,7 @@ You can easily see:
 
 Click any run to see a detailed view:
 
-![Run summary view with annotated components](/observability_dashboard_2_annotated.png)
+![Run summary tab with annotated components](https://modal-cdn.com/cdnbot/dashboard-run-summaryag16g12w_0308d564.webp)
 
 Some highlights:
 
@@ -68,17 +68,33 @@ Some tips:
 
 Custom phases emitted by your code (e.g., a custom reward function) appear as their own markers for easy debugging and tracking.
 
+The Metrics tab charts every scalar the run reports, grouped by namespace:
+
+![Metrics tab with annotated components](https://modal-cdn.com/cdnbot/dashboard-run-metricsv55f7plh_043c67b0.webp)
+
+1. Metric namespaces: `perf`, `rollout`, and `train`.
+2. One chart per reported metric.
+
 ## Per rollout
 
 You can even inspect each rollout to quickly debug poor performance:
 
-![Rollouts tab with annotated components](/observability_dashboard_3_annotated.png)
+![Rollouts tab with annotated components](https://modal-cdn.com/cdnbot/dashboard-run-rolloutsrnarx6dv_7b167674.webp)
 
 You'll see:
 
 1. Same timeline but for each step.
 2. Reward distribution across all rollouts. A healthy run is represented as a bimodal distribution for the majority of the run, while an unhealthy one will gravitate towards one end or the other before training has completed. Pictured above is one indicative of the end of a run, as most rollouts have already saturated the reward.
 3. Per-rollout trace that shows the full prompt, the system message, the model's thinking, every conversation turn, and the reward.
+
+## Logs
+
+The Logs tab streams every worker's logs — live while the run is going, stored once it finishes:
+
+![Logs tab with annotated components](https://modal-cdn.com/cdnbot/dashboard-run-logse6vmv22__f0e67d65.webp)
+
+1. Substring filter and time-range picker, plus a stored-logs toggle.
+2. Interleaved log lines from all workers in the run.
 
 ## Housekeeping
 
