@@ -41,10 +41,6 @@ def test_debug_disabled_does_not_touch_actor(monkeypatch):
 def test_enabled_actor_preserves_method_binding(tmp_path, monkeypatch):
     monkeypatch.setenv(debug.ENABLE_ENV, "1")
     monkeypatch.setenv("GLM53_DEBUG_DIR", str(tmp_path))
-    monkeypatch.setattr(
-        debug.faulthandler, "dump_traceback_later", lambda *a, **k: None
-    )
-    monkeypatch.setattr(debug.faulthandler, "cancel_dump_traceback_later", lambda: None)
     state = debug.Diagnostics(8, start_observer=False)
     monkeypatch.setattr(debug, "install", lambda rank: state)
 
@@ -97,10 +93,6 @@ def test_kernel_hook_skips_loaded_modules(monkeypatch):
 
 def test_nested_spans_preserve_results_and_exceptions(tmp_path, monkeypatch):
     monkeypatch.setenv("GLM53_DEBUG_DIR", str(tmp_path))
-    monkeypatch.setattr(
-        debug.faulthandler, "dump_traceback_later", lambda *a, **k: None
-    )
-    monkeypatch.setattr(debug.faulthandler, "cancel_dump_traceback_later", lambda: None)
     state = debug.Diagnostics(8, start_observer=False)
     outer = state.enter("train_actor")
     assert debug._wrap(lambda x: x + 1, state, "moe_sort_chunks")(2) == 3
@@ -123,7 +115,11 @@ def test_observer_reports_simulated_stall(tmp_path):
         executable.chmod(0o755)
     source = """
 import time
+import faulthandler
 from modal_training_gym.frameworks.miles.glm_5_3_flash_lora_debug import Diagnostics
+def reject_in_process_dump(*args, **kwargs):
+    raise AssertionError("Trainer must not schedule in-process traceback dumps")
+faulthandler.dump_traceback_later = reject_in_process_dump
 d = Diagnostics(8)
 t = d.enter("triton_load:simulated_block")
 try:
@@ -149,4 +145,4 @@ finally:
     assert "observer_stall" in result.stdout
     assert "triton_load:simulated_block" in result.stdout
     assert result.stdout.count("DIAGNOSTIC_STUB_OK") == 2
-    assert "Timeout" in result.stderr
+    assert "Timeout" not in result.stderr

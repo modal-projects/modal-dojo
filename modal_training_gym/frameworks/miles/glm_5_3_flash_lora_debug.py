@@ -7,7 +7,6 @@ collectives are inserted into training. This module imports only the stdlib.
 
 from __future__ import annotations
 
-import faulthandler
 import functools
 import importlib.metadata
 import json
@@ -123,8 +122,9 @@ class Diagnostics:
             self.publish()
             if emit:
                 self.emit("begin", label=label, count=token["count"])
-            if len(self.stack) == 1:
-                faulthandler.dump_traceback_later(self.interval, repeat=True)
+            # Keep stack collection outside the trainer. In the pinned runtime,
+            # an all-thread faulthandler timer coincided with rank 0 exiting
+            # halfway through an interpreter-trampoline frame dump.
             return token
 
     def leave(self, token, ok=True):
@@ -138,8 +138,6 @@ class Diagnostics:
                 )
             self.stack.remove(token)
             self.publish()
-            if not self.stack:
-                faulthandler.cancel_dump_traceback_later()
 
 
 def _wrap(function, diagnostics, label):

@@ -94,10 +94,13 @@ the distributed training path before another full validation attempt.
 
 Set `recipe.environment["TRAINING_GYM_GLM53_LORA_DEBUG"] = "1"` to enable
 recipe-scoped diagnostics. Each trainer logs phase boundaries and Triton
-module-load boundaries, with bounded MoE-sort progress logging. During an
-active phase, Python stacks are dumped every 120 seconds; a separate CPU
+module-load boundaries, with bounded MoE-sort progress logging. A separate CPU
 observer captures native stacks with `py-spy` and GPU counters if diagnostic
-progress stops for that interval. `GLM53_DEBUG_STALL_SECONDS` adjusts it.
+progress stops for 120 seconds. `GLM53_DEBUG_STALL_SECONDS` adjusts it.
+There is no in-process traceback timer: the first instrumented H200 run lost
+rank 0 during such a dump, before rollout, so that timer was removed. All three
+serving engines had completed loading and graph capture; training is still
+unvalidated.
 An observer report indicates a long operation, not proof of deadlock. The
 observer does not synchronize CUDA, execute collectives, or dump tensor
 contents, local variables, or environment credentials. Diagnostics are off
