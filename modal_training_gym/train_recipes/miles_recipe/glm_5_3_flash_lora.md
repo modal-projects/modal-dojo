@@ -105,6 +105,10 @@ An observer report indicates a long operation, not proof of deadlock. The
 observer does not synchronize CUDA, execute collectives, or dump tensor
 contents, local variables, or environment credentials. Diagnostics are off
 by default and are installed only in this LoRA recipe's image.
+Set `GLM53_DEBUG_ARCHIVE_DIR=/checkpoints/glm53-debug` to also retain phase
+markers, original Python exceptions, and observer captures in per-run,
+per-rank JSONL files. Kernel and MoE progress stays in console logs to avoid
+frequent writes to the volume. Archive failures preserve the training exception.
 
 The H200 retry after removing the timer completed initialization and initial
 adapter synchronization, then generated 120 GSM8K samples with mean reward

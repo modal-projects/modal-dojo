@@ -17,9 +17,28 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 
 ENABLE_ENV = "TRAINING_GYM_GLM53_LORA_DEBUG"
 _state = None
+
+
+def archive(rank, pid, event, **fields):
+    """Best-effort low-volume evidence, independent of console rate limits."""
+    root = os.environ.get("GLM53_DEBUG_ARCHIVE_DIR")
+    if not root:
+        return
+    try:
+        folder = Path(root) / os.environ.get(
+            "TRAINING_GYM_TRAINING_RUN_ID", "preflight"
+        )
+        folder.mkdir(parents=True, exist_ok=True)
+        with (folder / f"rank-{rank}-pid-{pid}.jsonl").open("a") as output:
+            output.write(
+                json.dumps({"time": time.time(), "event": event, **fields}) + "\n"
+            )
+    except OSError as error:
+        print(f"GLM53_DEBUG archive_error: {error}", file=sys.stderr, flush=True)
 
 
 class Diagnostics:
@@ -74,6 +93,10 @@ class Diagnostics:
         self.emit("installed", versions=versions, state_file=str(self.path))
 
     def emit(self, event, **fields):
+        if event == "exception" or not fields.get("label", "").startswith(
+            ("triton_load:", "moe_sort_chunks")
+        ):
+            archive(self.rank, self.pid, event, **fields)
         print(
             "GLM53_DEBUG "
             + json.dumps(
@@ -85,6 +108,7 @@ class Diagnostics:
                     **fields,
                 }
             ),
+            file=sys.stderr if event == "exception" else sys.stdout,
             flush=True,
         )
 
@@ -149,6 +173,9 @@ def _wrap(function, diagnostics, label):
             result = function(*args, **kwargs)
             ok = True
             return result
+        except BaseException:
+            diagnostics.emit("exception", label=label, traceback=traceback.format_exc())
+            raise
         finally:
             diagnostics.leave(token, ok)
 
@@ -211,6 +238,30 @@ def instrument_actor(cls):
     cls._glm53_debug_wrapped = True
 
 
+def capture_commands(pid, rank):
+    commands = [
+        ["py-spy", "dump", "--native", "--pid", str(pid)],
+        ["nvidia-smi", "--query-gpu=index,utilization.gpu,memory.used", "--format=csv"],
+    ]
+    captures = []
+    for command in commands:
+        capture = {"pid": pid, "rank": rank, "command": command}
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=20)
+            capture.update(
+                returncode=result.returncode,
+                stdout=result.stdout[-24000:],
+                stderr=result.stderr[-2000:],
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            capture["error"] = str(error)
+        if "--native" in command and capture.get("returncode") != 0:
+            commands.append(["py-spy", "dump", "--pid", str(pid)])
+        captures.append(capture)
+        print("GLM53_DEBUG observer_command " + json.dumps(capture), flush=True)
+    return captures
+
+
 def watch(pid: int, path: Path, interval: int):
     last_dump = 0.0
     while True:
@@ -231,36 +282,10 @@ def watch(pid: int, path: Path, interval: int):
         ):
             last_dump = now
             print("GLM53_DEBUG observer_stall " + json.dumps(state), flush=True)
-            captures = []
             # No locals or environment dump: only stacks and GPU counters.
-            for command in (
-                ["py-spy", "dump", "--native", "--pid", str(pid)],
-                [
-                    "nvidia-smi",
-                    "--query-gpu=index,utilization.gpu,memory.used",
-                    "--format=csv",
-                ],
-            ):
-                try:
-                    result = subprocess.run(
-                        command, capture_output=True, text=True, timeout=20
-                    )
-                    capture = {
-                        "pid": pid,
-                        "rank": state["rank"],
-                        "command": command,
-                        "returncode": result.returncode,
-                        "stdout": result.stdout[-24000:],
-                        "stderr": result.stderr[-2000:],
-                    }
-                    captures.append(capture)
-                    print(
-                        "GLM53_DEBUG observer_command " + json.dumps(capture),
-                        flush=True,
-                    )
-                except (OSError, subprocess.TimeoutExpired) as error:
-                    print(f"GLM53_DEBUG observer_error pid={pid}: {error}", flush=True)
+            captures = capture_commands(pid, state["rank"])
             path.with_suffix(".capture.json").write_text(json.dumps(captures))
+            archive(state["rank"], pid, "stall_capture", state=state, captures=captures)
         time.sleep(5)
 
 

@@ -91,8 +91,10 @@ def test_kernel_hook_skips_loaded_modules(monkeypatch):
     assert state.leave.call_count == 1
 
 
-def test_nested_spans_preserve_results_and_exceptions(tmp_path, monkeypatch):
+def test_nested_spans_preserve_results_and_exceptions(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("GLM53_DEBUG_DIR", str(tmp_path))
+    monkeypatch.setenv("GLM53_DEBUG_ARCHIVE_DIR", str(tmp_path / "archive"))
+    monkeypatch.setenv("TRAINING_GYM_TRAINING_RUN_ID", "test-run")
     state = debug.Diagnostics(8, start_observer=False)
     outer = state.enter("train_actor")
     assert debug._wrap(lambda x: x + 1, state, "moe_sort_chunks")(2) == 3
@@ -105,6 +107,50 @@ def test_nested_spans_preserve_results_and_exceptions(tmp_path, monkeypatch):
     assert json.loads(state.path.read_text())["stack"] == [outer]
     state.leave(outer)
     assert json.loads(state.path.read_text())["stack"] == []
+    assert "original failure" in capsys.readouterr().err
+    records = [
+        json.loads(line)
+        for line in next((tmp_path / "archive/test-run").glob("*.jsonl"))
+        .read_text()
+        .splitlines()
+    ]
+    failure = next(record for record in records if record["event"] == "exception")
+    assert "RuntimeError: original failure" in failure["traceback"]
+    assert not any(record.get("label") == "moe_sort_chunks" for record in records)
+
+
+def test_archive_failure_preserves_original_exception(tmp_path, monkeypatch):
+    blocked = tmp_path / "not-a-directory"
+    blocked.write_text("occupied")
+    monkeypatch.setenv("GLM53_DEBUG_ARCHIVE_DIR", str(blocked))
+    monkeypatch.setenv("GLM53_DEBUG_DIR", str(tmp_path))
+    state = debug.Diagnostics(0, start_observer=False)
+    error = RuntimeError("training failure")
+
+    def fail():
+        raise error
+
+    with pytest.raises(RuntimeError) as caught:
+        debug._wrap(fail, state, "train_actor")()
+    assert caught.value is error
+
+
+@pytest.mark.parametrize("timeout", [False, True])
+def test_native_capture_failure_falls_back(monkeypatch, timeout):
+    def run(command, **kwargs):
+        if "--native" in command:
+            if timeout:
+                raise subprocess.TimeoutExpired(command, 20)
+            return SimpleNamespace(returncode=1, stdout="", stderr="frame merge failed")
+        return SimpleNamespace(returncode=0, stdout="captured", stderr="")
+
+    monkeypatch.setattr(debug.subprocess, "run", run)
+    captures = debug.capture_commands(123, 8)
+    assert len(captures) == 3
+    assert captures[1]["command"][0] == "nvidia-smi"
+    assert captures[2]["command"] == ["py-spy", "dump", "--pid", "123"]
+    assert captures[2]["stdout"] == "captured"
+    assert captures[0].get("error") if timeout else captures[0]["returncode"] == 1
 
 
 def test_observer_reports_simulated_stall(tmp_path):
