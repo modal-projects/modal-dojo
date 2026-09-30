@@ -224,9 +224,6 @@ def generate_starlight(output_dir: Path) -> None:
         )
         output_path = output_dir / destination
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        # The README H1 supplies the page title; overriding the head title tag
-        # keeps the homepage tab title as just "Modal Dojo" instead of
-        # "Modal Dojo | Modal Dojo".
         output_path.write_text(
             "---\n"
             "order: 0\n"
