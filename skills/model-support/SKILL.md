@@ -6,7 +6,7 @@ description: Use when adding, debugging, validating, or productionizing support 
 
 ## Adding a new model config
 
-When asked to add a new model example to SlimeRecipe or MilesRecipe, you should output artifacts in a temporary directory in `.gym/new_models/[model_name]/` folder. Once you are finished, add the finished config to the recipes folder.
+When asked to add a new model example to SlimeRecipe or MilesRecipe, you should output artifacts in a temporary directory in `.modal-dojo/new_models/[model_name]/` folder. Once you are finished, add the finished config to the recipes folder.
 
 Read the reference for the framework whose recipe you are adding — each carries its own four phases and common gotchas:
 

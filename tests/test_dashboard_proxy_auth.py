@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from urllib.error import HTTPError, URLError
 
 import pytest
+
+from modal_dojo.cli.setup import ProxyAuthMode
 from fastapi.testclient import TestClient
 
 from modal_dojo import _dashboard
@@ -51,7 +53,7 @@ def test_dashboard_proxy_auth_mode_is_persisted(config_path, monkeypatch):
     config.save_dashboard_url("https://dashboard.test", proxy_auth=True)
 
     assert config.get_dashboard_url() == "https://dashboard.test"
-    assert config.get_dashboard_proxy_auth() is True
+    assert config.get_dashboard_proxy_auth("https://dashboard.test") is True
     assert "proxy_auth = true" in config_path.read_text()
 
 
@@ -62,7 +64,7 @@ def test_live_dashboard_proxy_auth_mode_is_authoritative(
     config.save_dashboard_url("https://dashboard.test", proxy_auth=not expected)
     monkeypatch.setattr(config, "urlopen", lambda *_args, **_kwargs: _Response(body))
 
-    assert config.get_dashboard_proxy_auth() is expected
+    assert config.get_dashboard_proxy_auth("https://dashboard.test") is expected
 
 
 def test_dashboard_proxy_auth_treats_403_as_enabled(config_path, monkeypatch):
@@ -73,7 +75,7 @@ def test_dashboard_proxy_auth_treats_403_as_enabled(config_path, monkeypatch):
 
     monkeypatch.setattr(config, "urlopen", forbidden)
 
-    assert config.get_dashboard_proxy_auth() is True
+    assert config.get_dashboard_proxy_auth("https://dashboard.test") is True
 
 
 def test_proxy_auth_status_does_not_require_basic_auth(monkeypatch, tmp_path):
@@ -135,7 +137,7 @@ def test_auto_deploy_reuses_proxy_auth_mode(monkeypatch, last_proxy_auth, expect
     monkeypatch.setattr(cli_setup_module, "setup", setup)
 
     assert cli_setup_module.ensure_dashboard_deployed() == "https://dashboard.test"
-    assert calls == [{"interactive": False, "require_proxy_auth": expected}]
+    assert calls == [{"interactive": False, "proxy_auth": ProxyAuthMode.UNSPECIFIED}]
 
 
 class _ModalFn:
@@ -227,7 +229,7 @@ def test_auto_deploy_redeploys_when_incoming_version_is_newer(config_path, monke
     calls = _record_setup(monkeypatch)
 
     assert cli_setup_module.ensure_dashboard_deployed() == "https://dashboard.test"
-    assert calls == [{"interactive": False, "require_proxy_auth": False}]
+    assert calls == [{"interactive": False, "proxy_auth": ProxyAuthMode.UNSPECIFIED}]
 
 
 def _raise_version_error(error):

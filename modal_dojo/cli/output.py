@@ -90,3 +90,9 @@ def print_warning(message: str) -> None:
     Console(stderr=True, highlight=False).print(
         f"[bold yellow]Warning:[/bold yellow] {escape(message)}"
     )
+
+
+def print_note(message: str) -> None:
+    Console(stderr=True, highlight=False).print(
+        f"[bold cyan]Note:[/bold cyan] {escape(message)}"
+    )

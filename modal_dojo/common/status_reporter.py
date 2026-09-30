@@ -8,9 +8,9 @@ the dashboard's ``/api/framework-status`` endpoint.
 The dashboard URL is resolved at enqueue time from:
 1. Explicit ``url`` argument
 2. ``MODAL_DOJO_FRAMEWORK_STATUS_URL`` env var (propagated into remote
-   containers/workers; the source of truth is ``~/.training-gym.toml`` on the
+   containers/workers; the source of truth is ``~/.modal-dojo.toml`` on the
    user's machine, which can't be read remotely)
-3. ``~/.training-gym.toml`` via :mod:`modal_dojo.common.config`
+3. ``~/.modal-dojo.toml`` via :mod:`modal_dojo.common.config`
    (local processes only)
 
 If none of those resolve, ``enqueue`` is a no-op — training continues, just

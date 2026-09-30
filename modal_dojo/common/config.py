@@ -1,4 +1,4 @@
-"""User-local config persisted at ``~/.training-gym.toml``.
+"""User-local config persisted at ``~/.modal-dojo.toml``.
 
 Populated by ``modal-dojo setup``; read by the slime launcher (and any other
 caller) to look up where to POST phase reports and other client-side defaults.
@@ -7,6 +7,7 @@ caller) to look up where to POST phase reports and other client-side defaults.
 from __future__ import annotations
 
 import os
+import tempfile
 import tomllib
 from json import JSONDecodeError, loads
 from pathlib import Path
@@ -14,13 +15,10 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from modal_dojo.common.dashboard import (
-    DashboardLookupUnknown,
-    deployed_dashboard_url,
-)
 
-
-CONFIG_PATH = Path.home() / ".training-gym.toml"
+CONFIG_PATH = Path.home() / ".modal-dojo.toml"
+LEGACY_CONFIG_PATH = Path.home() / ".training-gym.toml"
+_legacy_warning_printed = False
 MODAL_CONFIG_PATH = Path(
     os.environ.get("MODAL_CONFIG_PATH") or os.path.expanduser("~/.modal.toml")
 )
@@ -65,15 +63,63 @@ def get_dashboard_trajectory_viewer() -> str | None:
     return None
 
 
-def load_config() -> dict[str, Any]:
-    """Return the parsed ``~/.training-gym.toml``, or ``{}`` if missing."""
-    if not CONFIG_PATH.is_file():
-        return {}
+def _read_config(path: Path, *, strict: bool = False) -> dict[str, Any]:
     try:
-        with CONFIG_PATH.open("rb") as f:
+        with path.open("rb") as f:
             return tomllib.load(f)
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        if strict:
+            raise ValueError(
+                f"Cannot read configuration {path}: {exc}. Repair it and rerun modal-dojo setup."
+            ) from exc
         return {}
+
+
+def load_config() -> dict[str, Any]:
+    """Read the new config, warning once when using the legacy file."""
+    global _legacy_warning_printed
+    if CONFIG_PATH.exists():
+        return _read_config(CONFIG_PATH)
+    if LEGACY_CONFIG_PATH.exists():
+        if not _legacy_warning_printed:
+            from modal_dojo.cli.output import print_warning
+
+            print_warning(
+                f"Using legacy configuration {LEGACY_CONFIG_PATH}. Run `modal-dojo setup` to migrate your setup."
+            )
+            _legacy_warning_printed = True
+        return _read_config(LEGACY_CONFIG_PATH)
+    return {}
+
+
+def _write_config(contents: bytes) -> None:
+    """Atomically replace config with an owner-only file."""
+    fd, name = tempfile.mkstemp(prefix=f".{CONFIG_PATH.name}.", dir=CONFIG_PATH.parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(contents)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(name, CONFIG_PATH)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def migrate_config() -> bool:
+    """Validate configuration and copy legacy bytes once, leaving the original."""
+    if CONFIG_PATH.exists():
+        _read_config(CONFIG_PATH, strict=True)
+        return False
+    if not LEGACY_CONFIG_PATH.exists():
+        return False
+    _read_config(LEGACY_CONFIG_PATH, strict=True)
+    _write_config(LEGACY_CONFIG_PATH.read_bytes())
+    from modal_dojo.cli.output import print_note
+
+    print_note(
+        f"Migrated configuration from {LEGACY_CONFIG_PATH} to {CONFIG_PATH}. Future writes use {CONFIG_PATH}; the original file was retained."
+    )
+    return True
 
 
 def save_dashboard_url(url: str, *, proxy_auth: bool | None = None) -> None:
@@ -86,7 +132,7 @@ def save_dashboard_url(url: str, *, proxy_auth: bool | None = None) -> None:
     if proxy_auth is not None:
         dashboard["proxy_auth"] = proxy_auth
     config["dashboard"] = dashboard
-    CONFIG_PATH.write_text(_render(config))
+    _write_config(_render(config).encode())
 
 
 def save_dashboard_trajectory_viewer(path: str | None) -> None:
@@ -103,7 +149,7 @@ def save_dashboard_trajectory_viewer(path: str | None) -> None:
         config["dashboard"] = dashboard
     else:
         config.pop("dashboard", None)
-    CONFIG_PATH.write_text(_render(config))
+    _write_config(_render(config).encode())
 
 
 class DashboardVersionUnknown(Exception):
@@ -144,8 +190,11 @@ def get_dashboard_url() -> str | None:
     return None
 
 
-def get_dashboard_proxy_auth() -> bool | None:
-    """Return the deployed dashboard's proxy-auth mode, if known.
+def get_dashboard_proxy_auth(url: str | None) -> bool | None:
+    """Return proxy-auth mode for the explicitly supplied URL, if known.
+
+    ``None`` skips the live probe and uses only the persisted mode.
+    This function never discovers a dashboard URL.
 
     The live endpoint is authoritative. Modal itself returns 403 before a
     proxy-authenticated dashboard request reaches FastAPI, so that status also
@@ -160,10 +209,6 @@ def get_dashboard_proxy_auth() -> bool | None:
     if not isinstance(persisted, bool):
         persisted = None
 
-    try:
-        url = dashboard.get("url") or deployed_dashboard_url()
-    except DashboardLookupUnknown:
-        url = dashboard.get("url")
     if isinstance(url, str) and url.strip():
         request = Request(
             url.strip().rstrip("/") + DASHBOARD_PROXY_AUTH_PATH,
@@ -221,11 +266,11 @@ def save_proxy_auth(key: str, secret: str) -> None:
     """Persist the proxy-auth token pair under ``[proxy_auth]``."""
     config = load_config()
     config[PROXY_AUTH_SECTION] = {"key": key.strip(), "secret": secret.strip()}
-    CONFIG_PATH.write_text(_render(config))
+    _write_config(_render(config).encode())
 
 
 def load_proxy_auth() -> bool:
-    """Populate ``MODAL_KEY`` / ``MODAL_SECRET`` from ``~/.training-gym.toml``.
+    """Populate ``MODAL_KEY`` / ``MODAL_SECRET`` from ``~/.modal-dojo.toml``.
 
     Dotenv-style: real environment variables always win and are never
     overwritten; only unset ones are filled in from the saved config. Returns

@@ -15,23 +15,31 @@ What this does:
    ``MODAL_TOKEN_*`` env vars or the active profile in ``~/.modal.toml``.
 
 2. Deploys the dashboard's ASGI app and orphan reconciler.
-3. Persists the FastAPI web URL to ``~/.training-gym.toml`` so other
+3. Persists the FastAPI web URL to ``~/.modal-dojo.toml`` so other
    clients (e.g. the slime launcher) can find the dashboard.
 """
 
 from __future__ import annotations
 
 import os
+from enum import Enum
 import webbrowser
 from pathlib import Path
 
 from modal_dojo.common.dashboard import (
     DASHBOARD_APP_NAME,
+    LEGACY_DASHBOARD_APP_NAME,
     DashboardLookupUnknown,
     current_dashboard_version,
     deployed_dashboard_url,
     is_dashboard_upgrade,
 )
+
+
+class ProxyAuthMode(Enum):
+    REQUIRE = "require"
+    DISABLE = "disable"
+    UNSPECIFIED = "unspecified"
 
 
 def _load_dashboard_for_deploy(
@@ -52,7 +60,7 @@ def _load_dashboard_for_deploy(
 
 
 def setup(
-    require_proxy_auth: bool,
+    proxy_auth: ProxyAuthMode = ProxyAuthMode.UNSPECIFIED,
     interactive: bool = True,
     trajectory_viewer: str | Path | None = None,
     reset_trajectory_viewer: bool = False,
@@ -68,9 +76,46 @@ def setup(
     from modal_dojo.common.config import (
         CONFIG_PATH,
         get_dashboard_trajectory_viewer,
+        migrate_config,
+        get_dashboard_url,
+        get_dashboard_proxy_auth,
         save_dashboard_trajectory_viewer,
         save_dashboard_url,
     )
+
+    from modal_dojo.cli.output import print_note
+
+    from .skills import warn_legacy_skills
+
+    warn_legacy_skills()
+    copied = migrate_config()
+    saved_url = get_dashboard_url()
+    try:
+        new_url = deployed_dashboard_url()
+        old_url = None if new_url else deployed_dashboard_url(LEGACY_DASHBOARD_APP_NAME)
+    except DashboardLookupUnknown as exc:
+        raise ValueError(
+            "Could not discover existing dashboards. Check Modal credentials/network and rerun modal-dojo setup."
+        ) from exc
+    migrating = (
+        copied
+        or bool(old_url)
+        or bool(saved_url and "--training-gym-dashboard-" in saved_url)
+    )
+    existing_url = new_url or old_url or saved_url
+    if proxy_auth is ProxyAuthMode.UNSPECIFIED:
+        inherited = get_dashboard_proxy_auth(existing_url)
+        if inherited is None and (migrating or existing_url):
+            raise ValueError(
+                "Cannot determine existing dashboard authentication. Pass --proxy-auth or --no-proxy-auth explicitly to modal-dojo setup."
+            )
+        require_proxy_auth = inherited is True
+    elif proxy_auth is ProxyAuthMode.REQUIRE:
+        require_proxy_auth = True
+    elif proxy_auth is ProxyAuthMode.DISABLE:
+        require_proxy_auth = False
+    else:
+        raise TypeError("proxy_auth must be a ProxyAuthMode")
 
     if reset_trajectory_viewer:
         save_dashboard_trajectory_viewer(None)
@@ -115,14 +160,22 @@ def setup(
         dashboard.app.deploy()
 
     web_url = dashboard.fastapi_app.get_web_url()
+    if not web_url:
+        raise ValueError(
+            "Dashboard deployment returned no URL; previous saved URL retained."
+        )
     save_dashboard_url(web_url, proxy_auth=require_proxy_auth)
+    if migrating:
+        print_note(
+            "A new dojo-dashboard has been deployed. The old training-gym-dashboard app has not been stopped. After active runs finish, run `modal app stop training-gym-dashboard` in the same Modal environment, then update saved dashboard links to the new URL."
+        )
     print(f"\nDashboard deployed: {web_url}")
     print(f"Saved dashboard URL to {CONFIG_PATH}")
     return web_url
 
 
 def ensure_proxy_auth(interactive: bool = True, force: bool = False) -> bool:
-    """Prompt for and persist Modal proxy-auth tokens in ``~/.training-gym.toml``.
+    """Prompt for and persist Modal proxy-auth tokens in ``~/.modal-dojo.toml``.
 
     Authenticated served endpoints (``unauthenticated=False``) need Modal proxy auth
     and need a ``MODAL_KEY`` / ``MODAL_SECRET`` token pair. When ``interactive``
@@ -241,7 +294,6 @@ def set_password(password: str | None = None) -> None:
         print("Dashboard password cleared (open access). Redeploying...")
 
     from modal_dojo.cli.output import print_warning
-    from modal_dojo.common.config import get_dashboard_proxy_auth
     from modal_dojo.common.trackio import (
         TrackioLookupUnknown,
         lookup_trackio_url,
@@ -249,7 +301,7 @@ def set_password(password: str | None = None) -> None:
 
     setup(
         interactive=False,
-        require_proxy_auth=get_dashboard_proxy_auth() is True,
+        proxy_auth=ProxyAuthMode.UNSPECIFIED,
     )
     try:
         trackio_url = lookup_trackio_url()
@@ -271,7 +323,7 @@ def open_dashboard() -> str | None:
     """Open the deployed dashboard in the default browser; return its URL.
 
     Resolves the live URL from Modal (authoritative) and keeps the cached
-    ``~/.training-gym.toml`` value in sync, falling back to that cache if the
+    ``~/.modal-dojo.toml`` value in sync, falling back to that cache if the
     Modal lookup fails. Prints guidance and returns ``None`` when nothing is
     deployed.
     """
@@ -307,7 +359,6 @@ def ensure_dashboard_deployed() -> str | None:
     try:
         from modal_dojo.common.config import (
             DashboardVersionUnknown,
-            get_dashboard_proxy_auth,
             get_dashboard_url,
             get_dashboard_version,
             save_dashboard_url,
@@ -338,7 +389,7 @@ def ensure_dashboard_deployed() -> str | None:
             )
         return setup(
             interactive=False,
-            require_proxy_auth=get_dashboard_proxy_auth() is True,
+            proxy_auth=ProxyAuthMode.UNSPECIFIED,
         )
     except Exception as exc:
         print(

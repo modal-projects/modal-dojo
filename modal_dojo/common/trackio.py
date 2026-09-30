@@ -117,7 +117,7 @@ class TrackioConfig(MetricConfig):
             else:
                 return None
         return _without_credentials(
-            url, project=self.project or "training-gym", run_id=run_id
+            url, project=self.project or "modal-dojo", run_id=run_id
         )
 
 
@@ -386,7 +386,7 @@ def install_wandb_shim() -> None:
     shim.Settings = _Settings
 
     def init(*args: Any, **kwargs: Any) -> _RunProxy:
-        project = kwargs.pop("project", args[0] if args else "") or "training-gym"
+        project = kwargs.pop("project", args[0] if args else "") or "modal-dojo"
         framework_id = kwargs.pop("id", "")
         framework_name = kwargs.pop("name", "")
         requested_name = (

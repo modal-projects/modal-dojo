@@ -15,6 +15,7 @@ from .errors import CLIError
 
 SKILLS_DIRECTORY = Path(".agents") / "skills"
 CLAUDE_SKILLS_DIRECTORY = Path(".claude") / "skills"
+RENAMED_SKILLS = {"training-gym-overview": "modal-dojo-overview"}
 
 
 def _bundled_skills_path() -> Path:
@@ -219,6 +220,53 @@ def _ensure_claude_compatibility(
     click.echo(f"Linked Claude skill at {link}")
 
 
+def _legacy_skill_paths(project_root: Path, name: str) -> tuple[Path, ...]:
+    return tuple(
+        path
+        for directory in (SKILLS_DIRECTORY, CLAUDE_SKILLS_DIRECTORY)
+        if (path := project_root / directory / name).exists() or path.is_symlink()
+    )
+
+
+def warn_legacy_skills(project_root: Path | None = None) -> None:
+    """Warn about old project skills without installing or removing anything."""
+    from .output import print_warning
+
+    if project_root is None:
+        try:
+            project_root = _find_project_root(Path.cwd())
+        except click.UsageError:
+            project_root = Path.cwd()
+    for old_name, new_name in RENAMED_SKILLS.items():
+        paths = _legacy_skill_paths(project_root, old_name)
+        if paths:
+            print_warning(
+                f"{old_name} was renamed to {new_name}. Old skills remain at "
+                f"{', '.join(str(path) for path in paths)}. "
+                "Run `modal-dojo skills install --force` from this project "
+                "(or supply --project-dir) to install the replacement and remove the old skills."
+            )
+
+
+def _remove_renamed_skills(project_root: Path) -> None:
+    """Remove old skill paths, logging failures and continuing."""
+    from .output import print_warning
+
+    for old_name in RENAMED_SKILLS:
+        for path in _legacy_skill_paths(project_root, old_name):
+            if path.parent.is_symlink() or path.parent.parent.is_symlink():
+                print_warning(f"Skipped {path}: a skill parent is a symbolic link.")
+                continue
+            try:
+                if path.is_symlink() or path.is_file():
+                    path.unlink()
+                else:
+                    shutil.rmtree(path)
+                click.echo(f"Removed {path}")
+            except OSError as exc:
+                print_warning(f"Could not remove {path}: {exc}")
+
+
 def install_skills(*, project_dir: Path | None, force: bool) -> tuple[Path, ...]:
     """Install every bundled skill and return their destinations."""
     project_root = (
@@ -226,11 +274,16 @@ def install_skills(*, project_dir: Path | None, force: bool) -> tuple[Path, ...]
         if project_dir is not None
         else _find_project_root(Path.cwd())
     )
+    if force:
+        _remove_renamed_skills(project_root)
+    else:
+        warn_legacy_skills(project_root)
     skills = _bundled_skills()
     destinations = tuple(
         project_root / SKILLS_DIRECTORY / skill_name for skill_name in skills
     )
     installed_destinations: list[tuple[str, Path]] = []
+    failed_skills: list[str] = []
 
     for (skill_name, source), destination in zip(
         skills.items(), destinations, strict=True
@@ -244,7 +297,7 @@ def install_skills(*, project_dir: Path | None, force: bool) -> tuple[Path, ...]
             )
         except CLIError as exc:
             if exc.error != "skill_destination_exists":
-                raise
+                failed_skills.append(skill_name)
             click.echo(f"Skipped {skill_name}: {exc.format_message()}", err=True)
             continue
 
@@ -256,10 +309,12 @@ def install_skills(*, project_dir: Path | None, force: bool) -> tuple[Path, ...]
 
     for skill_name, destination in installed_destinations:
         _ensure_claude_compatibility(
-            project_root,
-            destination,
-            skill_name=skill_name,
-            force=force,
+            project_root, destination, skill_name=skill_name, force=force
+        )
+    if failed_skills:
+        raise CLIError(
+            f"Failed to install skills: {', '.join(failed_skills)}",
+            error="skill_install_failed",
         )
     return tuple(destination for _, destination in installed_destinations)
 
@@ -285,7 +340,7 @@ def skills_group() -> None:
 @click.option(
     "--force",
     is_flag=True,
-    help="Replace existing canonical skills or manageable Claude child paths.",
+    help="Replace existing skills and Claude links; remove renamed legacy skills.",
 )
 def install_command(*, project_dir: Path | None, force: bool) -> None:
     """Install bundled skills and Claude-compatible links."""

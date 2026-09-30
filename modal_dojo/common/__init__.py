@@ -71,7 +71,7 @@ def proxy_auth_secrets() -> list:
     Custom deployments can sit behind Modal proxy auth.
     Driver-shell env does not reach Ray rollout actors, so frameworks attach this
     secret to the train function the same way they attach wandb / HF secrets.
-    Loads from env or ``~/.training-gym.toml`` via :func:`load_proxy_auth`.
+    Loads from env or ``~/.modal-dojo.toml`` via :func:`load_proxy_auth`.
     Returns ``[]`` when the pair is unset (callers that hit proxy-auth endpoints
     will then get 401).
     """

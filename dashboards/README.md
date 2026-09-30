@@ -34,7 +34,7 @@ builds the dashboard. It receives these props:
 - `rollout`: the expanded `TrainingRolloutResult`.
 - `run`: the current `TrainingRun` summary.
 
-The override path is saved in `~/.training-gym.toml`, so later `setup` or
+The override path is saved in `~/.modal-dojo.toml`, so later `setup` or
 password redeploys keep using it. To restore the built-in viewer, run
 `modal-dojo setup --no-trajectory-viewer`.
 
