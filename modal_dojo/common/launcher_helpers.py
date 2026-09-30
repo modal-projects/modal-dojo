@@ -167,7 +167,9 @@ def create_training_volumes(
         mount: volume(name),
     }
     if mount_metadata:
-        volumes["/metadata"] = volume("training-gym-metadata")
+        from modal_dojo.utils.metadata import METADATA_VOLUME_NAME
+
+        volumes["/metadata"] = volume(METADATA_VOLUME_NAME)
     return name, mount, volumes
 
 

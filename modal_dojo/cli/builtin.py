@@ -37,10 +37,7 @@ def setup_command(
     trajectory_viewer: Path | None,
     no_trajectory_viewer: bool,
 ) -> None:
-    """Deploy the dashboard and migrate legacy Gym configuration if needed.
-
-    Existing authentication is preserved unless an auth flag is supplied.
-    """
+    """Deploy the dashboard."""
     if proxy_auth and no_proxy_auth:
         raise click.UsageError(
             "--proxy-auth and --no-proxy-auth cannot be used together."
@@ -119,3 +116,46 @@ def cleanup_command(older_than_days: int, dry_run: bool) -> None:
     from .cleanup import cleanup
 
     cleanup(older_than_days=older_than_days, dry_run=dry_run)
+
+
+@click.command("migrate", cls=_DojoCommand)
+@click.option(
+    "--proxy-auth", is_flag=True, help="Require dashboard proxy authentication."
+)
+@click.option(
+    "--no-proxy-auth", is_flag=True, help="Disable dashboard proxy authentication."
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Skip the live-run check after verifying no training runs are active.",
+)
+def migrate_command(proxy_auth: bool, no_proxy_auth: bool, force: bool) -> None:
+    """Migrate Training Gym configuration and volumes during a maintenance window."""
+    from .migrate import migrate
+    from .setup import ProxyAuthMode
+
+    if proxy_auth and no_proxy_auth:
+        raise click.UsageError(
+            "--proxy-auth and --no-proxy-auth cannot be used together."
+        )
+    mode = (
+        ProxyAuthMode.REQUIRE
+        if proxy_auth
+        else ProxyAuthMode.DISABLE
+        if no_proxy_auth
+        else ProxyAuthMode.UNSPECIFIED
+    )
+    print(
+        "This will migrate your Training Gym configuration to the new Modal Dojo name. Before running, you should make sure all active runs are stopped."
+    )
+    print()
+    answer = click.prompt(
+        "Are you sure you want to continue? [y/n]",
+        type=click.Choice(["y", "n"], case_sensitive=False),
+        show_choices=False,
+    )
+    if answer == "n":
+        click.echo("Migration cancelled.")
+        return
+    migrate(proxy_auth=mode, force=force)

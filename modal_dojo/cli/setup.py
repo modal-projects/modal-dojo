@@ -28,7 +28,6 @@ from pathlib import Path
 
 from modal_dojo.common.dashboard import (
     DASHBOARD_APP_NAME,
-    LEGACY_DASHBOARD_APP_NAME,
     DashboardLookupUnknown,
     current_dashboard_version,
     deployed_dashboard_url,
@@ -76,36 +75,27 @@ def setup(
     from modal_dojo.common.config import (
         CONFIG_PATH,
         get_dashboard_trajectory_viewer,
-        migrate_config,
+        require_migrated_config,
         get_dashboard_url,
         get_dashboard_proxy_auth,
         save_dashboard_trajectory_viewer,
         save_dashboard_url,
     )
 
-    from modal_dojo.cli.output import print_note
-
     from .skills import warn_legacy_skills
 
     warn_legacy_skills()
-    copied = migrate_config()
+    require_migrated_config()
     saved_url = get_dashboard_url()
     try:
-        new_url = deployed_dashboard_url()
-        old_url = None if new_url else deployed_dashboard_url(LEGACY_DASHBOARD_APP_NAME)
+        existing_url = deployed_dashboard_url() or saved_url
     except DashboardLookupUnknown as exc:
         raise ValueError(
-            "Could not discover existing dashboards. Check Modal credentials/network and rerun modal-dojo setup."
+            "Could not discover the dashboard. Check Modal credentials/network and rerun modal-dojo setup."
         ) from exc
-    migrating = (
-        copied
-        or bool(old_url)
-        or bool(saved_url and "--training-gym-dashboard-" in saved_url)
-    )
-    existing_url = new_url or old_url or saved_url
     if proxy_auth is ProxyAuthMode.UNSPECIFIED:
         inherited = get_dashboard_proxy_auth(existing_url)
-        if inherited is None and (migrating or existing_url):
+        if inherited is None and existing_url:
             raise ValueError(
                 "Cannot determine existing dashboard authentication. Pass --proxy-auth or --no-proxy-auth explicitly to modal-dojo setup."
             )
@@ -165,10 +155,6 @@ def setup(
             "Dashboard deployment returned no URL; previous saved URL retained."
         )
     save_dashboard_url(web_url, proxy_auth=require_proxy_auth)
-    if migrating:
-        print_note(
-            "A new dojo-dashboard has been deployed. The old training-gym-dashboard app has not been stopped. After active runs finish, run `modal app stop training-gym-dashboard` in the same Modal environment, then update saved dashboard links to the new URL."
-        )
     print(f"\nDashboard deployed: {web_url}")
     print(f"Saved dashboard URL to {CONFIG_PATH}")
     return web_url

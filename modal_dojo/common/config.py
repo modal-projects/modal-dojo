@@ -18,7 +18,6 @@ from urllib.request import Request, urlopen
 
 CONFIG_PATH = Path.home() / ".modal-dojo.toml"
 LEGACY_CONFIG_PATH = Path.home() / ".training-gym.toml"
-_legacy_warning_printed = False
 MODAL_CONFIG_PATH = Path(
     os.environ.get("MODAL_CONFIG_PATH") or os.path.expanduser("~/.modal.toml")
 )
@@ -75,21 +74,19 @@ def _read_config(path: Path, *, strict: bool = False) -> dict[str, Any]:
         return {}
 
 
-def load_config() -> dict[str, Any]:
-    """Read the new config, warning once when using the legacy file."""
-    global _legacy_warning_printed
-    if CONFIG_PATH.exists():
-        return _read_config(CONFIG_PATH)
+def require_migrated_config() -> None:
+    """Reject legacy-only setups before launching or provisioning anything."""
     if LEGACY_CONFIG_PATH.exists():
-        if not _legacy_warning_printed:
-            from modal_dojo.cli.output import print_warning
+        from modal_dojo.common.errors import DojoConfigError
 
-            print_warning(
-                f"Using legacy configuration {LEGACY_CONFIG_PATH}. Run `modal-dojo setup` to migrate your setup."
-            )
-            _legacy_warning_printed = True
-        return _read_config(LEGACY_CONFIG_PATH)
-    return {}
+        raise DojoConfigError(
+            "Legacy Training Gym configuration detected. Run `modal-dojo migrate` before continuing."
+        )
+
+
+def load_config() -> dict[str, Any]:
+    """Read the Modal Dojo configuration."""
+    return _read_config(CONFIG_PATH) if CONFIG_PATH.exists() else {}
 
 
 def _write_config(contents: bytes) -> None:
@@ -103,23 +100,6 @@ def _write_config(contents: bytes) -> None:
         os.replace(name, CONFIG_PATH)
     finally:
         Path(name).unlink(missing_ok=True)
-
-
-def migrate_config() -> bool:
-    """Validate configuration and copy legacy bytes once, leaving the original."""
-    if CONFIG_PATH.exists():
-        _read_config(CONFIG_PATH, strict=True)
-        return False
-    if not LEGACY_CONFIG_PATH.exists():
-        return False
-    _read_config(LEGACY_CONFIG_PATH, strict=True)
-    _write_config(LEGACY_CONFIG_PATH.read_bytes())
-    from modal_dojo.cli.output import print_note
-
-    print_note(
-        f"Migrated configuration from {LEGACY_CONFIG_PATH} to {CONFIG_PATH}. Future writes use {CONFIG_PATH}; the original file was retained."
-    )
-    return True
 
 
 def save_dashboard_url(url: str, *, proxy_auth: bool | None = None) -> None:
@@ -190,7 +170,12 @@ def get_dashboard_url() -> str | None:
     return None
 
 
-def get_dashboard_proxy_auth(url: str | None) -> bool | None:
+def get_dashboard_proxy_auth(
+    url: str | None,
+    *,
+    settings: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+) -> bool | None:
     """Return proxy-auth mode for the explicitly supplied URL, if known.
 
     ``None`` skips the live probe and uses only the persisted mode.
@@ -201,7 +186,7 @@ def get_dashboard_proxy_auth(url: str | None) -> bool | None:
     identifies an authenticated deployment. The persisted mode remains a
     fallback for older or temporarily unreachable dashboards.
     """
-    dashboard = load_config().get("dashboard")
+    dashboard = (load_config() if settings is None else settings).get("dashboard")
     if not isinstance(dashboard, dict):
         dashboard = {}
 
@@ -212,7 +197,7 @@ def get_dashboard_proxy_auth(url: str | None) -> bool | None:
     if isinstance(url, str) and url.strip():
         request = Request(
             url.strip().rstrip("/") + DASHBOARD_PROXY_AUTH_PATH,
-            headers=modal_proxy_auth_headers(),
+            headers=modal_proxy_auth_headers() if headers is None else headers,
         )
         try:
             with urlopen(request, timeout=5) as response:

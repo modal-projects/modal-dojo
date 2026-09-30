@@ -16,7 +16,7 @@ from modal_dojo._api_reference import exclude_from_api_reference
 
 T = TypeVar("T")
 
-METADATA_VOLUME_NAME = "training-gym-metadata"
+METADATA_VOLUME_NAME = "modal-dojo-metadata"
 _READ_CONCURRENCY = 16
 
 

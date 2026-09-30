@@ -599,6 +599,9 @@ class TrainConfig:
         from modal_dojo.common.modal_lifecycle import stop_app
         from modal_dojo.common.status_reporter import enqueue_framework_status
 
+        from modal_dojo.common.config import require_migrated_config
+
+        require_migrated_config()
         maybe_warn_gpu_oom(self.recipe, self.model)
         training_run_id = self._generate_training_run_id()
         ensure_dashboard_deployed()

@@ -390,7 +390,7 @@ def test_a_failed_resolution_leaves_the_config_untouched(monkeypatch):
     resolve_trackio_destination(config)
 
     assert config.server_url == "https://trackio.example"
-    assert config.modal_secret_name == "_training-gym-trackio-write-token"
+    assert config.modal_secret_name == "_modal-dojo-trackio-write-token"
 
 
 def test_an_explicit_token_secret_is_kept(monkeypatch):
@@ -417,7 +417,7 @@ def test_a_bare_config_resolves_to_the_deployed_server(monkeypatch):
     assert config.server_url == "https://trackio.example"
     assert config.dashboard_url == "https://trackio.example"
     # Ingestion authenticates with the deployed server's write token.
-    assert config.modal_secret_name == "_training-gym-trackio-write-token"
+    assert config.modal_secret_name == "_modal-dojo-trackio-write-token"
 
 
 def test_an_explicit_destination_is_left_alone(monkeypatch):

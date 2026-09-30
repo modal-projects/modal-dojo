@@ -29,25 +29,22 @@ from modal_dojo import TrainConfig, DojoError, DojoConfigError
 
 If you're using any `TRAINING_GYM_*` environment variables, be sure to update them to `MODAL_DOJO_*`.
 
-## CLI and dashboard
+## Dashboard and CLI
 
-The `training-gym` command has been renamed to `modal-dojo`, and many other things related to configuration and the dashboard have also been renamed:
+The `training-gym` command has been renamed to `modal-dojo`, and the dashboard is now deployed at `dojo-dashboard` instead of `training-gym-dashboard`. Many other things have also been renamed:
 
 * The `~/.training-gym.toml` config file is now `~/.modal-dojo.toml`.
 * The `training-gym-overview` skill is now `modal-dojo-overview`.
-* The dashboard app, deployed previously as `training-gym-dashboard`, is now `dojo-dashboard`.
+* Volumes such as `training-gym-metadata` have been renamed to `modal-dojo-metadata`.
+* The default Trackio app name is now `modal-dojo-trackio`.
 
-To copy your existing configuration over, and to deploy a new `dojo-dashboard` with an updated URL, run:
-
-```bash
-modal-dojo setup
-```
-
-This command does not stop the old dashboard, so that any ongoing runs can keep reporting their status. Once all active runs are finished, stop the old dashboard:
+To migrate your configuration and deploy a new `dojo-dashboard` with an updated URL, ensure there are no active training runs, then run:
 
 ```bash
-modal app stop training-gym-dashboard
+modal-dojo migrate
 ```
+
+The command will stop old dashboards, move your config file, rename any volumes, and redeploy Modal Dojo apps using their new names.
 
 ## Metrics
 

@@ -18,7 +18,7 @@ DASHBOARD_PREVIEW_ENV_KEY = "MODAL_DOJO_DASHBOARD_PREVIEW"
 DASHBOARD_VERSION_ENV_KEY = "DASHBOARD_VERSION"
 
 # Bump when the deployed dashboard frontend or backend changes.
-DASHBOARD_VERSION = 6
+DASHBOARD_VERSION = 7
 
 
 def current_dashboard_version() -> str:

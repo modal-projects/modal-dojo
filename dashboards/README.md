@@ -1,7 +1,7 @@
 # Dashboard
 
 Self-hosted observability dashboard for Modal Dojo. Aggregates training
-runs and eval results from the `training-gym-metadata` Modal Volume into
+runs and eval results from the `modal-dojo-metadata` Modal Volume into
 a single Svelte SPA served by a Modal ASGI endpoint.
 
 Deploy your own copy:
@@ -55,7 +55,7 @@ run.add_dashboard_component(
 ```
 
 The source is stored content-addressably in the
-`training-gym-dashboard-overlay` Modal Volume, with a per-run association
+`modal-dojo-dashboard-overlay` Modal Volume, with a per-run association
 record under `runs/<training_run_id>/<name>.json`. The immutable artifact
 manifest is also associated with the run under
 `metadata.dashboard_components`. The dashboard mounts this Volume, verifies
