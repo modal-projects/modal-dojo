@@ -125,7 +125,7 @@ def test_migration_inherits_settings_and_prefers_new_app(
     assert config.get_proxy_auth() == ("wk-test", "ws-test")
     assert (
         re.search(
-            r"modal[ \n]app[ \n]stop[ \n]training-gym-dashboard",
+            r"modal[ \n]+app[ \n]+stop[ \n]+training-gym-dashboard",
             capsys.readouterr().err,
         )
         is not None
