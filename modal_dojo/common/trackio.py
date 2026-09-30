@@ -19,7 +19,7 @@ from modal_dojo.common.metrics import MetricConfig
 
 
 _DEFAULT_TRACKIO_VERSION = "0.34.0"
-_DEFAULT_MODAL_APP_NAME = "training-gym-trackio"
+_DEFAULT_MODAL_APP_NAME = "modal-dojo-trackio"
 _RUN_NAME_ENV = "MODAL_DOJO_TRACKIO_RUN_NAME"
 _SHIM_MARKER = "_modal_dojo_trackio_adapter"
 

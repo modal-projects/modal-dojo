@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-DASHBOARD_OVERLAY_VOLUME_NAME = "training-gym-dashboard-overlay"
+DASHBOARD_OVERLAY_VOLUME_NAME = "modal-dojo-dashboard-overlay"
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 MAX_COMPONENT_BYTES = 2 * 1024 * 1024
 

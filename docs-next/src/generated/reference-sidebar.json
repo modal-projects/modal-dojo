@@ -159,6 +159,10 @@
       "link": "/reference/cli/setup"
     },
     {
+      "label": "modal-dojo migrate",
+      "link": "/reference/cli/migrate"
+    },
+    {
       "label": "modal-dojo set-password",
       "link": "/reference/cli/set-password"
     },

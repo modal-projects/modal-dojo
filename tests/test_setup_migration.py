@@ -1,292 +1,497 @@
-from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
-import re
 
-from modal_dojo.cli.setup import ProxyAuthMode
-
-from modal_dojo.common import config
-from modal_dojo.common.dashboard import (
-    DashboardLookupUnknown,
-    LEGACY_DASHBOARD_APP_NAME,
-)
+from modal_dojo.cli import migrate as migration
 from modal_dojo.cli import setup as cli_setup_module
+from modal_dojo.cli.setup import ProxyAuthMode
+from modal_dojo.cli.errors import CLIError
+from modal_dojo.common import config
+from modal_dojo.common.errors import DojoConfigError
 
 
 @pytest.fixture
 def paths(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / ".modal-dojo.toml")
     monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", tmp_path / ".training-gym.toml")
-    monkeypatch.setattr(config, "_legacy_warning_printed", False)
     return config.CONFIG_PATH, config.LEGACY_CONFIG_PATH
 
 
-def test_read_warns_once_without_writing(paths, capsys):
-    new, old = paths
-    old.write_text('[dashboard]\nurl="https://old.test"\n')
-    assert config.load_config() == config.load_config()
-    output = capsys.readouterr()
-    assert not output.out
-    assert output.err.count("Warning:") == 1
-    assert "modal-dojo setup" in output.err
-    assert not new.exists()
+class Resources:
+    def __init__(self):
+        self.volumes = {
+            old: SimpleNamespace(object_id=old) for old, _ in migration.VOLUME_PAIRS
+        }
+        self.app_list = [
+            migration.AppInfo(
+                "dashboard", migration.LEGACY_DASHBOARD_APP_NAME, True, {}
+            ),
+            migration.AppInfo("trackio", "training-gym-trackio", True, {}),
+        ]
+        self.events = []
+        self.rows = []
+        self.liveness = False
+        self.fail_rename = None
 
+    def volume(self, name):
+        return self.volumes.get(name)
 
-def test_copy_verbatim_and_precedence(paths, capsys):
-    new, old = paths
-    raw = b'# my settings\n[dashboard]\nurl="https://old.test"\n'
-    old.write_bytes(raw)
-    assert config.migrate_config()
-    assert new.read_bytes() == old.read_bytes() == raw
-    assert new.stat().st_mode & 0o777 == 0o600
-    assert "Note:" in capsys.readouterr().err
-    old.write_text("invalid toml")
-    assert not config.migrate_config()
-    config.save_dashboard_url("https://new.test")
-    assert config.get_dashboard_url() == "https://new.test"
-    assert old.read_text() == "invalid toml"
-    assert new.stat().st_mode & 0o777 == 0o600
+    def apps(self, names):
+        return [app for app in self.app_list if app.name in names]
 
+    def records(self, volume):
+        return self.rows
 
-@pytest.mark.parametrize("target", [0, 1])
-def test_malformed_config_is_not_overwritten(paths, target):
-    paths[target].write_text("invalid toml")
-    with pytest.raises(ValueError, match="Cannot read configuration"):
-        config.migrate_config()
-    assert paths[target].read_text() == "invalid toml"
-    if target == 0:
-        assert config.load_config() == {}
-    else:
-        assert not paths[0].exists()
+    def live(self, app_id):
+        return self.liveness
 
+    def stop(self, app_id):
+        self.events.append(("stop", app_id))
+        for app in self.app_list:
+            if app.id == app_id:
+                app.live = False
 
-def test_unreadable_config_is_not_overwritten(paths, monkeypatch):
-    paths[1].write_text("[dashboard]\n")
-    original = type(paths[1]).open
-
-    def denied(path, *args, **kwargs):
-        if path == paths[1]:
-            raise PermissionError("denied")
-        return original(path, *args, **kwargs)
-
-    monkeypatch.setattr(type(paths[1]), "open", denied)
-    with pytest.raises(ValueError, match="Cannot read configuration"):
-        config.migrate_config()
-    assert not paths[0].exists()
+    def rename(self, old, new):
+        if old == self.fail_rename:
+            raise RuntimeError("rename failed")
+        self.events.append(("rename", old))
+        self.volumes[new] = self.volumes.pop(old)
 
 
 @pytest.fixture
-def deployment(paths, monkeypatch):
-    import modal
-
-    seen = []
-    dashboard = SimpleNamespace(
-        ensure_creds_secret=lambda **kwargs: True,
-        app=SimpleNamespace(deploy=lambda: None),
-        fastapi_app=SimpleNamespace(get_web_url=lambda: "https://new.test"),
-    )
-
-    def load(auth, trajectory_viewer=None):
-        seen.append((auth, trajectory_viewer))
-        return dashboard
-
-    monkeypatch.setattr(cli_setup_module, "_load_dashboard_for_deploy", load)
-    monkeypatch.setattr(cli_setup_module, "ensure_proxy_auth", lambda **kwargs: True)
-    monkeypatch.setattr(modal, "enable_output", nullcontext)
-    monkeypatch.setattr(cli_setup_module, "deployed_dashboard_url", lambda *args: None)
-    monkeypatch.setattr(config, "get_dashboard_proxy_auth", lambda url: None)
-    return dashboard, seen
-
-
-@pytest.mark.parametrize("auth", [True, False])
-def test_migration_inherits_settings_and_prefers_new_app(
-    paths, deployment, monkeypatch, capsys, auth
-):
-    dashboard, seen = deployment
+def harness(paths, monkeypatch):
+    resources = Resources()
     paths[1].write_text(
-        '[dashboard]\nurl="https://old.test"\ntrajectory_viewer="/my/viewer.svelte"\n[proxy_auth]\nkey="wk-test"\nsecret="ws-test"\n'
+        '# settings\n[dashboard]\nurl="https://old.test"\nproxy_auth=true\n[proxy_auth]\nkey="wk-test"\nsecret="ws-test"\n'
     )
     monkeypatch.setattr(
-        cli_setup_module,
-        "deployed_dashboard_url",
-        lambda *args: "https://old.test" if args else "https://new.test",
+        migration, "deployed_dashboard_url", lambda *args: "https://old.test"
     )
-    probed = []
+    monkeypatch.setattr(config, "get_dashboard_proxy_auth", lambda url, **kwargs: True)
+    monkeypatch.setattr(
+        migration.TrackioConfig,
+        "deploy_to_modal",
+        lambda **kwargs: SimpleNamespace(server_url="https://trackio.test"),
+    )
 
-    def mode(url):
-        probed.append(url)
-        return auth
+    def setup(**kwargs):
+        resources.events.append(("setup", kwargs["proxy_auth"]))
+        config.save_dashboard_url("https://new.test")
+        return "https://new.test"
 
-    monkeypatch.setattr(config, "get_dashboard_proxy_auth", mode)
-    cli_setup_module.setup(interactive=False)
-    assert probed == ["https://new.test"]
-    assert seen == [(auth, "/my/viewer.svelte")]
+    monkeypatch.setattr(migration, "setup", setup)
+    return resources
+
+
+def test_loader_ignores_legacy_and_guards_setup(paths, harness):
+    assert config.load_config() == {}
+    with pytest.raises(DojoConfigError, match="modal-dojo migrate"):
+        cli_setup_module.setup()
+    assert not paths[0].exists()
+
+
+@pytest.mark.parametrize("method", ["train", "launch"])
+def test_training_guard_precedes_launch_work(paths, harness, method):
+    from modal_dojo.common.train import TrainConfig
+
+    with pytest.raises(DojoConfigError, match="modal-dojo migrate"):
+        getattr(TrainConfig, method)(object.__new__(TrainConfig))
+
+
+def test_migrate_moves_config_and_preserves_volume_ids(paths, harness):
+    migration.migrate(resources=harness)
+    assert paths[0].exists() and not paths[1].exists()
+    assert paths[0].stat().st_mode & 0o777 == 0o600
     assert config.get_proxy_auth() == ("wk-test", "ws-test")
-    assert (
-        re.search(
-            r"modal[ \n]+app[ \n]+stop[ \n]+training-gym-dashboard",
-            capsys.readouterr().err,
-        )
-        is not None
-    )
-    assert config.get_dashboard_url() == "https://new.test"
+    for old, new in migration.VOLUME_PAIRS:
+        assert harness.volumes[new].object_id == old
+    assert harness.events[:2] == [("stop", "dashboard"), ("stop", "trackio")]
+    assert harness.events[-1] == ("setup", ProxyAuthMode.REQUIRE)
+    migration.migrate(resources=harness)
 
 
-def test_failed_deploy_keeps_old_url_then_retry(paths, deployment, monkeypatch):
-    dashboard, seen = deployment
-    paths[1].write_text('[dashboard]\nurl="https://old.test"\n')
-
-    def fail():
-        raise RuntimeError("deployment failed")
-
-    dashboard.app.deploy = fail
-    with pytest.raises(RuntimeError):
-        cli_setup_module.setup(proxy_auth=ProxyAuthMode.REQUIRE, interactive=False)
-    assert config.get_dashboard_url() == "https://old.test"
-    dashboard.app.deploy = lambda: None
-    cli_setup_module.setup(proxy_auth=ProxyAuthMode.DISABLE, interactive=False)
-    assert config.get_dashboard_url() == "https://new.test"
-    assert seen == [(True, None), (False, None)]
-
-
-def test_unknown_auth_requires_explicit_flag(paths, deployment):
-    paths[1].write_text('[dashboard]\nurl="https://old.test"\n')
-    with pytest.raises(ValueError, match="--proxy-auth"):
-        cli_setup_module.setup(interactive=False)
-    assert not deployment[1]
-
-
-def test_legacy_app_without_config_is_detected(paths, deployment, monkeypatch):
-    calls = []
-
-    def lookup(*args):
-        calls.append(args)
-        return "https://old.test" if args else None
-
-    monkeypatch.setattr(cli_setup_module, "deployed_dashboard_url", lookup)
-    monkeypatch.setattr(config, "get_dashboard_proxy_auth", lambda url: True)
-    cli_setup_module.setup(interactive=False)
-    assert (LEGACY_DASHBOARD_APP_NAME,) in calls
-    assert deployment[1] == [(True, None)]
-
-
-def test_fresh_install_defaults_open(paths, deployment):
-    cli_setup_module.setup(interactive=False)
-    assert deployment[1] == [(False, None)]
-
-
-def test_unknown_discovery_never_deploys(paths, deployment, monkeypatch):
-    def unknown(*args):
-        raise DashboardLookupUnknown()
-
-    monkeypatch.setattr(cli_setup_module, "deployed_dashboard_url", unknown)
-    with pytest.raises(ValueError, match="discover"):
-        cli_setup_module.setup(interactive=False)
-    assert not deployment[1]
-
-
-def test_metrics_defaults_and_persistent_identifiers():
-    from modal_dojo.common.metric_mirror import DashboardMetricConfig
-    from modal_dojo.common.dashboard_components import DASHBOARD_OVERLAY_VOLUME_NAME
-    from modal_dojo.utils.metadata import METADATA_VOLUME_NAME
-    from modal_dojo.common.dashboard import DASHBOARD_APP_NAME, DASHBOARD_VERSION
-
-    assert DashboardMetricConfig().project == "modal-dojo"
-    assert DashboardMetricConfig(project="training-gym").project == "training-gym"
-    assert METADATA_VOLUME_NAME == "training-gym-metadata"
-    assert DASHBOARD_OVERLAY_VOLUME_NAME == "training-gym-dashboard-overlay"
-    assert config.DASHBOARD_PASSWORD_SECRET_NAME == "_training-gym-dashboard-password"
-    assert DASHBOARD_APP_NAME == "dojo-dashboard"
-    assert DASHBOARD_VERSION == 6
+def test_conflicts_precede_service_shutdown(paths, harness):
+    harness.volumes[migration.METADATA_VOLUME_NAME] = SimpleNamespace(object_id="other")
+    with pytest.raises(CLIError, match="Both"):
+        migration.migrate(resources=harness)
+    assert not harness.events and paths[1].exists()
 
 
 @pytest.mark.parametrize(
-    ("flag", "expected"),
-    [(None, None), ("--proxy-auth", True), ("--no-proxy-auth", False)],
+    "status",
+    ["running", "initializing", "deploying_model", "running_eval", "unknown", None],
 )
-def test_cli_requires_auth_choice_when_existing_mode_unknown(
-    paths, deployment, flag, expected
+def test_active_or_unknown_metadata_blocks(paths, harness, status):
+    harness.rows = [
+        ("training-runs/run.json", {"status": status, "modal_app_id": "ap-run"})
+    ]
+    with pytest.raises(CLIError, match="ap-run"):
+        migration.migrate(resources=harness)
+    assert not harness.events
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "cancelled", "stopped"])
+def test_terminal_metadata_never_checks_app_liveness(
+    paths, harness, monkeypatch, status
 ):
+    harness.rows = [
+        ("training-runs/run.json", {"status": status, "modal_app_id": "ap-run"})
+    ]
+
+    def forbidden(*args):
+        pytest.fail("Run checks must not query app liveness")
+
+    monkeypatch.setattr(harness, "live", forbidden)
+    migration.migrate(resources=harness)
+
+
+@pytest.mark.parametrize("folder", ["evals", "eval-results"])
+def test_evaluation_metadata_is_ignored(paths, harness, folder):
+    harness.rows = [(f"{folder}/eval.json", {"status": "running_eval"})]
+    migration.migrate(resources=harness)
+
+
+def test_partial_rename_retry(paths, harness):
+    harness.fail_rename = migration.VOLUME_PAIRS[1][0]
+    with pytest.raises(CLIError, match="volume rename"):
+        migration.migrate(resources=harness)
+    assert paths[1].exists() and not paths[0].exists()
+    harness.fail_rename = None
+    migration.migrate(resources=harness)
+
+
+def test_stop_failure_blocks_renames(paths, harness, monkeypatch):
+    def fail(app_id):
+        raise RuntimeError("stop failed")
+
+    monkeypatch.setattr(harness, "stop", fail)
+    with pytest.raises(CLIError, match="service shutdown"):
+        migration.migrate(resources=harness)
+    assert all(old in harness.volumes for old, _ in migration.VOLUME_PAIRS)
+
+
+def test_both_configs_preserve_new_and_archive_old(paths, harness):
+    paths[0].write_text(
+        '[dashboard]\nurl="https://chosen.test"\n[proxy_auth]\nkey="new-key"\nsecret="new-secret"\n'
+    )
+    old_bytes = paths[1].read_bytes()
+    migration.migrate(resources=harness)
+    assert config.get_proxy_auth() == ("new-key", "new-secret")
+    assert not paths[1].exists()
+    assert next(paths[0].parent.glob("*.bak")).read_bytes() == old_bytes
+
+
+@pytest.mark.parametrize("mode", list(ProxyAuthMode))
+def test_auth_resolution_precedes_shutdown(paths, harness, monkeypatch, mode):
+    def probe(url, **kwargs):
+        assert not harness.events
+        assert kwargs["headers"] == {"Modal-Key": "wk-test", "Modal-Secret": "ws-test"}
+        return None
+
+    monkeypatch.setattr(config, "get_dashboard_proxy_auth", probe)
+    if mode is ProxyAuthMode.UNSPECIFIED:
+        with pytest.raises(CLIError, match="--proxy-auth or --no-proxy-auth"):
+            migration.migrate(resources=harness)
+        assert not harness.events
+    else:
+        migration.migrate(resources=harness, proxy_auth=mode)
+        assert harness.events[-1] == ("setup", mode)
+
+
+def test_failed_deploy_after_move_is_retryable(paths, harness, monkeypatch):
+    original = migration.setup
+
+    def fail(**kwargs):
+        raise RuntimeError("deployment failed")
+
+    monkeypatch.setattr(migration, "setup", fail)
+    with pytest.raises(CLIError, match="dashboard deployment"):
+        migration.migrate(resources=harness)
+    assert paths[0].exists() and not paths[1].exists()
+    assert config.get_dashboard_url() == "https://old.test"
+    monkeypatch.setattr(migration, "setup", original)
+    migration.migrate(resources=harness)
+
+
+def test_no_config_does_not_inspect_resources(paths):
+    with pytest.raises(CLIError, match="modal-dojo setup"):
+        migration.migrate(resources=object())
+
+
+def test_invalid_config_does_not_mutate(paths, harness):
+    paths[1].write_text("invalid toml")
+    with pytest.raises(CLIError, match="configuration inspection"):
+        migration.migrate(resources=harness)
+    assert not harness.events
+
+
+def test_app_discovery_failure_prevents_mutation(paths, harness, monkeypatch):
+    def fail(names):
+        raise RuntimeError("network unavailable")
+
+    monkeypatch.setattr(harness, "apps", fail)
+    with pytest.raises(CLIError, match="service discovery"):
+        migration.migrate(resources=harness)
+    assert not harness.events
+
+
+@pytest.mark.parametrize(
+    ("app_name", "volume_name", "expected"),
+    [
+        ("modal-dojo-trackio", "", "modal-dojo-trackio-data"),
+        ("custom-trackio", "", "custom-trackio-data"),
+        ("modal-dojo-trackio", "custom-data", "custom-data"),
+    ],
+)
+def test_trackio_volume_defaults(monkeypatch, app_name, volume_name, expected):
+    import modal_dojo.common.trackio as trackio
+
+    calls = []
+
+    def deploy(**kwargs):
+        calls.append(kwargs)
+        return "https://trackio.test"
+
+    monkeypatch.setattr(trackio, "_deploy_modal_dashboard", deploy)
+    trackio.TrackioConfig.deploy_to_modal(app_name=app_name, volume_name=volume_name)
+    assert calls[0]["volume_name"] == expected
+
+
+def test_cli_migrate_flags(monkeypatch):
     from click.testing import CliRunner
     from modal_dojo.cli import entrypoint_cli
 
-    paths[1].write_text('[dashboard]\nurl="https://old.test"\n')
-    result = CliRunner().invoke(entrypoint_cli, ["setup", *([flag] if flag else [])])
-    if flag is None:
-        assert result.exit_code != 0
-        assert "--proxy-auth or --no-proxy-auth" in str(result.exception)
-        assert not deployment[1]
-        assert config.get_dashboard_url() == "https://old.test"
-    else:
+    calls = []
+    monkeypatch.setattr(migration, "migrate", lambda **kwargs: calls.append(kwargs))
+    for flag, mode in [
+        ([], ProxyAuthMode.UNSPECIFIED),
+        (["--proxy-auth"], ProxyAuthMode.REQUIRE),
+        (["--no-proxy-auth"], ProxyAuthMode.DISABLE),
+    ]:
+        result = CliRunner().invoke(entrypoint_cli, ["migrate", *flag])
         assert result.exit_code == 0, result.exception
-        assert deployment[1] == [(expected, None)]
+        assert calls[-1] == {"proxy_auth": mode, "force": False}
+    assert (
+        CliRunner()
+        .invoke(entrypoint_cli, ["migrate", "--proxy-auth", "--no-proxy-auth"])
+        .exit_code
+        == 2
+    )
 
 
-def test_auth_lookup_uses_only_explicit_url(paths, monkeypatch):
-    config.save_dashboard_url("https://cached.test", proxy_auth=True)
-    requested = []
+def test_shutdown_waits_for_containers(monkeypatch):
+    calls = []
+    outputs = iter(['[{"Container ID": "ta-running"}]', "[]"])
 
-    def unavailable(request, **kwargs):
-        from urllib.error import URLError
+    def run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(stdout=next(outputs)) if "list" in command else None
 
-        requested.append(request.full_url)
-        raise URLError("offline")
+    monkeypatch.setattr(migration.subprocess, "run", run)
+    monkeypatch.setattr(migration.time, "sleep", lambda seconds: None)
+    migration.ModalResources().stop("ap-service")
+    assert calls[0][0] == [
+        migration.sys.executable,
+        "-m",
+        "modal",
+        "app",
+        "stop",
+        "ap-service",
+        "--yes",
+    ]
+    assert [call[0][3:] for call in calls[1:]] == [
+        ["container", "list", "--app-id", "ap-service", "--json"],
+        ["container", "list", "--app-id", "ap-service", "--json"],
+    ]
+    assert all(kwargs["check"] for _, kwargs in calls)
 
-    monkeypatch.setattr(config, "urlopen", unavailable)
-    assert config.get_dashboard_proxy_auth("https://explicit.test") is True
-    assert requested == ["https://explicit.test/api/proxy-auth"]
-    requested.clear()
-    assert config.get_dashboard_proxy_auth(None) is True
-    assert not requested
-    with pytest.raises(TypeError):
-        config.get_dashboard_proxy_auth()
+
+@pytest.mark.parametrize("failure", ["stop", "list", "invalid-json"])
+def test_shutdown_errors_propagate(monkeypatch, failure):
+    def run(command, **kwargs):
+        if (failure == "stop" and "stop" in command) or (
+            failure == "list" and "list" in command
+        ):
+            raise migration.subprocess.CalledProcessError(1, command)
+        return SimpleNamespace(stdout="invalid")
+
+    monkeypatch.setattr(migration.subprocess, "run", run)
+    with pytest.raises((migration.subprocess.CalledProcessError, ValueError)):
+        migration.ModalResources().stop("ap-service")
 
 
-def test_setup_warns_about_old_skills_without_modifying_them(
-    paths, deployment, monkeypatch, capsys
+def test_migration_stops_both_trackio_names(paths, harness):
+    harness.app_list.append(
+        migration.AppInfo("new-trackio", "modal-dojo-trackio", True, {})
+    )
+    migration.migrate(resources=harness)
+    assert ("stop", "trackio") in harness.events
+    assert ("stop", "new-trackio") in harness.events
+
+
+def test_default_trackio_deploy_uses_new_names(monkeypatch):
+    import modal_dojo.common.trackio as trackio
+
+    calls = []
+
+    def deploy(**kwargs):
+        calls.append(kwargs)
+        return "https://new-trackio.test"
+
+    monkeypatch.setattr(trackio, "_deploy_modal_dashboard", deploy)
+    result = trackio.TrackioConfig.deploy_to_modal()
+    assert calls[0]["app_name"] == "modal-dojo-trackio"
+    assert calls[0]["volume_name"] == "modal-dojo-trackio-data"
+    assert result.modal_secret_name == "_modal-dojo-trackio-write-token"
+
+
+def test_migrate_warns_about_old_skills_without_changing_files(
+    paths, harness, monkeypatch, capsys
 ):
     root = paths[0].parent
     (root / ".git").mkdir()
     old = root / ".agents/skills/training-gym-overview"
     old.mkdir(parents=True)
-    (old / "SKILL.md").write_text("old instructions")
+    (old / "SKILL.md").write_text("existing instructions")
+    link = root / ".claude/skills/training-gym-overview"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(old, target_is_directory=True)
     nested = root / "src"
     nested.mkdir()
     monkeypatch.chdir(nested)
-    cli_setup_module.setup(interactive=False)
+
+    migration.migrate(resources=harness)
+
     assert "modal-dojo skills install --force" in capsys.readouterr().err
-    assert (old / "SKILL.md").read_text() == "old instructions"
-    assert not (root / ".agents/skills/modal-dojo-overview").exists()
+    assert (old / "SKILL.md").read_text() == "existing instructions"
+    assert link.is_symlink() and link.resolve() == old
+    assert not (old.parent / "modal-dojo-overview").exists()
 
 
-def test_current_dashboard_does_not_require_legacy_lookup(
-    paths, deployment, monkeypatch
-):
-    looked_up = []
+def test_service_discovery_uses_public_lookup(monkeypatch):
+    import modal
+    from modal.exception import NotFoundError
 
-    def lookup(*args):
-        looked_up.append(args)
-        if args:
-            raise DashboardLookupUnknown()
-        return "https://new.test"
+    backend = migration.ModalResources()
+    calls = []
 
-    monkeypatch.setattr(cli_setup_module, "deployed_dashboard_url", lookup)
-    monkeypatch.setattr(config, "get_dashboard_proxy_auth", lambda url: True)
-    assert cli_setup_module.setup(interactive=False) == "https://new.test"
-    assert looked_up == [()]
-    assert deployment[1] == [(True, None)]
+    def lookup(name, *, create_if_missing):
+        calls.append((name, create_if_missing))
+        if name == "missing":
+            raise NotFoundError("missing")
+        return SimpleNamespace(app_id="ap-service")
+
+    monkeypatch.setattr(modal.App, "lookup", lookup)
+    assert not hasattr(backend, "rpc")
+    apps = backend.apps({"present", "missing"})
+    assert [(app.id, app.name) for app in apps] == [("ap-service", "present")]
+    assert calls == [("missing", False), ("present", False)]
 
 
-def test_unknown_legacy_lookup_without_current_dashboard_blocks_deploy(
-    paths, deployment, monkeypatch
-):
-    def lookup(*args):
-        if args:
-            raise DashboardLookupUnknown()
-        return None
+def test_run_check_uses_only_volume_records():
+    resources = SimpleNamespace(
+        records=lambda volume: [
+            (
+                "training-runs/run.json",
+                {"status": "completed", "modal_app_id": "ap-old"},
+            ),
+            ("evals/historical.json", {}),
+        ]
+    )
+    migration._check_runs(resources, [object()])
 
-    monkeypatch.setattr(cli_setup_module, "deployed_dashboard_url", lookup)
-    with pytest.raises(ValueError, match="discover"):
-        cli_setup_module.setup(interactive=False)
-    assert not deployment[1]
+
+def test_metadata_read_failure_blocks_migration(paths, harness, monkeypatch):
+    def fail(volume):
+        raise OSError("metadata unavailable")
+
+    monkeypatch.setattr(harness, "records", fail)
+    with pytest.raises(CLIError, match="metadata unavailable"):
+        migration.migrate(resources=harness)
+    assert not harness.events
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_training_summary_read_does_not_iterate_volume(wrapped):
+    import json
+
+    rows = [{"training_run_id": "run-a", "status": "running"}]
+    payload = {"items": rows} if wrapped else rows
+    reads = []
+
+    def read_file(path):
+        reads.append(path)
+        return [json.dumps(payload).encode()]
+
+    volume = SimpleNamespace(read_file=read_file)
+    assert list(migration.ModalResources().records(volume)) == [
+        ("training-runs/run-a", rows[0])
+    ]
+    assert reads == ["training-runs-summary/summary.json"]
+
+
+@pytest.mark.parametrize(
+    "payload", [b"bad json", b"{}", b'{"items": null}', b'{"items": [42]}']
+)
+def test_invalid_summary_blocks_without_iteration(payload):
+    volume = SimpleNamespace(read_file=lambda path: [payload])
+    with pytest.raises(ValueError, match="Restore or rebuild"):
+        list(migration.ModalResources().records(volume))
+
+
+def test_missing_summary_blocks_without_iteration():
+    def missing(path):
+        raise FileNotFoundError(path)
+
+    with pytest.raises(ValueError, match="Restore or rebuild"):
+        list(migration.ModalResources().records(SimpleNamespace(read_file=missing)))
+
+
+def test_empty_summary_has_no_live_runs():
+    volume = SimpleNamespace(read_file=lambda path: [b'{"items": []}'])
+    assert list(migration.ModalResources().records(volume)) == []
+
+
+def test_force_skips_all_run_checks(paths, harness, monkeypatch, capsys):
+    def forbidden(*args):
+        pytest.fail("Forced migration must not read run metadata")
+
+    monkeypatch.setattr(harness, "records", forbidden)
+    migration.migrate(resources=harness, force=True)
+    assert "Skipping the live-run check" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("unreadable", [True, False])
+def test_live_check_failure_explains_force(paths, harness, monkeypatch, unreadable):
+    if unreadable:
+
+        def fail(volume):
+            raise ValueError("summary unavailable")
+
+        monkeypatch.setattr(harness, "records", fail)
+    else:
+        harness.rows = [("training-runs/run.json", {"status": "running"})]
+    with pytest.raises(CLIError) as error:
+        migration.migrate(resources=harness)
+    assert "After verifying there are no active training runs" in error.value.hint
+    assert "modal-dojo migrate --force" in error.value.hint
+    assert not harness.events
+
+
+def test_force_does_not_skip_volume_conflicts(paths, harness):
+    harness.volumes[migration.METADATA_VOLUME_NAME] = SimpleNamespace(object_id="other")
+    with pytest.raises(CLIError, match="Both") as error:
+        migration.migrate(resources=harness, force=True)
+    assert "--force" not in error.value.hint
+    assert not harness.events
+
+
+def test_cli_forwards_force(monkeypatch):
+    from click.testing import CliRunner
+    from modal_dojo.cli import entrypoint_cli
+
+    calls = []
+    monkeypatch.setattr(migration, "migrate", lambda **kwargs: calls.append(kwargs))
+    result = CliRunner().invoke(entrypoint_cli, ["migrate", "--force", "--proxy-auth"])
+    assert result.exit_code == 0, result.exception
+    assert calls == [{"proxy_auth": ProxyAuthMode.REQUIRE, "force": True}]

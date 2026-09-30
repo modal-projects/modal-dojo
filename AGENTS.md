@@ -104,7 +104,7 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
 
 ### Dashboard
 
-`dashboards/app.py` is a Modal app with a Svelte frontend (built at image-build time). Training runs and evals write metadata to a shared Modal Volume (`training-gym-metadata`) via `modal_dojo.utils.metadata`. The ASGI endpoint serves the pre-built SPA + JSON APIs (`/api/runs`, `/api/train-results`, `/api/evals`) that read summary JSON from the volume on demand.
+`dashboards/app.py` is a Modal app with a Svelte frontend (built at image-build time). Training runs and evals write metadata to a shared Modal Volume (`modal-dojo-metadata`) via `modal_dojo.utils.metadata`. The ASGI endpoint serves the pre-built SPA + JSON APIs (`/api/runs`, `/api/train-results`, `/api/evals`) that read summary JSON from the volume on demand.
 
 ## Working rules
 
