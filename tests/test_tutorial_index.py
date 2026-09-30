@@ -92,10 +92,16 @@ def _frontmatter_lines(text: str) -> list[str]:
     return [line for line in parts[1].splitlines() if line.strip()]
 
 
-def test_homepage_frontmatter_is_order_only(tmp_path: Path) -> None:
+def test_homepage_frontmatter(tmp_path: Path) -> None:
     generate_starlight(tmp_path)
     text = (tmp_path / "index.md").read_text()
-    assert _frontmatter_lines(text) == ["order: 0"]
+    # The head title override keeps the homepage tab title as just "Modal Dojo".
+    assert _frontmatter_lines(text) == [
+        "order: 0",
+        "head:",
+        "  - tag: title",
+        "    content: Modal Dojo",
+    ]
     assert "\n# Modal Dojo\n" in text
 
 
