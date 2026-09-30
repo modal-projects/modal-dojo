@@ -108,6 +108,42 @@ The two batches differ, so the higher reward is not evidence of generalization
 or a statistically established improvement. This proves the requested two-step
 H200 path, not a ten-step smoke test, B300 support, or checkpoint export.
 
+The follow-up metric audit confirmed 120 unique samples and 15 groups of eight
+per rollout. The logs report 40 microbatches per data-parallel replica (DP3,
+TP8); expert parallelism does not mean 24 independent sample batches. Replaying
+the pinned scheduler from trace input/output token counts preserves every
+sample exactly once and produces 40 samples per replica. Reconstructed token
+totals are 13718/12304/12164 in step 1 and 12143/12021/12021 in step 2. These
+are a schedule reconstruction, not captured per-rank tensor checksums.
+
+Whole driver iterations took 1250.6 and 548.4 seconds. The second iteration
+spent 195.3 seconds on rollout offload, trainer offload, and weight sync;
+CPU offload is a substantial cost even after compilation. One warm iteration
+does not establish a steady-state performance baseline.
+
+The trainer/rollout KL is a sampled-token k3 estimate, and the mean absolute
+logprob differences above are small. Neither exposes distribution tails or
+proves exact equality between the BF16 trainer and FP8 rollout base. With
+`use_rollout_logprobs=False`, PPO KL and ESS compare trainer-scored old-policy
+logprobs with the training forward pass. Near-zero PPO KL, zero clip fraction,
+and ESS near one are expected with one update per rollout; they are not
+independent proof of trainer/rollout equivalence. Entropy observation is off,
+so `entropy_loss=0` is a placeholder rather than measured zero entropy.
+
+GSM8K is saturated: 13/15 groups in step 1 and 11/15 in step 2 are all correct.
+Only 2 and 4 groups, respectively, have nonzero GRPO reward variance. The
+pinned upstream metrics code has a reporting bug for integer rewards: it
+creates the key `"1"` but looks up `"1.0"`, causing
+`zero_std/all_one_percentage` to report zero. Counts and downloaded traces
+instead establish 86.7% and 73.3%. This affects reporting, not normalization.
+In the second batch, all four zero-scored responses have correct arithmetic:
+three lack a boxed answer and one puts prose inside the box. The upstream
+math grader requires an extractable boxed answer; the reward consequently
+tests formatting as well as math. No reward semantics were changed for the
+validation. A longer stability test should use a more discriminative task,
+audit reward extraction, observe entropy and mismatch tails, and exercise
+checkpoint/resume before production use.
+
 Before the full run, 27 focused local tests passed. A one-H200 diagnostic
 reproduced the stock FLA backward crash with synchronous CUDA launches. The
 patched image then passed packed and strided Q/K/V tests with FP32 gates and
