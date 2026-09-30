@@ -398,6 +398,25 @@ def _build_miles_base_image(
     return image
 
 
+def _remap_kernel_cache_dirs(
+    environment: dict[str, str], checkpoints_mount_path: str
+) -> dict[str, str]:
+    environment = dict(environment)
+    for key in (
+        "TRITON_CACHE_DIR",
+        "TORCHINDUCTOR_CACHE_DIR",
+        "TILELANG_CACHE_DIR",
+        "SGLANG_CACHE_DIR",
+    ):
+        cache_dir = environment.get(key)
+        if cache_dir and Path(cache_dir).is_relative_to(CHECKPOINTS_PATH):
+            environment[key] = str(
+                Path(checkpoints_mount_path)
+                / Path(cache_dir).relative_to(CHECKPOINTS_PATH)
+            )
+    return environment
+
+
 def build_ray_runtime_env(
     *,
     head_addr: str,
@@ -492,14 +511,7 @@ def build_miles_app(
     hf_cache_volume = all_volumes[str(HF_CACHE_PATH)]
     data_volume = all_volumes[str(DATA_PATH)]
     checkpoints_volume = all_volumes[checkpoints_mount_path]
-    environment = dict(miles.environment)
-    for key in ("TRITON_CACHE_DIR", "TORCHINDUCTOR_CACHE_DIR"):
-        cache_dir = environment.get(key)
-        if cache_dir and Path(cache_dir).is_relative_to(CHECKPOINTS_PATH):
-            environment[key] = str(
-                Path(checkpoints_mount_path)
-                / Path(cache_dir).relative_to(CHECKPOINTS_PATH)
-            )
+    environment = _remap_kernel_cache_dirs(miles.environment, checkpoints_mount_path)
     checkpoint_dir = compute_recipe_save_root(
         miles,
         recipe_default_save_root=str(CHECKPOINTS_PATH),

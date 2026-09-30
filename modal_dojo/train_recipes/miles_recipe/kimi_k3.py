@@ -24,6 +24,7 @@ _PATCHES = (
     "patch_lora_sync_stream_pp",
     "patch_ipc_bucket_empty_cache",
     "patch_checkpoint_local_dirs",
+    "patch_lora_initial_offload",
 )
 
 # Includes K3 support in Miles, Megatron, and SGLang.
@@ -79,6 +80,11 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
             "CONVERT_DEQUANT_MXFP4": "1",
             "TRITON_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/triton",
             "TORCHINDUCTOR_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/torchinductor",
+            "TILELANG_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/tilelang",
+            "SGLANG_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/sglang",
+            # Initial LoRA sync needs KV/graph memory, not a base-weight round trip.
+            # Set to "0" to restore upstream's initialization sequence.
+            "MODAL_DOJO_K3_KEEP_INITIAL_BASE_WEIGHTS": "1",
             "SGLANG_JIT_ROUTE_RADIX": "1",
             # sglang's membind pins the whole host backup to one NUMA node,
             # which cannot hold it.
