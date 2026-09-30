@@ -110,7 +110,7 @@ def test_same_uncached_dataset_for_eval_is_written_once(tmp_path, monkeypatch):
         def rows(self):
             return self._rows
 
-    monkeypatch.setattr("modal_training_gym.train_recipes.base.DATA_PATH", tmp_path)
+    monkeypatch.setattr("modal_dojo.train_recipes.base.DATA_PATH", tmp_path)
     dataset = OneShotDataset()
     dataset_path, eval_dataset_path = BaseTrainRecipe._resolve_dataset_paths(
         dataset, dataset
