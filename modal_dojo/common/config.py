@@ -76,7 +76,7 @@ def _read_config(path: Path, *, strict: bool = False) -> dict[str, Any]:
 
 def require_migrated_config() -> None:
     """Reject legacy-only setups before launching or provisioning anything."""
-    if LEGACY_CONFIG_PATH.exists() and not CONFIG_PATH.exists():
+    if LEGACY_CONFIG_PATH.exists():
         from modal_dojo.common.errors import DojoConfigError
 
         raise DojoConfigError(
