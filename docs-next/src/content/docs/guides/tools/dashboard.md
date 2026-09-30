@@ -93,7 +93,7 @@ The Logs tab streams every worker's logs live while the run is going, and stores
 
 ![Logs tab with annotated components](https://modal-cdn.com/cdnbot/dashboard-run-logse6vmv22__f0e67d65.webp)
 
-1. Substring filter and time-range picker, plus a stored-logs toggle.
+1. Substring filter and time-range picker.
 2. Interleaved log lines from all workers in the run.
 
 ## Housekeeping
