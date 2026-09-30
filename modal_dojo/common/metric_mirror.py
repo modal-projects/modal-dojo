@@ -112,12 +112,7 @@ def flatten_numeric(data: Mapping[str, Any], prefix: str = "") -> dict[str, floa
 
 
 class MetricMirror:
-    """Coalesces ``log`` calls per step and posts them every few seconds.
-
-    Honor ``define_metric(..., step_metric=...)`` before falling back to the
-    process-local W&B logging counter. Different workers' logging counters
-    are not training steps. Keep separate calls' timestamps when batching.
-    """
+    """Batch metric updates using their declared step axes and timestamps."""
 
     def __init__(self, training_run_id: str) -> None:
         self.training_run_id = training_run_id
@@ -180,9 +175,6 @@ class MetricMirror:
                 if definition is not None:
                     candidate, sync = definition
                     axis_value = (self._axis_values if sync else metrics).get(candidate)
-                    # The storage contract is an integer step. Do not truncate
-                    # fractional axes or fall back to a misleading worker step
-                    # when a declared custom axis has not been logged yet.
                     if (
                         axis_value is None
                         or not (0 <= axis_value <= 100_000_000)

@@ -664,17 +664,12 @@ def _wrap_function(src: str, name: str, context: str) -> str:
     fn = _function(src, name)
     body = fn.body
     if isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
-        body = body[1:]  # preserve the function docstring
+        body = body[1:]
     return _wrap_span(src, body[0].lineno, body[-1].end_lineno, context)
 
 
 def _wrap_calls(src: str, function: str, calls: dict[str, str]) -> str:
-    """Wrap complete call statements, retaining branches and multiline calls.
-
-    Each requested call must exist. Unlike text anchors this survives changes
-    to argument formatting without moving a call outside its original guard.
-    Nested function definitions are separate scopes and are not visited.
-    """
+    """Wrap call statements within their original scopes."""
     spans = []
     seen = set()
 
@@ -709,8 +704,6 @@ def _phase(name: str) -> str:
 
 
 def _patch_executor_driver(src: str, path: Path) -> str:
-    # Startup work must not be attributed to rollout 0. In particular, the
-    # initial update waits for gated SGLang startup before transferring LoRA.
     startup = {
         "create_rollout_components": "initialize_rollout",
         "create_training_models": "initialize_training",
@@ -746,8 +739,6 @@ def _patch_executor_driver(src: str, path: Path) -> str:
             "eval_dispatcher.dispatch": _phase("evaluate_rollouts"),
         },
     )
-    # Keep the startup lane outside the loop. Weight transfer itself is timed
-    # in group.py so readiness waits do not inflate the transfer phase.
     body = _function(src, "train").body
     loop_index = next(i for i, node in enumerate(body) if isinstance(node, ast.For))
     src = _wrap_span(
@@ -830,10 +821,6 @@ def main() -> None:
     if not ROOT.is_dir():
         return
     if (ROOT / "miles/ray/rollout/rollout_executor.py").exists():
-        # K3's September image split the old RolloutManager into an executor
-        # and inference controller, and refactored the Megatron training step.
-        # These are required lanes, so fail the build on drift rather than
-        # silently shipping another image with an empty dashboard timeline.
         _patch_file(ROOT / "train.py", _SYNC_PHASE_WRAPS)
         patch_executor_package(ROOT)
         _patch_entrypoint(ROOT / "train_async.py", _ASYNC_PHASE_WRAPS)

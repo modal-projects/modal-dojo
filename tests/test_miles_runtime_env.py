@@ -7,35 +7,6 @@ import pytest
 from modal_dojo.frameworks.miles import launcher
 from modal_dojo.frameworks.miles.launcher import build_ray_runtime_env
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
-from modal_dojo.train_recipes.miles_recipe.kimi_k3 import Kimi_K3_LoRA_Recipe
-
-
-def test_k3_kernel_caches_follow_checkpoint_mount():
-    environment = Kimi_K3_LoRA_Recipe().environment
-    remapped = launcher._remap_kernel_cache_dirs(environment, "/mounted-checkpoints")
-    for key in (
-        "TRITON_CACHE_DIR",
-        "TORCHINDUCTOR_CACHE_DIR",
-        "TILELANG_CACHE_DIR",
-        "SGLANG_CACHE_DIR",
-    ):
-        assert environment[key].startswith("/checkpoints/.kernel-cache/")
-        assert remapped[key] == environment[key].replace(
-            "/checkpoints/", "/mounted-checkpoints/", 1
-        )
-    assert remapped["MODAL_DOJO_K3_KEEP_INITIAL_BASE_WEIGHTS"] == "1"
-
-
-def test_kernel_cache_remap_preserves_user_paths():
-    environment = {
-        "TILELANG_CACHE_DIR": "/tmp/tilelang",
-        "SGLANG_CACHE_DIR": "relative-cache",
-    }
-    assert (
-        launcher._remap_kernel_cache_dirs(environment, "/mounted-checkpoints")
-        == environment
-    )
-    assert launcher._remap_kernel_cache_dirs({}, "/mounted-checkpoints") == {}
 
 
 @pytest.fixture

@@ -82,9 +82,6 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
             "TORCHINDUCTOR_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/torchinductor",
             "TILELANG_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/tilelang",
             "SGLANG_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/sglang",
-            # Initial LoRA sync needs KV/graph memory, not a base-weight round trip.
-            # Set to "0" to restore upstream's initialization sequence.
-            "MODAL_DOJO_K3_KEEP_INITIAL_BASE_WEIGHTS": "1",
             "SGLANG_JIT_ROUTE_RADIX": "1",
             # sglang's membind pins the whole host backup to one NUMA node,
             # which cannot hold it.

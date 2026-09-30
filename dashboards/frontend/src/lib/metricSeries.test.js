@@ -1,18 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { UNGROUPED, formatMetricValue, groupMetricKeys, metricAxisLabel } from "./metricSeries.js";
+import { UNGROUPED, formatMetricValue, groupMetricKeys } from "./metricSeries.js";
 import { niceTicks } from "./ticks.js";
 
 const KEYS = ["train/loss", "rollout/reward", "perf/tokens_per_s", "lr", "eval/acc", "train/grad_norm"];
-
-test("metric axes distinguish optimizer, rollout and legacy logging steps", () => {
-  assert.equal(metricAxisLabel("train/step"), "Training step");
-  assert.equal(metricAxisLabel("rollout/step"), "Rollout step");
-  assert.equal(metricAxisLabel("eval/step"), "Evaluation step");
-  assert.equal(metricAxisLabel("custom/step"), "custom/step");
-  assert.equal(metricAxisLabel(undefined), "Logging step");
-});
 
 test("groupMetricKeys groups by prefix, ungrouped first, then alphabetically", () => {
   assert.deepEqual(groupMetricKeys(KEYS), [

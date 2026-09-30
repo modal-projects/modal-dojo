@@ -124,8 +124,6 @@ class RunMetrics:
                 if key not in mine or at > mine_at.get(key, -1.0):
                     mine[key] = value
                     mine_at[key] = at
-                    # Legacy chunks have only a row timestamp. Read them as
-                    # written; worker identity/axis cannot be recovered safely.
                     self.metric_times.setdefault(step, {})[key] = metric_times.get(
                         raw_step, {}
                     ).get(key, times.get(raw_step))
@@ -166,7 +164,7 @@ def metric_series(
 
 
 def metric_step_keys(run: RunMetrics) -> dict[str, str | None]:
-    """Axis labels for each series; no inferred training axes for legacy data."""
+    """Return axis labels for each metric series."""
     axes: dict[str, set[str | None]] = {}
     for step, metrics in run.table.items():
         for key in metrics:

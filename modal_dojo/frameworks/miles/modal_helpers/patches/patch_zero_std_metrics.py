@@ -1,9 +1,4 @@
-"""Normalize integer/float reward buckets in Miles' rollout diagnostics.
-
-The percentage lookup uses "0.0"/"1.0", but round(int, 1) yields an int.
-Normalize only the logged bucket key; rewards and training are untouched.
-Supports both the older rollout.py and the executor-era rollout/metrics.py.
-"""
+"""Normalize integer and float reward buckets in Miles' rollout diagnostics."""
 
 from pathlib import Path
 
