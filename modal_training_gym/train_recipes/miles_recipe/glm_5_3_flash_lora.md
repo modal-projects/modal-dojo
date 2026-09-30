@@ -106,6 +106,16 @@ observer does not synchronize CUDA, execute collectives, or dump tensor
 contents, local variables, or environment credentials. Diagnostics are off
 by default and are installed only in this LoRA recipe's image.
 
+The H200 retry after removing the timer completed initialization and initial
+adapter synchronization, then generated 120 GSM8K samples with mean reward
+0.8917, mean response length 206 tokens, and no truncation (144 seconds).
+Inspected responses were coherent. It entered log-probability computation but
+exited with code 1 before any verified optimizer step. GPU XID warnings were
+recorded, but the exact exception was obscured by NCCL collective logging and
+Modal's output-rate limit; the root cause remains unresolved. For diagnostics,
+use `NCCL_DEBUG_SUBSYS=INIT,NET` rather than per-collective `COLL` output. The
+two-step LoRA validation has not passed.
+
 ```python
 from modal_training_gym import (
     GLM_5_3_Flash_LoRA, GLM_5_3_Flash_LoRA_Recipe,
