@@ -1,6 +1,7 @@
 """Experimental bridge-mode GLM-5.3-Flash LoRA from radixark/miles#3098."""
 
 from dataclasses import field
+from pathlib import Path
 from typing import ClassVar
 
 from pydantic import ConfigDict, model_validator
@@ -9,9 +10,11 @@ from pydantic.dataclasses import dataclass
 from modal_dojo.common.models.base import ModelConfig
 from modal_dojo.common.models.glm_5_3_flash import GLM_5_3_Flash_LoRA
 from modal_dojo.common.patches import encode_patch
-from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash import _PATCH_DIR
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
+_PATCH_DIR = (
+    Path(__file__).resolve().parents[2] / "frameworks/miles/modal_helpers/patches"
+)
 _BRIDGE_REF = "6527b18e8bb0db994a267e6dfd4db7dafc669df9"
 _TARGETS = (
     "self_attention.linear_q",

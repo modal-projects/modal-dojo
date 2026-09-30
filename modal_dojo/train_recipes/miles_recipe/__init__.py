@@ -5,9 +5,6 @@ from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash import (
 from modal_dojo.train_recipes.miles_recipe.gemma4_26b_a4b import (
     Gemma4_26B_A4B_Recipe,
 )
-from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash import (
-    GLM_5_3_Flash_Recipe,
-)
 from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash_lora import (
     GLM_5_3_Flash_LoRA_Recipe,
 )
@@ -29,7 +26,6 @@ __all__ = [
     "MilesRecipe",
     "DeepSeek_V4_1_Flash_Recipe",
     "Gemma4_26B_A4B_Recipe",
-    "GLM_5_3_Flash_Recipe",
     "GLM_5_3_Flash_LoRA_Recipe",
     "Inkling_Small_Recipe",
     "Inkling_Small_LoRA_Recipe",
