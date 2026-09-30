@@ -268,7 +268,7 @@ def test_cli_migrate_flags(monkeypatch):
         (["--proxy-auth"], ProxyAuthMode.REQUIRE),
         (["--no-proxy-auth"], ProxyAuthMode.DISABLE),
     ]:
-        result = CliRunner().invoke(entrypoint_cli, ["migrate", *flag])
+        result = CliRunner().invoke(entrypoint_cli, ["migrate", *flag], input="yes\n")
         assert result.exit_code == 0, result.exception
         assert calls[-1] == {"proxy_auth": mode, "force": False}
     assert (
@@ -435,7 +435,10 @@ def test_training_summary_read_does_not_iterate_volume(wrapped):
 )
 def test_invalid_summary_blocks_without_iteration(payload):
     volume = SimpleNamespace(read_file=lambda path: [payload])
-    with pytest.raises(ValueError, match="Restore or rebuild"):
+    with pytest.raises(
+        ValueError,
+        match="Manually check that no runs are active, then run with --force",
+    ):
         list(migration.ModalResources().records(volume))
 
 
@@ -443,7 +446,10 @@ def test_missing_summary_blocks_without_iteration():
     def missing(path):
         raise FileNotFoundError(path)
 
-    with pytest.raises(ValueError, match="Restore or rebuild"):
+    with pytest.raises(
+        ValueError,
+        match="Manually check that no runs are active, then run with --force",
+    ):
         list(migration.ModalResources().records(SimpleNamespace(read_file=missing)))
 
 
@@ -492,6 +498,46 @@ def test_cli_forwards_force(monkeypatch):
 
     calls = []
     monkeypatch.setattr(migration, "migrate", lambda **kwargs: calls.append(kwargs))
-    result = CliRunner().invoke(entrypoint_cli, ["migrate", "--force", "--proxy-auth"])
+    result = CliRunner().invoke(
+        entrypoint_cli, ["migrate", "--force", "--proxy-auth"], input="y\n"
+    )
     assert result.exit_code == 0, result.exception
     assert calls == [{"proxy_auth": ProxyAuthMode.REQUIRE, "force": True}]
+
+
+@pytest.mark.parametrize("answer", ["y", "Y", "n", "N"])
+def test_migration_confirmation(monkeypatch, answer):
+    from click.testing import CliRunner
+    from modal_dojo.cli import entrypoint_cli
+
+    calls = []
+    monkeypatch.setattr(migration, "migrate", lambda **kwargs: calls.append(kwargs))
+    result = CliRunner().invoke(
+        entrypoint_cli, ["migrate", "--force"], input=answer + "\n"
+    )
+    assert result.exit_code == 0
+    assert "no active runs on the Training Gym" in result.output
+    assert bool(calls) is (answer.lower() == "y")
+
+
+@pytest.mark.parametrize("answer", ["maybe", "true", "1", ""])
+def test_invalid_confirmation_reprompts(monkeypatch, answer):
+    from click.testing import CliRunner
+    from modal_dojo.cli import entrypoint_cli
+
+    calls = []
+    monkeypatch.setattr(migration, "migrate", lambda **kwargs: calls.append(kwargs))
+    result = CliRunner().invoke(entrypoint_cli, ["migrate"], input=answer + "\nno\n")
+    assert result.exit_code == 0
+    assert not calls
+
+
+def test_confirmation_eof_does_not_migrate(monkeypatch):
+    from click.testing import CliRunner
+    from modal_dojo.cli import entrypoint_cli
+
+    calls = []
+    monkeypatch.setattr(migration, "migrate", lambda **kwargs: calls.append(kwargs))
+    result = CliRunner().invoke(entrypoint_cli, ["migrate"], input="")
+    assert result.exit_code != 0
+    assert not calls

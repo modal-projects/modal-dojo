@@ -146,4 +146,16 @@ def migrate_command(proxy_auth: bool, no_proxy_auth: bool, force: bool) -> None:
         if no_proxy_auth
         else ProxyAuthMode.UNSPECIFIED
     )
+    print(
+        "This will migrate your Training Gym configuration to the new Modal Dojo name. Before running, you should make sure all active runs are stopped."
+    )
+    print()
+    answer = click.prompt(
+        "Are you sure you want to continue? [y/n]",
+        type=click.Choice(["y", "n"], case_sensitive=False),
+        show_choices=False,
+    )
+    if answer == "n":
+        click.echo("Migration cancelled.")
+        return
     migrate(proxy_auth=mode, force=force)
