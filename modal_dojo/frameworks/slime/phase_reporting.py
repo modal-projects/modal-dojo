@@ -27,7 +27,7 @@ from modal_dojo.common.timing_recorder import (
     recording_lane_on_reporting_rank as recording_lane_on_reporting_rank,
     time_phase as time_phase,
 )
-from modal_training_gym.common.training_rollout import TrainingRolloutResult
+from modal_dojo.common.training_rollout import TrainingRolloutResult
 
 from .advantage_reporting import (
     _advantage_samples_payload as _advantage_samples_payload,

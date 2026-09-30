@@ -1,10 +1,10 @@
 from types import SimpleNamespace
 
-from modal_training_gym.common.dataset import HuggingFaceDataset
-from modal_training_gym.common.models import Qwen3_4B
-from modal_training_gym.common.train import TrainConfig
-from modal_training_gym.common.training_rollout import TrainingRolloutResult
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.common.dataset import HuggingFaceDataset
+from modal_dojo.common.models import Qwen3_4B
+from modal_dojo.common.train import TrainConfig
+from modal_dojo.common.training_rollout import TrainingRolloutResult
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 def _dataset(*, input_format: str, input_column: str) -> HuggingFaceDataset:
@@ -45,7 +45,7 @@ def test_evaluate_forces_eval_only_recipe_on_given_dataset(monkeypatch) -> None:
 
     monkeypatch.setattr(TrainConfig, "train", fake_train)
     monkeypatch.setattr(
-        "modal_training_gym.common.train.vol_get",
+        "modal_dojo.common.train.vol_get",
         lambda *_args, **_kwargs: TrainingRolloutResult(
             training_run_id="eval-run",
             rollout_id=0,
