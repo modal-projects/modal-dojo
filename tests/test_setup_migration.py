@@ -103,7 +103,7 @@ def deployment(paths, monkeypatch):
 def test_migration_inherits_settings_and_prefers_new_app(
     paths, deployment, monkeypatch, capsys, auth
 ):
-    seen = deployment
+    dashboard, seen = deployment
     paths[1].write_text(
         '[dashboard]\nurl="https://old.test"\ntrajectory_viewer="/my/viewer.svelte"\n[proxy_auth]\nkey="wk-test"\nsecret="ws-test"\n'
     )
@@ -123,7 +123,13 @@ def test_migration_inherits_settings_and_prefers_new_app(
     assert probed == ["https://new.test"]
     assert seen == [(auth, "/my/viewer.svelte")]
     assert config.get_proxy_auth() == ("wk-test", "ws-test")
-    assert re.search(r"modal[ \n]app[ \n]stop[ \n]training-gym-dashboard", capsys.readouterr().err) is not None
+    assert (
+        re.search(
+            r"modal[ \n]app[ \n]stop[ \n]training-gym-dashboard",
+            capsys.readouterr().err,
+        )
+        is not None
+    )
     assert config.get_dashboard_url() == "https://new.test"
 
 
