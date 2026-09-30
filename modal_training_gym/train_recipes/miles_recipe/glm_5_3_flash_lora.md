@@ -12,6 +12,16 @@ Its DAPO settings follow the PR's reported full-model experiment: 15 prompts
 replay, and learning rate `1e-5`. Fixed microbatches and full recompute match
 the upstream launcher. The default is one rollout.
 
+Upstream reports two separate full-model validations: an
+[eight-step GSM8K run](https://github.com/radixark/miles/pull/3098#issuecomment-5523089411)
+with an 8192-token response cap, and a later
+[20-step DAPO run](https://github.com/radixark/miles/pull/3098#issuecomment-5531105191)
+with a 7168-token cap. This preset follows the latter workload. Both reports
+use H200 GPUs; using the same flags on B300 does not reproduce that environment.
+The PR describes Triton 3.6 validation, while our image probe reports Triton
+3.7.1. A complete upstream validation image/version manifest was not supplied
+in those reports.
+
 Rank-16, alpha-32 adapters cover KDA attention and gate projections, DSA
 projections, dense MLPs, shared experts, and routed experts. Each routed
 expert has its own adapter factors. The sparse indexer, KDA convolutions,
@@ -58,6 +68,40 @@ was needed because Transformer Engine imports require the CUDA driver. The
 FP8 helper test moves its CUDA result to CPU for comparison with the upstream
 CPU reference; its numeric tolerances are unchanged. No full model weights
 were loaded, and this does not validate training, serving, or distributed sync.
+
+The September 29, 2026 two-step validation passed 246 local tests and the
+isolated GPU preflight, then exercised the full 24-B300 topology. Run
+`compact-twill-3ac0d3dafb0e` loaded the base through Bridge, synchronized the
+initial adapters to all three rollout engines, and generated 120 responses
+in 284 seconds (mean math reward 0.45; 54.2% reached the response limit).
+It stalled before the first optimizer update: repeated trainer stacks on
+multiple ranks were blocked in Transformer Engine's MoE chunk-sort kernel
+loading, with the native stack in `cuModuleLoadData`. The run was stopped.
+Neither the two optimizer steps nor checkpoint saving is validated. An
+earlier attempt stalled during one rollout engine's CUDA graph capture;
+an identical retry passed that stage. These observations do not establish
+the underlying runtime cause. The FFT recipe and shared launcher were not
+changed for these validation attempts.
+
+A two-B300 diagnostic passed fused MoE sorting and gradient comparisons
+after NCCL all-to-all under both lazy and eager CUDA loading. It did not
+reproduce the full-cluster stall. Eager initialization took 320 seconds.
+A validation-only retry (`merry-mean-5ae4ab814954`) with
+`CUDA_MODULE_LOADING=EAGER` failed earlier, at Miles' fixed 120-second
+router-readiness timeout. Eager loading has not been adopted by the recipe.
+Further work should isolate kernel preloading to trainer processes and prove
+the distributed training path before another full validation attempt.
+
+Set `recipe.environment["TRAINING_GYM_GLM53_LORA_DEBUG"] = "1"` to enable
+recipe-scoped diagnostics. Each trainer logs phase boundaries and Triton
+module-load boundaries, with bounded MoE-sort progress logging. During an
+active phase, Python stacks are dumped every 120 seconds; a separate CPU
+observer captures native stacks with `py-spy` and GPU counters if diagnostic
+progress stops for that interval. `GLM53_DEBUG_STALL_SECONDS` adjusts it.
+An observer report indicates a long operation, not proof of deadlock. The
+observer does not synchronize CUDA, execute collectives, or dump tensor
+contents, local variables, or environment credentials. Diagnostics are off
+by default and are installed only in this LoRA recipe's image.
 
 ```python
 from modal_training_gym import (
