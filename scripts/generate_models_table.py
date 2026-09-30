@@ -56,7 +56,8 @@ def family_of(hf_id: str) -> str:
 
 
 def model_link(hf_id: str) -> ModelLink:
-    display_name = hf_id.rsplit("/", 1)[-1]
+    slug = hf_id.rsplit("/", 1)[-1]
+    display_name = slug[:1].upper() + slug[1:]
     return ModelLink(display_name=display_name, href=f"{HF_URL}/{hf_id}")
 
 
