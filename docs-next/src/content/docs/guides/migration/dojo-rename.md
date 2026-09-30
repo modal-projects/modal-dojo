@@ -35,9 +35,9 @@ The `training-gym` command has been renamed to `modal-dojo`, and many other thin
 
 * The `~/.training-gym.toml` config file is now `~/.modal-dojo.toml`.
 * The `training-gym-overview` skill is now `modal-dojo-overview`.
-* The dashboard app, deployed previously as `training-gym-dashboard`, is now `modal-dojo-dashboard`.
+* The dashboard app, deployed previously as `training-gym-dashboard`, is now `dojo-dashboard`.
 
-To copy your existing configuration over, and to deploy a new `modal-dojo-dashboard`, run:
+To copy your existing configuration over, and to deploy a new `dojo-dashboard` with an updated URL, run:
 
 ```bash
 modal-dojo setup
