@@ -47,7 +47,14 @@ The dependencies are pinned independently of FFT:
 | `sglang-kernel` | `0.4.6.post1` |
 
 The recipe installs Bridge without replacing the image's PyTorch, CUDA, or
-Megatron stack. Its KDA kernel patch is shared with FFT. A separate timing
+Megatron stack. Its KDA forward kernel patch is shared with FFT. A LoRA-only
+backward patch restricts the FLA 0.4.2 fused KDA backward autotuner on Hopper
+to BK32/BV32, four warps, one stage. The original search reproducibly accesses
+invalid GPU memory on H200 with Triton 3.7.1; the conservative configuration
+passes an isolated output/gradient comparison against a PyTorch reference.
+Other architectures retain the original search. This is a configuration
+workaround, not a diagnosis of the underlying compiler/kernel defect.
+A separate timing
 adapter covers this PR's older synchronous driver, actor logprobs,
 forward/backward, and optimizer step. Those three Miles files are restored
 from the pinned checkout before instrumentation, and golden fixtures enforce
@@ -119,6 +126,21 @@ recorded, but the exact exception was obscured by NCCL collective logging and
 Modal's output-rate limit; the root cause remains unresolved. For diagnostics,
 use `NCCL_DEBUG_SUBSYS=INIT,NET` rather than per-collective `COLL` output. The
 two-step LoRA validation has not passed.
+
+With exception archiving enabled, H200 run `bright-buck-93464065c328`
+completed rollout (reward 0.8917, no truncation) and log-probability computation
+(231 seconds), then failed in the first backward pass. The captured exception
+points to FLA's `chunk_kda_bwd_kernel_wy_dqkg_fused` autotuning. A single-H200
+reproducer with synchronous CUDA launches confirmed illegal memory access
+during the stock search, while the conservative configuration completed both
+packed and 1024-token backward passes. Output and all five input gradients
+matched the reference within 0.4% relative RMS error. This motivates the
+Hopper-only workaround above; it does not establish a successful full-model
+optimizer update. A second isolated H200 proof verified the patch in the built
+recipe image and passed with Bridge-style strided Q/K/V, FP32 gates/beta,
+packed sequences, and lengths up to 16,384 tokens. All gradients were finite;
+the packed reference comparison passed. The failed training and diagnostic
+apps were stopped.
 
 ```python
 from modal_training_gym import (
