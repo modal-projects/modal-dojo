@@ -6,13 +6,13 @@ from types import ModuleType
 
 import pytest
 
-from modal_training_gym.common.launcher_helpers import (
+from modal_dojo.common.launcher_helpers import (
     mount_caller_source,
     ship_callable,
 )
-from modal_training_gym.common.launcher_helpers import ship_recipe_callables
-from modal_training_gym.train_recipes.miles_recipe import MilesRecipe
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.common.launcher_helpers import ship_recipe_callables
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 _WRAPPED_HOOKS = (
@@ -125,13 +125,13 @@ def test_recipe_hooks_ship_closures_to_framework_destinations(recipe_cls):
         fields["rollout_function_path"],
         config[reward_key] if recipe_cls is SlimeRecipe else fields[reward_key],
         *(
-            config[f"training_gym_{name}_path"]
+            config[f"modal_dojo_{name}_path"]
             for name in _WRAPPED_HOOKS
             if getattr(recipe, name) is None
         ),
     ]
     assert shipped == set(destinations)
     assert all(".phase_reporting." in fields[f"{n}_path"] for n in _WRAPPED_HOOKS)
-    assert config["training_gym_custom_eval_rollout_log_function_path"] == (
+    assert config["modal_dojo_custom_eval_rollout_log_function_path"] == (
         "user.eval_hook"
     )

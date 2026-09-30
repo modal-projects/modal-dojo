@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from modal_training_gym.common.framework import Framework
-from modal_training_gym.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.framework import Framework
+from modal_dojo.common.run import TrainingRun, TrainingRunStatus
 
 
 def _run(status: TrainingRunStatus) -> TrainingRun:
@@ -42,9 +42,7 @@ def test_done_sees_status_written_after_launch(fake_volume):
 
 def test_context_manager_stops_app(monkeypatch):
     stopped: list[str] = []
-    monkeypatch.setattr(
-        "modal_training_gym.common.modal_lifecycle.stop_app", stopped.append
-    )
+    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", stopped.append)
     run = _run(TrainingRunStatus.RUNNING)
     run.modal_app_id = "ap-1"
 
@@ -57,9 +55,7 @@ def test_context_manager_stops_app(monkeypatch):
 
 def test_context_manager_leaves_app_running_on_exception(monkeypatch):
     stopped: list[str] = []
-    monkeypatch.setattr(
-        "modal_training_gym.common.modal_lifecycle.stop_app", stopped.append
-    )
+    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", stopped.append)
     run = _run(TrainingRunStatus.RUNNING)
     run.modal_app_id = "ap-1"
 
@@ -72,9 +68,7 @@ def test_context_manager_leaves_app_running_on_exception(monkeypatch):
 
 def test_close_is_idempotent(monkeypatch):
     stopped: list[str] = []
-    monkeypatch.setattr(
-        "modal_training_gym.common.modal_lifecycle.stop_app", stopped.append
-    )
+    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", stopped.append)
     run = _run(TrainingRunStatus.COMPLETED)
     run.modal_app_id = "ap-1"
 
@@ -86,9 +80,7 @@ def test_close_is_idempotent(monkeypatch):
 
 def test_done_does_not_stop_app(monkeypatch, fake_volume):
     stopped: list[str] = []
-    monkeypatch.setattr(
-        "modal_training_gym.common.modal_lifecycle.stop_app", stopped.append
-    )
+    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", stopped.append)
     run = _run(TrainingRunStatus.COMPLETED)
     run.modal_app_id = "ap-1"
 
@@ -166,9 +158,7 @@ def test_wait_timeout_does_not_mark_failed(fake_volume):
 
 def test_wait_all_closes_each_run_when_that_run_is_done(monkeypatch, fake_volume):
     stopped: list[str] = []
-    monkeypatch.setattr(
-        "modal_training_gym.common.modal_lifecycle.stop_app", stopped.append
-    )
+    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", stopped.append)
     sleeps: list[float] = []
 
     class _FlipCall:
@@ -192,7 +182,7 @@ def test_wait_all_closes_each_run_when_that_run_is_done(monkeypatch, fake_volume
         sleeps.append(seconds)
         second._function_call.pending = False
 
-    monkeypatch.setattr("modal_training_gym.common.run.time.sleep", _sleep)
+    monkeypatch.setattr("modal_dojo.common.run.time.sleep", _sleep)
 
     finished = TrainingRun.wait_all([first, second], poll_interval=0.01)
 

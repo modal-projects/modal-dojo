@@ -5,7 +5,7 @@
 #
 # # On-policy distillation across model families
 #
-# In the [last OPD tutorial](https://gym.modal.dev/tutorials/on_policy_distillation),
+# In the [last OPD tutorial](https://dojo.modal.dev/tutorials/on_policy_distillation),
 # we saw how same-family OPD minimizes reverse-KL on shared token IDs. However, if you
 # wanted to use a teacher model from another model family, you'll quickly find out that
 # they don't share a vocabulary, so reverse-KL on raw token logprobs is undefined.
@@ -36,21 +36,21 @@ from env import (
     to_json_schema,
     tool_schemas_to_openai,
 )
-from modal_training_gym import (
+from modal_dojo import (
     CustomDeployment,
     Endpoint,
     Qwen3_6_35B,
     SglangRecipe,
     TrainConfig,
 )
-from modal_training_gym.common.models.base import HFModelConfiguration, ToolCall
-from modal_training_gym.train_recipes.slime_recipe import Qwen3_6_35B_Recipe
+from modal_dojo.common.models.base import HFModelConfiguration, ToolCall
+from modal_dojo.train_recipes.slime_recipe import Qwen3_6_35B_Recipe
 
 # ## Deploy the base models
 #
 # First, we'll deploy the teacher and base models to derive a baseline.
-# You'll notice that even if the Gym doesn't have a native model class for a model you want to use,
-# you can just use [HFModelConfiguration](https://gym.modal.dev/reference/hfmodelconfiguration)!
+# You'll notice that even if the Modal Dojo doesn't have a native model class for a model you want to use,
+# you can just use [HFModelConfiguration](https://dojo.modal.dev/reference/hfmodelconfiguration)!
 
 STUDENT_READY_TIMEOUT = 15 * 60
 TEACHER_READY_TIMEOUT = 30 * 60
@@ -240,7 +240,7 @@ def trajectory_reward(
 
 # ## Get the dataset
 #
-# The [dataset preprocessing code](https://github.com/modal-projects/training-gym/blob/main/tutorials/cross_tok_distill/env.py)
+# The [dataset preprocessing code](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/cross_tok_distill/env.py)
 # is verbose, so we simply instantiate the datasets here.
 
 dataset_config = BfclMultiTurnConfig(eval_tail=30)
@@ -474,7 +474,7 @@ async def cross_tokenizer_reward(args, sample, **kwargs):
     import random
 
     import aiohttp
-    from modal_training_gym.common.deployment import _modal_proxy_auth_headers
+    from modal_dojo.common.deployment import _modal_proxy_auth_headers
 
     tokenizer = _tokenizer("Qwen/Qwen3.6-35B-A3B")
     resp_len = max(1, sample.response_length)

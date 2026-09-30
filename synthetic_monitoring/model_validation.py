@@ -1,4 +1,4 @@
-"""Weekly synthetic monitoring for training-gym model validation.
+"""Weekly synthetic monitoring for modal-dojo model validation.
 
 Test it out with:
 
@@ -19,8 +19,8 @@ from pathlib import Path
 
 import modal
 
-from modal_training_gym.common.models.validation import _ValidationConfig
-from modal_training_gym.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.models.validation import _ValidationConfig
+from modal_dojo.common.run import TrainingRun, TrainingRunStatus
 from scripts.validate_model_configs import ValidationResult, run_base_training
 from synthetic_monitoring.chart import RunPoint, render_timing_history_chart
 
@@ -37,7 +37,7 @@ probe_image = (
     .uv_sync(uv_project_dir=str(REPO_ROOT), extra_options="--no-dev")
     .uv_pip_install("slack-sdk==3.27.1", "matplotlib==3.10.1")
     .env({"MODAL_ENVIRONMENT": MODAL_ENV})
-    .add_local_python_source("modal_training_gym", "synthetic_monitoring", "scripts")
+    .add_local_python_source("modal_dojo", "synthetic_monitoring", "scripts")
     .add_local_dir(
         str(REPO_ROOT / "dashboards" / "frontend"),
         remote_path="/root/dashboards/frontend",

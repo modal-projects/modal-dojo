@@ -8,12 +8,12 @@ from urllib.error import HTTPError, URLError
 import pytest
 from fastapi.testclient import TestClient
 
-from modal_training_gym import _dashboard
-from modal_training_gym.cli import setup as cli_setup_module
-from modal_training_gym.common import config
-from modal_training_gym.common import status_reporter
-from modal_training_gym.common import reporting
-from modal_training_gym.common.dashboard import (
+from modal_dojo import _dashboard
+from modal_dojo.cli import setup as cli_setup_module
+from modal_dojo.common import config
+from modal_dojo.common import status_reporter
+from modal_dojo.common import reporting
+from modal_dojo.common.dashboard import (
     DASHBOARD_VERSION,
     DashboardLookupUnknown,
     current_dashboard_version,
@@ -101,7 +101,7 @@ def test_dashboard_import_sets_proxy_auth_mode(monkeypatch):
         return module
 
     monkeypatch.setattr(config, "_dashboard_requires_proxy_auth", False)
-    monkeypatch.setitem(sys.modules, "modal_training_gym._dashboard", dashboard)
+    monkeypatch.setitem(sys.modules, "modal_dojo._dashboard", dashboard)
     monkeypatch.setattr(importlib, "reload", reload_module)
 
     loaded = cli_setup_module._load_dashboard_for_deploy(True)
@@ -348,7 +348,7 @@ def test_slime_reporting_posts_include_proxy_auth_headers(config_path, monkeypat
     config.save_proxy_auth("wk-test", "ws-test")
     monkeypatch.delenv("MODAL_KEY", raising=False)
     monkeypatch.delenv("MODAL_SECRET", raising=False)
-    monkeypatch.setenv("TRAINING_GYM_FRAMEWORK_STATUS_TOKEN", "run-token")
+    monkeypatch.setenv("MODAL_DOJO_FRAMEWORK_STATUS_TOKEN", "run-token")
     requests = _capture_report(reporting, monkeypatch)
     reporting._post(
         {

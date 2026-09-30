@@ -36,7 +36,7 @@
 # </details>
 #
 # To do cross-family OPD (i.e., use a teacher from a different model family such as Deepseek), see
-# [this tutorial](https://gym.modal.dev/tutorials/cross_tok_distill).
+# [this tutorial](https://dojo.modal.dev/tutorials/cross_tok_distill).
 
 import ast
 import json
@@ -44,7 +44,7 @@ import time
 
 from datasets import load_dataset
 
-from modal_training_gym import (
+from modal_dojo import (
     CustomDeployment,
     DatasetConfig,
     Endpoint,
@@ -61,7 +61,7 @@ from modal_training_gym import (
 # to serve the student. However, for the teacher model, we need per-token logprobs,
 # which are not currently supported by Endpoints when speculative decoding is
 # enabled. So we instead use a
-# [CustomDeployment](https://gym.modal.dev/reference/customdeployment)
+# [CustomDeployment](https://dojo.modal.dev/reference/customdeployment)
 # to serve the teacher.
 
 student_model = Qwen3_5_4B()

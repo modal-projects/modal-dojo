@@ -1,8 +1,8 @@
 <script>
   /**
-   * Training Gym's built-in trajectory viewer.
+   * Modal Dojo's built-in trajectory viewer.
    *
-   * This is the slot that `training-gym setup --trajectory-viewer` replaces
+   * This is the slot that `modal-dojo setup --trajectory-viewer` replaces
    * at build time, and the fallback when a run has no run-scoped viewer. It
    * renders the conversation exactly as the rollout page always has (tool
    * calls, thinking, eval reports) via

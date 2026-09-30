@@ -5,7 +5,7 @@ the dashboard renders it per sample."""
 
 import base64
 
-from modal_training_gym.common.sample_extraction import (
+from modal_dojo.common.sample_extraction import (
     RolloutImageStore,
     _sample_to_dict,
 )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from modal_training_gym.frameworks.slime.modal_helpers.patches import (
+from modal_dojo.frameworks.slime.modal_helpers.patches import (
     patch_sglang_trtllm_moe_repack as patcher,
 )
 

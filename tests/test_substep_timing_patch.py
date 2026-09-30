@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 TESTDATA = Path(__file__).parent / "testdata"
-FRAMEWORKS = Path(__file__).parents[1] / "modal_training_gym" / "frameworks"
+FRAMEWORKS = Path(__file__).parents[1] / "modal_dojo" / "frameworks"
 
 
 def patcher_path(framework: str) -> Path:
@@ -334,7 +334,7 @@ def test_package_patch_failure_is_best_effort(
         scope=None,
         blocks=(("missing", "missing\n"),),
     )
-    monkeypatch.setenv("TRAINING_GYM_SUBSTEP_TIMING", mode)
+    monkeypatch.setenv("MODAL_DOJO_SUBSTEP_TIMING", mode)
     miles.patch_package_file(tmp_path, target)
     assert "substep timing patch skipped" in capsys.readouterr().out
 
@@ -358,7 +358,7 @@ def test_async_training_offloads_are_separate_from_train(miles, tmp_path):
         assert f"with _tg_rec.phase('{phase}'):" in patched
     assert (
         "if not args.eval_uses_snapshots:\n"
-        "                    # PATCHED_TRAINING_GYM_TIMING_EVALUATE_ROLLOUTS_END"
+        "                    # PATCHED_MODAL_DOJO_TIMING_EVALUATE_ROLLOUTS_END"
     ) in patched
     assert (
         "with _tg_rec.phase('evaluate_rollouts_end'):\n"

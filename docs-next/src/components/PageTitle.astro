@@ -12,7 +12,7 @@ const sourcePath =
   typeof entry.data.sourcePath === 'string' ? entry.data.sourcePath : '';
 const showGithub = Boolean(sourcePath);
 const githubHref = showGithub
-  ? `https://github.com/modal-projects/training-gym/${sourcePath.endsWith('.py') ? 'blob' : 'tree'}/main/${sourcePath}`
+  ? `https://github.com/modal-projects/modal-dojo/${sourcePath.endsWith('.py') ? 'blob' : 'tree'}/main/${sourcePath}`
   : '';
 
 const bodyMarkdown = typeof entry.body === 'string' ? entry.body.trim() : '';

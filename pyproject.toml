@@ -1,5 +1,5 @@
 [project]
-name = "modal-training-gym"
+name = "modal-dojo"
 version = "0.1.0"
 description = "Reusable building blocks for Modal multi-node training examples"
 requires-python = ">=3.12"
@@ -21,20 +21,20 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-only-include = ["modal_training_gym", "dashboards/frontend"]
+only-include = ["modal_dojo", "dashboards/frontend"]
 exclude = ["dashboards/frontend/node_modules", "dashboards/frontend/dist"]
 
 [tool.hatch.build.targets.wheel.sources]
-"dashboards/frontend" = "modal_training_gym/_frontend"
+"dashboards/frontend" = "modal_dojo/_frontend"
 
 [tool.hatch.build.targets.wheel.force-include]
-"skills" = "modal_training_gym/_skills"
+"skills" = "modal_dojo/_skills"
 
 [tool.hatch.build.targets.sdist.force-include]
 "skills" = "skills"
 
 [project.scripts]
-training-gym = "modal_training_gym.cli:main"
+modal-dojo = "modal_dojo.cli:main"
 
 [dependency-groups]
 ci = [

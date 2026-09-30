@@ -4,7 +4,7 @@ order: 0
 
 # Choosing a base model
 
-The first step to training is choosing a base model. The Training Gym supports the [top](https://gym.modal.dev/#supported-models) open-source LLMs and VLMs. 
+The first step to training is choosing a base model. The Modal Dojo supports the [top](https://dojo.modal.dev/#supported-models) open-source LLMs and VLMs.
 
 ## How do I choose?
 
@@ -19,7 +19,7 @@ An even better solution is benchmarking the capabilities of each model for your 
 Then, it’s as easy as:
 
 ```python
-from modal_training_gym import Qwen3_6_27B
+from modal_dojo import Qwen3_6_27B
 
 model = Qwen3_6_27B()
 ```
@@ -28,4 +28,4 @@ When you instantiate the object, weight downloading, response parsing, and archi
 
 ## To support a new model
 
-We keep our [list of supported models](https://gym.modal.dev/#supported-models) comprehensive and up-to-date. However, if you find that we don’t support a certain model, you can easily extend [HFModelConfiguration](https://gym.modal.dev/reference/hfmodelconfiguration). See the [Qwen3.8 file](https://github.com/modal-projects/training-gym/blob/main/modal_training_gym/common/models/qwen3_8_27b.py) for a good example. Our provided [agent skill](https://github.com/modal-projects/training-gym/blob/main/skills/model-support/SKILL.md) is very helpful for this.  
+We keep our [list of supported models](https://dojo.modal.dev/#supported-models) comprehensive and up-to-date. However, if you find that we don’t support a certain model, you can easily extend [HFModelConfiguration](https://dojo.modal.dev/reference/hfmodelconfiguration). See the [Qwen3.8 file](https://github.com/modal-projects/modal-dojo/blob/main/modal_dojo/common/models/qwen3_8_27b.py) for a good example. Our provided [agent skill](https://github.com/modal-projects/modal-dojo/blob/main/skills/model-support/SKILL.md) is very helpful for this.

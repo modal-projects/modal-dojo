@@ -5,17 +5,17 @@ import time
 from queue import Queue
 from types import ModuleType
 
-from modal_training_gym.common import reporting
-from modal_training_gym.common import timing_recorder
-from modal_training_gym.common.step_timing import RoleTimingRecord
-from modal_training_gym.common.timing_recorder import RoleRecorder
+from modal_dojo.common import reporting
+from modal_dojo.common import timing_recorder
+from modal_dojo.common.step_timing import RoleTimingRecord
+from modal_dojo.common.timing_recorder import RoleRecorder
 
 
 def _configure(monkeypatch):
     monkeypatch.setattr(timing_recorder, "MIN_PUBLISH_INTERVAL_S", 0.0)
-    monkeypatch.setenv("TRAINING_GYM_SUBSTEP_TIMING", "auto")
-    monkeypatch.setenv("TRAINING_GYM_FRAMEWORK_STATUS_URL", "https://dashboard.test")
-    monkeypatch.setenv("TRAINING_GYM_TRAINING_RUN_ID", "run-1")
+    monkeypatch.setenv("MODAL_DOJO_SUBSTEP_TIMING", "auto")
+    monkeypatch.setenv("MODAL_DOJO_FRAMEWORK_STATUS_URL", "https://dashboard.test")
+    monkeypatch.setenv("MODAL_DOJO_TRAINING_RUN_ID", "run-1")
     monkeypatch.setattr(timing_recorder, "_TIMING_MODE_CACHE", None)
 
 
@@ -80,7 +80,7 @@ def test_payload_bounds_are_applied_before_enqueue(monkeypatch):
 
 
 def test_off_mode_does_not_record_or_publish(monkeypatch):
-    monkeypatch.setenv("TRAINING_GYM_SUBSTEP_TIMING", "off")
+    monkeypatch.setenv("MODAL_DOJO_SUBSTEP_TIMING", "off")
     monkeypatch.setattr(timing_recorder, "_TIMING_MODE_CACHE", None)
     snapshots = []
     monkeypatch.setattr(
@@ -99,7 +99,7 @@ def test_off_mode_does_not_record_or_publish(monkeypatch):
 
 def test_sft_skips_rl_only_phases(monkeypatch):
     _configure(monkeypatch)
-    monkeypatch.setenv("TRAINING_GYM_LOSS_TYPE", "sft_loss")
+    monkeypatch.setenv("MODAL_DOJO_LOSS_TYPE", "sft_loss")
     monkeypatch.setattr(reporting, "_enqueue_timing", lambda *_a, **_k: None)
 
     recorder = RoleRecorder("driver", 0)

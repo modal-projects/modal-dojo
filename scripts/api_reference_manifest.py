@@ -4,14 +4,14 @@ import inspect
 from enum import Enum
 from typing import Any
 
-import modal_training_gym as gym
-from modal_training_gym._api_reference import is_excluded_from_api_reference
+import modal_dojo
+from modal_dojo._api_reference import is_excluded_from_api_reference
 from scripts.generate_models_table import collect_model_preset_names
 
 API_REFERENCE_DENYLIST: frozenset[str] = frozenset(
     name
-    for name in gym.__all__
-    if is_excluded_from_api_reference(name, getattr(gym, name))
+    for name in modal_dojo.__all__
+    if is_excluded_from_api_reference(name, getattr(modal_dojo, name))
 )
 
 GROUPS = {
@@ -55,17 +55,17 @@ def entry_sort_key(entry: dict[str, str]) -> tuple[bool, str]:
 def collect_public_api() -> list[dict[str, Any]]:
     presets = collect_model_preset_names()
     entries: list[dict[str, str]] = []
-    for name in gym.__all__:
+    for name in modal_dojo.__all__:
         if name in API_REFERENCE_DENYLIST:
             continue
-        obj = getattr(gym, name)
+        obj = getattr(modal_dojo, name)
         kind = _kind(obj)
         if kind is None:
             continue
         entries.append(
             {
                 "class_name": name,
-                "module": gym.__name__,
+                "module": modal_dojo.__name__,
                 "group": _group_for_module(obj.__module__),
                 "sidebar_label": name,
                 "kind": kind,

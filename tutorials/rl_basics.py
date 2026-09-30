@@ -5,12 +5,12 @@
 #
 # # Getting started with RL
 #
-# This tutorial introduces some core features of the Training Gym by walking through
+# This tutorial introduces some core features of the Modal Dojo by walking through
 # a simple example of Reinforcement Learning with Verifiable Rewards (RLVR), a
 # foundational method of RL post-training. Here, we teach
 # [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B)
 # how to write correct haikus. Step by step, we'll show the foundations of running
-# training jobs on the Gym.
+# training jobs on the Modal Dojo.
 
 import nltk
 from nltk.corpus import cmudict
@@ -18,7 +18,7 @@ from nltk.corpus import cmudict
 import re
 import time
 
-from modal_training_gym import (
+from modal_dojo import (
     Endpoint,
     HuggingFaceDataset,
     Qwen3_5_4B,
@@ -35,7 +35,7 @@ from modal_training_gym import (
 # production-ready LLM inference endpoint on Modal's managed infrastructure. It supports both
 # open model weights in addition to custom fine tunes, sourced from either a Hugging Face repo or a
 # [Modal Volume](https://modal.com/docs/guide/volumes). To use it, we provide a
-# [class](https://gym.modal.dev/reference/endpoint) to instantiate one programatically.
+# [class](https://dojo.modal.dev/reference/endpoint) to instantiate one programatically.
 #
 # It will take a moment to download the model weights onto a Modal Volume and boot containers past the
 # [cold-start](https://modal.com/docs/guide/cold-start#what-is-a-cold-start).
@@ -122,7 +122,7 @@ def score_haiku(response: str) -> float:
 # this is because the task is sufficiently out-of-distribution, and no existing dataset
 # will serve your needs.
 #
-# See the [DatasetConfig](https://gym.modal.dev/reference/datasetconfig)
+# See the [DatasetConfig](https://dojo.modal.dev/reference/datasetconfig)
 # documentation for a deeper dive.
 
 train_dataset = HuggingFaceDataset(
@@ -190,7 +190,7 @@ async def haiku_rm(args, sample, **kwargs) -> float:
 
 # ## Train the model
 #
-# Finally, onto the training. The Gym supports both the
+# Finally, onto the training. The Modal Dojo supports both the
 # [Slime](https://github.com/THUDM/slime) and
 # [Miles](https://github.com/radixark/miles) frameworks.
 # Here, we use Slime for demonstration purposes.

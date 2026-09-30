@@ -31,15 +31,15 @@ try:
 except ImportError:  # imported as scripts.validate_model_configs, e.g. by tests
     from scripts.validation_backends import build_recipe_and_dataset
 
-from modal_training_gym.common.models.validation import (
+from modal_dojo.common.models.validation import (
     Framework,
     _ValidationConfig,
 )
-from modal_training_gym.common.modal_lifecycle import stop_app
-from modal_training_gym.common.run import TrainingRun, TrainingRunStatus
-from modal_training_gym.common.step_timing import measured_run_times
-from modal_training_gym.common.wandb import WandbConfig
-from modal_training_gym.train import TrainConfig
+from modal_dojo.common.modal_lifecycle import stop_app
+from modal_dojo.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.step_timing import measured_run_times
+from modal_dojo.common.wandb import WandbConfig
+from modal_dojo.train import TrainConfig
 
 COMMENT_MARKER = "<!-- validate-models-comment -->"
 TIMING_SETTLE_WINDOW_S = 30.0
@@ -93,7 +93,7 @@ def _total_step_time_s(result: "ValidationResult") -> float:
 
     Reported instead of wall clock, which also covers queue, model download and
     checkpoint conversion time — variable with compute availability rather than
-    gym performance.
+    Modal Dojo performance.
     """
     return float(
         sum(step.get("duration_s") or 0 for step in (result.step_times or {}).values())
@@ -327,7 +327,7 @@ def _ship_dataset_definition(dataset) -> None:
     registry separate from the installed one, so both have to be told.
     """
     module = sys.modules.get(type(dataset).__module__)
-    if module is None or module.__name__.startswith("modal_training_gym"):
+    if module is None or module.__name__.startswith("modal_dojo"):
         return
     cloudpickle.register_pickle_by_value(module)
     modal_cloudpickle.register_pickle_by_value(module)

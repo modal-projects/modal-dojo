@@ -25,7 +25,7 @@ import requests
 import soundfile as sf
 from datasets import Audio, load_dataset
 
-from modal_training_gym import (
+from modal_dojo import (
     CustomDeployment,
     MultimodalDataset,
     Qwen3_ASR_1_7B,
@@ -37,7 +37,7 @@ from modal_training_gym import (
 #
 # Since audio models are not yet supported on
 # [Endpoints](https://modal.com/docs/guide/endpoints), we use a
-# [CustomDeployment](https://gym.modal.dev/reference/customdeployment)
+# [CustomDeployment](https://dojo.modal.dev/reference/customdeployment)
 # to deploy the base and trained models.
 
 model = Qwen3_ASR_1_7B()

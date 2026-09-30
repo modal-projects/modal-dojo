@@ -15,16 +15,16 @@ While the model and dataset dictate what will be trained, the recipe dictates ho
 - Etc.
 
 ```python
-from modal_training_gym import Qwen3_5_4B_Recipe
+from modal_dojo import Qwen3_5_4B_Recipe
 
 recipe = Qwen3_5_4B_Recipe()
 ```
 
-We provide optimized recipes for all supported models in the Training Gym, but note that they are easily extensible to fit whatever use case you may have. Under the hood, each recipe is backed by one of two backend frameworks: [Miles](https://github.com/radixark/miles) or [Slime](https://github.com/THUDM/slime). All recipes allow you to specify framework-native parameters using the corresponding recipe fields.
+We provide optimized recipes for all supported models in the Modal Dojo, but note that they are easily extensible to fit whatever use case you may have. Under the hood, each recipe is backed by one of two backend frameworks: [Miles](https://github.com/radixark/miles) or [Slime](https://github.com/THUDM/slime). All recipes allow you to specify framework-native parameters using the corresponding recipe fields.
 
-This guide will focus on the most important ones. However, you can see the full lists for each of the base classes (i.e., [MilesRecipe](https://gym.modal.dev/reference/milesrecipe) and [SlimeRecipe](https://gym.modal.dev/reference/slimerecipe)).
+This guide will focus on the most important ones. However, you can see the full lists for each of the base classes (i.e., [MilesRecipe](https://dojo.modal.dev/reference/milesrecipe) and [SlimeRecipe](https://dojo.modal.dev/reference/slimerecipe)).
 
-See [this guide](https://gym.modal.dev/guides/metric) for more details on logging integrations.
+See [this guide](https://dojo.modal.dev/guides/metric) for more details on logging integrations.
 
 ## Hardware and parallelism
 
@@ -38,7 +38,7 @@ recipe = Qwen3_5_4B_Recipe(
 )
 ```
 
-The Gym runs your training workloads across one or more nodes on Modal, each with one or more GPUs. Smaller models (i.e., tens of billions of parameters) can be trained on a single node, while larger models may require a [multi-node cluster](https://modal.com/docs/guide/multi-node-training).
+The Modal Dojo runs your training workloads across one or more nodes on Modal, each with one or more GPUs. Smaller models (i.e., tens of billions of parameters) can be trained on a single node, while larger models may require a [multi-node cluster](https://modal.com/docs/guide/multi-node-training).
 
 Each recipe automatically provisions the smallest cluster shape that will work, but you may want to increase this to maximize throughput. You can choose any type from [Modal’s supported GPUs](https://modal.com/docs/guide/gpu#picking-a-gpu). Also, note that you may not actually need (or even want!) multiple nodes: we suggest setting `actor_num_gpus_per_node` to the [maximum amount](https://modal.com/docs/guide/gpu#specifying-gpu-count) to minimize unnecessary communication between nodes.
 
@@ -59,7 +59,7 @@ Qwen3_5_4B_Recipe(
 You can also tune how model computations are parallelized and sharded across multiple GPUs. These parameters can be difficult to determine and may differ for each model, so we provide defaults in each model’s recipe. However, if you’re experiencing out-of-memory errors or want complete control over how your GPUs are utilized, you can manually set these yourself:
 
 ```python
-from modal_training_gym import Qwen3_5_4B_Miles_Recipe
+from modal_dojo import Qwen3_5_4B_Miles_Recipe
 
 Qwen3_5_4B_Miles_Recipe(
     # ...
@@ -77,7 +77,7 @@ Qwen3_5_4B_Miles_Recipe(
 For supervised fine-tuning (SFT), set `loss_type="sft_loss"`. At the moment, passing `eval_dataset` is not supported.
 
 ```python
-from modal_training_gym import HuggingFaceDataset, Qwen3_0_6B, Qwen3_0_6B_Recipe, TrainConfig
+from modal_dojo import HuggingFaceDataset, Qwen3_0_6B, Qwen3_0_6B_Recipe, TrainConfig
 
 conversations = HuggingFaceDataset(
     "HuggingFaceH4/no_robots",
@@ -148,7 +148,7 @@ recipe = Qwen3_5_4B_Recipe(
 
 The simplest reward functions (like the above) return binary scores for correct or incorrect responses. Likely, though, you'll want to provide the model with more granular information for better training performance; for example, giving an exact distance between its response and the expected answer. And to enable use cases like code generation and gameplay, you'll want to incorporate external components such as a [Modal Sandbox](https://modal.com/docs/guide/sandboxes).
 
-For logging purposes, you can attach metadata to each sample for more observability in the [dashboard](https://gym.modal.dev/guides/dashboard/).
+For logging purposes, you can attach metadata to each sample for more observability in the [dashboard](https://dojo.modal.dev/guides/dashboard/).
 
 When your task requires something beyond a single-turn interaction, all it takes is implementing a [custom generate](https://miles.radixark.com/docs/user-guide/generate-endpoint) function.
 
@@ -218,7 +218,7 @@ Typically, your generation function will:
 3. Tokenize the prompt and response with a corresponding loss mask.
 4. Set response fields on the sample.
 
-If the function generates the prompts (i.e., no initial dataset), you must use the [OnlineRollout](https://gym.modal.dev/reference/onlinerollout) class.
+If the function generates the prompts (i.e., no initial dataset), you must use the [OnlineRollout](https://dojo.modal.dev/reference/onlinerollout) class.
 
 Since the containers use [Modal Images](https://modal.com/docs/guide/images) under the hood, you can easily use external packages by extending the base image:
 

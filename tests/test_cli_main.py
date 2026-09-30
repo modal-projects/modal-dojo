@@ -6,9 +6,9 @@ from unittest.mock import Mock
 import pytest
 from click.testing import CliRunner
 
-from modal_training_gym import cli as cli_module
-from modal_training_gym.cli.errors import CLIError, ExitCode
-from modal_training_gym.common.trackio import TrackioLookupUnknown
+from modal_dojo import cli as cli_module
+from modal_dojo.cli.errors import CLIError, ExitCode
+from modal_dojo.common.trackio import TrackioLookupUnknown
 
 
 @pytest.fixture
@@ -66,9 +66,9 @@ def test_main_returns_no_command_exit_code(capsys):
 
 def test_setup_dispatches_to_existing_function(runner, monkeypatch):
     setup = Mock()
-    monkeypatch.setattr("modal_training_gym.cli.setup.setup", setup)
+    monkeypatch.setattr("modal_dojo.cli.setup.setup", setup)
     monkeypatch.setattr(
-        "modal_training_gym.common.config.get_dashboard_proxy_auth", lambda: False
+        "modal_dojo.common.config.get_dashboard_proxy_auth", lambda: False
     )
 
     result = runner.invoke(cli_module.entrypoint_cli, ["setup"])
@@ -87,7 +87,7 @@ def test_setup_dispatches_to_existing_function(runner, monkeypatch):
 )
 def test_setup_preserves_proxy_auth_choice(runner, monkeypatch, flag, expected):
     setup = Mock()
-    monkeypatch.setattr("modal_training_gym.cli.setup.setup", setup)
+    monkeypatch.setattr("modal_dojo.cli.setup.setup", setup)
 
     result = runner.invoke(cli_module.entrypoint_cli, ["setup", flag])
 
@@ -109,9 +109,9 @@ def test_setup_prompts_for_explicit_choice_after_authenticated_deploy(
     runner, monkeypatch
 ):
     setup = Mock()
-    monkeypatch.setattr("modal_training_gym.cli.setup.setup", setup)
+    monkeypatch.setattr("modal_dojo.cli.setup.setup", setup)
     monkeypatch.setattr(
-        "modal_training_gym.common.config.get_dashboard_proxy_auth", lambda: True
+        "modal_dojo.common.config.get_dashboard_proxy_auth", lambda: True
     )
 
     result = runner.invoke(cli_module.entrypoint_cli, ["setup"])
@@ -123,7 +123,7 @@ def test_setup_prompts_for_explicit_choice_after_authenticated_deploy(
 
 def test_open_dispatches_to_existing_function(runner, monkeypatch):
     open_dashboard = Mock()
-    monkeypatch.setattr("modal_training_gym.cli.setup.open_dashboard", open_dashboard)
+    monkeypatch.setattr("modal_dojo.cli.setup.open_dashboard", open_dashboard)
 
     result = runner.invoke(cli_module.entrypoint_cli, ["open"])
 
@@ -133,7 +133,7 @@ def test_open_dispatches_to_existing_function(runner, monkeypatch):
 
 def test_set_proxy_auth_dispatches_to_existing_function(runner, monkeypatch):
     set_proxy_auth = Mock()
-    monkeypatch.setattr("modal_training_gym.cli.setup.set_proxy_auth", set_proxy_auth)
+    monkeypatch.setattr("modal_dojo.cli.setup.set_proxy_auth", set_proxy_auth)
 
     result = runner.invoke(cli_module.entrypoint_cli, ["set-proxy-auth"])
 
@@ -151,7 +151,7 @@ def test_set_proxy_auth_dispatches_to_existing_function(runner, monkeypatch):
 )
 def test_set_password_preserves_arguments(runner, monkeypatch, args, expected):
     set_password = Mock()
-    monkeypatch.setattr("modal_training_gym.cli.setup.set_password", set_password)
+    monkeypatch.setattr("modal_dojo.cli.setup.set_password", set_password)
 
     result = runner.invoke(cli_module.entrypoint_cli, args)
 
@@ -170,22 +170,22 @@ def test_set_password_preserves_arguments(runner, monkeypatch, args, expected):
 def test_set_password_warns_about_stale_trackio_password(
     monkeypatch, capsys, lookup, expect_old_password, expect_could_not_check
 ):
-    from modal_training_gym.cli.setup import set_password
+    from modal_dojo.cli.setup import set_password
 
-    monkeypatch.setattr("modal_training_gym._dashboard.set_dashboard_password", Mock())
-    monkeypatch.setattr("modal_training_gym.cli.setup.setup", Mock())
+    monkeypatch.setattr("modal_dojo._dashboard.set_dashboard_password", Mock())
+    monkeypatch.setattr("modal_dojo.cli.setup.setup", Mock())
     monkeypatch.setattr(
-        "modal_training_gym.common.config.get_dashboard_proxy_auth",
+        "modal_dojo.common.config.get_dashboard_proxy_auth",
         lambda: False,
     )
     if isinstance(lookup, Exception):
         monkeypatch.setattr(
-            "modal_training_gym.common.trackio.lookup_trackio_url",
+            "modal_dojo.common.trackio.lookup_trackio_url",
             Mock(side_effect=lookup),
         )
     else:
         monkeypatch.setattr(
-            "modal_training_gym.common.trackio.lookup_trackio_url",
+            "modal_dojo.common.trackio.lookup_trackio_url",
             lambda app_name="training-gym-trackio": lookup,
         )
 
@@ -221,7 +221,7 @@ def test_set_password_warns_about_stale_trackio_password(
 )
 def test_cleanup_preserves_arguments(runner, monkeypatch, args, expected):
     cleanup = Mock()
-    monkeypatch.setattr("modal_training_gym.cli.cleanup.cleanup", cleanup)
+    monkeypatch.setattr("modal_dojo.cli.cleanup.cleanup", cleanup)
 
     result = runner.invoke(cli_module.entrypoint_cli, args)
 
@@ -243,12 +243,12 @@ def test_expected_errors_use_declared_exit_code(runner, monkeypatch):
             "offline",
             error="dashboard_unreachable",
             exit_code=ExitCode.BACKEND,
-            hint="training-gym open",
+            hint="modal-dojo open",
         )
 
-    monkeypatch.setattr("modal_training_gym.cli.setup.setup", fail)
+    monkeypatch.setattr("modal_dojo.cli.setup.setup", fail)
     monkeypatch.setattr(
-        "modal_training_gym.common.config.get_dashboard_proxy_auth", lambda: False
+        "modal_dojo.common.config.get_dashboard_proxy_auth", lambda: False
     )
 
     result = runner.invoke(cli_module.entrypoint_cli, ["setup"])
@@ -256,7 +256,7 @@ def test_expected_errors_use_declared_exit_code(runner, monkeypatch):
     assert result.exit_code == ExitCode.BACKEND
     assert result.stdout == ""
     assert "offline" in result.stderr
-    assert "training-gym open" in result.stderr
+    assert "modal-dojo open" in result.stderr
 
 
 def test_main_renders_structured_json_errors(monkeypatch, capsys):
@@ -265,7 +265,7 @@ def test_main_renders_structured_json_errors(monkeypatch, capsys):
             "Run run_8f2a was not found.",
             error="run_not_found",
             exit_code=ExitCode.NOT_FOUND,
-            hint="training-gym run list --since 7d",
+            hint="modal-dojo run list --since 7d",
             run_id="run_8f2a",
         )
 
@@ -278,7 +278,7 @@ def test_main_renders_structured_json_errors(monkeypatch, capsys):
         "error": "run_not_found",
         "run_id": "run_8f2a",
         "message": "Run run_8f2a was not found.",
-        "hint": "training-gym run list --since 7d",
+        "hint": "modal-dojo run list --since 7d",
     }
 
 
@@ -308,11 +308,11 @@ def test_main_maps_click_keyboard_interrupt_to_130(monkeypatch, capsys):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(
-        "modal_training_gym.cli.setup.setup",
+        "modal_dojo.cli.setup.setup",
         interrupt,
     )
     monkeypatch.setattr(
-        "modal_training_gym.common.config.get_dashboard_proxy_auth", lambda: False
+        "modal_dojo.common.config.get_dashboard_proxy_auth", lambda: False
     )
 
     assert cli_module.main(["setup"]) == 130

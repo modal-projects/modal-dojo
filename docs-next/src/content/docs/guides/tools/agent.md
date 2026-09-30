@@ -4,23 +4,23 @@ order: 0
 
 # Agent-driven training
 
-Agents are particularly useful when you need to validate hypotheses or run many experiments in parallel. However, they are less effective when forced to create and sift through thousands of lines of configuration files and training scripts. The Training Gym solves this with an intuitive API, a CLI for maximum observability into the run status, and skills that teach agents best practices such as smoking runs and tactics for debugging.
+Agents are particularly useful when you need to validate hypotheses or run many experiments in parallel. However, they are less effective when forced to create and sift through thousands of lines of configuration files and training scripts. The Modal Dojo solves this with an intuitive API, a CLI for maximum observability into the run status, and skills that teach agents best practices such as smoking runs and tactics for debugging.
 
-This guide demonstrates how to effectively use agents with the Gym by getting Claude to post-train a model of its choosing to respond only in [rhyme](https://open.spotify.com/episode/5txYOHA44zWiSgNK623Epp).
+This guide demonstrates how to effectively use agents with the Modal Dojo by getting Claude to post-train a model of its choosing to respond only in [rhyme](https://open.spotify.com/episode/5txYOHA44zWiSgNK623Epp).
 
 ## Set up
 
-First, we'll install the `training-gym` CLI:
+First, we'll install the `modal-dojo` CLI:
 
 ```bash
-pip install -q git+https://github.com/modal-projects/training-gym.git@main
-training-gym --help
+pip install -q git+https://github.com/modal-projects/modal-dojo.git@main
+modal-dojo --help
 ```
 
 Then, we'll install the provided skills into our current project:
 
 ```bash
-training-gym skills install
+modal-dojo skills install
 ```
 
 The main skill agents should use is `agent-driven-training`, which lays out the RL training lifecycle:
@@ -31,7 +31,7 @@ The main skill agents should use is `agent-driven-training`, which lays out the 
 - Inspect actual model outputs to verify that higher rewards induce the intended behavior.
 - Investigate suspicious reward trends to prevent [reward hacking](https://en.wikipedia.org/wiki/Reward_hacking).
 
-To learn more about the CLI and the provided skills, see the [reference page](https://gym.modal.dev/reference/cli).
+To learn more about the CLI and the provided skills, see the [reference page](https://dojo.modal.dev/reference/cli).
 
 ## Let it cook
 
@@ -46,7 +46,7 @@ We leave it ambiguous to demonstrate that when empowered with the right tools an
 Since it is just writing Python code, we can easily inspect what it wrote. First, it loaded the dataset:
 
 ```python
-from modal_training_gym import HuggingFaceDataset
+from modal_dojo import HuggingFaceDataset
 
 SYSTEM_PROMPT = (
     "You are a poet who answers every question in rhyme. Answer the question "
@@ -66,7 +66,7 @@ rhyme_dataset = HuggingFaceDataset(
 )
 ```
 
-Next, it defined the reward function. Here, we care about the model's ability to both rhyme and answer the user's question. As our [intro tutorial](https://gym.modal.dev/tutorials/rl_basics) shows, NLTK’s [CMU Pronouncing Dictionary](https://github.com/prosegrinder/python-cmudict) is a useful library for measuring the former.
+Next, it defined the reward function. Here, we care about the model's ability to both rhyme and answer the user's question. As our [intro tutorial](https://dojo.modal.dev/tutorials/rl_basics) shows, NLTK’s [CMU Pronouncing Dictionary](https://github.com/prosegrinder/python-cmudict) is a useful library for measuring the former.
 
 <details>
 <summary>What's going on here</summary>
@@ -244,7 +244,7 @@ def rhyme_reward(response: str, reference: str) -> float:
 
 
 async def rhyme_rm(args, sample, **kwargs) -> float:
-    from modal_training_gym import Qwen3_4B
+    from modal_dojo import Qwen3_4B
 
     model = Qwen3_4B()
     response = model.parse_response(getattr(sample, "response", "") or "")
@@ -255,8 +255,8 @@ async def rhyme_rm(args, sample, **kwargs) -> float:
 Then, it wrote the training code:
 
 ```python
-from modal_training_gym import Qwen3_4B, TrainConfig
-from modal_training_gym.train_recipes.slime_recipe import Qwen3_4B_Recipe
+from modal_dojo import Qwen3_4B, TrainConfig
+from modal_dojo.train_recipes.slime_recipe import Qwen3_4B_Recipe
 
 
 def _image_overlay(image):
@@ -308,36 +308,36 @@ Throughout the run, the agent used the following commands to:
 - Confirm a run was launched successfully:
 
 ```bash
-training-gym run list --since 2h --json
+modal-dojo run list --since 2h --json
 ```
 
 - See the progress of a run in more detail:
 
 ```bash
-training-gym run get <run-id> --verbose --json
+modal-dojo run get <run-id> --verbose --json
 ```
 
 - Inspect the logs of a failing or hanging run:
 
 ```bash
-training-gym run logs <run-id> --json
-training-gym run logs <run-id> --follow --json
-training-gym run logs <run-id> --search "checkpoint" --json
+modal-dojo run logs <run-id> --json
+modal-dojo run logs <run-id> --follow --json
+modal-dojo run logs <run-id> --search "checkpoint" --json
 ```
 
 - Observe the raw model responses:
 
 ```bash
-training-gym run trace <run-id> --out ./traces --dry-run --json
-training-gym run trace <run-id> --out ./traces --yes --json
+modal-dojo run trace <run-id> --out ./traces --dry-run --json
+modal-dojo run trace <run-id> --out ./traces --yes --json
 ```
 
 ## Results
 
 <video controls playsinline width="100%">
   <source src="/agent-driven-training-rhyme.mp4" type="video/mp4">
-  <source src="https://gym.modal.dev/agent-driven-training-rhyme.mp4" type="video/mp4">
-  <a href="https://gym.modal.dev/agent-driven-training-rhyme.mp4">Watch the agent-driven training demo.</a>
+  <source src="https://dojo.modal.dev/agent-driven-training-rhyme.mp4" type="video/mp4">
+  <a href="https://dojo.modal.dev/agent-driven-training-rhyme.mp4">Watch the agent-driven training demo.</a>
 </video>
 
 After 46 minutes of training, the model makes all responses [rhyme](#1) [damn well](#2) while still [answering the user](#3).

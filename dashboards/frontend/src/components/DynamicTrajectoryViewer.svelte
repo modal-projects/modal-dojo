@@ -21,7 +21,7 @@
     position = null,
   } = $props();
 
-  const MARK = "trainingGymDashboardComponent";
+  const MARK = "modalDojoDashboardComponent";
   const READY_TIMEOUT_MS = 20000;
   // Components can be attached after a run finishes, when the page has
   // stopped polling `run`; re-check the manifest so they still show up.
@@ -117,7 +117,7 @@
         mode = "fallback";
         return;
       }
-      const src = `${base}/${encodeURIComponent(digest)}/frame.html`;
+      const src = `${base}/${encodeURIComponent(digest)}/frame.html?bridge=modal-dojo-v1`;
       try {
         // Compile errors surface here as a readable status instead of a blank frame.
         const frameResponse = await fetch(src, { credentials: "same-origin" });

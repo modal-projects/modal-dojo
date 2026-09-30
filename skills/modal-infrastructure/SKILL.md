@@ -4,18 +4,18 @@ description: >-
   Operates raw Modal infrastructure: runs, apps, containers, volumes,
   scheduling, image builds, caches, and endpoint authentication.
 when_to_use: >-
-  Use for explicit raw Modal operations or when the Training Gym CLI cannot
+  Use for explicit raw Modal operations or when the Modal Dojo CLI cannot
   explain an infrastructure failure. Use agent-driven-training for normal
-  Training Gym lifecycle work.
+  Modal Dojo lifecycle work.
 ---
 
 # Modal infrastructure operations
 
 This document captures durable repo-specific workflow for agents launching and debugging training jobs on Modal in this repository.
 
-For routine Training Gym lifecycle work, use
+For routine Modal Dojo lifecycle work, use
 [agent-driven-training](../agent-driven-training/SKILL.md). Use this runbook
-when the request explicitly concerns Modal infrastructure or the Training Gym
+when the request explicitly concerns Modal infrastructure or the Modal Dojo
 CLI cannot explain the underlying failure.
 
 ## Scope

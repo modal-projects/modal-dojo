@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from modal_training_gym.common import ids
-from modal_training_gym.common.dataset import DatasetConfig, HuggingFaceDataset
-from modal_training_gym.common.models import ModelConfig, Qwen3_4B
-from modal_training_gym.common.train import TrainConfig
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
-from modal_training_gym.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
+from modal_dojo.common import ids
+from modal_dojo.common.dataset import DatasetConfig, HuggingFaceDataset
+from modal_dojo.common.models import ModelConfig, Qwen3_4B
+from modal_dojo.common.train import TrainConfig
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
 
 
 def test_create_hash_has_word_word_hash_shape() -> None:
@@ -55,7 +55,7 @@ def test_train_config_generates_fresh_run_id_per_call(monkeypatch) -> None:
         return f"brisk-river-{len(calls):08x}"
 
     monkeypatch.setattr(
-        "modal_training_gym.common.train.create_hash",
+        "modal_dojo.common.train.create_hash",
         fake_create_hash,
     )
 
@@ -79,8 +79,8 @@ def test_the_wandb_run_id_is_the_whole_training_run_id() -> None:
     deep link, so the producer and the record have to agree on it, and it has to
     stay distinguishing: WANDB_RESUME=allow turns a repeat into a resume of the
     earlier run rather than a new one."""
-    from modal_training_gym.common.run import metric_run_id_for_attempt
-    from modal_training_gym.common.wandb import WandbConfig
+    from modal_dojo.common.run import metric_run_id_for_attempt
+    from modal_dojo.common.wandb import WandbConfig
 
     run_id = "electric-batter-6362579afd91"
     assert metric_run_id_for_attempt(run_id, 1) == run_id

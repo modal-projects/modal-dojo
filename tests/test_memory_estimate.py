@@ -5,17 +5,17 @@ from dataclasses import replace
 
 import pytest
 
-from modal_training_gym.common.framework import Framework
-from modal_training_gym.common.memory_estimate import (
+from modal_dojo.common.framework import Framework
+from modal_dojo.common.memory_estimate import (
     _arch_from_hf,
     _peak_gib,
     maybe_warn_gpu_oom,
 )
-from modal_training_gym.common.models.base import ModelArchitecture
-from modal_training_gym.common.models.qwen3_4b import Qwen3_4B
-from modal_training_gym.common.models.validation import VALIDATION_CONFIGS
-from modal_training_gym.train_recipes.miles_recipe import MilesRecipe
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.common.models.base import ModelArchitecture
+from modal_dojo.common.models.qwen3_4b import Qwen3_4B
+from modal_dojo.common.models.validation import VALIDATION_CONFIGS
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 @pytest.mark.parametrize(
@@ -60,7 +60,7 @@ def test_hf_cfg_detects_moe(tmp_path, monkeypatch) -> None:
         '"vocab_size":1000}'
     )
     monkeypatch.setattr(
-        "modal_training_gym.common.memory_estimate.hf_hub_download",
+        "modal_dojo.common.memory_estimate.hf_hub_download",
         lambda **_: str(p),
     )
     assert _arch_from_hf("org/moe").num_experts == 8
@@ -70,7 +70,7 @@ def test_hf_bad_json_returns_none(tmp_path, monkeypatch) -> None:
     p = tmp_path / "config.json"
     p.write_text("not-json")
     monkeypatch.setattr(
-        "modal_training_gym.common.memory_estimate.hf_hub_download",
+        "modal_dojo.common.memory_estimate.hf_hub_download",
         lambda **_: str(p),
     )
     assert _arch_from_hf("org/bad") is None

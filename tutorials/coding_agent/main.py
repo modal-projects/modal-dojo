@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from modal_training_gym import (
+from modal_dojo import (
     DatasetConfig,
     Qwen3_6_27B,
     Qwen3_6_27B_Recipe,
@@ -35,7 +35,7 @@ from tutorials.coding_agent.dataset import (
 # tasks with a mix of successes and failures, so that we only train on tasks
 # with useful GRPO learning signal.
 # Since this is verbose, we have a
-# [separate preprocessing script](https://github.com/modal-projects/training-gym/blob/main/tutorials/coding_agent/dataset.py).
+# [separate preprocessing script](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/coding_agent/dataset.py).
 #
 # Run with:
 #
@@ -70,7 +70,7 @@ class AgentTaskDataset(DatasetConfig):
 
 # ## Start training
 #
-# With the [Qwen3_6_27B_Recipe](https://gym.modal.dev/reference/qwen3_6_27b_recipe)
+# With the [Qwen3_6_27B_Recipe](https://dojo.modal.dev/reference/qwen3_6_27b_recipe)
 # recipe class, it's just that simple.
 
 RUN_NAME = f"coding-agent-{uuid4().hex}"

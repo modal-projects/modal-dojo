@@ -25,6 +25,14 @@
       "link": "/reference/datasetconfig"
     },
     {
+      "label": "DojoConfigError",
+      "link": "/reference/dojoconfigerror"
+    },
+    {
+      "label": "DojoError",
+      "link": "/reference/dojoerror"
+    },
+    {
       "label": "Endpoint",
       "link": "/reference/endpoint"
     },
@@ -113,14 +121,6 @@
       "link": "/reference/traininggroup"
     },
     {
-      "label": "TrainingGymConfigError",
-      "link": "/reference/traininggymconfigerror"
-    },
-    {
-      "label": "TrainingGymError",
-      "link": "/reference/traininggymerror"
-    },
-    {
       "label": "TrainingRun",
       "link": "/reference/trainingrun"
     },
@@ -147,31 +147,31 @@
   ],
   "cli": [
     {
-      "label": "training-gym run",
+      "label": "modal-dojo run",
       "link": "/reference/cli/run"
     },
     {
-      "label": "training-gym skills",
+      "label": "modal-dojo skills",
       "link": "/reference/cli/skills"
     },
     {
-      "label": "training-gym setup",
+      "label": "modal-dojo setup",
       "link": "/reference/cli/setup"
     },
     {
-      "label": "training-gym set-password",
+      "label": "modal-dojo set-password",
       "link": "/reference/cli/set-password"
     },
     {
-      "label": "training-gym set-proxy-auth",
+      "label": "modal-dojo set-proxy-auth",
       "link": "/reference/cli/set-proxy-auth"
     },
     {
-      "label": "training-gym open",
+      "label": "modal-dojo open",
       "link": "/reference/cli/open"
     },
     {
-      "label": "training-gym cleanup",
+      "label": "modal-dojo cleanup",
       "link": "/reference/cli/cleanup"
     }
   ]

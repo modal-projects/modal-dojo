@@ -24,7 +24,7 @@
 import re
 import time
 
-from modal_training_gym import (
+from modal_dojo import (
     CustomDeployment,
     MultimodalDataset,
     Qwen3_VL_8B,
@@ -285,7 +285,7 @@ def run_baseline_evals(deployment):
 #
 # We pass `metrics=WandbConfig(project="…")` so reward/KL/length curves stream to
 # Weights & Biases — the key comes from the `wandb-secret` Modal secret. The
-# Training Gym dashboard picks up the run's project/entity/id and wires up the
+# Modal Dojo dashboard picks up the run's project/entity/id and wires up the
 # **Open in W&B** button on the run. Drop `metrics=` to disable logging.
 
 config = TrainConfig(

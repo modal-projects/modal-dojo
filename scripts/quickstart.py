@@ -1,6 +1,6 @@
 import re
 
-from modal_training_gym import (
+from modal_dojo import (
     HuggingFaceDataset,
     Qwen3_5_4B,
     Qwen3_5_4B_Recipe,

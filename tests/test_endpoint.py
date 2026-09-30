@@ -12,11 +12,11 @@ import modal
 import pytest
 from modal.cli.endpoint import create as modal_endpoint_create
 
-from modal_training_gym.common import endpoint as endpoint_module
-from modal_training_gym.common.checkpoint import Checkpoint, CheckpointType
-from modal_training_gym.common.endpoint import Endpoint
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.models import ModelConfig
+from modal_dojo.common import endpoint as endpoint_module
+from modal_dojo.common.checkpoint import Checkpoint, CheckpointType
+from modal_dojo.common.endpoint import Endpoint
+from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.common.models import ModelConfig
 
 
 class _FakeClock:
@@ -717,7 +717,7 @@ def test_headers_require_configured_proxy_credentials(
 ) -> None:
     monkeypatch.setattr(endpoint_module, "modal_proxy_auth_headers", lambda: {})
 
-    with pytest.raises(TrainingGymConfigError, match="MODAL_KEY and MODAL_SECRET"):
+    with pytest.raises(DojoConfigError, match="MODAL_KEY and MODAL_SECRET"):
         _endpoint(requires_proxy_auth=True)._headers()
 
 
@@ -892,7 +892,7 @@ def test_chat_requires_proxy_credentials_before_posting(
     monkeypatch.setattr(endpoint_module, "modal_proxy_auth_headers", lambda: {})
     monkeypatch.setattr(endpoint_module.httpx, "post", _post)
 
-    with pytest.raises(TrainingGymConfigError, match="Proxy authentication requires"):
+    with pytest.raises(DojoConfigError, match="Proxy authentication requires"):
         _endpoint(requires_proxy_auth=True).chat([])
 
 

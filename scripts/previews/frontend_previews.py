@@ -222,7 +222,7 @@ def refresh_sandboxes():
     print("Refreshing sandboxes")
 
     gh = Github()
-    repo = gh.get_repo("modal-projects/training-gym")
+    repo = gh.get_repo("modal-projects/modal-dojo")
 
     prs = defaultdict(list)
     for (pr_number, _), deployment in list(deployments.items()):

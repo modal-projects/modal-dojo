@@ -11,8 +11,8 @@ Covers the pure, slime-free seams of the dashboard trajectory-timeline feature:
 
 from types import SimpleNamespace
 
-from modal_training_gym.common.sample import Sample, TraceSpan
-from modal_training_gym.frameworks.slime import phase_reporting as pr
+from modal_dojo.common.sample import Sample, TraceSpan
+from modal_dojo.frameworks.slime import phase_reporting as pr
 
 
 # ── _normalize_trace ─────────────────────────────────────────────────────────

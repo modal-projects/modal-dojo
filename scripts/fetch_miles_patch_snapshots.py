@@ -10,7 +10,7 @@ from pathlib import Path
 
 import modal
 
-from modal_training_gym.train_recipes.miles_recipe.recipe import MilesRecipe
+from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 MILES_IMAGE = MilesRecipe().docker_image
 

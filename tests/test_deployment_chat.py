@@ -1,5 +1,5 @@
-from modal_training_gym.common import deployment as deployment_module
-from modal_training_gym.common.deployment import CustomDeployment
+from modal_dojo.common import deployment as deployment_module
+from modal_dojo.common.deployment import CustomDeployment
 
 
 def test_chat_serializes_tool_arguments_without_mutating_messages(monkeypatch) -> None:

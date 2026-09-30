@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from modal_training_gym.common.models.base import HFModelConfiguration
+from modal_dojo.common.models.base import HFModelConfiguration
 
 
 class _Model(HFModelConfiguration):

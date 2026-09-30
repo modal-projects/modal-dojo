@@ -1,6 +1,6 @@
 # Dashboard
 
-Self-hosted observability dashboard for Training Gym. Aggregates training
+Self-hosted observability dashboard for Modal Dojo. Aggregates training
 runs and eval results from the `training-gym-metadata` Modal Volume into
 a single Svelte SPA served by a Modal ASGI endpoint.
 
@@ -20,7 +20,7 @@ It is environment-agnostic; replace it for a deployment with your own Svelte
 component:
 
 ```bash
-training-gym setup --trajectory-viewer ./MyTrajectoryViewer.svelte
+modal-dojo setup --trajectory-viewer ./MyTrajectoryViewer.svelte
 ```
 
 The component is mounted over
@@ -36,7 +36,7 @@ builds the dashboard. It receives these props:
 
 The override path is saved in `~/.training-gym.toml`, so later `setup` or
 password redeploys keep using it. To restore the built-in viewer, run
-`training-gym setup --no-trajectory-viewer`.
+`modal-dojo setup --no-trajectory-viewer`.
 
 ## Run-scoped dashboard components
 
@@ -44,7 +44,7 @@ For a component that belongs to one run, attach it after launch instead of
 changing the global dashboard setup:
 
 ```python
-from modal_training_gym import DashboardComponent, TrainingRun
+from modal_dojo import DashboardComponent, TrainingRun
 
 run = TrainingRun.from_id("bristled-pine-a7c3e91d4b")
 run.add_dashboard_component(

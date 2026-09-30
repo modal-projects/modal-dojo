@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from modal_training_gym.common.run_list import (
+from modal_dojo.common.run_list import (
     count_run_facets,
     filter_run_summaries,
     run_list_field_metadata,
 )
-from modal_training_gym.common.run_summary import RunSummary
+from modal_dojo.common.run_summary import RunSummary
 
 
 def _summary(**overrides) -> RunSummary:

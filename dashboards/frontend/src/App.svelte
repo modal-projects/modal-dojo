@@ -16,7 +16,7 @@
   import logoSvg from "./lib/logo.svg";
   import { fmtDuration } from "./lib/format.js";
   import { createSidebarCollapsedState } from "./lib/sidebarCollapsed.svelte.js";
-  const DOCS_URL = "https://gym.modal.dev";
+  const DOCS_URL = "https://dojo.modal.dev";
 
   // The server filters, sorts and pages the run list, so `runs` only holds the
   // rows the page asked for and every total comes from `runCounts`.
@@ -873,7 +873,7 @@
       <img src={logoSvg} alt="Modal" class="h-[17.5px] w-auto flex-[0_0_auto]" />
       <span class="inline-flex items-center gap-[0.18rem] [font-family:var(--font-display)] [font-feature-settings:'ss01'_on] text-[17.6px] leading-[1] [padding-block:0.08rem] font-[600] tracking-[-0.02em] [transform:translateY(1px)] whitespace-nowrap max-[360px]:text-[15px]">
         <span class="text-[#ddffdc]">Modal</span>
-        <span class="text-(--green)">Training Gym</span>
+        <span class="text-(--green)">Dojo</span>
       </span>
     </div>
     <a
