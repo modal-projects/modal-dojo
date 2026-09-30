@@ -189,6 +189,26 @@ export default defineConfig({
         },
         {
           tag: 'meta',
+          attrs: { property: 'og:image:alt', content: 'Modal Dojo dashboard showing training metrics for a run' },
+        },
+        {
+          tag: 'meta',
+          attrs: { property: 'og:video', content: 'https://modal-cdn.com/cdnbot/dashboard-4k_8aec4747.webm' },
+        },
+        {
+          tag: 'meta',
+          attrs: { property: 'og:video:type', content: 'video/webm' },
+        },
+        {
+          tag: 'meta',
+          attrs: { property: 'og:video:width', content: '3012' },
+        },
+        {
+          tag: 'meta',
+          attrs: { property: 'og:video:height', content: '2160' },
+        },
+        {
+          tag: 'meta',
           attrs: { name: 'twitter:card', content: 'summary_large_image' },
         },
         {
