@@ -97,7 +97,8 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     rollout_batch_size: int = 15
     n_samples_per_prompt: int = 8
     global_batch_size: int = 120
-    rollout_max_response_len: int = 7168
+    rollout_max_context_len: int = 32768
+    rollout_max_response_len: int = 32768
     rm_type: str | None = "math"
     balance_data: bool = True
     skip_eval_before_train: bool = True
@@ -106,7 +107,8 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     calculate_per_token_loss: bool = True
     use_dynamic_batch_size: bool = False
     micro_batch_size: int = 1
-    max_tokens_per_gpu: int = 16384
+    seq_length: int = 32768
+    max_tokens_per_gpu: int = 32768
     recompute_granularity: str = "full"
     recompute_method: str = "uniform"
     recompute_num_layers: int = 1
@@ -115,6 +117,7 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     sglang_tp_size: int = 8
     sglang_ep_size: int = 8
     sglang_dp_size: int | None = 1
+    sglang_context_length: int = 32768
     sglang_mem_fraction_static: float = 0.5
     sglang_lora_backend: str | None = "triton"
     sglang_max_lora_rank: int = 16
