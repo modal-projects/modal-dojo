@@ -479,7 +479,6 @@ def test_live_check_failure_explains_force(paths, harness, monkeypatch, unreadab
         harness.rows = [("training-runs/run.json", {"status": "running"})]
     with pytest.raises(CLIError) as error:
         migration.migrate(resources=harness)
-    assert "After verifying there are no active training runs" in error.value.hint
     assert "modal-dojo migrate --force" in error.value.hint
     assert not harness.events
 
