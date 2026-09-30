@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 
-DASHBOARD_APP_NAME = "modal-dojo-dashboard"
+DASHBOARD_APP_NAME = "dojo-dashboard"
 LEGACY_DASHBOARD_APP_NAME = "training-gym-dashboard"
 DASHBOARD_WEB_FUNCTION = "fastapi_app"
 

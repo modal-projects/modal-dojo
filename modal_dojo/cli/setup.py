@@ -167,7 +167,7 @@ def setup(
     save_dashboard_url(web_url, proxy_auth=require_proxy_auth)
     if migrating:
         print_note(
-            "A new modal-dojo-dashboard has been deployed. The old training-gym-dashboard app has not been stopped. After active runs finish, run `modal app stop training-gym-dashboard` in the same Modal environment, then update saved dashboard links to the new URL."
+            "A new dojo-dashboard has been deployed. The old training-gym-dashboard app has not been stopped. After active runs finish, run `modal app stop training-gym-dashboard` in the same Modal environment, then update saved dashboard links to the new URL."
         )
     print(f"\nDashboard deployed: {web_url}")
     print(f"Saved dashboard URL to {CONFIG_PATH}")

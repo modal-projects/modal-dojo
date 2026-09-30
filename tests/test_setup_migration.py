@@ -190,7 +190,7 @@ def test_metrics_defaults_and_persistent_identifiers():
     assert METADATA_VOLUME_NAME == "training-gym-metadata"
     assert DASHBOARD_OVERLAY_VOLUME_NAME == "training-gym-dashboard-overlay"
     assert config.DASHBOARD_PASSWORD_SECRET_NAME == "_training-gym-dashboard-password"
-    assert DASHBOARD_APP_NAME == "modal-dojo-dashboard"
+    assert DASHBOARD_APP_NAME == "dojo-dashboard"
     assert DASHBOARD_VERSION == 6
 
 
