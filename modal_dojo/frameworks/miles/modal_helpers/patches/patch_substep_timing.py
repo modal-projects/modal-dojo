@@ -570,6 +570,13 @@ def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
         print(f"{path.name} already patched for substep timing")
         return
 
+    if path.name == "train.py" and "create_rollout_components" in src:
+        src = _patch_executor_driver(src, path)
+        compile(src, str(path), "exec")
+        path.write_text(src)
+        print(f"Patched {path.name} for executor-based substep timing")
+        return
+
     src = _inject_preamble(src)
     if path.name == "train_async.py":
         src = replace_once(
@@ -628,6 +635,180 @@ def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
     print(f"Patched {path.name} for substep timing ({len(wraps)} phases)")
 
 
+def _function(src: str, name: str) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    matches = [
+        node
+        for node in ast.walk(ast.parse(src))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == name
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(f"expected one function {name}, found {len(matches)}")
+    return matches[0]
+
+
+def _wrap_span(src: str, start: int, end: int, context: str) -> str:
+    lines = src.splitlines(keepends=True)
+    block = "".join(lines[start - 1 : end])
+    indent = block[: len(block) - len(block.lstrip(" "))]
+    return (
+        "".join(lines[: start - 1])
+        + f"{indent}with {context}:\n"
+        + indent_block(block)
+        + "\n"
+        + "".join(lines[end:])
+    )
+
+
+def _wrap_function(src: str, name: str, context: str) -> str:
+    fn = _function(src, name)
+    body = fn.body
+    if isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+        body = body[1:]
+    return _wrap_span(src, body[0].lineno, body[-1].end_lineno, context)
+
+
+def _wrap_calls(src: str, function: str, calls: dict[str, str]) -> str:
+    """Wrap call statements within their original scopes."""
+    spans = []
+    seen = set()
+
+    def visit(node):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            return
+        if isinstance(node, (ast.Expr, ast.Assign, ast.AnnAssign, ast.Return)):
+            value = node.value
+            if isinstance(value, ast.Await):
+                value = value.value
+            if (
+                isinstance(value, ast.Call)
+                and (name := ast.unparse(value.func)) in calls
+            ):
+                spans.append((node.lineno, node.end_lineno, calls[name]))
+                seen.add(name)
+                return
+        for child in ast.iter_child_nodes(node):
+            visit(child)
+
+    for node in _function(src, function).body:
+        visit(node)
+    if missing := calls.keys() - seen:
+        raise RuntimeError(f"{function}: timing calls missing: {sorted(missing)}")
+    for start, end, context in sorted(spans, reverse=True):
+        src = _wrap_span(src, start, end, context)
+    return src
+
+
+def _phase(name: str) -> str:
+    return f"_tg_time_phase({name!r})"
+
+
+def _patch_executor_driver(src: str, path: Path) -> str:
+    startup = {
+        "create_rollout_components": "initialize_rollout",
+        "create_training_models": "initialize_training",
+    }
+    calls = {name: _phase(phase) for name, phase in startup.items()}
+    calls.update(
+        {
+            "inference_controller.prepare_rollout": _phase("prepare_rollout"),
+            "rollout_executor.get.remote": _phase("generate_rollouts"),
+            "inference_controller.offload_kv": _phase("offload_rollout"),
+            "inference_controller.offload_weights": _phase("offload_rollout"),
+            "inference_controller.offload": _phase("offload_rollout"),
+            "actor_model.onload": _phase("onload_train"),
+            "actor_model.train": _phase("train_models"),
+            "critic_model.train": _phase("train_models"),
+            "actor_model.offload": _phase("offload_train"),
+            "critic_model.offload": _phase("offload_train"),
+            "offload_train": _phase("offload_train"),
+            "actor_model.clear_memory": _phase("clear_train_memory"),
+            "actor_model.offload_grad_buffer": _phase("offload_train_gradients"),
+            "inference_controller.onload_weights": _phase("onload_rollout_weights"),
+            "save": _phase("checkpoint_save"),
+        }
+    )
+    src = _wrap_calls(src, "train", calls)
+    src = _wrap_driver_loop(src, path)
+    src = _wrap_calls(
+        src,
+        "train",
+        {
+            "inference_controller.onload_kv": _phase("onload_rollout_kv"),
+            "inference_controller.prepare_eval": _phase("prepare_eval"),
+            "eval_dispatcher.dispatch": _phase("evaluate_rollouts"),
+        },
+    )
+    body = _function(src, "train").body
+    loop_index = next(i for i, node in enumerate(body) if isinstance(node, ast.For))
+    src = _wrap_span(
+        src, body[0].lineno, body[loop_index - 1].end_lineno, "_tg_role('driver', None)"
+    )
+    return _inject_preamble(src)
+
+
+def patch_executor_package(root: Path) -> None:
+    """Instrument the synchronous executor layout shipped with Kimi K3."""
+    paths = {
+        "rollout": "miles/ray/rollout/rollout_executor.py",
+        "actor": "miles/backends/megatron_utils/actor.py",
+        "model": "miles/backends/megatron_utils/model.py",
+        "group": "miles/ray/train/group.py",
+    }
+    for kind, relative in paths.items():
+        path = root / relative
+        src = path.read_text()
+        if PREAMBLE_MARKER in src:
+            continue
+        if kind == "rollout":
+            src = _wrap_calls(
+                src,
+                "get",
+                {
+                    "self._get_rollout_data": _phase("generate_samples"),
+                    "convert_samples_to_train_data": _phase("reward_post_process"),
+                },
+            )
+            src = _wrap_function(src, "get", "_tg_role('rollout', rollout_id)")
+        elif kind == "actor":
+            src = _wrap_function(src, "compute_log_prob", _phase("compute_log_probs"))
+            src = _wrap_function(
+                src,
+                "train",
+                "_tg_mrec(rollout_id, 'critic' if self.role == 'critic' else 'actor')",
+            )
+        elif kind == "model":
+            src = _wrap_calls(
+                src,
+                "train_one_step",
+                {
+                    "run_forward_backward_pass": _phase("forward_backward"),
+                    "optimizer.step": _phase("optimizer_step"),
+                },
+            )
+        else:
+            src = _wrap_calls(
+                src,
+                "update_weights",
+                {
+                    "self._inference_controller.start_update_weights": _phase(
+                        "wait_for_inference_engines"
+                    ),
+                    "retry": "_tg_time_phase('initial_weight_sync' if rollout_id is None else 'weight_sync')",
+                    "self._inference_controller.end_update_weights": _phase(
+                        "finalize_weight_sync"
+                    ),
+                    "self._maybe_log_inference_engine_weight_checksums": _phase(
+                        "check_weight_sync"
+                    ),
+                },
+            )
+        src = _inject_preamble(src)
+        compile(src, str(path), "exec")
+        path.write_text(src)
+        print(f"Patched {relative} for executor-based substep timing")
+
+
 def _patch_entrypoint(path: Path, wraps: list[tuple[str, str]]) -> None:
     try:
         _patch_file(path, wraps)
@@ -638,6 +819,11 @@ def _patch_entrypoint(path: Path, wraps: list[tuple[str, str]]) -> None:
 def main() -> None:
     """Patch this image's framework checkout, if it has one."""
     if not ROOT.is_dir():
+        return
+    if (ROOT / "miles/ray/rollout/rollout_executor.py").exists():
+        _patch_file(ROOT / "train.py", _SYNC_PHASE_WRAPS)
+        patch_executor_package(ROOT)
+        _patch_entrypoint(ROOT / "train_async.py", _ASYNC_PHASE_WRAPS)
         return
     for name, wraps in ENTRYPOINTS.items():
         _patch_entrypoint(ROOT / name, wraps)

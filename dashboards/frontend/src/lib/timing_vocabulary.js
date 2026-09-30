@@ -10,6 +10,7 @@ export const CATEGORIES = {
     phases: [
       "train_models",
       "compute_log_probs",
+      "actor_train",
       "forward_backward",
       "optimizer_step",
       "trainer_finalize",
@@ -27,6 +28,7 @@ export const CATEGORIES = {
       "reward",
       "reward_batch",
       "reward_post_process",
+      "prepare_rollout",
     ],
   },
   transfer: {
@@ -37,6 +39,13 @@ export const CATEGORIES = {
       "initial_weight_sync",
       "offload_train",
       "offload_rollout",
+      "onload_train",
+      "onload_rollout_weights",
+      "onload_rollout_kv",
+      "offload_train_gradients",
+      "clear_train_memory",
+      "finalize_weight_sync",
+      "check_weight_sync",
     ],
   },
   checkpoint: {
@@ -47,12 +56,17 @@ export const CATEGORIES = {
   eval: {
     label: "Eval",
     color: slot("primary-4"),
-    phases: ["evaluate_rollouts", "evaluate_rollouts_end"],
+    phases: ["evaluate_rollouts", "evaluate_rollouts_end", "prepare_eval"],
+  },
+  startup: {
+    label: "Startup",
+    color: slot("primary-5"),
+    phases: ["initialize_training", "initialize_rollout"],
   },
   idle: {
     label: "Idle",
     color: "var(--color-c-gray-30)",
-    phases: ["wait_for_rollout", "wait_for_next_rollout"],
+    phases: ["wait_for_rollout", "wait_for_next_rollout", "wait_for_inference_engines"],
   },
 };
 
@@ -76,11 +90,24 @@ export const TIMING_LABELS = {
   generate_rollouts: "Rollout generation",
   offload_rollout: "Offload rollout engines",
   compute_log_probs: "Calculate log probs",
+  actor_train: "Actor training (log timer)",
   train_models: "Train",
   checkpoint_save: "Save checkpoint",
   offload_train: "Offload trainer",
   weight_sync: "Weight sync",
   initial_weight_sync: "Initial weight sync",
+  initialize_training: "Initialize training model",
+  initialize_rollout: "Initialize rollout workers",
+  wait_for_inference_engines: "Wait for inference engines",
+  onload_train: "Restore trainer to GPU",
+  onload_rollout_weights: "Restore rollout weights to GPU",
+  onload_rollout_kv: "Restore rollout KV cache",
+  offload_train_gradients: "Offload trainer gradients",
+  clear_train_memory: "Clear trainer memory",
+  finalize_weight_sync: "Finalize weight sync",
+  check_weight_sync: "Check weight sync",
+  prepare_rollout: "Prepare rollout",
+  prepare_eval: "Prepare evaluation",
   wait_for_rollout: "Waiting for this rollout",
   wait_for_next_rollout: "Waiting for the next rollout",
   generate_samples: "Rollout generation",
@@ -109,6 +136,7 @@ const SFT_CATEGORY_LABELS = {
 export const IDLE_PHASES = new Set([
   "wait_for_rollout",
   "wait_for_next_rollout",
+  "wait_for_inference_engines",
 ]);
 
 export const SAMPLED = new Set(["reward", "reward_batch", "sample_generation"]);
@@ -127,6 +155,7 @@ export const TOOLTIP_HIDDEN_PHASES = new Set([
 export const NESTS_IN = {
   generate_samples: ["generate_rollouts"],
   compute_log_probs: ["train_models"],
+  actor_train: ["train_models"],
   forward_backward: ["train_models"],
   optimizer_step: ["train_models"],
   trainer_finalize: ["train_models"],

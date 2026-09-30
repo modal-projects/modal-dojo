@@ -103,6 +103,7 @@ def test_ingest_buffers_in_memory_and_persists_chunks_on_final(
         live = client.get(f"/api/runs/{RUN_ID}/metrics").json()
         assert live == {
             "series": {"train/loss": [[0, 1.0, None], [1, 0.8, None]]},
+            "step_keys": {"train/loss": None},
             "stale": False,
         }
 
@@ -214,7 +215,11 @@ def test_finished_run_read_serves_memory_when_the_volume_is_down(
         monkeypatch.setattr(_dashboard, "_metadata_vol_put_many", boom)
         result = client.get(f"/api/runs/{RUN_ID}/metrics")
         assert result.status_code == 200
-        assert result.json() == {"series": {"a": [[0, 1.0, None]]}, "stale": True}
+        assert result.json() == {
+            "series": {"a": [[0, 1.0, None]]},
+            "step_keys": {"a": None},
+            "stale": True,
+        }
 
 
 def test_rejects_oversized_or_malformed_points(fake_volume, monkeypatch, tmp_path):
@@ -287,5 +292,5 @@ def test_metric_series_splits_the_table_per_key_and_downsamples():
     run.merge_points([MetricPoint(step=3, metrics={"a": 1.0})])
     out = metric_series(run, 4)
     assert list(out) == ["a", "x"]
-    assert out["a"] == [[3, 1.0, 103.0]]
+    assert out["a"] == [[3, 1.0, None]]
     assert out["x"] == [[0, 0.0, 100.0], [9, 9.0, 109.0]]

@@ -112,19 +112,40 @@ def flatten_numeric(data: Mapping[str, Any], prefix: str = "") -> dict[str, floa
 
 
 class MetricMirror:
-    """Coalesces ``log`` calls per step and posts them every few seconds.
-
-    Step semantics follow ``wandb.log``: ``step=None`` lands on an implicit
-    counter that advances unless ``commit=False``; an explicit step moves the
-    counter forward, never back.
-    """
+    """Batch metric updates using their declared step axes and timestamps."""
 
     def __init__(self, training_run_id: str) -> None:
         self.training_run_id = training_run_id
-        self._pending: dict[int, dict[str, Any]] = {}
+        self._pending: dict[tuple[int, str, float], dict[str, Any]] = {}
+        self._step_metrics: dict[str, tuple[str, bool]] = {}
+        self._axis_values: dict[str, float] = {}
         self._next_step = 0
         self._timer: threading.Timer | None = None
         self._lock = threading.Lock()
+
+    def define_metric(
+        self,
+        name: str,
+        step_metric: str | None = None,
+        step_sync: bool | None = None,
+        **_kwargs: Any,
+    ) -> None:
+        if not isinstance(name, str) or not isinstance(step_metric, str):
+            return
+        with self._lock:
+            self._step_metrics[name] = (step_metric, step_sync is not False)
+
+    def _metric_axis(self, key: str) -> tuple[str, bool] | None:
+        if key in self._step_metrics:
+            return self._step_metrics[key]
+        matches = [
+            pattern
+            for pattern in self._step_metrics
+            if pattern.endswith("*") and key.startswith(pattern[:-1])
+        ]
+        if matches:
+            return self._step_metrics[max(matches, key=len)]
+        return None
 
     def log(
         self,
@@ -145,9 +166,32 @@ class MetricMirror:
                 self._next_step = max(self._next_step, step)
             if not metrics:
                 return
-            point = self._pending.setdefault(step, {"step": step, "metrics": {}})
-            point["metrics"].update(metrics)
-            point["time"] = time.time()
+            axes = {axis for axis, _ in self._step_metrics.values()}
+            self._axis_values.update({k: v for k, v in metrics.items() if k in axes})
+            at = time.time()
+            for key, value in metrics.items():
+                metric_step, axis = step, ""
+                definition = self._metric_axis(key)
+                if definition is not None:
+                    candidate, sync = definition
+                    axis_value = (self._axis_values if sync else metrics).get(candidate)
+                    if (
+                        axis_value is None
+                        or not (0 <= axis_value <= 100_000_000)
+                        or not axis_value.is_integer()
+                    ):
+                        continue
+                    metric_step, axis = int(axis_value), candidate
+                point = self._pending.setdefault(
+                    (metric_step, axis, at),
+                    {
+                        "step": metric_step,
+                        "metrics": {},
+                        "time": at,
+                        **({"step_key": axis} if axis else {}),
+                    },
+                )
+                point["metrics"][key] = value
             if self._timer is None:
                 self._timer = threading.Timer(FLUSH_INTERVAL_SECONDS, self.flush)
                 self._timer.daemon = True
@@ -176,22 +220,35 @@ _MIRROR: MetricMirror | None = None
 _MIRROR_LOCK = threading.Lock()
 
 
+def _get_mirror() -> MetricMirror | None:
+    global _MIRROR
+    with _MIRROR_LOCK:
+        if _MIRROR is None:
+            if not (run_id := os.environ.get("MODAL_DOJO_TRAINING_RUN_ID")):
+                return None
+            from modal_dojo.common.reporting import register_pre_drain_hook
+
+            mirror = _MIRROR = MetricMirror(run_id)
+            register_pre_drain_hook(lambda: mirror.flush(final=True))
+        return _MIRROR
+
+
+def mirror_define_metric(*args: Any, **kwargs: Any) -> None:
+    """Capture axis declarations for dashboard, Trackio and real W&B alike."""
+    try:
+        if (mirror := _get_mirror()) is not None:
+            mirror.define_metric(*args, **kwargs)
+    except Exception:
+        pass
+
+
 def mirror_log(
     data: Any, *, step: int | None = None, commit: bool | None = None
 ) -> None:
     """Best-effort mirror of one ``wandb.log`` call; never raises."""
-    global _MIRROR
     try:
-        with _MIRROR_LOCK:
-            if _MIRROR is None:
-                if not (run_id := os.environ.get("MODAL_DOJO_TRAINING_RUN_ID")):
-                    return
-                from modal_dojo.common.reporting import register_pre_drain_hook
-
-                mirror = _MIRROR = MetricMirror(run_id)
-                register_pre_drain_hook(lambda: mirror.flush(final=True))
-        if isinstance(data, Mapping):
-            _MIRROR.log(data, step=step, commit=commit)
+        if isinstance(data, Mapping) and (mirror := _get_mirror()) is not None:
+            mirror.log(data, step=step, commit=commit)
     except Exception:
         pass
 
@@ -244,6 +301,15 @@ def patch_wandb_module() -> None:
         return result
 
     run_cls.log = log
+    original_define = getattr(run_cls, "define_metric", None)
+    if original_define is not None:
+
+        def define_metric(self: Any, *args: Any, **kwargs: Any) -> Any:
+            result = original_define(self, *args, **kwargs)
+            mirror_define_metric(*args, **kwargs)
+            return result
+
+        run_cls.define_metric = define_metric
 
 
 # ── dashboard: a W&B-shaped module over the dashboard ─────
@@ -289,8 +355,11 @@ class DashboardRun:
     ) -> None:
         mirror_log(data, step=step, commit=commit)
 
+    def define_metric(self, *args: Any, **kwargs: Any) -> None:
+        mirror_define_metric(*args, **kwargs)
+
     def __getattr__(self, name: str) -> Any:
-        # finish, define_metric, save, watch, alert, ...: accepted and ignored.
+        # finish, save, watch, alert, ...: accepted and ignored.
         return lambda *args, **kwargs: None
 
 
@@ -344,7 +413,7 @@ def install_wandb_shim() -> None:
     shim.finish = finish
     shim.save = lambda *args, **kwargs: []
     shim.login = lambda *args, **kwargs: True
-    shim.define_metric = lambda *args, **kwargs: None
+    shim.define_metric = mirror_define_metric
 
     def missing(name: str) -> Any:
         if name[:1].isupper():
