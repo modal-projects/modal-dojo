@@ -1,4 +1,4 @@
-"""Exercise the K3 long-context configuration on the full 64-B300 model.
+"""Exercise the full K3 long-context configuration on 64 B300 or H200 GPUs.
 
 Run with ``uv run -m scripts.validate_kimi_k3_long_context --mode capacity``.
 Defaults to two updates at 64k context; pass ``--launch`` to allocate GPUs.
@@ -260,12 +260,17 @@ def before_train_step(args, rollout_id, step_id, model, optimizer, opt_param_sch
 
 
 def build_config(
-    mode="capacity", context_length=65536, rollouts=2, decode_tokens=57344
+    mode="capacity",
+    context_length=65536,
+    rollouts=2,
+    decode_tokens=57344,
+    gpu_type="B300",
 ):
     from configs.kimi_k3_long_context import build_recipe
     from modal_dojo import HuggingFaceDataset, Kimi_K3, TrainConfig
 
     recipe = build_recipe(
+        gpu_type=gpu_type,
         context_length=context_length,
         num_rollout=rollouts,
         rm_type="deepscaler",
@@ -312,11 +317,12 @@ def main():
         "--context-length", type=int, choices=[65536, 131072], default=65536
     )
     parser.add_argument("--rollouts", type=int, default=2)
+    parser.add_argument("--gpu-type", choices=["B300", "H200"], default="B300")
     parser.add_argument("--decode-tokens", type=int, default=57344)
     parser.add_argument("--launch", action="store_true")
     args = parser.parse_args()
     config = build_config(
-        args.mode, args.context_length, args.rollouts, args.decode_tokens
+        args.mode, args.context_length, args.rollouts, args.decode_tokens, args.gpu_type
     )
     print(config.recipe.gpu_allocation.summary())
     if args.launch:
@@ -327,6 +333,7 @@ def main():
             "context_length": args.context_length,
             "rollouts": args.rollouts,
             "decode_tokens": args.decode_tokens,
+            "gpu_type": args.gpu_type,
         }
         dest = Path(".gym/new_models/Kimi_K3_Long_Context")
         dest.mkdir(parents=True, exist_ok=True)
