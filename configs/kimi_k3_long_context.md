@@ -65,6 +65,70 @@ Full uniform recomputation with `recompute_num_layers=1` already recomputes
 every transformer layer. Increasing that number changes the checkpoint segment
 size; it does not enable recomputation on more layers.
 
+## H200 candidate
+
+`build_recipe(gpu_type="H200")` selects eight nodes with eight H200s each.
+This candidate is limited to a 64k context and one request per TP16 engine.
+It uses full uniform recomputation in groups of three layers, 100% optimizer
+CPU offload, FlashInfer MLA decoding, and the same offload-first handoff.
+Host memory is 1,792 GiB requested with a 1,920-GiB limit: the estimated
+simultaneous weight backups total approximately 1,624 GiB per node. The B300
+profile's 2.5-TiB request exceeds the 2-TiB RAM capacity of
+[AWS H200 hosts](https://docs.aws.amazon.com/ec2/latest/instancetypes/ac.html).
+The reduced request depends on compact inference weights; full-run host peaks
+still need measurement.
+Training remains TP4 × PP8 × CP2 with EP8; inference remains four TP16 engines.
+
+The H200 image adds a shape-specific Marlin allocation patch: K3's 192-wide
+expert shard uses the supported 64-element alignment instead of padding to
+256. Other shapes and backends retain their existing behavior. The original
+MXFP4 checkpoint is reused; no NVFP4 conversion is needed. In single-H200
+kernel tests, the compact layout used 25% less expert-weight storage and gave
+identical outputs to the padded layout at 1, 16 and 128 tokens, including
+nonzero LoRA hook updates. The NVFP4 kernel also ran, but used approximately
+6% more storage than compact MXFP4 in that test.
+
+Across 92 layers and 896 experts, removing this padding saves approximately
+28.06 GiB per inference GPU. Subtracting that from the measured 140.15-GiB
+B300 weight allocation estimates 112.09 GiB of base weights. Routed-expert
+rank-32 adapters with shared outer factors add approximately 2.89 GiB, and
+the 131,072-token MLA cache adds 3.375 GiB. Other adapters, KDA state, graph
+buffers, communication and temporary allocations are additional. These are
+estimates, not a measured full-model H200 peak. The candidate sets SGLang's
+static memory fraction to 0.95; the inherited 0.75 budget is below even the
+estimated base-weight footprint on the measured 139.8-GiB H200.
+
+Run the local configuration check with:
+
+```bash
+uv run -m scripts.validate_kimi_k3_long_context --gpu-type H200
+```
+
+The patched allocator and post-load processing also passed a single-H200
+check with two in-place reloads, unchanged parameter identities and storage
+addresses, and finite outputs at all three batch sizes. This tests the real
+MXFP4 method with synthetic tensors, not a complete checkpoint load.
+
+A two-node H200 TP16 server using a four-layer, 64-expert checkpoint also
+passed health, 64,512-token prefill plus 1,022-token decoding, and KV-cache /
+CUDA-graph release and resume. Cold startup took 605 seconds; the long request
+took 44.4 seconds including compilation. This pruned checkpoint produces
+incoherent text and is only an execution-path check, not a quality benchmark.
+The pinned-runtime preflight verified the H200 arguments, tokenizer, dataset,
+reward edge cases and 64k mask assembly; 50 focused local tests passed.
+
+The full-model two-step H200 launch was attempted but stopped locally at
+`require_migrated_config()` because both legacy Training Gym and Modal Dojo
+configuration files exist. No training GPUs were allocated. Resolve that
+environment migration before launching:
+
+```bash
+uv run -m scripts.validate_kimi_k3_long_context --gpu-type H200 --rollouts 2 --launch
+```
+
+The full-model 64k trainer peak, checkpoint save, model quality and subsequent
+rollout with an updated adapter remain unverified.
+
 ## Agent trajectories
 
 Pass `custom_generate_function=your_agent` and `custom_rm_function=your_reward`
@@ -117,8 +181,8 @@ with responses capped at 4k. That run validates the base training cycle, not
 64k capacity or reward improvement.
 
 The [two-step 64k validation](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/shiny-fall-0bf32fd3aaf0)
-was submitted on September 30, 2026 using these settings. As of October 1 it
-remains queued for B300 workers, with no training steps completed. The cached
+was submitted on September 30, 2026 using these settings. It was subsequently
+cancelled, with no training steps or rewards recorded. The cached
 checkpoint was found and conversion was skipped. This run predates the rebase
 onto current `main`; it does not validate changes subsequently merged there.
 

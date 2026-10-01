@@ -1,4 +1,4 @@
-"""64k Kimi-K3 configuration on the existing 8 x B300:8 allocation.
+"""64k Kimi-K3 configuration on eight B300:8 or H200:8 nodes.
 
 Use ``build_recipe()`` with TrainConfig and your agent's dataset/reward. The
 agent must cap the *whole* trajectory (including tool observations), preserve
@@ -9,9 +9,11 @@ This is an explicit workload configuration, not a new model/default recipe.
 It retains the base recipe's image patches and checkpoint-volume identity.
 """
 
+from pathlib import Path
 from typing import Any
 
 from modal_dojo import Kimi_K3_LoRA_Recipe
+from modal_dojo.common.patches import encode_patch
 
 
 def remaining_response_tokens(
@@ -54,6 +56,7 @@ def build_recipe(
     *,
     context_length: int = 65536,
     concurrency_per_engine: int = 1,
+    gpu_type: str = "B300",
     **overrides: Any,
 ) -> Kimi_K3_LoRA_Recipe:
     """Build a synchronous long-context recipe; overrides select task/horizon.
@@ -66,6 +69,12 @@ def build_recipe(
         raise ValueError("Choose a target shape: 65536 or 131072 tokens")
     if concurrency_per_engine not in (1, 2, 4, 8):
         raise ValueError("concurrency_per_engine must be one of 1, 2, 4, 8")
+    if gpu_type not in ("B300", "H200"):
+        raise ValueError("Choose B300 or H200 for this configuration")
+    if gpu_type == "H200" and (context_length != 65536 or concurrency_per_engine != 1):
+        raise ValueError(
+            "The H200 candidate is scoped to 64k and one request per engine"
+        )
     extra = {
         "rollout_max_prompt_len": None,
         "sglang_context_length": context_length,
@@ -78,6 +87,7 @@ def build_recipe(
     }
     extra.update(overrides.pop("extra_config", None) or {})
     settings = {
+        "gpu_type": gpu_type,
         "colocate_memory_peak_device": "cpu",
         "memory": (2560 * 1024, 3072 * 1024),
         "custom_generate_function": generate_with_context_limit,
@@ -99,6 +109,25 @@ def build_recipe(
         ],
         "extra_config": extra,
     }
+    if gpu_type == "H200":
+        patches = (
+            Path(__file__).resolve().parents[1]
+            / "modal_dojo/frameworks/miles/modal_helpers/patches"
+        )
+        compact_mxfp4 = f"echo {encode_patch('patch_k3_marlin_padding', patches)} | base64 -d | python3"
+        settings.update(
+            # Both compact inference and trainer backups total ~1.59 TiB/node.
+            # H200 AWS hosts have 2 TiB; leave room for the host and runtime.
+            memory=(1792 * 1024, 1920 * 1024),
+            recompute_num_layers=3,
+            optimizer_offload_fraction=1.0,
+            sglang_mem_fraction_static=0.95,
+            sglang_decode_attention_backend="flashinfer",
+            image_run_commands=[
+                *(overrides.pop("image_run_commands", None) or []),
+                compact_mxfp4,
+            ],
+        )
     settings.update(overrides)
     recipe = Kimi_K3_LoRA_Recipe(**settings)
     if recipe.context_parallel_size != 2:

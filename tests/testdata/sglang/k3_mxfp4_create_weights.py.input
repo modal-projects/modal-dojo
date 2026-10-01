@@ -1,0 +1,200 @@
+# Verbatim create_weights from SGLang 880e3d2453eb7ef1738350e8c35ba2b956cc93a9.
+# Source: python/sglang/srt/layers/quantization/mxfp4.py
+class Mxfp4MoEMethod:
+    def create_weights(
+        self,
+        layer: torch.nn.Module,
+        num_experts: int,
+        hidden_size: int,
+        intermediate_size_per_partition: int,
+        params_dtype: torch.dtype,
+        with_bias: bool = False,
+        **extra_weight_attrs,
+    ):
+        self.num_experts = num_experts
+        weight_dtype = torch.uint8
+        scale_dtype = torch.uint8
+        self.with_bias = with_bias
+        mxfp4_block = 32
+        triton_kernels_padding_alignment = 64
+
+        # pad the intermediate size to be a multiple of 2 * mxfp4_block
+        # for to hold non-uniform sharded tensor as well as swizzling
+        intermediate_size_per_partition_after_pad = intermediate_size_per_partition
+        if self.use_marlin and not self.use_mega_moe:
+            intermediate_size_per_partition_after_pad = round_up(
+                intermediate_size_per_partition, 128
+            )
+            hidden_size = round_up(hidden_size, 256)
+            self.hidden_pad = hidden_size - layer.hidden_size
+            self.intermediate_pad = (
+                intermediate_size_per_partition_after_pad
+                - layer.intermediate_size_per_partition
+            )
+        elif self.use_deep_gemm or self.use_mega_moe:
+            # DeepGEMM fp8_fp4 grouped GEMM consumes the checkpoint layout
+            # directly (packed e2m1 K-major + ue8m0 g32 scales); no padding.
+            pass
+        elif get_platform().is_sm100:
+            if self.use_flashinfer:
+                # FlashInfer trtllm-gen FP4 kernel actual alignment:
+                # intermediate: scale shuffle needs M%128==0 → intermediate%64==0
+                # hidden: finalize kernel needs K%32==0, block quant needs K%32==0
+                # Using 128 alignment (not 256) since 256 was overly conservative
+                # and causes 60GB/GPU waste for models like K3 (384 intermediate).
+                intermediate_size_per_partition_after_pad = round_up(
+                    intermediate_size_per_partition, 128
+                )
+                hidden_size = round_up(hidden_size, 128)
+            else:
+                intermediate_size_per_partition_after_pad = round_up(
+                    intermediate_size_per_partition, triton_kernels_padding_alignment
+                )
+        elif self._fi_kernel in ("cutlass_sm90", "cutlass_sm120"):
+            # CUTLASS mixed-input GEMM dimensions must be % 128 == 0. The
+            # kernels also expect ``fc1_expert_weights`` in halved
+            # ``[up; gate]`` layout, which means the padding boundary must
+            # fall on the gate / up split.
+            #
+            # The mxfp4 weight loader (FusedMoE.weight_loader fast path) does
+            # a NAIVE copy of HF's ``[2*intermediate_size, hidden_packed]``
+            # tensor into the buffer's ``[:dim1, :dim2]`` slice. Padding the
+            # buffer here would push the gate/up boundary, so HF's "up"
+            # rows would land in the buffer's "gate" half and vice versa.
+            # Marlin sidesteps this by not padding; we do the same and
+            # rebuild a properly-padded buffer in the architecture-specific
+            # CUTLASS post-load processor after the load completes.
+            self._padded_intermediate = round_up(intermediate_size_per_partition, 128)
+            self._padded_hidden = round_up(hidden_size, 128)
+            # `hidden_size` here may ALREADY be FusedMoE's rounded value (GPT-OSS
+            # 2880 -> 3072). Remember the checkpoint's K so the post-load
+            # processor can exclude the never-written tail from Humming's
+            # per-expert scale range.
+            self._unpadded_hidden = getattr(layer, "hidden_size_unpadded", hidden_size)
+            # create_weights below uses the *unpadded* sizes so the loader's
+            # naive-copy fast path is correct.
+            intermediate_size_per_partition_after_pad = intermediate_size_per_partition
+        elif _use_aiter:
+            # Expert intermediate is padded to 128 or 256. On K3 (TP8) the 256
+            # default costs +33% mem (3072/8=384 -> 512). K3 FlyDSL MoE works with
+            # 128 padding, so relaxing to 128 saves that memory and lets the TP8
+            # decode CUDA graph range grow from 20 to 120.
+            _inter_align = 128 if _aiter_k3_opt else 256
+            intermediate_size_per_partition_after_pad = round_up(
+                intermediate_size_per_partition, _inter_align
+            )
+
+            hidden_size = round_up(hidden_size, 256)
+            self.hidden_pad = hidden_size - layer.hidden_size
+            self.intermediate_pad = (
+                intermediate_size_per_partition_after_pad
+                - layer.intermediate_size_per_partition
+            )
+        elif _is_xpu:
+            # The XPU grouped GEMM recovers K/N from the packed weight shapes and
+            # the group size from the scale shape, so it takes the checkpoint
+            # dims. Keep this ahead of the triton_kernels branch so an installed
+            # triton_kernels does not pad the XPU layout.
+            #
+            # Align to mxfp4_block anyway: gpt_oss.py shards the intermediate by
+            # whole mxfp4 blocks (ceil(blocks / tp) * 32), so a rank's slice can
+            # exceed intermediate_size / tp -- 736 vs 720 for gpt-oss-20b at
+            # tp=4, which overflows an unaligned buffer during load. round_up to
+            # 32 reproduces the loader's shard exactly, so no rows are wasted and
+            # the kernel still sees the true dims.
+            intermediate_size_per_partition_after_pad = round_up(
+                intermediate_size_per_partition, mxfp4_block
+            )
+        elif has_triton_kernels:
+            intermediate_size_per_partition_after_pad = round_up(
+                intermediate_size_per_partition, triton_kernels_padding_alignment
+            )
+
+        self.intermediate_size_per_partition = intermediate_size_per_partition_after_pad
+
+        self.hidden_size = hidden_size
+        # Fused gate_up_proj (column parallel)
+        w13_weight = torch.nn.Parameter(
+            torch.zeros(
+                layer.num_local_experts,
+                2 * intermediate_size_per_partition_after_pad,
+                hidden_size // 2,
+                dtype=weight_dtype,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_weight", w13_weight)
+        set_weight_attrs(w13_weight, extra_weight_attrs)
+
+        w13_weight_scale = torch.nn.Parameter(
+            torch.full(
+                (
+                    layer.num_local_experts,
+                    2 * intermediate_size_per_partition_after_pad,
+                    hidden_size // mxfp4_block,
+                ),
+                fill_value=_UE8M0_ONE,
+                dtype=scale_dtype,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w13_weight_scale", w13_weight_scale)
+        set_weight_attrs(w13_weight_scale, extra_weight_attrs)
+        w13_weight_scale.quant_method = "group"
+
+        create_bias = with_bias or not _is_hip
+        if create_bias:
+            w13_weight_bias = torch.nn.Parameter(
+                torch.zeros(
+                    layer.num_local_experts,
+                    2 * intermediate_size_per_partition_after_pad,
+                    dtype=torch.bfloat16,
+                ),
+                requires_grad=False,
+            )
+            layer.register_parameter("w13_weight_bias", w13_weight_bias)
+            set_weight_attrs(w13_weight_bias, extra_weight_attrs)
+
+        # down_proj (row parallel)
+        w2_weight = torch.nn.Parameter(
+            torch.zeros(
+                layer.num_local_experts,
+                hidden_size,
+                intermediate_size_per_partition_after_pad // 2,
+                dtype=weight_dtype,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w2_weight", w2_weight)
+        set_weight_attrs(w2_weight, extra_weight_attrs)
+
+        w2_weight_scale = torch.nn.Parameter(
+            torch.full(
+                (
+                    layer.num_local_experts,
+                    hidden_size,
+                    intermediate_size_per_partition_after_pad // mxfp4_block,
+                ),
+                fill_value=_UE8M0_ONE,
+                dtype=scale_dtype,
+            ),
+            requires_grad=False,
+        )
+        layer.register_parameter("w2_weight_scale", w2_weight_scale)
+        set_weight_attrs(w2_weight_scale, extra_weight_attrs)
+        w2_weight_scale.quant_method = "group"
+
+        if create_bias:
+            w2_weight_bias = torch.nn.Parameter(
+                torch.zeros(layer.num_local_experts, hidden_size, dtype=torch.bfloat16),
+                requires_grad=False,
+            )
+            layer.register_parameter("w2_weight_bias", w2_weight_bias)
+            set_weight_attrs(w2_weight_bias, extra_weight_attrs)
+
+        if self.use_marlin and not self.use_mega_moe:
+            layer._mxfp4_marlin_checkpoint_parameter_specs = {
+                name: (tuple(getattr(layer, name).shape), getattr(layer, name).dtype)
+                for name in self._marlin_parameter_names(layer)
+            }
+            layer._mxfp4_marlin_reload_in_place = False
