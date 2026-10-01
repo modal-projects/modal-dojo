@@ -117,16 +117,20 @@ def _peak_gib(
     etp = int(get("expert_tensor_parallel_size") or 1)
     dense_p, expert_p = dense / (tp * pp), experts / (ep * etp * pp)
 
-    offload = get("optimizer_cpu_offload")
-    raise_("optimizer_cpu_offload", offload, not offload)
-    opt = 0.0 if offload else 12.0
-    d_div = e_div = 1.0
-    if get("use_distributed_optimizer"):
-        d_div = max(1, world // (tp * pp))
-        e_div = max(1, world // (ep * etp * pp))
-    states = (
-        (dense_p + expert_p) * 6 + dense_p * opt / d_div + expert_p * opt / e_div
-    ) / GIB
+    if get("lora_rank"):
+        # Frozen bf16 base; adapter weights/grads/optimizer state are negligible.
+        states = (dense_p + expert_p) * 2 / GIB
+    else:
+        offload = get("optimizer_cpu_offload")
+        raise_("optimizer_cpu_offload", offload, not offload)
+        opt = 0.0 if offload else 12.0
+        d_div = e_div = 1.0
+        if get("use_distributed_optimizer"):
+            d_div = max(1, world // (tp * pp))
+            e_div = max(1, world // (ep * etp * pp))
+        states = (
+            (dense_p + expert_p) * 6 + dense_p * opt / d_div + expert_p * opt / e_div
+        ) / GIB
 
     ctx = get("rollout_max_context_len")
     prompt = get("rollout_max_prompt_len")
@@ -161,7 +165,8 @@ def _peak_gib(
         if recompute == "full"
         else layer * arch.num_layers
     ) / GIB
-    logits = tokens * arch.vocab_size / tp * 4 / GIB
+    # bf16 logits + fp32 copy saved by the fused cross-entropy + bf16 logits grad.
+    logits = tokens * arch.vocab_size / tp * 8 / GIB
 
     colocate = get("colocate")
     no_rollout = get("no_offload_rollout")
@@ -177,9 +182,7 @@ def _peak_gib(
 
 
 def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
-    if getattr(recipe, "lora_rank", None) or (
-        hasattr(recipe, "train_backend") and recipe.train_backend != "megatron"
-    ):
+    if hasattr(recipe, "train_backend") and recipe.train_backend != "megatron":
         return
     gpu_gib = gpu_memory_gib(recipe.gpu_type)
     if gpu_gib is None:
@@ -187,9 +190,19 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     arch = model.architecture or _arch_from_hf(model.model_name)
     if arch is None:
         return
-    peak, raised = _peak_gib(
-        arch, recipe._field_values() | recipe._escape_hatch_values(), gpu_gib
-    )
+    knobs = recipe._field_values() | recipe._escape_hatch_values()
+    peak, raised = _peak_gib(arch, knobs, gpu_gib)
+    if (
+        knobs.get("custom_generate_function")
+        or knobs.get("custom_generate_function_path")
+    ) and not knobs.get("rollout_max_context_len"):
+        warnings.warn(
+            "Multi-turn rollouts (custom_generate_function) can grow a sample past "
+            "rollout_max_prompt_len + rollout_max_response_len, so the GPU OOM "
+            "estimate is a lower bound. Set rollout_max_context_len to cap sample length.",
+            UserWarning,
+            stacklevel=3,
+        )
     if peak <= gpu_gib:
         return
     shape = ", ".join(
