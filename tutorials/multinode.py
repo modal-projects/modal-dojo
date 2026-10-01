@@ -1,5 +1,5 @@
 # ---
-# order: 9
+# order: 10
 # ---
 #
 # # Frontier-scale training
@@ -146,7 +146,11 @@ def train(config):
 def deploy_trained_model(checkpoint):
     print("deploying trained model endpoint...")
     trained_deployment = Endpoint.launch(
-        model, checkpoint, unauthenticated=True, recreate_if_existing=True
+        model,
+        checkpoint,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="multinode",
     )
     trained_deployment.wait_until_ready(timeout=45 * 60)
     print(f"checkpoint deployed to {trained_deployment.url}")

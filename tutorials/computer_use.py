@@ -1,5 +1,5 @@
 # ---
-# order: 8
+# order: 9
 # deps: pillow
 # ---
 #
@@ -246,6 +246,7 @@ def deploy_base_model():
     base_deployment = CustomDeployment.launch(
         model,
         unauthenticated=True,
+        app_name="computer-use-baseline",
     )
     print(f"Base model URL: {base_deployment.url}")
     return base_deployment
@@ -337,7 +338,7 @@ def deploy_trained_model(checkpoint):
     trained_deployment = CustomDeployment.launch(
         model,
         checkpoint=checkpoint,
-        app_name="qwen3-vl-8b-grounding-serve",
+        app_name="computer-use-trained",
         served_model_name="qwen3-vl-8b-grounding",
         unauthenticated=True,
     )
