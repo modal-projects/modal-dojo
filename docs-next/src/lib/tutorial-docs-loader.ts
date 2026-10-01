@@ -7,7 +7,6 @@ import { flattenDocId } from './docs-sections';
 import { discoverTutorialEntries } from './tutorial-slugs';
 
 const TUTORIAL_ENTRY_PREFIX = 'tutorials/';
-const frontmatterFieldPattern = /^# ([a-z_]+):\s*(.*)$/;
 const dependencyPattern =
   /^[A-Za-z0-9_.-]+(?: @ (?:git\+)?https:\/\/[A-Za-z0-9._/-]+(?:@[A-Za-z0-9._-]+)?)?$/;
 
@@ -25,23 +24,26 @@ function generateDocsId({
 }
 
 export function parseTutorialMetadata(source: string, tutorialPath: string) {
+  const isMarkdown = tutorialPath.endsWith('.md');
+  const prefix = isMarkdown ? '' : '# ';
   const lines = source.split(/\r?\n/);
-  if (lines[0] !== '# ---') {
+  if (lines[0] !== `${prefix}---`) {
     throw new Error(`${tutorialPath} must start with tutorial frontmatter`);
   }
-  const frontmatterEnd = lines.indexOf('# ---', 1);
+  const frontmatterEnd = lines.indexOf(`${prefix}---`, 1);
   if (frontmatterEnd === -1) {
     throw new Error(`${tutorialPath} has unterminated tutorial frontmatter`);
   }
 
+  const fieldPattern = new RegExp(`^${prefix}([a-z_]+):\\s*(.*)$`);
   const fields = new Map<string, string>();
   for (const line of lines.slice(1, frontmatterEnd)) {
-    const match = line.match(frontmatterFieldPattern);
+    const match = line.match(fieldPattern);
     if (!match) {
       throw new Error(`${tutorialPath} has invalid frontmatter line: ${line}`);
     }
     const [, name, value] = match;
-    if (name !== 'order' && name !== 'deps') {
+    if (name !== 'order' && name !== 'deps' && name !== 'github') {
       throw new Error(`${tutorialPath} has unsupported frontmatter field: ${name}`);
     }
     if (fields.has(name)) {
@@ -59,6 +61,11 @@ export function parseTutorialMetadata(source: string, tutorialPath: string) {
     throw new Error(`${tutorialPath} frontmatter order exceeds the safe integer range`);
   }
 
+  const github = fields.get('github');
+  if (github !== undefined && !github.startsWith('https://')) {
+    throw new Error(`${tutorialPath} frontmatter github must be an https URL`);
+  }
+
   const deps = (fields.get('deps') ?? '')
     .split(',')
     .map((dependency) => dependency.trim())
@@ -70,17 +77,23 @@ export function parseTutorialMetadata(source: string, tutorialPath: string) {
   if (invalidDeps.length > 0) {
     throw new Error(`${tutorialPath} has invalid frontmatter deps: ${invalidDeps.join(', ')}`);
   }
+  if (deps.length > 0 && isMarkdown) {
+    throw new Error(`${tutorialPath} cannot set deps in Markdown`);
+  }
 
   const contentLines = lines.slice(frontmatterEnd + 1);
-  const titleLine = contentLines.find((line) => line.startsWith('# # '));
+  const titlePrefix = `${prefix}# `;
+  const titleLine = contentLines.find((line) => line.startsWith(titlePrefix));
   if (!titleLine) {
     throw new Error(`${tutorialPath} is missing an H1 heading`);
   }
 
   return {
     order,
-    title: titleLine.slice(4).trim(),
+    title: titleLine.slice(titlePrefix.length).trim(),
     deps,
+    github,
+    isMarkdown,
     content: contentLines.join('\n'),
   };
 }
@@ -97,7 +110,8 @@ export interface Tutorial {
   order: number;
   title: string;
   body: string;
-  runCommand: string;
+  runCommand?: string;
+  githubUrl?: string;
   deps: string[];
 }
 
@@ -207,7 +221,10 @@ async function readTutorial(
   sourcePath: string,
 ): Promise<Tutorial> {
   const source = await readFile(tutorialPath, 'utf8');
-  const { order, title, deps, content } = parseTutorialMetadata(source, tutorialPath);
+  const { order, title, deps, github, isMarkdown, content } = parseTutorialMetadata(
+    source,
+    tutorialPath,
+  );
   return {
     path: tutorialPath,
     slug,
@@ -215,8 +232,9 @@ async function readTutorial(
     sourcePath,
     order,
     title,
-    body: renderBody(content),
-    runCommand: formatRunCommand(runTarget, deps),
+    body: isMarkdown ? content.trim() : renderBody(content),
+    runCommand: isMarkdown ? undefined : formatRunCommand(runTarget, deps),
+    githubUrl: github,
     deps,
   };
 }
@@ -271,7 +289,12 @@ export function tutorialDocsLoader(): Loader {
           title: tutorial.title,
           order: tutorial.order,
           sidebar: { order: tutorial.order },
-          runCommand: tutorial.runCommand,
+          ...(tutorial.runCommand !== undefined
+            ? { runCommand: tutorial.runCommand }
+            : {}),
+          ...(tutorial.githubUrl !== undefined
+            ? { githubUrl: tutorial.githubUrl }
+            : {}),
           sourcePath: tutorial.sourcePath,
         },
         tutorial.body,
@@ -317,7 +340,7 @@ export function tutorialDocsLoader(): Loader {
           relativePath !== '' &&
           !relativePath.startsWith('..') &&
           !path.isAbsolute(relativePath) &&
-          path.extname(resolvedPath) === '.py'
+          ['.py', '.md'].includes(path.extname(resolvedPath))
         );
       };
       let pendingReload = Promise.resolve();

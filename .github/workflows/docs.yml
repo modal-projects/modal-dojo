@@ -15,6 +15,7 @@ on:
       - "scripts/api_reference_manifest.py"
       - "scripts/generate_llms_txt.py"
       - "tutorials/**/*.py"
+      - "tutorials/**/*.md"
       - "uv.lock"
   push:
     paths:
@@ -30,6 +31,7 @@ on:
       - "scripts/api_reference_manifest.py"
       - "scripts/generate_llms_txt.py"
       - "tutorials/**/*.py"
+      - "tutorials/**/*.md"
       - "uv.lock"
   workflow_dispatch:
 

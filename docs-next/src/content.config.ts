@@ -10,6 +10,7 @@ export const collections = {
       extend: z.object({
         order: z.number(),
         runCommand: z.string().optional(),
+        githubUrl: z.string().optional(),
         sourcePath: z.string().optional(),
       }),
     }),

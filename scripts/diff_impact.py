@@ -270,7 +270,7 @@ def analyze_diff(diff_text: str) -> ImpactReport:
                 tuple(sorted(reasons)),
             )
             for slug, reasons in affected_tutorial_reasons.items()
-            if slug in tutorials
+            if slug in tutorials and tutorials[slug].path.suffix == ".py"
         )
     )
 

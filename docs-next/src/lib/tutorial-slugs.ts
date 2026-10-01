@@ -31,10 +31,10 @@ export async function discoverTutorialEntries(
   );
   const entries: TutorialSource[] = [];
   for (const child of children) {
-    if (child.isFile() && child.name.endsWith('.py')) {
+    if (child.isFile() && ['.py', '.md'].includes(path.extname(child.name))) {
       entries.push({
         path: path.join(tutorialsDirectory, child.name),
-        slug: path.basename(child.name, '.py'),
+        slug: path.parse(child.name).name,
         runTarget: `tutorials/${child.name}`,
         sourcePath: `tutorials/${child.name}`,
       });
