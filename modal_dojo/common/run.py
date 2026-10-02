@@ -24,6 +24,7 @@ from pydantic import (
     field_validator,
 )
 
+from modal_dojo.common.errors import DojoError
 from modal_dojo.common.framework import Framework
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.status import FrameworkStatus, resolve_framework_status
@@ -399,13 +400,68 @@ class TrainingRun(BaseModel):
         return list(runs)
 
     def close(self) -> None:
-        """Stop the detached Modal app. Safe to call more than once."""
+        """Stop the run's Modal app, best effort, without updating the run record.
+
+        Safe to call more than once. Use ``stop()`` to cancel a live run and record it as stopped.
+        """
         if self._closed:
             return
         self._closed = True
-        from modal_dojo.common.modal_lifecycle import stop_app
+        from modal_dojo.common.modal_lifecycle import stop_app_best_effort
 
-        stop_app(self.modal_app_id)
+        stop_app_best_effort(self.modal_app_id)
+
+    def stop(self, *, reason: str = "stopped_by_user") -> bool:
+        """Stop the run's Modal app and record the run as ``stopped``.
+
+        Args:
+            reason: Value recorded in the run's ``terminal_reason`` metadata.
+
+        Returns:
+            ``True`` if the run was stopped, ``False`` if it had already finished.
+
+        Raises:
+            DojoError: The run has no Modal app yet.
+        """
+        from modal_dojo.common.modal_lifecycle import app_live_status, stop_app
+
+        record = TrainingRun.from_id(self.training_run_id)
+        if record.status is not TrainingRunStatus.RUNNING:
+            return False
+        if not record.modal_app_id:
+            raise DojoError(
+                "Run is still launching; retry once its Modal app has started."
+            )
+        # A confirmed-dead app needs no stop RPC — the record update below is
+        # enough to reconcile it. Unknown liveness still attempts the stop.
+        app_dead = app_live_status(record.modal_app_id) is False
+        if not app_dead:
+            stop_app(record.modal_app_id)
+        finished_at = int(time.time())
+        # If the app is already gone because training finished — a result blob
+        # exists — the stale running record means completed, not stopped.
+        completed = app_dead and _train_result_exists(record.training_run_id)
+        record.status = (
+            TrainingRunStatus.COMPLETED if completed else TrainingRunStatus.STOPPED
+        )
+        record.ended_at = finished_at
+        if completed:
+            record.completed_at = record.completed_at or finished_at
+        if record.started_at:
+            record.duration_seconds = max(0, finished_at - record.started_at)
+        metadata = dict(record.metadata or {})
+        if not completed:
+            metadata["terminal_reason"] = reason
+        record.metadata = metadata
+        mark_training_attempt_finished(
+            record, status="completed" if completed else "stopped", ended_at=finished_at
+        )
+        record.save()
+        self._closed = True
+        self._reload()
+        self.ended_at = record.ended_at
+        self.duration_seconds = record.duration_seconds
+        return True
 
     def __enter__(self) -> "TrainingRun":
         return self
@@ -635,6 +691,37 @@ class TrainingRun(BaseModel):
                     merged_components.pop(name, None)
                     merged_components[name] = current_components[name]
                 merged_metadata["dashboard_components"] = merged_components
+
+            def _attempt_count(value: object) -> int:
+                try:
+                    return int(value or 0)
+                except (TypeError, ValueError):
+                    return 0
+
+            # A retry legitimately writes RUNNING over a stored STOPPED
+            # record; only same-or-older-attempt writers (which are stale)
+            # have the stored terminal fields forced back onto the payload.
+            if (
+                isinstance(stored, dict)
+                and stored.get("status") == TrainingRunStatus.STOPPED.value
+                and _attempt_count(merged_metadata.get("attempt_count"))
+                <= _attempt_count(stored_metadata.get("attempt_count"))
+            ):
+                for key in (
+                    "status",
+                    "ended_at",
+                    "completed_at",
+                    "duration_seconds",
+                    "error_message",
+                ):
+                    payload[key] = stored.get(key)
+                for key in (
+                    "terminal_reason",
+                    "last_attempt_status",
+                    "last_attempt_ended_at",
+                ):
+                    if key in stored_metadata:
+                        merged_metadata[key] = stored_metadata[key]
             payload["metadata"] = merged_metadata
             return payload
 
@@ -869,6 +956,19 @@ def mark_training_attempt_finished(
     metadata["last_attempt_status"] = status
     metadata["last_attempt_ended_at"] = ended_at
     run.metadata = metadata
+
+
+def _train_result_exists(training_run_id: str) -> bool:
+    """True when a train result blob was persisted for the run.
+
+    Best-effort: a transient store error falls back to False so it never
+    blocks an explicit stop.
+    """
+    try:
+        vol_get(MetadataStore.TRAIN_RESULTS, training_run_id)
+        return True
+    except Exception:
+        return False
 
 
 def record_resume_checkpoint(

@@ -80,23 +80,27 @@ def app_is_live(app_id: str) -> bool:
 
 
 def stop_app(app_id: str) -> None:
+    from modal._utils.async_utils import synchronizer
+    from modal.client import _Client
+    from modal_proto import api_pb2
+
+    async def _stop() -> None:
+        client = await _Client.from_env()
+        await client.stub.AppStop(
+            api_pb2.AppStopRequest(
+                app_id=app_id,
+                source=api_pb2.APP_STOP_SOURCE_PYTHON_CLIENT,
+            )
+        )
+
+    synchronizer.create_blocking(_stop)()
+
+
+def stop_app_best_effort(app_id: str) -> None:
     """Stop a detached Modal app (best effort). Never raises."""
     if not app_id:
         return
     try:
-        from modal._utils.async_utils import synchronizer
-        from modal.client import _Client
-        from modal_proto import api_pb2
-
-        async def _stop() -> None:
-            client = await _Client.from_env()
-            await client.stub.AppStop(
-                api_pb2.AppStopRequest(
-                    app_id=app_id,
-                    source=api_pb2.APP_STOP_SOURCE_PYTHON_CLIENT,
-                )
-            )
-
-        synchronizer.create_blocking(_stop)()
+        stop_app(app_id)
     except Exception as exc:  # noqa: BLE001 — auto-stop is best-effort
         print(f"WARNING: could not auto-stop app {app_id}: {exc!r}")

@@ -1,0 +1,55 @@
+<script>
+  import { CircleStop } from "lucide-svelte";
+  import { stopRun } from "../lib/api.js";
+
+  let { run, onStopped, compact = false } = $props();
+
+  let stopping = $state(false);
+  let stopError = $state("");
+  const label = $derived(stopping ? "Stopping…" : "Stop run");
+
+  async function confirmStop() {
+    if (stopping || !run?.run_id) return;
+    if (!window.confirm(`Stop training run ${run.run_id}? This stops its Modal app.`))
+      return;
+    stopping = true;
+    stopError = "";
+    try {
+      const updated = await stopRun(run.run_id);
+      onStopped?.(updated);
+    } catch (err) {
+      stopError = String(err?.message || err);
+    } finally {
+      stopping = false;
+    }
+  }
+</script>
+
+{#if run?.status === "running"}
+  {#if stopError}
+    <span class="stop-run-error" title={stopError}>{stopError}</span>
+  {/if}
+  <button
+    class={compact
+      ? "drawer-panel-close ghost-hover"
+      : "inline-flex items-center gap-[6px] [border:1px_solid_var(--border,#2f2f2f)] rounded-[6px] [background:none] text-(--muted) cursor-pointer [font:inherit] text-[12px] font-medium leading-[16px] min-h-[32px] p-[4px_8px] hover:text-(--text-bright) hover:[border-color:#f87171]"}
+    onclick={confirmStop}
+    disabled={stopping}
+    aria-label={label}
+    title={label}
+  >
+    <span class="stop-icon">
+      <CircleStop size={compact ? 16 : 12} strokeWidth={2.1} />
+    </span>
+    {#if !compact}
+      <span class="max-[520px]:hidden">{label}</span>
+    {/if}
+  </button>
+{/if}
+
+<style>
+  .stop-icon {
+    display: inline-flex;
+    color: #f87171;
+  }
+</style>
