@@ -26,7 +26,7 @@ Or pin it in `pyproject.toml`:
 modal-dojo = { git = "https://github.com/modal-projects/modal-dojo.git", branch = "main" }
 ```
 
-Set up Modal and the [dashboard](https://dojo.modal.dev/guides/dashboard):
+Set up [Modal](https://modal.com/docs/cli/latest/setup) and the [dashboard](https://dojo.modal.dev/guides/dashboard):
 
 ```bash
 modal-dojo setup
