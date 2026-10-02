@@ -77,3 +77,9 @@ def test_sample_to_dict_drops_oversized_tag_value():
     sample = Sample.model_validate(_sample_to_dict(raw))
     assert sample.metadata["small_tag"] == 1
     assert "huge_tag" not in sample.metadata
+
+
+def test_sample_to_dict_keeps_remove_sample():
+    raw = {"prompt": "p", "response": "r", "reward": 0.0, "remove_sample": True}
+    sample = Sample.model_validate(_sample_to_dict(raw))
+    assert sample.metadata["remove_sample"] is True

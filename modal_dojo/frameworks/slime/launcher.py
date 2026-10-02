@@ -354,11 +354,8 @@ def build_slime_app(
     SlimeRecipe._validate_datasets(dataset, eval_dataset, loss_type=slime.loss_type)
     if slime.loss_type == "sft_loss":
         dataset = _SftDataset(dataset)
-    dataset_path = SlimeRecipe._resolve_data_paths(dataset)
-    eval_dataset_path = (
-        SlimeRecipe._resolve_data_paths(eval_dataset)
-        if eval_dataset is not None
-        else None
+    dataset_path, eval_dataset_path = SlimeRecipe._resolve_dataset_paths(
+        dataset, eval_dataset
     )
 
     # Models that can't do THD packing (model.requires_bshd, e.g. Qwen3-ASR) must
@@ -526,6 +523,7 @@ def build_slime_app(
     register_recipe_functions(
         app,
         image,
+        slime,
         hf_cache_volume=hf_cache_volume,
         data_volume=data_volume,
         checkpoints_volume=checkpoints_volume,
@@ -536,7 +534,6 @@ def build_slime_app(
         prepare_dataset=lambda: write_datasets(
             dataset, eval_dataset, dataset_path, eval_dataset_path
         ),
-        dataset_timeout=2 * 60 * 60,
     )
 
     convert_nnodes, convert_nproc, _ = get_checkpoint_conversion_policy(

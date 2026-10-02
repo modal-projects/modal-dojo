@@ -101,6 +101,26 @@ def test_write_datasets_writes_train_and_eval(tmp_path):
     assert eval_dataset.write_count == 1
 
 
+def test_same_uncached_dataset_for_eval_is_written_once(tmp_path, monkeypatch):
+    class OneShotDataset(RowsDataset):
+        def __init__(self) -> None:
+            super().__init__(None)
+            self._rows = iter([{"prompt": "once", "label": "once"}])
+
+        def rows(self):
+            return self._rows
+
+    monkeypatch.setattr("modal_dojo.train_recipes.base.DATA_PATH", tmp_path)
+    dataset = OneShotDataset()
+    dataset_path, eval_dataset_path = BaseTrainRecipe._resolve_dataset_paths(
+        dataset, dataset
+    )
+
+    assert write_datasets(dataset, dataset, dataset_path, eval_dataset_path)
+    with open(eval_dataset_path) as f:
+        assert json.loads(f.read()) == {"prompt": "once", "label": "once"}
+
+
 def test_eval_dataset_fields_must_match_training_dataset():
     class OtherInputDataset(RowsDataset):
         def input_key(self) -> str:
