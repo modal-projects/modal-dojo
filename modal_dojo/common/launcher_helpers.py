@@ -172,8 +172,17 @@ def create_training_volumes(
     return name, mount, volumes
 
 
-def experimental_options(recipe: Any) -> dict[str, Any]:
-    return dict((recipe.train_function_kwargs or {}).get("experimental_options") or {})
+def experimental_options(recipe: Any, *, clustered: bool = True) -> dict[str, Any]:
+    options = dict(
+        (recipe.train_function_kwargs or {}).get("experimental_options") or {}
+    )
+    if not clustered:
+        # High-priority capacity is reserved per cluster shape; single-node
+        # helpers would be rejected at deploy time.
+        options.pop("high_priority", None)
+        if options.get("priority") == "high":
+            options.pop("priority")
+    return options
 
 
 def training_function_options(
