@@ -6,7 +6,7 @@ file: miles/miles/backends/megatron_utils/update_weight/hf_weight_iterator.py::M
 
 import pathlib
 
-MARKER = "PATCHED_LORA_SYNC_STREAM_PP"
+MARKER = "PATCHED_LORA_SYNC_STREAM_PP_BOUNDED"
 
 TARGET = pathlib.Path(
     "/root/miles/miles/backends/megatron_utils/update_weight/hf_weight_iterator.py"
@@ -38,12 +38,11 @@ def _iter_hf_adapter_units_streaming(self, adapter, *, materialize):
 
     local_by_name = {{n: t for n, t in named_tensors}}
     del named_tensors
+    max_bytes = self.args.update_weight_buffer_size
     for src, meta in enumerate(all_meta):
-        by_dtype: dict = {{}}
-        for n, shape, dtype in meta:
-            by_dtype.setdefault(dtype, []).append((n, shape))
-        for dtype, entries in by_dtype.items():
-            numel = sum(math.prod(shape) for _, shape in entries)
+        for dtype, entries, numel in _lora_pp_chunks(meta, max_bytes):
+            # Fresh storage: the downstream packer can retain views while
+            # requesting the next chunk. Never overwrite a reusable buffer.
             flat = torch.empty(numel, dtype=dtype, device=device)
             if src == pp.rank:
                 off = 0
@@ -61,6 +60,31 @@ def _iter_hf_adapter_units_streaming(self, adapter, *, materialize):
             del flat
 
 
+def _lora_pp_chunks(meta, max_bytes):
+    if max_bytes <= 0:
+        raise ValueError("LoRA PP broadcast buffer size must be positive")
+    by_dtype: dict = {{}}
+    for name, shape, dtype in meta:
+        by_dtype.setdefault(dtype, []).append((name, shape))
+    for dtype, entries in by_dtype.items():
+        chunk = []
+        numel = 0
+        for name, shape in entries:
+            size = math.prod(shape)
+            if chunk and (numel + size) * dtype.itemsize > max_bytes:
+                yield dtype, chunk, numel
+                chunk, numel = [], 0
+            chunk.append((name, shape))
+            numel += size
+            # Match Miles' atomic-tensor contract: an individual tensor may
+            # exceed the target, but must never share that oversized chunk.
+            if numel * dtype.itemsize >= max_bytes:
+                yield dtype, chunk, numel
+                chunk, numel = [], 0
+        if chunk:
+            yield dtype, chunk, numel
+
+
 def _check_adapter_export(names):
     if not names:
         raise RuntimeError("LoRA weight sync failed: the adapter export produced zero tensors")
@@ -75,7 +99,13 @@ MegatronHfWeightIteratorBase._iter_hf_adapter_units = _iter_hf_adapter_units_str
 def apply(target: pathlib.Path = TARGET) -> None:
     src = target.read_text()
     if MARKER in src:
+        if src.count(OVERRIDE) != 1:
+            raise RuntimeError("Unexpected partially patched LoRA PP iterator")
         return
+    if "PATCHED_LORA_SYNC_STREAM_PP" in src:
+        raise RuntimeError(
+            "Rebuild from the pinned image before replacing the old PP patch"
+        )
     if (
         src.count(ANCHOR) != 1
         or src.count("def _iter_hf_adapter_units(self, adapter, *, materialize):") != 1
@@ -88,7 +118,7 @@ def apply(target: pathlib.Path = TARGET) -> None:
     compile(patched, str(target), "exec")
     target.write_text(patched)
     print(
-        "Patched MegatronHfWeightIteratorBase._iter_hf_adapter_units to stream per PP stage"
+        "Patched MegatronHfWeightIteratorBase._iter_hf_adapter_units to bound PP broadcasts"
     )
 
 
