@@ -97,3 +97,50 @@ def test_periodic_moe_freq_matches_explicit_pattern() -> None:
     peak_int, _ = _peak_gib(replace(base, moe_layer_freq="2"), knobs, 80.0)
     peak_list, _ = _peak_gib(replace(base, moe_layer_freq="[1,0]*6"), knobs, 80.0)
     assert peak_int == peak_list
+
+
+def _qwen3_5_knobs(**overrides) -> dict[str, object]:
+    return {
+        "actor_num_nodes": 1,
+        "actor_num_gpus_per_node": 1,
+        "use_distributed_optimizer": True,
+        "use_dynamic_batch_size": True,
+        "max_tokens_per_gpu": 32768,
+        "rollout_max_response_len": 32768,
+        "recompute_granularity": "full",
+        "optimizer_cpu_offload": True,
+        **overrides,
+    }
+
+
+_QWEN3_5_4B = ModelArchitecture(
+    num_layers=32,
+    hidden_size=2560,
+    ffn_hidden_size=9216,
+    num_attention_heads=16,
+    num_query_groups=4,
+    kv_channels=256,
+    vocab_size=248320,
+)
+
+
+def test_logits_backward_counted() -> None:
+    # 32k tokens x 248k vocab OOMed in the logits backward on an 80 GB H100.
+    peak, _ = _peak_gib(_QWEN3_5_4B, _qwen3_5_knobs(), 79.2)
+    assert peak > 79.2
+
+
+def test_lora_recipe_estimated() -> None:
+    full, _ = _peak_gib(_QWEN3_5_4B, _qwen3_5_knobs(), 79.2)
+    lora, raised = _peak_gib(_QWEN3_5_4B, _qwen3_5_knobs(lora_rank=16), 79.2)
+    assert 0 < lora < full
+    assert "optimizer_cpu_offload" not in raised
+
+
+def test_multi_turn_without_context_cap_warns() -> None:
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {"custom_generate_function_path": "pkg.generate"}
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert any("rollout_max_context_len" in str(w.message) for w in caught)

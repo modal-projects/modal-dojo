@@ -51,7 +51,6 @@ from modal_dojo.common.launcher_helpers import (
     register_recipe_functions,
     report_phase,
     start_training_cluster,
-    download_model_if_needed,
     write_datasets,
 )
 from modal_dojo.common.launcher_utils import (
@@ -811,7 +810,7 @@ def build_slime_app(
         ) as set_status:
             if model:
                 await set_status(SlimeStatus.DOWNLOAD_MODEL)
-                download_model_if_needed(model, always=True)
+                model.download()
                 await hf_cache_volume.commit.aio()
 
             if dataset:

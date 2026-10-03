@@ -22,6 +22,8 @@ What this does:
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from enum import Enum
 import webbrowser
 from pathlib import Path
@@ -86,6 +88,8 @@ def setup(
 
     warn_legacy_skills()
     require_migrated_config()
+    if interactive:
+        ensure_modal_setup()
     saved_url = get_dashboard_url()
     try:
         existing_url = deployed_dashboard_url() or saved_url
@@ -158,6 +162,26 @@ def setup(
     print(f"\nDashboard deployed: {web_url}")
     print(f"Saved dashboard URL to {CONFIG_PATH}")
     return web_url
+
+
+def ensure_modal_setup() -> None:
+    """Run ``modal setup`` when no Modal credentials are configured."""
+    from modal_dojo.common.config import resolve_modal_creds
+
+    token_id, token_secret, _ = resolve_modal_creds()
+    if token_id and token_secret:
+        return
+
+    print("Modal is not set up yet. Running `modal setup`...")
+    subprocess.run([sys.executable, "-m", "modal", "setup"], check=True)
+    token_id, token_secret, _ = resolve_modal_creds()
+    if not (token_id and token_secret):
+        raise ValueError(
+            "`modal setup` did not configure Modal credentials. Run `modal setup` and rerun modal-dojo setup."
+        )
+    # The Modal client read ~/.modal.toml at import, before `modal setup` wrote it.
+    os.environ["MODAL_TOKEN_ID"] = token_id
+    os.environ["MODAL_TOKEN_SECRET"] = token_secret
 
 
 def ensure_proxy_auth(interactive: bool = True, force: bool = False) -> bool:

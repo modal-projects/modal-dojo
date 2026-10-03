@@ -145,7 +145,8 @@ export default defineConfig({
     '/tutorials/rl/005_dapo': '/tutorials/dapo',
     '/tutorials/rl/006_audio_asr': '/tutorials/audio_asr',
     '/tutorials/rl/007_param_sweep': '/tutorials/param_sweep',
-    '/tutorials/rl/008_computer_use': '/tutorials/computer_use',
+    '/tutorials/rl/008_computer_use': '/tutorials/street_fighter',
+    '/tutorials/computer_use': '/tutorials/street_fighter',
     '/tutorials/rl/009_cross_tokenizer_distillation':
       '/tutorials/cross_tok_distill',
     '/tutorials/cross_tokenizer_distillation': '/tutorials/cross_tok_distill',

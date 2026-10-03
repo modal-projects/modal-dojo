@@ -13,7 +13,7 @@ from .base import ModelConfig
 from .deepseek_v41_flash import DeepSeek_V4_1_Flash
 from .gemma4_26b_a4b import Gemma4_26B_A4B
 from .glm_4_7 import GLM_4_7
-from .glm_5_3_flash import GLM_5_3_Flash
+from .glm_5_3_flash import GLM_5_3_Flash, GLM_5_3_Flash_LoRA
 from .inkling_small import Inkling_Small, Inkling_Small_LoRA
 from .kimi_k3 import Kimi_K3
 from .moonlight_16b_a3b_instruct import Moonlight_16B_A3B_Instruct
@@ -85,6 +85,7 @@ class _ValidationConfig:
 VALIDATION_CONFIGS: set[_ValidationConfig] = {
     _ValidationConfig("GLM-4.7", GLM_4_7, Framework.SLIME),
     _ValidationConfig("GLM-5.3-Flash", GLM_5_3_Flash, Framework.MILES),
+    _ValidationConfig("GLM-5.3-Flash-LoRA", GLM_5_3_Flash_LoRA, Framework.MILES),
     _ValidationConfig("Qwen3-0.6B", Qwen3_0_6B, Framework.SLIME),
     _ValidationConfig("Qwen3-1.7B", Qwen3_1_7B, Framework.SLIME),
     _ValidationConfig("Qwen3-4B", Qwen3_4B, Framework.SLIME),

@@ -6,7 +6,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TUTORIALS_DIR = REPO_ROOT / "tutorials"
-FIELD_PATTERN = re.compile(r"^# ([a-z_]+):\s*(.*)$")
 DEP_PATTERN = re.compile(
     r"^[A-Za-z0-9_.-]+"
     r"(?: @ (?:git\+)?https://[A-Za-z0-9._/-]+(?:@[A-Za-z0-9._-]+)?)?"
@@ -24,25 +23,28 @@ class TutorialEntry:
     order: int
     title: str
     deps: tuple[str, ...]
+    github: str | None = None
 
 
 def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
+    prefix = "" if path.suffix == ".md" else "# "
     lines = path.read_text().splitlines()
-    if not lines or lines[0] != "# ---":
+    if not lines or lines[0] != f"{prefix}---":
         raise ValueError(f"{path} must start with tutorial frontmatter")
 
     try:
-        frontmatter_end = lines.index("# ---", 1)
+        frontmatter_end = lines.index(f"{prefix}---", 1)
     except ValueError as exc:
         raise ValueError(f"{path} has unterminated tutorial frontmatter") from exc
 
+    field_pattern = re.compile(rf"{prefix}([a-z_]+):\s*(.*)")
     fields: dict[str, str] = {}
     for line in lines[1:frontmatter_end]:
-        match = FIELD_PATTERN.fullmatch(line)
+        match = field_pattern.fullmatch(line)
         if match is None:
             raise ValueError(f"{path} has invalid frontmatter line: {line!r}")
         name, value = match.groups()
-        if name not in {"order", "deps"}:
+        if name not in {"order", "deps", "github"}:
             raise ValueError(f"{path} has unsupported frontmatter field: {name}")
         if name in fields:
             raise ValueError(f"{path} has duplicate frontmatter field: {name}")
@@ -54,6 +56,10 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
     order = int(order_text)
     if order > MAX_SAFE_INTEGER:
         raise ValueError(f"{path} frontmatter order exceeds the safe integer range")
+
+    github = fields.get("github")
+    if github is not None and not github.startswith("https://"):
+        raise ValueError(f"{path} frontmatter github must be an https URL")
 
     deps = tuple(
         dependency.strip()
@@ -67,9 +73,16 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
     ]
     if invalid_deps:
         raise ValueError(f"{path} has invalid frontmatter deps: {invalid_deps}")
+    if deps and path.suffix == ".md":
+        raise ValueError(f"{path} cannot set deps in Markdown")
 
+    title_prefix = f"{prefix}# "
     title_line = next(
-        (line for line in lines[frontmatter_end + 1 :] if line.startswith("# # ")),
+        (
+            line
+            for line in lines[frontmatter_end + 1 :]
+            if line.startswith(title_prefix)
+        ),
         None,
     )
     if title_line is None:
@@ -79,8 +92,9 @@ def parse_tutorial(path: Path, slug: str) -> TutorialEntry:
         path=path,
         slug=slug,
         order=order,
-        title=title_line.removeprefix("# # ").strip(),
+        title=title_line.removeprefix(title_prefix).strip(),
         deps=deps,
+        github=github,
     )
 
 
@@ -92,7 +106,7 @@ def discover_tutorial_paths(
     if not tutorials_dir.is_dir():
         return ()
     for child in sorted(tutorials_dir.iterdir(), key=lambda path: path.name):
-        if child.is_file() and child.suffix == ".py":
+        if child.is_file() and child.suffix in {".py", ".md"}:
             candidate = child
             slug = child.stem
         elif child.is_dir() and (child / "main.py").is_file():

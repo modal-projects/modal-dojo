@@ -539,3 +539,73 @@ def test_confirmation_eof_does_not_migrate(monkeypatch):
     result = CliRunner().invoke(entrypoint_cli, ["migrate"], input="")
     assert result.exit_code != 0
     assert not calls
+
+
+@pytest.fixture
+def no_modal_creds(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MODAL_CONFIG_PATH", tmp_path / ".modal.toml")
+    monkeypatch.delenv("MODAL_TOKEN_ID", raising=False)
+    monkeypatch.delenv("MODAL_TOKEN_SECRET", raising=False)
+    monkeypatch.delenv("MODAL_PROFILE", raising=False)
+    return config.MODAL_CONFIG_PATH
+
+
+def test_modal_setup_runs_when_unconfigured(no_modal_creds, monkeypatch):
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command[1:])
+        no_modal_creds.write_text(
+            '[default]\ntoken_id="ak-new"\ntoken_secret="as-new"\nactive=true\n'
+        )
+
+    monkeypatch.setattr(cli_setup_module.subprocess, "run", run)
+    cli_setup_module.ensure_modal_setup()
+    assert calls == [["-m", "modal", "setup"]]
+    assert cli_setup_module.os.environ["MODAL_TOKEN_ID"] == "ak-new"
+    assert cli_setup_module.os.environ["MODAL_TOKEN_SECRET"] == "as-new"
+
+
+def test_modal_setup_failure_to_configure_raises(no_modal_creds, monkeypatch):
+    monkeypatch.setattr(cli_setup_module.subprocess, "run", lambda *a, **k: None)
+    with pytest.raises(ValueError, match="modal setup"):
+        cli_setup_module.ensure_modal_setup()
+
+
+def test_modal_setup_skipped_when_configured(no_modal_creds, monkeypatch):
+    monkeypatch.setenv("MODAL_TOKEN_ID", "ak-env")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "as-env")
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("modal setup must not run when credentials exist")
+
+    monkeypatch.setattr(cli_setup_module.subprocess, "run", forbidden)
+    cli_setup_module.ensure_modal_setup()
+
+
+def test_migration_check_precedes_modal_setup(paths, harness, monkeypatch):
+    def forbidden():
+        pytest.fail("modal setup must not run before the migration check")
+
+    monkeypatch.setattr(cli_setup_module, "ensure_modal_setup", forbidden)
+    with pytest.raises(DojoConfigError, match="modal-dojo migrate"):
+        cli_setup_module.setup()
+
+
+@pytest.mark.parametrize("interactive", [True, False])
+def test_setup_runs_modal_setup_only_when_interactive(paths, monkeypatch, interactive):
+    calls = []
+
+    class Stop(Exception):
+        pass
+
+    def lookup():
+        raise Stop
+
+    monkeypatch.setattr(
+        cli_setup_module, "ensure_modal_setup", lambda: calls.append("modal setup")
+    )
+    monkeypatch.setattr(cli_setup_module, "deployed_dashboard_url", lookup)
+    with pytest.raises(Stop):
+        cli_setup_module.setup(interactive=interactive)
+    assert calls == (["modal setup"] if interactive else [])
