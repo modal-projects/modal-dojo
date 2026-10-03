@@ -116,6 +116,7 @@ def build_recipe(
         )
         compact_mxfp4 = f"echo {encode_patch('patch_k3_marlin_padding', patches)} | base64 -d | python3"
         cpu_lora_staging = f"echo {encode_patch('patch_k3_lora_cpu_staging', patches)} | base64 -d | python3"
+        lora_health = f"echo {encode_patch('patch_k3_lora_health', patches)} | base64 -d | python3"
         settings.update(
             # Both compact inference and trainer backups total ~1.59 TiB/node.
             # H200 AWS hosts have 2 TiB; leave room for the host and runtime.
@@ -131,6 +132,7 @@ def build_recipe(
                 # serving weights. Stage independent IPC copies on the host;
                 # SGLang validates and TP-slices them into its existing pool.
                 cpu_lora_staging,
+                lora_health,
             ],
         )
     settings.update(overrides)
