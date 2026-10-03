@@ -151,6 +151,31 @@ release and resume, and adapter unload without leaked health leases, also passed
 These are pruned-model execution timings, not full-K3 performance estimates.
 All 61 focused local tests pass.
 
+The next full-model attempt,
+[concave-frisbee](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/concave-frisbee-8a15d3a104f0),
+finished inference initialization but failed in the trainer's initial adapter
+broadcast, before any rollout. The existing pipeline streaming patch allocated
+one entire stage's adapter factors at once: 5.96 GiB with only 5.04 GiB free.
+The 256-MiB transfer bucket setting previously took effect after this allocation.
+
+The pipeline broadcast patch now groups same-dtype tensors by that byte budget
+before allocating its GPU buffer. Each group gets independent storage, so
+downstream lookahead and retained tensor views cannot be overwritten by a later
+broadcast. Atomic tensors remain intact; an individual tensor larger than the
+budget is sent alone, matching Miles' transfer contract. K3's 168-MiB expert
+factors fit within the configured 256-MiB budget. Non-sending ranks still join
+every collective in the same order. This bounds broadcast scratch space; it
+does not establish the full-model 64k training activation peak.
+
+The bounded patch passed an eight-rank NCCL test on one H200:8 node. Each rank
+exported 6,104 MiB of synthetic adapter tensors under an allocator cap leaving
+5.04 GiB of headroom; the old stage-sized allocation reproduced the OOM.
+Two bounded syncs passed, including non-sending ranks and 296 verified tensors
+per sender. Extra GPU allocation peaked at 728 MiB on senders and 224 MiB on
+non-senders, including downstream lookahead and a deliberately retained earlier
+tensor. The image's original source matched the pinned snapshot, and 76 focused
+local tests passed. Cross-node, full-model validation remains required.
+
 A single-H200 regression reproduced the original accumulating-stash OOM,
 then staged 1,344 MiB with zero additional GPU allocation using the patch.
 Reusing the source bucket did not change staged values. The pinned memory
