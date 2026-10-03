@@ -1,3 +1,4 @@
+import warnings
 from collections.abc import Callable
 from dataclasses import field
 from typing import Any, ClassVar, Literal
@@ -734,6 +735,23 @@ class MilesRecipe(BaseTrainRecipe):
     @model_validator(mode="after")
     def _validate_gpu_allocation(self) -> "MilesRecipe":
         validate_multi_node_gpu_count(resolve_gpu_allocation(self), self.gpu_type)
+        return self
+
+    @model_validator(mode="after")
+    def _warn_routing_replay_with_custom_rollout(self) -> "MilesRecipe":
+        if not self.use_rollout_routing_replay:
+            return self
+        if self.rollout_function is None and self.custom_generate_function is None:
+            return self
+        warnings.warn(
+            "use_rollout_routing_replay=True with a custom rollout_function or "
+            "custom_generate_function: each SGLang request must set "
+            '"return_routed_experts": True and attach the response\'s '
+            "routed_experts to sample.rollout_routed_experts, or the first rollout "
+            "fails with 'rollout samples carry no rollout_routed_experts'. Set "
+            "use_rollout_routing_replay=False if your rollout does not do this.",
+            stacklevel=2,
+        )
         return self
 
     # ── Container → miles flag converters ────────────────────────────────────

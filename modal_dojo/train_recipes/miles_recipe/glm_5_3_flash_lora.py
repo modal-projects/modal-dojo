@@ -96,10 +96,10 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     offload_train_target: str = "cpu"
     update_weight_buffer_size: int = 1024**3
 
-    # Upstream's full-model DAPO run: 120 samples divides the three DP ranks.
+    # 15 prompts x 4 samples = 60, which divides the three DP ranks.
     rollout_batch_size: int = 15
-    n_samples_per_prompt: int = 8
-    global_batch_size: int = 120
+    n_samples_per_prompt: int = 4
+    global_batch_size: int = 60
     rollout_max_context_len: int = 32768
     rollout_max_response_len: int = 32768
     rm_type: str | None = "math"
@@ -108,7 +108,6 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     use_rollout_routing_replay: bool = True
     lr: float = 1e-5
     calculate_per_token_loss: bool = True
-    use_dynamic_batch_size: bool = False
     micro_batch_size: int = 1
     seq_length: int = 32768
     max_tokens_per_gpu: int = 32768
