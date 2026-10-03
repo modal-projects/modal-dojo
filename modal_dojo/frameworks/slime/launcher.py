@@ -627,7 +627,9 @@ def build_slime_app(
         volumes=all_volumes,
         timeout=4 * 60 * 60,
         secrets=proxy_auth_secrets() or None,
-        experimental_options=shared.experimental_options(slime),
+        experimental_options=shared.experimental_options(
+            slime, clustered=convert_nnodes > 1
+        ),
         serialized=True,
         single_use_containers=True,
         name="convert_checkpoint",

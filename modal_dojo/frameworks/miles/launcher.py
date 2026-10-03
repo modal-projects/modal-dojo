@@ -673,7 +673,9 @@ def build_miles_app(
         # torch_dist stages each rank's shard through host RAM.
         memory=miles.memory,
         ephemeral_disk=miles.convert_ephemeral_disk_mb,
-        experimental_options=shared.experimental_options(miles),
+        experimental_options=shared.experimental_options(
+            miles, clustered=convert_multi_node
+        ),
         serialized=True,
         name="convert_checkpoint",
     )
