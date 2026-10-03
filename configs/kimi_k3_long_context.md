@@ -140,6 +140,17 @@ actual generation health checks without allocating a second GPU adapter pool.
 Its request lease is released on completion or timeout. An ambiguous registry
 with multiple adapters returns unhealthy instead of selecting an arbitrary one.
 
+The combined two-node TP16 check passed with these patches: two nonzero adapter
+updates changed finite output logprobs, while aborted, checksum-invalid and
+partial updates preserved the installed policy. Generation health passed after
+each check. A 64,512-token prompt plus 1,022 generated tokens took 39.7 seconds
+cold and 6.4 seconds on repetition. The cold request exceeded the endpoint's
+20-second health timeout during kernel compilation, then completed and recovered
+healthy status. The warm request passed its concurrent health check. KV/graph
+release and resume, and adapter unload without leaked health leases, also passed.
+These are pruned-model execution timings, not full-K3 performance estimates.
+All 61 focused local tests pass.
+
 A single-H200 regression reproduced the original accumulating-stash OOM,
 then staged 1,344 MiB with zero additional GPU allocation using the patch.
 Reusing the source bucket did not change staged values. The pinned memory
