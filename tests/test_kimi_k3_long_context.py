@@ -12,6 +12,22 @@ from configs.kimi_k3_long_context import (
 from scripts.validate_kimi_k3_long_context import append_tokens, observation_prefix
 
 
+def test_hardware_recipes_are_independent_and_keep_checkpoint_identity():
+    from configs.kimi_k3_b300 import build_recipe as b300
+    from configs.kimi_k3_h200 import build_recipe as h200
+
+    first = b300(extra_config={"probe": 1})
+    second = h200()
+    assert "probe" not in second.extra_config
+    assert "probe" not in b300().extra_config
+    assert type(first) is type(second)
+    assert first.ref_load == second.ref_load
+    assert first.gpu_type == "B300" and second.gpu_type == "H200"
+    for factory, other in ((b300, "H200"), (h200, "B300")):
+        with pytest.raises(ValueError, match="requires"):
+            factory(gpu_type=other)
+
+
 def test_h200_profile_preserves_base_patches_and_uses_memory_saving_settings():
     base = build_recipe()
     recipe = build_recipe(gpu_type="H200", image_run_commands=["echo custom"])
@@ -20,7 +36,7 @@ def test_h200_profile_preserves_base_patches_and_uses_memory_saving_settings():
         == base.image_run_commands
     )
     assert "echo custom" in recipe.image_run_commands
-    assert len(recipe.image_run_commands) == len(base.image_run_commands) + 4
+    assert len(recipe.image_run_commands) == len(base.image_run_commands) + 6
     assert recipe.gpu_type == "H200"
     assert recipe.memory == (1792 * 1024, 1920 * 1024)
     assert recipe.actor_num_nodes == recipe.actor_num_gpus_per_node == 8

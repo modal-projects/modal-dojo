@@ -1,13 +1,13 @@
 # Kimi-K3 at 64k
 
-`configs/kimi_k3_long_context.py` builds a long-context configuration of the
+`configs/kimi_k3_b300.py` builds the B300 long-context configuration of the
 K3 LoRA recipe on `main`, including the startup and observability fixes from
 [#636](https://github.com/modal-projects/modal-dojo/pull/636). It retains the
 64-B300 colocated topology, pinned image, adapter-only synchronization, persistent
 kernel caches and base checkpoint volume. Training remains synchronous.
 
 ```python
-from configs.kimi_k3_long_context import build_recipe
+from configs.kimi_k3_b300 import build_recipe
 from modal_dojo import Kimi_K3, TrainConfig
 
 config = TrainConfig(
@@ -67,7 +67,18 @@ size; it does not enable recomputation on more layers.
 
 ## H200 candidate
 
-`build_recipe(gpu_type="H200")` selects eight nodes with eight H200s each.
+`from configs.kimi_k3_h200 import build_recipe` selects the independent H200
+configuration on eight nodes with eight H200s each. Hardware-specific settings
+and patches live in separate modules; `kimi_k3_long_context.py` contains shared
+context budgeting and a compatibility dispatcher. Both preserve the original
+recipe class and checkpoint-volume identity.
+
+The H200 configuration additionally merges checkpoint shards directly on CPU
+and compiles K3’s original `situ_and_mul` formula to fuse FP32 intermediates.
+The CPU merge avoids repeated failed GPU allocations while loading frozen
+weights. Activation fusion targets the log-probability OOM in
+`inverse-antagonist-c8d1f746f40e`, which completed its first rollout but failed
+before an optimizer update. Neither patch is included in the B300 configuration.
 This candidate is limited to a 64k context and one request per TP16 engine.
 It uses full uniform recomputation in groups of three layers, 100% optimizer
 CPU offload, FlashInfer MLA decoding, and the same offload-first handoff.
