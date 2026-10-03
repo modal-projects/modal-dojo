@@ -69,14 +69,3 @@ def context_settings(context_length: int, concurrency_per_engine: int) -> dict:
         ],
         "extra_config": extra,
     }
-
-
-def build_recipe(*, gpu_type="B300", **overrides):
-    """Compatibility entry point; prefer the hardware-specific config modules."""
-    if gpu_type == "B300":
-        from configs.kimi_k3_b300 import build_recipe as build
-    elif gpu_type == "H200":
-        from configs.kimi_k3_h200 import build_recipe as build
-    else:
-        raise ValueError("Choose B300 or H200 for this configuration")
-    return build(**overrides)
