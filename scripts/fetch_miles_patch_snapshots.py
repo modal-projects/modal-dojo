@@ -45,7 +45,13 @@ def read_k3_sources() -> dict[str, str]:
     return {
         "k3_hf_weight_iterator.py": Path(
             "/root/miles/miles/backends/megatron_utils/update_weight/hf_weight_iterator.py"
-        ).read_text()
+        ).read_text(),
+        "k3_ops.py": Path(
+            "/root/miles/miles_plugins/models/kimi_k3/ops.py"
+        ).read_text(),
+        "k3_checkpoint_utils.py": Path(
+            "/root/Megatron-LM/megatron/core/transformer/utils.py"
+        ).read_text(),
     }
 
 

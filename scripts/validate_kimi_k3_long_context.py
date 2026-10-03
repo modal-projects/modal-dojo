@@ -266,11 +266,15 @@ def build_config(
     decode_tokens=57344,
     gpu_type="B300",
 ):
-    from configs.kimi_k3_long_context import build_recipe
+    if gpu_type == "H200":
+        from configs.kimi_k3_h200 import build_recipe
+    elif gpu_type == "B300":
+        from configs.kimi_k3_b300 import build_recipe
+    else:
+        raise ValueError("Choose B300 or H200")
     from modal_dojo import HuggingFaceDataset, Kimi_K3, TrainConfig
 
     recipe = build_recipe(
-        gpu_type=gpu_type,
         context_length=context_length,
         num_rollout=rollouts,
         rm_type="deepscaler",
