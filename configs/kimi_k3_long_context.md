@@ -117,10 +117,36 @@ incoherent text and is only an execution-path check, not a quality benchmark.
 The pinned-runtime preflight verified the H200 arguments, tokenizer, dataset,
 reward edge cases and 64k mask assembly; 50 focused local tests passed.
 
-The full-model two-step H200 launch was attempted but stopped locally at
-`require_migrated_config()` because both legacy Training Gym and Modal Dojo
-configuration files exist. No training GPUs were allocated. Resolve that
-environment migration before launching:
+The first full-model H200 run,
+[adagio-hull](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/adagio-hull-e43716fddb12),
+loaded the compact inference weights at **111.50 GiB per rank**, but failed
+before its first rollout. SGLang cloned and retained every incoming adapter
+bucket on GPU until the complete adapter arrived. A 168-MiB clone failed with
+only 44 MiB free. This was adapter synchronization, before long-context
+generation or training.
+
+The H200 image now also patches that staging copy to an independent, blocking
+CPU copy. Blocking is necessary because the sender may reuse its CUDA IPC
+bucket as soon as the RPC returns. SGLang's existing whole-adapter validation,
+checksum checks and abort handling remain in place; its loader slices the
+host tensors into the existing TP-sharded GPU adapter pool. The B300 profile
+does not apply this patch.
+
+A single-H200 regression reproduced the original accumulating-stash OOM,
+then staged 1,344 MiB with zero additional GPU allocation using the patch.
+Reusing the source bucket did not change staged values. The pinned memory
+saver released its 2-GiB CPU backup when weights resumed on GPU. Thus, during
+adapter synchronization, host memory holds the trainer backup and adapter
+staging, rather than both frozen-model backups plus staging. Approximately
+46 GiB of raw routed-expert factors per rank, plus up to 31 GiB for temporary
+normalization, adds about 616 GiB per eight-rank node to the roughly 732-GiB
+trainer backup. Runtime overhead and actual full-model peaks still need
+measurement.
+
+The run used the deployment-compatible launcher at `1e4c5bdd2` with the same
+recipe, image patches and flags. Current `main` requires the shared Training
+Gym-to-Dojo configuration/volume migration; that migration was not performed
+as part of this model fix. In an environment configured for current `main`, run:
 
 ```bash
 uv run -m scripts.validate_kimi_k3_long_context --gpu-type H200 --rollouts 2 --launch

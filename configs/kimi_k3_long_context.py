@@ -115,6 +115,7 @@ def build_recipe(
             / "modal_dojo/frameworks/miles/modal_helpers/patches"
         )
         compact_mxfp4 = f"echo {encode_patch('patch_k3_marlin_padding', patches)} | base64 -d | python3"
+        cpu_lora_staging = f"echo {encode_patch('patch_k3_lora_cpu_staging', patches)} | base64 -d | python3"
         settings.update(
             # Both compact inference and trainer backups total ~1.59 TiB/node.
             # H200 AWS hosts have 2 TiB; leave room for the host and runtime.
@@ -126,6 +127,10 @@ def build_recipe(
             image_run_commands=[
                 *(overrides.pop("image_run_commands", None) or []),
                 compact_mxfp4,
+                # A whole unsharded adapter cannot fit alongside the frozen
+                # serving weights. Stage independent IPC copies on the host;
+                # SGLang validates and TP-slices them into its existing pool.
+                cpu_lora_staging,
             ],
         )
     settings.update(overrides)
