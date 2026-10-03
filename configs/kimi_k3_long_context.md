@@ -132,6 +132,14 @@ checksum checks and abort handling remain in place; its loader slices the
 host tensors into the existing TP-sharded GPU adapter pool. The B300 profile
 does not apply this patch.
 
+The H200 image also fixes generation health checks with the single adapter
+slot. The pinned `/health_generate` otherwise requests the base model, which
+would evict the installed adapter; `lora_no_cpu_backup` correctly refuses that
+eviction. The health request now uses the sole registered policy, preserving
+actual generation health checks without allocating a second GPU adapter pool.
+Its request lease is released on completion or timeout. An ambiguous registry
+with multiple adapters returns unhealthy instead of selecting an arbitrary one.
+
 A single-H200 regression reproduced the original accumulating-stash OOM,
 then staged 1,344 MiB with zero additional GPU allocation using the patch.
 Reusing the source bucket did not change staged values. The pinned memory
