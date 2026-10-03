@@ -905,6 +905,9 @@ class MilesRecipe(BaseTrainRecipe):
         from modal_dojo.train_recipes.miles_recipe.gemma4_26b_a4b import (
             Gemma4_26B_A4B_Recipe,
         )
+        from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash import (
+            GLM_5_3_Flash_Recipe,
+        )
         from modal_dojo.common.models.glm_5_3_flash import GLM_5_3_Flash_LoRA
         from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash_lora import (
             GLM_5_3_Flash_LoRA_Recipe,
@@ -926,6 +929,8 @@ class MilesRecipe(BaseTrainRecipe):
 
         if isinstance(model_config, GLM_5_3_Flash_LoRA):
             return GLM_5_3_Flash_LoRA_Recipe()
+        if model_config.model_name == "zai-org/GLM-5.3-Flash":
+            return GLM_5_3_Flash_Recipe()
         if model_config.model_name == "Qwen/Qwen3.5-4B":
             return Qwen3_5_4B_Miles_Recipe()
         if model_config.model_name == "moonshotai/Moonlight-16B-A3B-Instruct":
