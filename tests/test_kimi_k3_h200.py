@@ -27,7 +27,7 @@ def test_h200_profile_preserves_base_patches_and_uses_memory_saving_settings():
     assert recipe.extra_config["fp8_param_gather"]
     assert recipe.recompute_granularity == "full"
     assert recipe.recompute_method == "uniform"
-    assert recipe.recompute_num_layers == 3
+    assert recipe.recompute_num_layers == 1
     assert recipe.optimizer_offload_fraction == 1.0
     assert recipe.sglang_mem_fraction_static == 0.95
     assert recipe.sglang_decode_attention_backend == "flashinfer"

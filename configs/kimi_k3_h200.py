@@ -43,7 +43,8 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
         tensor_model_parallel_size=2,
         context_parallel_size=4,
         max_tokens_per_gpu=context_length // 4,
-        recompute_num_layers=3,
+        # Three-layer groups OOM during 64k backward on native H200 stages.
+        recompute_num_layers=1,
         optimizer_offload_fraction=1.0,
         sglang_mem_fraction_static=0.95,
         sglang_decode_attention_backend="flashinfer",
