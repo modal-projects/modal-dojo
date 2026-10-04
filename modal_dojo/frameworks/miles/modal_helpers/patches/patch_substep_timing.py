@@ -668,7 +668,12 @@ def _wrap_function(src: str, name: str, context: str) -> str:
     return _wrap_span(src, body[0].lineno, body[-1].end_lineno, context)
 
 
-def _wrap_calls(src: str, function: str, calls: dict[str, str]) -> str:
+def _wrap_calls(
+    src: str,
+    function: str,
+    calls: dict[str, str],
+    optional: frozenset[str] = frozenset(),
+) -> str:
     """Wrap call statements within their original scopes."""
     spans = []
     seen = set()
@@ -692,7 +697,7 @@ def _wrap_calls(src: str, function: str, calls: dict[str, str]) -> str:
 
     for node in _function(src, function).body:
         visit(node)
-    if missing := calls.keys() - seen:
+    if missing := calls.keys() - seen - optional:
         raise RuntimeError(f"{function}: timing calls missing: {sorted(missing)}")
     for start, end, context in sorted(spans, reverse=True):
         src = _wrap_span(src, start, end, context)
@@ -728,7 +733,9 @@ def _patch_executor_driver(src: str, path: Path) -> str:
             "save": _phase("checkpoint_save"),
         }
     )
-    src = _wrap_calls(src, "train", calls)
+    src = _wrap_calls(
+        src, "train", calls, optional=frozenset({"actor_model.offload_grad_buffer"})
+    )
     src = _wrap_driver_loop(src, path)
     src = _wrap_calls(
         src,
@@ -757,56 +764,61 @@ def patch_executor_package(root: Path) -> None:
     }
     for kind, relative in paths.items():
         path = root / relative
-        src = path.read_text()
-        if PREAMBLE_MARKER in src:
-            continue
-        if kind == "rollout":
-            src = _wrap_calls(
-                src,
-                "get",
-                {
-                    "self._get_rollout_data": _phase("generate_samples"),
-                    "convert_samples_to_train_data": _phase("reward_post_process"),
-                },
-            )
-            src = _wrap_function(src, "get", "_tg_role('rollout', rollout_id)")
-        elif kind == "actor":
-            src = _wrap_function(src, "compute_log_prob", _phase("compute_log_probs"))
-            src = _wrap_function(
-                src,
-                "train",
-                "_tg_mrec(rollout_id, 'critic' if self.role == 'critic' else 'actor')",
-            )
-        elif kind == "model":
-            src = _wrap_calls(
-                src,
-                "train_one_step",
-                {
-                    "run_forward_backward_pass": _phase("forward_backward"),
-                    "optimizer.step": _phase("optimizer_step"),
-                },
-            )
-        else:
-            src = _wrap_calls(
-                src,
-                "update_weights",
-                {
-                    "self._inference_controller.start_update_weights": _phase(
-                        "wait_for_inference_engines"
-                    ),
-                    "retry": "_tg_time_phase('initial_weight_sync' if rollout_id is None else 'weight_sync')",
-                    "self._inference_controller.end_update_weights": _phase(
-                        "finalize_weight_sync"
-                    ),
-                    "self._maybe_log_inference_engine_weight_checksums": _phase(
-                        "check_weight_sync"
-                    ),
-                },
-            )
-        src = _inject_preamble(src)
-        compile(src, str(path), "exec")
-        path.write_text(src)
-        print(f"Patched {relative} for executor-based substep timing")
+        try:
+            src = path.read_text()
+            if PREAMBLE_MARKER in src:
+                continue
+            if kind == "rollout":
+                src = _wrap_calls(
+                    src,
+                    "get",
+                    {
+                        "self._get_rollout_data": _phase("generate_samples"),
+                        "convert_samples_to_train_data": _phase("reward_post_process"),
+                    },
+                )
+                src = _wrap_function(src, "get", "_tg_role('rollout', rollout_id)")
+            elif kind == "actor":
+                src = _wrap_function(
+                    src, "compute_log_prob", _phase("compute_log_probs")
+                )
+                src = _wrap_function(
+                    src,
+                    "train",
+                    "_tg_mrec(rollout_id, 'critic' if self.role == 'critic' else 'actor')",
+                )
+            elif kind == "model":
+                src = _wrap_calls(
+                    src,
+                    "train_one_step",
+                    {
+                        "run_forward_backward_pass": _phase("forward_backward"),
+                        "optimizer.step": _phase("optimizer_step"),
+                    },
+                )
+            else:
+                src = _wrap_calls(
+                    src,
+                    "update_weights",
+                    {
+                        "self._inference_controller.start_update_weights": _phase(
+                            "wait_for_inference_engines"
+                        ),
+                        "retry": "_tg_time_phase('initial_weight_sync' if rollout_id is None else 'weight_sync')",
+                        "self._inference_controller.end_update_weights": _phase(
+                            "finalize_weight_sync"
+                        ),
+                        "self._maybe_log_inference_engine_weight_checksums": _phase(
+                            "check_weight_sync"
+                        ),
+                    },
+                )
+            src = _inject_preamble(src)
+            compile(src, str(path), "exec")
+            path.write_text(src)
+            print(f"Patched {relative} for executor-based substep timing")
+        except Exception as exc:
+            print(f"WARNING: {path} substep timing patch skipped: {exc}")
 
 
 def _patch_entrypoint(path: Path, wraps: list[tuple[str, str]]) -> None:
@@ -821,7 +833,7 @@ def main() -> None:
     if not ROOT.is_dir():
         return
     if (ROOT / "miles/ray/rollout/rollout_executor.py").exists():
-        _patch_file(ROOT / "train.py", _SYNC_PHASE_WRAPS)
+        _patch_entrypoint(ROOT / "train.py", _SYNC_PHASE_WRAPS)
         patch_executor_package(ROOT)
         _patch_entrypoint(ROOT / "train_async.py", _ASYNC_PHASE_WRAPS)
         return
