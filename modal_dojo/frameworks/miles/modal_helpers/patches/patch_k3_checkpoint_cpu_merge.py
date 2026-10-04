@@ -1,13 +1,7 @@
-"""Merge checkpoint shards directly on CPU for the H200 K3 profile.
-
+"""
 image: radixark/miles:dev-202609251434
-Megatron commit: f148a32b4385b758b66a77c9c3ad1641f1295d4b
+commit: f148a32b4385b758b66a77c9c3ad1641f1295d4b (Megatron-LM)
 file: megatron/core/transformer/utils.py
-
-The frozen trainer weights leave insufficient GPU headroom for checkpoint
-merges. Use the existing CPU fallback directly, without repeated failed CUDA
-allocations, gc.collect(), and empty_cache(). Do not enable low_memory_resume:
-that also changes optimizer-state restoration, including transfers to GPU.
 """
 
 from pathlib import Path
@@ -35,12 +29,11 @@ def cat_with_oom_fallback(sub_state_dict):
         torch.cuda.empty_cache()
         return merged_sub_state_dict
 '''
-REPLACEMENT = f'''@torch.no_grad()
+REPLACEMENT = f"""@torch.no_grad()
 def cat_with_oom_fallback(sub_state_dict):
-    """Merge checkpoint pieces on CPU, preserving the pinned fallback result."""
-    # {MARKER}: H200 has no GPU headroom during base-weight load.
+    # {MARKER}
     return torch.cat([t.cpu() for t in sub_state_dict])
-'''
+"""
 
 
 def apply(target: Path = TARGET) -> None:

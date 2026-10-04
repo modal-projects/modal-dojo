@@ -1,7 +1,7 @@
-"""Fuse K3's FP32 activation intermediates for the H200 64k recipe.
-
-Pinned source: radixark/miles:dev-202609251434, miles_plugins/models/kimi_k3/ops.py.
-Inductor generates the forward and backward kernels from the original formula.
+"""
+image: radixark/miles:dev-202609251434
+commit: https://github.com/radixark/miles/commit/41c5e38b94ea23677de93b01a4a77d55677a8f09
+file: miles_plugins/models/kimi_k3/ops.py
 """
 
 from pathlib import Path

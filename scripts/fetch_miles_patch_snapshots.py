@@ -11,7 +11,6 @@ from pathlib import Path
 import modal
 
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
-from modal_dojo.train_recipes.miles_recipe.kimi_k3 import Kimi_K3_LoRA_Recipe
 
 MILES_IMAGE = MilesRecipe().docker_image
 
@@ -37,32 +36,8 @@ def read_sources() -> dict[str, str]:
     return {name: Path(path).read_text() for name, path in MILES_SOURCE_PATHS.items()}
 
 
-@app.function(
-    image=modal.Image.from_registry(Kimi_K3_LoRA_Recipe().docker_image).entrypoint([]),
-    serialized=True,
-)
-def read_k3_sources() -> dict[str, str]:
-    return {
-        "k3_hf_weight_iterator.py": Path(
-            "/root/miles/miles/backends/megatron_utils/update_weight/hf_weight_iterator.py"
-        ).read_text(),
-        "k3_ops.py": Path(
-            "/root/miles/miles_plugins/models/kimi_k3/ops.py"
-        ).read_text(),
-        "k3_lora.py": Path(
-            "/root/miles/miles_plugins/models/kimi_k3/lora.py"
-        ).read_text(),
-        "k3_checkpoint_utils.py": Path(
-            "/root/Megatron-LM/megatron/core/transformer/utils.py"
-        ).read_text(),
-        "k3_checkpoint_serialization.py": Path(
-            "/root/Megatron-LM/megatron/core/dist_checkpointing/serialization.py"
-        ).read_text(),
-    }
-
-
 @app.local_entrypoint()
 def main() -> None:
     TESTDATA_DIR.mkdir(parents=True, exist_ok=True)
-    for name, source in (read_sources.remote() | read_k3_sources.remote()).items():
+    for name, source in read_sources.remote().items():
         (TESTDATA_DIR / f"{name}.input").write_text(source)

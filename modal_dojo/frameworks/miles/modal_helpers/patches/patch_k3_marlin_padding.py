@@ -1,12 +1,7 @@
-"""Use the supported 64-element Marlin tile for K3 TP16 expert shards.
-
+"""
 image: radixark/miles:dev-202609251434
 commit: https://github.com/sgl-project/sglang/commit/880e3d2453eb7ef1738350e8c35ba2b956cc93a9
 file: python/sglang/srt/layers/quantization/mxfp4.py
-
-Enabled only by the explicit H200 long-context configuration. Both Marlin
-GEMMs support the unpadded (hidden=3584, intermediate=192) shape. Preserve
-the existing alignment for every other shape and backend.
 """
 
 from pathlib import Path

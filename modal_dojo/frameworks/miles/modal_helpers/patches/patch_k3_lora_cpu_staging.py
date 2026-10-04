@@ -1,13 +1,7 @@
-"""Stage streamed K3 adapters on CPU until the complete update is validated.
-
+"""
 image: radixark/miles:dev-202609251434
 commit: https://github.com/sgl-project/sglang/commit/880e3d2453eb7ef1738350e8c35ba2b956cc93a9
 file: python/sglang/srt/managers/scheduler_components/weight_updater.py
-
-Enabled only by the explicit H200 K3 configuration. The incoming CUDA IPC
-bucket can be reused as soon as its RPC returns, so keep an independent,
-blocking CPU copy. The existing adapter loader slices CPU tensors into the
-resident GPU pool; checksum, partial-update and abort checks stay intact.
 """
 
 from pathlib import Path
@@ -23,7 +17,7 @@ ANCHOR = """            if copy_tensors:
                     copied_devices.add(tensor.device)
 """
 REPLACEMENT = f"""            if copy_tensors:
-                # {MARKER}: finish copying before acknowledging the IPC bucket.
+                # {MARKER}
                 tensor = tensor.detach().to(device="cpu", copy=True, non_blocking=False)
 """
 

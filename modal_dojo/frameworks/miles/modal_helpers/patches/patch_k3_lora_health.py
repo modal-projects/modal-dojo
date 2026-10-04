@@ -1,12 +1,7 @@
-"""Keep K3 generation health probes within the single resident adapter slot.
-
+"""
 image: radixark/miles:dev-202609251434
 commit: https://github.com/sgl-project/sglang/commit/880e3d2453eb7ef1738350e8c35ba2b956cc93a9
 file: python/sglang/srt/entrypoints/http_server.py
-
-A base-only health request would evict an installed no-CPU-backup adapter.
-Probe the sole registered policy instead, and release its request lease on
-both health completion and timeout. Actual generation remains enabled.
 """
 
 from pathlib import Path
@@ -22,7 +17,7 @@ ANCHOR = """    if _global_state.tokenizer_manager.is_generation:
         )
 """
 REPLACEMENT = f"""    if _global_state.tokenizer_manager.is_generation:
-        # {MARKER}: do not evict the sole non-reloadable policy.
+        # {MARKER}
         health_lora_path = None
         if (
             get_lora().enable_lora

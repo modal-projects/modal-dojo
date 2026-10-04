@@ -1,7 +1,7 @@
 """
 image: radixark/miles:dev-202609251434
 commit: https://github.com/radixark/miles/commit/41c5e38b94ea23677de93b01a4a77d55677a8f09
-file: miles/miles/backends/megatron_utils/update_weight/hf_weight_iterator.py::MegatronHfWeightIteratorBase._iter_hf_adapter_units
+file: miles/backends/megatron_utils/update_weight/hf_weight_iterator.py
 """
 
 import pathlib
@@ -41,8 +41,6 @@ def _iter_hf_adapter_units_streaming(self, adapter, *, materialize):
     max_bytes = self.args.update_weight_buffer_size
     for src, meta in enumerate(all_meta):
         for dtype, entries, numel in _lora_pp_chunks(meta, max_bytes):
-            # Fresh storage: the downstream packer can retain views while
-            # requesting the next chunk. Never overwrite a reusable buffer.
             flat = torch.empty(numel, dtype=dtype, device=device)
             if src == pp.rank:
                 off = 0
@@ -76,8 +74,6 @@ def _lora_pp_chunks(meta, max_bytes):
                 chunk, numel = [], 0
             chunk.append((name, shape))
             numel += size
-            # Match Miles' atomic-tensor contract: an individual tensor may
-            # exceed the target, but must never share that oversized chunk.
             if numel * dtype.itemsize >= max_bytes:
                 yield dtype, chunk, numel
                 chunk, numel = [], 0

@@ -1,5 +1,3 @@
-"""Kimi-K3 LoRA 64k recipe on eight H200:8 nodes."""
-
 from pathlib import Path
 
 from modal_dojo import Kimi_K3_LoRA_Recipe
@@ -35,20 +33,13 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
         f"echo {encode_patch('patch_k3_fp8_checkpoint', patches)} | base64 -d | python3"
     )
     settings.update(
-        # Both compact inference and trainer backups total ~1.59 TiB/node.
-        # H200 AWS hosts have 2 TiB; leave room for the host and runtime.
         memory=(1792 * 1024, 1920 * 1024),
-        # Keep all 64 GPUs and eight pipeline stages, but shard the 64k
-        # sequence over four context ranks to reduce training activations.
         tensor_model_parallel_size=2,
         context_parallel_size=4,
         max_tokens_per_gpu=context_length // 4,
-        # PP8 otherwise retains eight 64k forward graphs before backward.
-        # Four completions bound the live pipeline activations on H200.
         rollout_batch_size=1,
         n_samples_per_prompt=4,
         global_batch_size=4,
-        # Three-layer groups OOM during 64k backward on native H200 stages.
         recompute_num_layers=1,
         optimizer_offload_fraction=1.0,
         sglang_mem_fraction_static=0.95,
@@ -56,9 +47,6 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
         image_run_commands=[
             *(overrides.pop("image_run_commands", None) or []),
             compact_mxfp4,
-            # A whole unsharded adapter cannot fit alongside the frozen
-            # serving weights. Stage independent IPC copies on the host;
-            # SGLang validates and TP-slices them into its existing pool.
             cpu_lora_staging,
             lora_health,
             cpu_checkpoint_merge,
@@ -68,16 +56,14 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
         ],
     )
     settings["extra_config"]["log_probs_max_tokens_per_gpu"] = context_length // 4
-    # Hopper supports FP8 hybrid; the pinned Megatron CPU-offload path
-    # requires delayed scaling when compute parameters are stored in FP8.
+
     settings["extra_config"].update(
         fp8="hybrid", fp8_recipe="delayed", fp8_param_gather=True
     )
     settings["extra_config"].update(overrides.pop("extra_config", None) or {})
     settings.update(overrides)
     recipe = Kimi_K3_LoRA_Recipe(**settings)
-    # Triton/communication allocations bypass PyTorch's OOM-triggered cache
-    # reclamation. Release old cached blocks before they consume all headroom.
+
     recipe.environment = {
         **recipe.environment,
         "PYTORCH_CUDA_ALLOC_CONF": "garbage_collection_threshold:0.8",

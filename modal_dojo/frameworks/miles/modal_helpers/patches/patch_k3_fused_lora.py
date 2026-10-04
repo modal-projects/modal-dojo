@@ -1,8 +1,7 @@
-"""Fuse routed-expert LoRA concatenation and addition on the pinned K3 image.
-
-The eager path materializes a full-width concatenated delta before allocating
-the addition result. Inductor writes the sum directly, preserving autograd and
-leaving Transformer Engine's view output unmodified.
+"""
+image: radixark/miles:dev-202609251434
+commit: https://github.com/radixark/miles/commit/41c5e38b94ea23677de93b01a4a77d55677a8f09
+file: miles_plugins/models/kimi_k3/lora.py
 """
 
 from pathlib import Path
@@ -25,8 +24,6 @@ class _MergeExpertLoRA(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        # No activation values are needed for this linear operation. Avoid
-        # an extra full-width contiguous gradient in compiled cat backward.
         return (
             grad_output if ctx.needs_input_grad[0] else None,
             grad_output[..., :ctx.width] * ctx.scale if ctx.needs_input_grad[1] else None,

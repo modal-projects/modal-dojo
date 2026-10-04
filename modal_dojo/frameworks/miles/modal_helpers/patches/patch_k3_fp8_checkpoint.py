@@ -1,9 +1,9 @@
-"""Bound FP8 checkpoint-loading GPU memory in the H200 K3 image.
-
-Stage dequantized load templates on CPU, one tensor at a time, rather than
-keeping a second BF16 model on GPU. Preserve tensor values and leave save
-semantics untouched. Frozen base parameters need no optimizer initialization
-copies, so release those CPU copies when native LoRA freezes the base.
+"""
+image: radixark/miles:dev-202609251434
+commit: https://github.com/radixark/miles/commit/41c5e38b94ea23677de93b01a4a77d55677a8f09
+megatron-commit: f148a32b4385b758b66a77c9c3ad1641f1295d4b
+file: megatron/core/dist_checkpointing/serialization.py
+file: miles_plugins/models/kimi_k3/lora.py
 """
 
 from pathlib import Path
@@ -14,7 +14,7 @@ SERIALIZATION = Path(
 LORA = Path("/root/miles/miles_plugins/models/kimi_k3/lora.py")
 LOAD_MARKER = "PATCHED_K3_FP8_LOAD_CPU"
 LOAD_ANCHOR = "    force_all_tensors_to_non_fp8(sharded_state_dict)\n"
-LOAD_REPLACEMENT = f"""    # {LOAD_MARKER}: retain only one dequantized GPU tensor at a time.
+LOAD_REPLACEMENT = f"""    # {LOAD_MARKER}
     from .dict_utils import nested_values
     from ..fp8_utils import dequantize_fp8_tensor, is_float8tensor
 
@@ -29,7 +29,7 @@ LORA_ANCHOR = """    for parameter in model.parameters():
 """
 LORA_REPLACEMENT = f"""    for parameter in model.parameters():
         parameter.requires_grad = False
-        # {LORA_MARKER}: the optimizer never owns frozen base weights.
+        # {LORA_MARKER}
         clear_init = getattr(parameter, "clear_high_precision_init_val", None)
         if clear_init is not None:
             clear_init()
@@ -51,7 +51,7 @@ def _patched(path: Path, marker: str, anchor: str, replacement: str) -> str:
 
 
 def apply(serialization: Path = SERIALIZATION, lora: Path = LORA) -> None:
-    # Validate both files before changing either one.
+
     replacements = [
         (
             serialization,
