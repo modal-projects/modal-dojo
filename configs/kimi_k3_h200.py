@@ -58,6 +58,11 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
         ],
     )
     settings["extra_config"]["log_probs_max_tokens_per_gpu"] = context_length // 4
+    # Hopper supports FP8 hybrid; the pinned Megatron CPU-offload path
+    # requires delayed scaling when compute parameters are stored in FP8.
+    settings["extra_config"].update(
+        fp8="hybrid", fp8_recipe="delayed", fp8_param_gather=True
+    )
     settings["extra_config"].update(overrides.pop("extra_config", None) or {})
     settings.update(overrides)
     recipe = Kimi_K3_LoRA_Recipe(**settings)

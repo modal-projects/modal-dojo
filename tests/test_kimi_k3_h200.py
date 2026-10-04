@@ -22,6 +22,9 @@ def test_h200_profile_preserves_base_patches_and_uses_memory_saving_settings():
     assert recipe.pipeline_model_parallel_size == 8
     assert recipe.max_tokens_per_gpu == 16384
     assert recipe.extra_config["log_probs_max_tokens_per_gpu"] == 16384
+    assert recipe.extra_config["fp8"] == "hybrid"
+    assert recipe.extra_config["fp8_recipe"] == "delayed"
+    assert recipe.extra_config["fp8_param_gather"]
     assert recipe.recompute_granularity == "full"
     assert recipe.recompute_method == "uniform"
     assert recipe.recompute_num_layers == 3

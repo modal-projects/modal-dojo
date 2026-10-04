@@ -19,7 +19,10 @@ config = TrainConfig(
 
 ## Configuration
 
-- Eight H200:8 nodes; BF16 rank-32 LoRA training and native MXFP4 inference.
+- Eight H200:8 nodes; BF16 rank-32 LoRA adapters and native MXFP4 inference.
+- Transformer Engine trainer layers use FP8 hybrid with delayed scaling and
+  FP8 parameter storage (`fp8_param_gather`); other layers remain BF16.
+  Delayed scaling is required by the pinned optimizer CPU-offload path.
 - Trainer TP2 x PP8 x CP4, DP1, EP8; four TP16 inference engines.
 - Total context 65,536 tokens; one active request per engine.
 - Training/log-probability packing budget 16,384 tokens per GPU at CP4.
@@ -79,7 +82,7 @@ in 199 seconds. It then failed in the first training pass: a 2.67 GiB expert
 LoRA addition and 1.97 GiB backward allocations exhausted memory. No optimizer
 update completed. App `ap-0pUTy1g6CGleSfRyHyO4gg` stopped with zero workers.
 
-The revised candidate keeps 64 H200s and BF16 but uses TP2/CP4 instead of
+The first revised candidate kept 64 H200s and BF16 but used TP2/CP4 instead of
 TP4/CP2 to reduce activation pressure. The pinned-runtime argument, tokenizer,
 masking and reward preflight passes. A real H200 test of Transformer Engine
 grouped linear plus the upstream K3 LoRA wrapper passes output, input-gradient
@@ -88,6 +91,22 @@ At 233472 x 6144 BF16, fused-add forward temporaries fall from 5.34 GiB to
 2.73 GiB; backward peak is unchanged at 8.02 GiB in this isolated test. The
 eager allocation fails under a cap where the fused version succeeds. This is
 not yet proof that the complete model fits during training.
+
+That BF16 TP2/CP4 retry, `crispy-rake-2ba575441549`, produced eight near-64k
+samples in 175 seconds, including one correctly rewarded boxed answer. Log
+probabilities completed in 903 seconds, but a 1.40 GiB expert down-projection
+LoRA addition then OOMed before an optimizer update. Its app stopped.
+
+The next candidate adds FP8 hybrid/delayed scaling with FP8 compute parameters.
+An isolated H200 proof using actual Transformer Engine grouped layers and K3
+LoRA completed two forward/backward/AdamW cycles. It loaded BF16 parameter
+values into FP8 tensors and verified exact values after CPU offload/resume.
+Peak memory in this small block fell from 720 MiB to 579 MiB; FP8 parameter
+initialization alone did not halve memory. Output relative RMSE was about 7.2%,
+input-gradient RMSE 9.9%, and worst adapter-gradient RMSE 8.0% versus BF16.
+This is compatibility evidence, not full-model numerical-quality validation.
+Pinned-runtime FP8/CPU-offload argument and data/reward preflight returned
+successfully; the helper logged a segfault during process teardown afterward.
 
 ```bash
 # Inspect the config locally:
