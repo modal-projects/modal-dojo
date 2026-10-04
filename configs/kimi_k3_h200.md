@@ -26,7 +26,11 @@ config = TrainConfig(
 - Trainer TP2 x PP8 x CP4, DP1, EP8; four TP16 inference engines.
 - Total context 65,536 tokens; one active request per engine.
 - Training/log-probability packing budget 16,384 tokens per GPU at CP4.
-- Full uniform activation recomputation in groups of three layers.
+- One prompt with four completions per update (`global_batch_size=4`) bounds
+  the number of live pipeline microbatches; this is an H200 capacity default.
+- Full uniform activation recomputation one layer at a time.
+- PyTorch cache garbage-collection threshold 0.8 leaves space for Triton and
+  communication allocations outside the PyTorch caching allocator.
 - All optimizer state offloaded to CPU; active-model offload before restoring
   the other model; host RAM 1,792 GiB requested and 1,920 GiB maximum per node.
 - FlashInfer MLA decoding and compact Marlin expert storage.
@@ -48,6 +52,11 @@ before allocating its buffer; it previously flattened a whole 5.96 GiB stage.
 The frozen trainer checkpoint now merges directly on CPU, avoiding repeated
 failed GPU allocations and cache/garbage-collection fallback work. This does
 not enable `low_memory_resume` or change optimizer restoration.
+
+FP8 checkpoint loading dequantizes one tensor at a time into CPU staging.
+Previously, Megatron accumulated a second BF16 model on GPU before loading
+the checkpoint. Frozen FP8 base parameters also release their initialization
+copies on CPU when LoRA freezes them; trainable optimizer inputs are retained.
 
 K3's original `situ_and_mul` formula is compiled with dynamic shapes to fuse
 its FP32 intermediates. This addresses the activation allocation that failed
@@ -107,6 +116,33 @@ input-gradient RMSE 9.9%, and worst adapter-gradient RMSE 8.0% versus BF16.
 This is compatibility evidence, not full-model numerical-quality validation.
 Pinned-runtime FP8/CPU-offload argument and data/reward preflight returned
 successfully; the helper logged a segfault during process teardown afterward.
+
+The FP8 loader regression reproduces the original OOM with 96 MiB of extra
+GPU allocation allowed. The patch peaks at 42 MiB, loads exact BF16 checkpoint
+values, and copies them back into FP8 parameters within the tested quantization
+tolerance. Clearing frozen initialization copies leaves parameter values intact.
+
+A native 12-layer stage on eight H200s (TP2/CP4/EP8, 64k synthetic sequence)
+failed backward with three-layer recomputation. One-layer recomputation passed
+forward/backward on all eight ranks with finite outputs and 156 gradients per
+rank; peak live PyTorch allocation was 113.38–114.16 GiB. This test excludes
+optimizer/DDP, pipeline communication, real-weight routing skew and colocated
+inference. Exercise multiple live microbatches before treating the single-stage
+result as evidence for the full pipeline:
+
+```bash
+uv run modal run --env helena-dev --detach scripts/validate_k3_h200_stage_memory.py --extra-resident-gib 8
+```
+
+The expanded test caught an OOM with eight live microbatches. Each additional
+forward graph retained about 1.64 GiB, motivating the four-completion default
+(approximately 6.6 GiB less retained memory). Four microbatches without proactive
+cache reclamation then failed during Triton backward autotuning. The next test
+combined cache reclamation with 8 GiB of persistent allocations per GPU to
+approximate omitted full-run overhead; the local network connection failed
+before its result was collected, and no pass is claimed. The combined candidate
+therefore still requires full-model validation. Local configuration/patch tests:
+95 passing.
 
 ```bash
 # Inspect the config locally:

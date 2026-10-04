@@ -39,6 +39,9 @@ image = (
             "NCCL_RAS_ENABLE": "0",
             "PYTHONPATH": "/root/Megatron-LM:/root/miles",
             "HF_MODULES_CACHE": "/tmp/hf_modules",
+            "PYTORCH_CUDA_ALLOC_CONF": recipe.environment.get(
+                "PYTORCH_CUDA_ALLOC_CONF", ""
+            ),
         }
     )
 )
@@ -166,6 +169,8 @@ def worker():
         "ep": 8,
         "fp8": args.fp8,
         "recompute_num_layers": args.recompute_num_layers,
+        "inflight_microbatches": options.get("inflight_microbatches", 1),
+        "extra_resident_gib": options.get("extra_resident_gib", 0),
         "limitations": "synthetic weights, all-MoE first-stage layout; no PP transport, optimizer, rollout or real routing skew",
     }
 
@@ -199,6 +204,21 @@ def worker():
                 stage_provider, ModelType.encoder_or_decoder, wrap_with_ddp=False
             )[0]
         model.train()
+        # Hold a conservative allowance for full-run runtime/communication
+        # overhead omitted by this single-stage harness.
+        ballast = [
+            torch.empty(2**30, dtype=torch.uint8, device="cuda")
+            for _ in range(result["extra_resident_gib"])
+        ]
+        assert sum(t.numel() for t in ballast) == result["extra_resident_gib"] * 2**30
+        result["trainable_parameter_gib"] = (
+            sum(
+                p.numel() * p.element_size()
+                for p in model.parameters()
+                if p.requires_grad
+            )
+            / 2**30
+        )
         from miles_plugins.models.hf_attention import detect_and_setup_hybrid_cp
 
         detect_and_setup_hybrid_cp(
@@ -250,21 +270,32 @@ def worker():
         torch.cuda.reset_peak_memory_stats()
         result["status"] = "forward"
         mem("before_forward")
-        output = model(
-            input_ids=tokens,
-            position_ids=None,
-            attention_mask=None,
-            labels=None,
-            packed_seq_params=packed,
-        )
+        outputs = []
+        for microbatch in range(result["inflight_microbatches"]):
+            outputs.append(
+                model(
+                    input_ids=tokens,
+                    position_ids=None,
+                    attention_mask=None,
+                    labels=None,
+                    packed_seq_params=packed,
+                )
+            )
+            mem(f"forward_microbatch_{microbatch}")
         result["status"] = "backward"
         mem("after_forward")
-        output.float().square().mean().backward()
+        result["finite_output"] = all(bool(torch.isfinite(o).all()) for o in outputs)
+        # PP8 can have eight forward graphs live before the first backward.
+        # Drain oldest first, as the non-interleaved pipeline schedule does.
+        for microbatch in range(result["inflight_microbatches"]):
+            output = outputs.pop(0)
+            output.float().square().mean().backward()
+            del output
+            mem(f"backward_microbatch_{microbatch}")
         mem("after_backward")
         grads = [
             p.grad for p in model.parameters() if p.requires_grad and p.grad is not None
         ]
-        result["finite_output"] = bool(torch.isfinite(output).all())
         result["gradient_count"] = len(grads)
         result["finite_grads"] = bool(grads) and all(
             bool(torch.isfinite(g).all()) for g in grads
@@ -312,14 +343,15 @@ def worker():
     cpu=32,
     volumes={"/hf-cache": modal.Volume.from_name("huggingface-cache")},
     serialized=True,
-    timeout=1800,
+    timeout=2400,
 )
-def check(cli, extra):
+def check(cli, extra, inflight_microbatches=1, extra_resident_gib=0):
     import ast
     import os
     import signal
     import importlib.util
     import subprocess
+    import time
     from torch_memory_saver.hooks.mode_preload import configure_subprocess
 
     for name in (
@@ -332,7 +364,14 @@ def check(cli, extra):
         spec.loader.exec_module(module)
         module.apply()
     Path("/tmp/native-stage-args.json").write_text(
-        json.dumps({"cli": cli, "extra": extra})
+        json.dumps(
+            {
+                "cli": cli,
+                "extra": extra,
+                "inflight_microbatches": inflight_microbatches,
+                "extra_resident_gib": extra_resident_gib,
+            }
+        )
     )
     tree = ast.parse(Path("/root/native_stage_source.py").read_text())
     fn = next(
@@ -360,7 +399,15 @@ def check(cli, extra):
             start_new_session=True,
         )
         try:
-            proc.wait(timeout=1200)
+            deadline = time.monotonic() + 2100
+            with open("/tmp/native-stdout.log") as progress:
+                while proc.poll() is None:
+                    for line in progress:
+                        if line.startswith(("NATIVE_MEMORY", "NATIVE_RESULT")):
+                            print(line.rstrip(), flush=True)
+                    if time.monotonic() >= deadline:
+                        raise subprocess.TimeoutExpired(proc.args, 2100)
+                    time.sleep(5)
         except subprocess.TimeoutExpired:
             os.killpg(proc.pid, signal.SIGTERM)
             try:
@@ -390,11 +437,29 @@ def check(cli, extra):
 
 
 @app.local_entrypoint()
-def main():
+def main(inflight_microbatches: int = 0, extra_resident_gib: int = 0):
+    if inflight_microbatches == 0:
+        inflight_microbatches = min(8, recipe.global_batch_size)
+    if not 1 <= inflight_microbatches <= 8:
+        raise ValueError("Choose between one and eight in-flight microbatches")
+    if not 0 <= extra_resident_gib <= 16:
+        raise ValueError("Choose between zero and 16 GiB of extra resident memory")
     OUT.mkdir(parents=True, exist_ok=True)
-    result = check.remote(recipe.cli_args(model=Kimi_K3()), recipe.extra_config)
-    (OUT / "native-stage-result.json").write_text(json.dumps(result, indent=2))
-    (OUT / "native-stage-output.log").write_text(
+    call = check.spawn(
+        recipe.cli_args(model=Kimi_K3()),
+        recipe.extra_config,
+        inflight_microbatches,
+        extra_resident_gib,
+    )
+    handle = {"app_id": app.app_id, "call_id": call.object_id}
+    (OUT / "native-stage-call.json").write_text(json.dumps(handle))
+    print(json.dumps(handle), flush=True)
+    result = call.get()
+    stem = f"native-stage-inflight{inflight_microbatches}"
+    if extra_resident_gib:
+        stem += f"-resident{extra_resident_gib}"
+    (OUT / f"{stem}-result.json").write_text(json.dumps(result, indent=2))
+    (OUT / f"{stem}-output.log").write_text(
         result.pop("stdout", "") + "\n" + result.pop("stderr", "")
     )
     print(

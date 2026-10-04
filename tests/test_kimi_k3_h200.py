@@ -21,6 +21,8 @@ def test_h200_profile_preserves_base_patches_and_uses_memory_saving_settings():
     assert recipe.context_parallel_size == 4
     assert recipe.pipeline_model_parallel_size == 8
     assert recipe.max_tokens_per_gpu == 16384
+    assert recipe.rollout_batch_size == 1
+    assert recipe.n_samples_per_prompt == recipe.global_batch_size == 4
     assert recipe.extra_config["log_probs_max_tokens_per_gpu"] == 16384
     assert recipe.extra_config["fp8"] == "hybrid"
     assert recipe.extra_config["fp8_recipe"] == "delayed"
@@ -35,6 +37,12 @@ def test_h200_profile_preserves_base_patches_and_uses_memory_saving_settings():
     assert recipe.experts_shared_outer_loras
     assert recipe.ref_load == base.ref_load
     assert recipe.docker_image == base.docker_image
+    assert (
+        recipe.environment["PYTORCH_CUDA_ALLOC_CONF"]
+        == "garbage_collection_threshold:0.8"
+    )
+    for key, value in base.environment.items():
+        assert recipe.environment[key] == value
 
 
 @pytest.mark.parametrize(
