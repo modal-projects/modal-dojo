@@ -49,6 +49,9 @@ def read_k3_sources() -> dict[str, str]:
         "k3_ops.py": Path(
             "/root/miles/miles_plugins/models/kimi_k3/ops.py"
         ).read_text(),
+        "k3_lora.py": Path(
+            "/root/miles/miles_plugins/models/kimi_k3/lora.py"
+        ).read_text(),
         "k3_checkpoint_utils.py": Path(
             "/root/Megatron-LM/megatron/core/transformer/utils.py"
         ).read_text(),

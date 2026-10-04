@@ -28,10 +28,18 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
     )
     cpu_checkpoint_merge = f"echo {encode_patch('patch_k3_checkpoint_cpu_merge', patches)} | base64 -d | python3"
     fused_activation = f"echo {encode_patch('patch_k3_fused_activation', patches)} | base64 -d | python3"
+    fused_lora = (
+        f"echo {encode_patch('patch_k3_fused_lora', patches)} | base64 -d | python3"
+    )
     settings.update(
         # Both compact inference and trainer backups total ~1.59 TiB/node.
         # H200 AWS hosts have 2 TiB; leave room for the host and runtime.
         memory=(1792 * 1024, 1920 * 1024),
+        # Keep all 64 GPUs and eight pipeline stages, but shard the 64k
+        # sequence over four context ranks to reduce training activations.
+        tensor_model_parallel_size=2,
+        context_parallel_size=4,
+        max_tokens_per_gpu=context_length // 4,
         recompute_num_layers=3,
         optimizer_offload_fraction=1.0,
         sglang_mem_fraction_static=0.95,
@@ -46,11 +54,17 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
             lora_health,
             cpu_checkpoint_merge,
             fused_activation,
+            fused_lora,
         ],
     )
+    settings["extra_config"]["log_probs_max_tokens_per_gpu"] = context_length // 4
     settings["extra_config"].update(overrides.pop("extra_config", None) or {})
     settings.update(overrides)
     recipe = Kimi_K3_LoRA_Recipe(**settings)
-    if recipe.gpu_type != "H200" or recipe.context_parallel_size != 2:
-        raise ValueError("The H200 recipe requires H200 GPUs and CP2")
+    if (
+        recipe.gpu_type != "H200"
+        or recipe.context_parallel_size != 4
+        or recipe.tensor_model_parallel_size != 2
+    ):
+        raise ValueError("The H200 recipe requires H200 GPUs and TP2/CP4")
     return recipe

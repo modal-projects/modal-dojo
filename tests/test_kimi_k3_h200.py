@@ -12,11 +12,16 @@ def test_h200_profile_preserves_base_patches_and_uses_memory_saving_settings():
         == base.image_run_commands
     )
     assert "echo custom" in recipe.image_run_commands
-    assert len(recipe.image_run_commands) == len(base.image_run_commands) + 6
+    assert len(recipe.image_run_commands) == len(base.image_run_commands) + 7
     assert recipe.gpu_type == "H200"
     assert recipe.memory == (1792 * 1024, 1920 * 1024)
     assert recipe.actor_num_nodes == recipe.actor_num_gpus_per_node == 8
     assert recipe.rollout_num_gpus_per_engine == 16
+    assert recipe.tensor_model_parallel_size == 2
+    assert recipe.context_parallel_size == 4
+    assert recipe.pipeline_model_parallel_size == 8
+    assert recipe.max_tokens_per_gpu == 16384
+    assert recipe.extra_config["log_probs_max_tokens_per_gpu"] == 16384
     assert recipe.recompute_granularity == "full"
     assert recipe.recompute_method == "uniform"
     assert recipe.recompute_num_layers == 3

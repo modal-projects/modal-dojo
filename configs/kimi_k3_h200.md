@@ -20,9 +20,9 @@ config = TrainConfig(
 ## Configuration
 
 - Eight H200:8 nodes; BF16 rank-32 LoRA training and native MXFP4 inference.
-- Trainer TP4 x PP8 x CP2, DP1, EP8; four TP16 inference engines.
+- Trainer TP2 x PP8 x CP4, DP1, EP8; four TP16 inference engines.
 - Total context 65,536 tokens; one active request per engine.
-- Training/log-probability packing budget 32,768 tokens per GPU at CP2.
+- Training/log-probability packing budget 16,384 tokens per GPU at CP4.
 - Full uniform activation recomputation in groups of three layers.
 - All optimizer state offloaded to CPU; active-model offload before restoring
   the other model; host RAM 1,792 GiB requested and 1,920 GiB maximum per node.
@@ -51,6 +51,11 @@ its FP32 intermediates. This addresses the activation allocation that failed
 in the first full-model log-probability pass. Forward and backward numerical
 comparisons use dtype-appropriate tolerances, rather than bitwise identity.
 
+The expert LoRA add also fuses concatenation with addition, avoiding a
+full-width delta temporary without modifying Transformer Engine's view output.
+Its explicit linear backward uses no saved activations and avoids the extra
+full-width gradient materialized by a compiler-generated backward.
+
 ## Validation evidence and limits
 
 Earlier full-model attempts failed at GPU adapter staging and then a
@@ -67,11 +72,22 @@ identical tensors with zero additional GPU allocation in four dtype/layout
 cases. Other isolated GPU tests cover compact expert reload, adapter integrity,
 health, 64k prefill/decode, release/resume, and bounded eight-rank broadcasts.
 
-Full-model validation is running as
+The next full-model attempt,
 [relative-cottage-dcec7a81a761](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/relative-cottage-dcec7a81a761),
-app `ap-0pUTy1g6CGleSfRyHyO4gg`. It uses the same recipe settings and patch output
-as this branch. Optimizer updates, checkpoint save, and a subsequent rollout
-with updated weights remain pending.
+completed eight near-64k rollouts in 174 seconds and log-probability computation
+in 199 seconds. It then failed in the first training pass: a 2.67 GiB expert
+LoRA addition and 1.97 GiB backward allocations exhausted memory. No optimizer
+update completed. App `ap-0pUTy1g6CGleSfRyHyO4gg` stopped with zero workers.
+
+The revised candidate keeps 64 H200s and BF16 but uses TP2/CP4 instead of
+TP4/CP2 to reduce activation pressure. The pinned-runtime argument, tokenizer,
+masking and reward preflight passes. A real H200 test of Transformer Engine
+grouped linear plus the upstream K3 LoRA wrapper passes output, input-gradient
+and adapter-gradient comparisons for BF16/FP32 and both zero/nonzero adapters.
+At 233472 x 6144 BF16, fused-add forward temporaries fall from 5.34 GiB to
+2.73 GiB; backward peak is unchanged at 8.02 GiB in this isolated test. The
+eager allocation fails under a cap where the fused version succeeds. This is
+not yet proof that the complete model fits during training.
 
 ```bash
 # Inspect the config locally:
@@ -86,7 +102,6 @@ It tests near-64k sequence capacity, not autonomous 60k-token generation or
 learning quality. Meaningful rewards and a longer smoke test are still needed.
 Use `--mode math` for ordinary DAPO rollouts with the context ceiling.
 
-The active run was launched before the PR split from deployment-compatible
-launcher `1e4c5bdd2`, with matching flags, patches, environment, topology and RAM.
-It is unaffected by this Git reorganization. Current main's shared Training
+Full retries use deployment-compatible launcher `1e4c5bdd2`, with matching
+flags, patches, environment, topology and RAM. Current main's shared Training
 Gym-to-Dojo environment migration is outside this model change.
