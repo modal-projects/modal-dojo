@@ -55,6 +55,9 @@ def read_k3_sources() -> dict[str, str]:
         "k3_checkpoint_utils.py": Path(
             "/root/Megatron-LM/megatron/core/transformer/utils.py"
         ).read_text(),
+        "k3_checkpoint_serialization.py": Path(
+            "/root/Megatron-LM/megatron/core/dist_checkpointing/serialization.py"
+        ).read_text(),
     }
 
 

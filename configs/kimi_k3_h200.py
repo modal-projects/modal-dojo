@@ -31,6 +31,9 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
     fused_lora = (
         f"echo {encode_patch('patch_k3_fused_lora', patches)} | base64 -d | python3"
     )
+    fp8_checkpoint = (
+        f"echo {encode_patch('patch_k3_fp8_checkpoint', patches)} | base64 -d | python3"
+    )
     settings.update(
         # Both compact inference and trainer backups total ~1.59 TiB/node.
         # H200 AWS hosts have 2 TiB; leave room for the host and runtime.
@@ -55,6 +58,7 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
             cpu_checkpoint_merge,
             fused_activation,
             fused_lora,
+            fp8_checkpoint,
         ],
     )
     settings["extra_config"]["log_probs_max_tokens_per_gpu"] = context_length // 4
