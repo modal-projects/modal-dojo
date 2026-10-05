@@ -93,7 +93,7 @@ rather than a remote failure):
 | `rollout_max_retries` | 2 | transient-failure retries per conversation |
 | `min_group_completion` | 1.0 | fraction of a group required for admission |
 | `min_step_groups` | 1.0 | fraction of groups required to run the step |
-| `rollout_quarantine` | true | skip repeat pathological prompts |
+| `rollout_quarantine` | false | skip repeat pathological prompts |
 
 Defaults preserve current behavior exactly; only `rollout_max_retries`
 changes anything, and it is bounded and logged.
