@@ -15,13 +15,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from modal.exception import (
-    ConnectionError as ModalConnectionError,
-    InternalError,
-    NotFoundError,
-    ResourceExhaustedError,
-    ServiceError,
-)
+from modal.exception import NotFoundError
 from pydantic import (
     BaseModel,
     Field,
@@ -44,6 +38,9 @@ from modal_dojo.utils.metadata import (
     vol_get,
     vol_put_with_summary,
 )
+from modal_dojo.utils.modal_errors import (
+    TRANSIENT_MODAL_ERRORS as _TRANSIENT_MODAL_ERRORS,
+)
 
 if TYPE_CHECKING:
     from modal_dojo.common.checkpoint import Checkpoint
@@ -52,12 +49,13 @@ if TYPE_CHECKING:
 
 TRAINING_RUNS_STORE_NAME = MetadataStore.TRAINING_RUNS.value
 CHECKPOINT_LOCATION_METADATA_KEY = "checkpoint_location"
-_TRANSIENT_MODAL_ERRORS = (
-    ModalConnectionError,
-    InternalError,
-    ResourceExhaustedError,
-    ServiceError,
-)
+# FAILED records are written mid-flight while Modal's ``Retries`` may still
+# have a pending retry for the same FunctionCall; give the record a settle
+# window before trusting it over a still-pending call.
+_FAILED_RECORD_SETTLE_SECONDS = 15 * 60
+# Warn once when a run's status stays unreadable for this long (both the
+# metadata record and the FunctionCall result keep hitting transient errors).
+_TRANSIENT_STALL_SECONDS = 5 * 60
 
 
 class FrameworkStatusUpdate(BaseModel):
@@ -176,6 +174,8 @@ class TrainingRun(BaseModel):
     _metadata_loaded_keys: set[str] | None = PrivateAttr(default=None)
     _dashboard_component_updates: set[str] = PrivateAttr(default_factory=set)
     _closed: bool = PrivateAttr(default=False)
+    _transient_pending_since: float | None = PrivateAttr(default=None)
+    _transient_stall_warned: bool = PrivateAttr(default=False)
 
     @field_serializer("source_model")
     def _serialize_source_model(self, value: Any) -> dict[str, Any] | None:
@@ -229,20 +229,72 @@ class TrainingRun(BaseModel):
         self.metrics = stored.metrics
         self.error_message = stored.error_message
 
-    def _function_call_outcome(self) -> tuple[bool, Exception | None]:
+    def _function_call_outcome(self) -> tuple[bool, Exception | None, bool]:
+        """Probe the FunctionCall once.
+
+        Returns ``(finished, error, transient)``. ``transient`` marks an
+        unreadable result — a transport flake or lookup failure — distinct
+        from a call that is simply still pending.
+        """
         if self._function_call is None and not self.function_call_id:
-            return False, None
+            return False, None, False
         try:
             call = self.function_call
-        except Exception:
-            return False, None
+        except _TRANSIENT_MODAL_ERRORS:
+            return False, None, True
         try:
             call.get(timeout=0)
-            return True, None
-        except (TimeoutError, *_TRANSIENT_MODAL_ERRORS):
-            return False, None
+            return True, None, False
+        except TimeoutError:
+            return False, None, False
+        except _TRANSIENT_MODAL_ERRORS:
+            return False, None, True
         except Exception as exc:
-            return True, exc
+            return True, exc, False
+
+    def _failed_record_settled(self) -> bool:
+        """Whether a stored FAILED record can be trusted over a live call.
+
+        ``mark_run_failed`` writes FAILED while Modal's ``Retries`` may still
+        hold a pending retry for the same FunctionCall; honoring it
+        immediately lets ``wait_all`` stop an app whose run is about to be
+        retried. Settle once the call reports finished, when the record
+        carries no attempt timestamp, or once the settle window elapsed.
+        """
+        if self._function_call is None and not self.function_call_id:
+            return True
+        finished, _, _ = self._function_call_outcome()
+        if finished:
+            return True
+        ended_at = (self.metadata or {}).get("last_attempt_ended_at")
+        if ended_at is None:
+            return True
+        try:
+            return time.time() - float(ended_at) >= _FAILED_RECORD_SETTLE_SECONDS
+        except (TypeError, ValueError):
+            return True
+
+    def _note_transient_stall(self) -> None:
+        """Track consecutive unreadable polls; warn once it drags on."""
+        now = time.monotonic()
+        if self._transient_pending_since is None:
+            self._transient_pending_since = now
+            return
+        if (
+            not self._transient_stall_warned
+            and now - self._transient_pending_since >= _TRANSIENT_STALL_SECONDS
+        ):
+            self._transient_stall_warned = True
+            print(
+                f"WARNING: training run {self.training_run_id} has been "
+                f"unreachable via Modal for "
+                f"{int(now - self._transient_pending_since)}s; "
+                "still treating it as RUNNING"
+            )
+
+    def _clear_transient_stall(self) -> None:
+        self._transient_pending_since = None
+        self._transient_stall_warned = False
 
     def checkpoints(self) -> list["Checkpoint"]:
         """Snapshot of committed megatron ``iter_*`` directories.
@@ -303,11 +355,24 @@ class TrainingRun(BaseModel):
 
         Does not stop the Modal app.
         """
-        with contextlib.suppress(*_TRANSIENT_MODAL_ERRORS):
+        transient = False
+        try:
             self._reload()
+        except _TRANSIENT_MODAL_ERRORS:
+            transient = True
         if self.status is not TrainingRunStatus.RUNNING:
+            if (
+                self.status is TrainingRunStatus.FAILED
+                and not self._failed_record_settled()
+            ):
+                return False
             return True
-        finished, exc = self._function_call_outcome()
+        finished, exc, outcome_transient = self._function_call_outcome()
+        transient = transient or outcome_transient
+        if transient:
+            self._note_transient_stall()
+        else:
+            self._clear_transient_stall()
         if not finished:
             return False
         self.status = (
@@ -316,6 +381,28 @@ class TrainingRun(BaseModel):
         if exc is not None:
             self.error_message = self.error_message or str(exc)
         return True
+
+    def _annotate_wait_error(self, exc: BaseException) -> BaseException:
+        """Tag ``exc`` with the run id, refresh status, mirror a local FAILED."""
+        message = str(exc)
+        if self.training_run_id not in message:
+            try:
+                exc.args = (
+                    f"{message} (training_run_id={self.training_run_id})",
+                    *exc.args[1:],
+                )
+            except (AttributeError, TypeError):
+                pass
+        try:
+            exc.training_run_id = self.training_run_id
+        except AttributeError:
+            pass
+        with contextlib.suppress(*_TRANSIENT_MODAL_ERRORS):
+            self._reload()
+        if self.status is TrainingRunStatus.RUNNING:
+            self.status = TrainingRunStatus.FAILED
+            self.error_message = self.error_message or str(exc)
+        return exc
 
     def wait(self, *, timeout: float | None = None) -> "TrainingRun":
         """Block until this run is done. Does not stop the Modal app."""
@@ -327,35 +414,47 @@ class TrainingRun(BaseModel):
             self._status_display.start_polling(self.training_run_id)
         try:
             if self._function_call is not None or self.function_call_id:
-                try:
-                    payload = self.function_call.get(timeout=timeout)
-                except TimeoutError as exc:
-                    if not str(exc):
-                        exc.args = (
+                deadline = None if timeout is None else time.monotonic() + timeout
+                remaining = timeout
+                last_transient: Exception | None = None
+                while True:
+                    if remaining is not None and remaining <= 0:
+                        detail = (
                             f"Timed out after {timeout}s waiting for "
-                            f"training_run_id={self.training_run_id}",
+                            f"training_run_id={self.training_run_id}"
                         )
-                    exc.training_run_id = self.training_run_id
-                    raise
-                except BaseException as exc:
-                    message = str(exc)
-                    if self.training_run_id not in message:
-                        try:
-                            exc.args = (
-                                f"{message} (training_run_id={self.training_run_id})",
-                                *exc.args[1:],
-                            )
-                        except (AttributeError, TypeError):
-                            pass
+                        if last_transient is not None:
+                            detail += f" (last transport error: {last_transient})"
+                        exc_timeout = TimeoutError(detail)
+                        exc_timeout.training_run_id = self.training_run_id
+                        raise exc_timeout
                     try:
+                        payload = self.function_call.get(timeout=remaining)
+                        break
+                    except TimeoutError as exc:
+                        if not str(exc):
+                            exc.args = (
+                                f"Timed out after {timeout}s waiting for "
+                                f"training_run_id={self.training_run_id}",
+                            )
                         exc.training_run_id = self.training_run_id
-                    except AttributeError:
-                        pass
-                    self._reload()
-                    if self.status is TrainingRunStatus.RUNNING:
-                        self.status = TrainingRunStatus.FAILED
-                        self.error_message = self.error_message or str(exc)
-                    raise
+                        raise
+                    except _TRANSIENT_MODAL_ERRORS as exc:
+                        # A remote failure in these classes is persisted as a
+                        # terminal record by the remote side; while the record
+                        # still reads RUNNING this was a local transport
+                        # flake — keep waiting until the deadline.
+                        last_transient = exc
+                        with contextlib.suppress(*_TRANSIENT_MODAL_ERRORS):
+                            self._reload()
+                        if self.status is not TrainingRunStatus.RUNNING:
+                            raise self._annotate_wait_error(exc)
+                        time.sleep(1.0 if remaining is None else min(1.0, remaining))
+                        remaining = (
+                            None if deadline is None else deadline - time.monotonic()
+                        )
+                    except BaseException as exc:
+                        raise self._annotate_wait_error(exc)
                 self._reload()
                 if isinstance(payload, dict):
                     if payload.get("app_name"):

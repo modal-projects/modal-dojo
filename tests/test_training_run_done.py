@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import time
+
 import modal.exception
 import pytest
 
 from modal_dojo.common.framework import Framework
-from modal_dojo.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.run import (
+    _FAILED_RECORD_SETTLE_SECONDS,
+    TrainingRun,
+    TrainingRunStatus,
+)
 
 
 def _run(status: TrainingRunStatus) -> TrainingRun:
@@ -202,6 +208,164 @@ def test_done_is_false_when_metadata_reload_hits_transport_error(monkeypatch):
 
     assert run.done() is False
     assert run.status is TrainingRunStatus.RUNNING
+
+
+def _save_failed(ended_at: float | None) -> None:
+    failed = _run(TrainingRunStatus.FAILED)
+    failed.error_message = "attempt died"
+    if ended_at is not None:
+        failed.metadata = {"last_attempt_ended_at": ended_at}
+    failed.save()
+
+
+class _PendingThenDoneCall:
+    pending = True
+
+    def get(self, timeout=None):
+        del timeout
+        if self.pending:
+            raise TimeoutError()
+        return {"app_name": "done"}
+
+
+def test_done_ignores_failed_record_while_retry_is_pending(fake_volume):
+    """A FAILED record written mid-flight does not outrank a pending retry."""
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _PendingCall()
+    _save_failed(time.time() - 1)
+
+    assert run.done() is False
+
+
+def test_done_honors_failed_record_once_function_call_finishes(fake_volume):
+    call = _PendingThenDoneCall()
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = call
+    _save_failed(time.time() - 1)
+
+    assert run.done() is False
+
+    call.pending = False
+
+    assert run.done() is True
+    assert run.status is TrainingRunStatus.FAILED
+
+
+def test_done_honors_failed_record_after_settle_window(fake_volume):
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _PendingCall()
+    _save_failed(time.time() - _FAILED_RECORD_SETTLE_SECONDS - 1)
+
+    assert run.done() is True
+    assert run.status is TrainingRunStatus.FAILED
+
+
+def test_done_honors_failed_record_without_attempt_end_time(fake_volume):
+    """Records predating ``last_attempt_ended_at`` settle immediately."""
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _PendingCall()
+    _save_failed(None)
+
+    assert run.done() is True
+
+
+@pytest.mark.parametrize(
+    "status", [TrainingRunStatus.STOPPED, TrainingRunStatus.CANCELLED]
+)
+def test_done_honors_stopped_cancelled_records_immediately(
+    status: TrainingRunStatus, fake_volume
+):
+    """Only FAILED gets a settle window; other terminal states are honored."""
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _PendingCall()
+    other = _run(status)
+    other.metadata = {"last_attempt_ended_at": time.time()}
+    other.save()
+
+    assert run.done() is True
+    assert run.status is status
+
+
+def test_done_propagates_permanent_function_call_lookup_error(monkeypatch, fake_volume):
+    def _raise(self):
+        raise modal.exception.InvalidError("unknown call")
+
+    monkeypatch.setattr(TrainingRun, "function_call", property(_raise))
+    run = _run(TrainingRunStatus.RUNNING)
+    run.function_call_id = "fc-1"
+
+    with pytest.raises(modal.exception.InvalidError):
+        run.done()
+
+
+def test_done_warns_once_after_sustained_transient_outage(
+    monkeypatch, fake_volume, capsys
+):
+    class _FlakyCall:
+        def get(self, timeout=None):
+            del timeout
+            raise modal.exception.ServiceError("unavailable")
+
+    monkeypatch.setattr("modal_dojo.common.run._TRANSIENT_STALL_SECONDS", 0)
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _FlakyCall()
+
+    assert run.done() is False
+    assert run.done() is False
+    assert run.done() is False
+
+    assert capsys.readouterr().out.count("unreachable via Modal") == 1
+
+
+def test_wait_tolerates_transient_get_errors(fake_volume):
+    class _FlakyThenDone:
+        attempts = 0
+
+        def get(self, timeout=None):
+            del timeout
+            self.attempts += 1
+            if self.attempts < 3:
+                raise modal.exception.ServiceError("blip")
+            return {"app_name": "done-app"}
+
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _FlakyThenDone()
+
+    result = run.wait(timeout=30)
+
+    assert result.app_name == "done-app"
+    assert run._function_call.attempts == 3
+
+
+def test_wait_surfaces_remote_transient_error_once_record_is_terminal(
+    fake_volume,
+):
+    class _RemoteDead:
+        def get(self, timeout=None):
+            del timeout
+            raise modal.exception.ServiceError("remote died")
+
+    _save_failed(time.time())
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _RemoteDead()
+
+    with pytest.raises(modal.exception.ServiceError, match="remote died"):
+        run.wait(timeout=30)
+
+    assert run.status is TrainingRunStatus.FAILED
+
+
+def test_wait_times_out_when_transient_errors_persist(fake_volume):
+    class _AlwaysFlaky:
+        def get(self, timeout=None):
+            del timeout
+            raise modal.exception.ServiceError("unavailable")
+
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _AlwaysFlaky()
+
+    with pytest.raises(TimeoutError, match="last transport error"):
+        run.wait(timeout=0.5)
 
 
 def test_wait_timeout_does_not_mark_failed(fake_volume):

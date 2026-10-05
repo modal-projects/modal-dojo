@@ -13,6 +13,11 @@ from functools import partial
 from typing import Any, Literal, TypeVar, cast, overload
 
 from modal_dojo._api_reference import exclude_from_api_reference
+from modal_dojo.utils.modal_errors import (
+    TRANSIENT_MODAL_ERRORS,
+    aretry_transient,
+    retry_transient,
+)
 
 T = TypeVar("T")
 
@@ -153,13 +158,13 @@ def _safe_reload(vol, *, is_async: bool = False):
         async def _run() -> None:
             try:
                 await vol.reload.aio()
-            except RuntimeError:
+            except (RuntimeError, *TRANSIENT_MODAL_ERRORS):
                 pass
 
         return _run()
     try:
         vol.reload()
-    except RuntimeError:
+    except (RuntimeError, *TRANSIENT_MODAL_ERRORS):
         pass
 
 
@@ -181,8 +186,12 @@ async def bounded_gather_with_retries(
             for attempt in range(3):
                 try:
                     return await reader()
+                except TRANSIENT_MODAL_ERRORS:
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(2**attempt)
                 except Error as exc:
-                    if "rate limit" not in str(exc).lower() or attempt == 2:
+                    if not _is_rate_limit(exc) or attempt == 2:
                         raise
                     await asyncio.sleep(2**attempt)
         raise AssertionError("unreachable")
@@ -200,7 +209,7 @@ def vol_remove(store: MetadataStore | str, key: str) -> bool:
     vol = _metadata_volume()
     path = f"{_store_path(store)}/{key}.json"
     try:
-        vol.remove_file(path)
+        retry_transient(lambda: vol.remove_file(path))
         return True
     except (FileNotFoundError, NotFoundError):
         return False
@@ -230,39 +239,19 @@ def vol_put(
 ) -> None: ...
 
 
-_WRITE_ATTEMPTS = 3
-
-
 def _run_write(commit: Callable[[], T]) -> T:
-    """Commit a volume write, retrying ``too many layers`` exhaustion.
+    """Commit a volume write, retrying transient Modal errors.
 
     Volume commits go through a fixed-size layer queue that drains in seconds;
-    concurrent writers (e.g. a synmon fan-out) can fill it transiently.
+    concurrent writers (e.g. a synmon fan-out) can fill it transiently. Every
+    commit overwrites in place (``force=True``), so retrying is idempotent.
     """
-    from modal.exception import ResourceExhaustedError
-
-    for attempt in range(_WRITE_ATTEMPTS):
-        try:
-            return commit()
-        except ResourceExhaustedError:
-            if attempt == _WRITE_ATTEMPTS - 1:
-                raise
-            time.sleep(2**attempt)
-    raise AssertionError("unreachable")
+    return retry_transient(commit)
 
 
 async def _arun_write(commit: Callable[[], Awaitable[T]]) -> T:
     """``_run_write`` for async commits."""
-    from modal.exception import ResourceExhaustedError
-
-    for attempt in range(_WRITE_ATTEMPTS):
-        try:
-            return await commit()
-        except ResourceExhaustedError:
-            if attempt == _WRITE_ATTEMPTS - 1:
-                raise
-            await asyncio.sleep(2**attempt)
-    raise AssertionError("unreachable")
+    return await aretry_transient(commit)
 
 
 def vol_put(
@@ -364,29 +353,32 @@ def vol_get(
 ) -> dict[str, Any] | Awaitable[dict[str, Any]]:
     vol = _metadata_volume()
     path = f"{_store_path(store)}/{key}.json"
+
+    async def _aread() -> dict[str, Any]:
+        try:
+            chunks = [chunk async for chunk in vol.read_file.aio(path)]
+            return json.loads(b"".join(chunks))
+        except FileNotFoundError:
+            await _safe_reload(vol, is_async=True)
+        try:
+            chunks = [chunk async for chunk in vol.read_file.aio(path)]
+            return json.loads(b"".join(chunks))
+        except FileNotFoundError:
+            raise KeyError(key) from None
+
+    def _read() -> dict[str, Any]:
+        try:
+            return json.loads(b"".join(vol.read_file(path)))
+        except FileNotFoundError:
+            _safe_reload(vol)
+        try:
+            return json.loads(b"".join(vol.read_file(path)))
+        except FileNotFoundError:
+            raise KeyError(key) from None
+
     if is_async:
-
-        async def _run() -> dict[str, Any]:
-            try:
-                chunks = [chunk async for chunk in vol.read_file.aio(path)]
-                return json.loads(b"".join(chunks))
-            except FileNotFoundError:
-                await _safe_reload(vol, is_async=True)
-            try:
-                chunks = [chunk async for chunk in vol.read_file.aio(path)]
-                return json.loads(b"".join(chunks))
-            except FileNotFoundError:
-                raise KeyError(key) from None
-
-        return _run()
-    try:
-        return json.loads(b"".join(vol.read_file(path)))
-    except FileNotFoundError:
-        _safe_reload(vol)
-    try:
-        return json.loads(b"".join(vol.read_file(path)))
-    except FileNotFoundError:
-        raise KeyError(key) from None
+        return aretry_transient(_aread)
+    return retry_transient(_read)
 
 
 @overload
@@ -435,6 +427,10 @@ def _is_rate_limit(exc: BaseException) -> bool:
     return "rate limit" in str(exc).lower()
 
 
+def _retriable_list_error(exc: BaseException) -> bool:
+    return isinstance(exc, TRANSIENT_MODAL_ERRORS) or _is_rate_limit(exc)
+
+
 def _metadata_entry(entry: Any) -> dict[str, Any]:
     return {
         "path": entry.path,
@@ -469,7 +465,7 @@ def _list_metadata_entries(
                 except (FileNotFoundError, NotFoundError):
                     return [], None
                 except Error as exc:
-                    if not _is_rate_limit(exc) or attempt == _LIST_ATTEMPTS - 1:
+                    if not _retriable_list_error(exc) or attempt == _LIST_ATTEMPTS - 1:
                         return [], exc
                     await asyncio.sleep(2**attempt)
             raise AssertionError("unreachable")
@@ -487,7 +483,7 @@ def _list_metadata_entries(
         except (FileNotFoundError, NotFoundError):
             return [], None
         except Error as exc:
-            if not _is_rate_limit(exc) or attempt == _LIST_ATTEMPTS - 1:
+            if not _retriable_list_error(exc) or attempt == _LIST_ATTEMPTS - 1:
                 return [], exc
             time.sleep(2**attempt)
     raise AssertionError("unreachable")
@@ -562,7 +558,7 @@ def _read_metadata_records(
             ):
                 return None
             except Error as exc:
-                if not _is_rate_limit(exc) or attempt == _LIST_ATTEMPTS - 1:
+                if not _retriable_list_error(exc) or attempt == _LIST_ATTEMPTS - 1:
                     return exc
                 time.sleep(2**attempt)
 
@@ -674,8 +670,9 @@ def vol_list_prefix(store: MetadataStore | str, prefix: str) -> list[dict[str, A
 
     vol = _metadata_volume()
     _safe_reload(vol)
-    results: list[dict[str, Any]] = []
-    try:
+
+    def _collect() -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
         for entry in vol.iterdir(_store_path(store)):
             if not entry.path.endswith(".json"):
                 continue
@@ -683,9 +680,12 @@ def vol_list_prefix(store: MetadataStore | str, prefix: str) -> list[dict[str, A
             if not name.startswith(prefix):
                 continue
             results.append(json.loads(b"".join(vol.read_file(entry.path))))
-    except (FileNotFoundError, NotFoundError):
         return results
-    return results
+
+    try:
+        return retry_transient(_collect)
+    except (FileNotFoundError, NotFoundError):
+        return []
 
 
 def vol_remove_keys_with_prefix(store: MetadataStore | str, prefix: str) -> int:
@@ -698,7 +698,7 @@ def vol_remove_keys_with_prefix(store: MetadataStore | str, prefix: str) -> int:
     vol = _metadata_volume()
     _safe_reload(vol)
     try:
-        entries = list(vol.iterdir(_store_path(store)))
+        entries = retry_transient(lambda: list(vol.iterdir(_store_path(store))))
     except (FileNotFoundError, NotFoundError):
         return 0
     removed = 0
@@ -723,8 +723,10 @@ def vol_count_items(store: MetadataStore | str) -> int:
     vol = _metadata_volume()
     _safe_reload(vol)
     try:
-        return sum(
-            1 for e in vol.iterdir(_store_path(store)) if e.path.endswith(".json")
+        return retry_transient(
+            lambda: sum(
+                1 for e in vol.iterdir(_store_path(store)) if e.path.endswith(".json")
+            )
         )
     except (FileNotFoundError, NotFoundError):
         return 0

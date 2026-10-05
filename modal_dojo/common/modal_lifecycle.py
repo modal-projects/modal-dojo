@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from modal_dojo.utils.modal_errors import retry_transient
+
 _LIVE_APP_STATES: frozenset[int] | None = None
 
 
@@ -97,6 +99,6 @@ def stop_app(app_id: str) -> None:
                 )
             )
 
-        synchronizer.create_blocking(_stop)()
+        retry_transient(lambda: synchronizer.create_blocking(_stop)())
     except Exception as exc:  # noqa: BLE001 — auto-stop is best-effort
         print(f"WARNING: could not auto-stop app {app_id}: {exc!r}")

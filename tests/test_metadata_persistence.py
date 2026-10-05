@@ -165,6 +165,47 @@ def test_vol_put_retries_exhausted_volume(fake_volume, monkeypatch, is_async):
     assert fake_volume.files[f"{MetadataStore.TRAINING_RUNS.value}/t4.json"]
 
 
+@pytest.mark.parametrize("is_async", [False, True])
+def test_vol_get_retries_transient_errors(fake_volume, monkeypatch, is_async):
+    """A single-read store hit retries transient Modal errors, then lands."""
+    path = f"{MetadataStore.TRAINING_RUNS.value}/t5.json"
+    fake_volume.files[path] = json.dumps({"training_run_id": "t5"}).encode()
+    flaky = 1
+    real_read = fake_volume.read_file._sync_fn
+    real_read_async = fake_volume.read_file.aio
+
+    def _flaky():
+        nonlocal flaky
+        if flaky:
+            flaky -= 1
+            raise ServiceError("unavailable")
+
+    def read_file(key: str):
+        _flaky()
+        return real_read(key)
+
+    async def read_file_async(key: str):
+        _flaky()
+        async for chunk in real_read_async(key):
+            yield chunk
+
+    monkeypatch.setattr(fake_volume.read_file, "_sync_fn", read_file)
+    monkeypatch.setattr(fake_volume.read_file, "aio", read_file_async)
+    got = metadata.vol_get(MetadataStore.TRAINING_RUNS, "t5", is_async=is_async)
+    if is_async:
+        got = asyncio.run(got)
+    assert got["training_run_id"] == "t5"
+
+
+def test_vol_get_exhausts_transient_retries(fake_volume, monkeypatch):
+    def read_file(key: str):
+        raise ServiceError("unavailable")
+
+    monkeypatch.setattr(fake_volume.read_file, "_sync_fn", read_file)
+    with pytest.raises(ServiceError):
+        metadata.vol_get(MetadataStore.TRAINING_RUNS, "t6")
+
+
 @pytest.mark.parametrize("fw", list(Framework))
 def test_train_result_blob_save_survives_unmounted_volume(fake_volume, fw):
     """``save_train_result_blob()`` completes when reload() raises, for every framework."""
