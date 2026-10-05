@@ -1,13 +1,14 @@
+import base64
 from collections.abc import Callable
 from dataclasses import field
 from pathlib import Path
 from typing import ClassVar
+import zlib
 
 from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models import Kimi_K3, ModelConfig
-from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 _PATCH_DIR = (
@@ -41,7 +42,11 @@ _KERNEL_CACHE_ROOT = f"/checkpoints/.kernel-cache/{_DOCKER_IMAGE.split(':')[-1]}
 
 def _image_patches() -> list[str]:
     return [
-        f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
+        "echo "
+        + base64.b64encode(
+            zlib.compress((_PATCH_DIR / f"{name}.py").read_bytes(), level=9)
+        ).decode()
+        + " | base64 -d | python3 -c 'import sys, zlib; exec(zlib.decompress(sys.stdin.buffer.read()))'"
         for name in _PATCHES
     ]
 
