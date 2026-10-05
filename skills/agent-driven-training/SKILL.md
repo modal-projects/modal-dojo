@@ -44,8 +44,7 @@ interventions, and verification for that symptom.
 | 08 | Async or more GPUs do not help | [Async and scaling](references/debug-async.md) |
 
 The references adapt the supplied RL Quick Reference Handbook and incorporate
-repository-specific operational checks. Its missing image assets are replaced
-with text. Published sources and recorded examples provide background, not
+repository-specific operational checks. Published sources and recorded examples provide background, not
 evidence about the current run. Data, infrastructure, and algorithms interact;
 metric patterns suggest hypotheses rather than establishing causes.
 
