@@ -662,9 +662,7 @@ def fastapi_app():
     cache_entries: dict[str, tuple[float, list[JsonDict], float]] = {
         key: (0.0, [], 0.0) for key in cache_keys
     }
-    # Bumped by ``invalidate_cache``. ``refresh_cache`` only installs a fresh
-    # expiry when the generation is unchanged since its load began, so a
-    # refresh racing an invalidation cannot re-pin stale data for another TTL.
+    # A stale refresh can't re-pin data that was invalidated mid-load.
     cache_generations = {key: 0 for key in cache_keys}
 
     TIMING_CACHE_MAX_RUNS = 64
@@ -934,8 +932,6 @@ def fastapi_app():
                 if cache_generations[key] == generation:
                     cache_entries[key] = (now + cache_ttl_seconds, values, loaded_at)
                 return values
-            # An invalidation during the load means the fetched data may
-            # predate it; leave the entry expired so the next read rebuilds.
             if cache_generations[key] == generation:
                 cache_entries[key] = (now + cache_ttl_seconds, values, now)
             return values
@@ -1058,9 +1054,6 @@ def fastapi_app():
             return []
         healed, changed = add_modal_app_urls(items)
         if changed:
-            # Persist only the healed field. Item bodies here can be stale
-            # relative to a concurrent upsert, so writing them back whole
-            # would roll fields like status back to the older snapshot.
             await run_in_threadpool(
                 vol_patch_summary_fields,
                 summary_store,

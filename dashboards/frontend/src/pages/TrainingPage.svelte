@@ -71,8 +71,7 @@
   // The list payload carries only the fields the table renders, so the drawer
   // fetches the run's full record (config and all) when it opens.
   let drawerDetail = $state(null);
-  // Bumped by local updates (e.g. a stop response) so a fetch issued before
-  // them can't overwrite newer data when it resolves.
+  // Stale drawer fetches can't overwrite newer local updates.
   let drawerDetailGen = 0;
   // Set only when the server says the run is gone. The list holds one page, so
   // a run being absent from it means nothing — the drawer renders from the

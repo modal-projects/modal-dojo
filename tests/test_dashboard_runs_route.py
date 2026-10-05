@@ -759,9 +759,7 @@ def test_stop_invalidation_survives_inflight_runs_refresh(
     monkeypatch.setattr(metadata, "vol_get_summary_items_healed", stale_once)
 
     with _client(monkeypatch, tmp_path) as client:
-        # The very first list load blocks in the slow loader; the stop that
-        # lands while it is in flight must not be overwritten by its stale
-        # payload once it resumes.
+        # The stale list payload must not overwrite the stop once it resumes.
         listing = threading.Thread(target=client.get, args=("/api/runs",))
         listing.start()
         assert entered.wait(timeout=30)

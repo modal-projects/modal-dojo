@@ -432,14 +432,10 @@ class TrainingRun(BaseModel):
             raise DojoError(
                 "Run is still launching; retry once its Modal app has started."
             )
-        # A confirmed-dead app needs no stop RPC — the record update below is
-        # enough to reconcile it. Unknown liveness still attempts the stop.
         app_dead = app_live_status(record.modal_app_id) is False
         if not app_dead:
             stop_app(record.modal_app_id)
         finished_at = int(time.time())
-        # If the app is already gone because training finished — a result blob
-        # exists — the stale running record means completed, not stopped.
         completed = app_dead and _train_result_exists(record.training_run_id)
         record.status = (
             TrainingRunStatus.COMPLETED if completed else TrainingRunStatus.STOPPED
@@ -698,9 +694,8 @@ class TrainingRun(BaseModel):
                 except (TypeError, ValueError):
                     return 0
 
-            # A retry legitimately writes RUNNING over a stored STOPPED
-            # record; only same-or-older-attempt writers (which are stale)
-            # have the stored terminal fields forced back onto the payload.
+            # A newer attempt's writes may move a stored STOPPED record back
+            # to RUNNING; same-or-older-attempt writes cannot.
             if (
                 isinstance(stored, dict)
                 and stored.get("status") == TrainingRunStatus.STOPPED.value
