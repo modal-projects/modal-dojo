@@ -458,8 +458,6 @@ def install_wandb_shim() -> None:
         if shim.run is None:
             if shim.finished:
                 return None
-            # Processes that never called init() still have to finish(): resume
-            # the run by name first so trackio never sees an uninitialized finish.
             init()
         result = trackio.finish()
         shim.run = None
