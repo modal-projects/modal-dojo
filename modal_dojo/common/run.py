@@ -459,6 +459,7 @@ class TrainingRun(BaseModel):
         self._reload()
         self.ended_at = record.ended_at
         self.duration_seconds = record.duration_seconds
+        self.completed_at = record.completed_at
         return True
 
     def __enter__(self) -> "TrainingRun":
@@ -711,6 +712,10 @@ class TrainingRun(BaseModel):
                     "completed_at",
                     "duration_seconds",
                     "error_message",
+                    "modal_app_id",
+                    "modal_app_url",
+                    "function_call_id",
+                    "started_at",
                 ):
                     payload[key] = stored.get(key)
                 for key in (
@@ -972,7 +977,7 @@ def _train_result_exists(record: "TrainingRun") -> bool:
     except (TypeError, ValueError):
         run_attempt = 0
     if blob_attempt is None:
-        return run_attempt <= 1
+        return run_attempt <= 0
     try:
         return int(blob_attempt) >= run_attempt
     except (TypeError, ValueError):

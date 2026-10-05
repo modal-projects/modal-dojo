@@ -328,16 +328,19 @@ def test_save_stale_attempt_cannot_overwrite_newer_record(fake_volume):
 
     retry = TrainingRun.from_id("run-1")
     mark_training_attempt_started(retry, started_at=300)
+    retry.modal_app_id = "ap-2"
     retry.save()
 
     stale = _run(TrainingRunStatus.STOPPED)
     stale.ended_at = 400
+    stale.modal_app_id = "ap-1"
     stale.metadata = {"terminal_reason": "stopped_by_user", "attempt_count": 1}
     stale.save()
 
     persisted = TrainingRun.from_id("run-1")
     assert persisted.status is TrainingRunStatus.RUNNING
     assert persisted.ended_at is None
+    assert persisted.modal_app_id == "ap-2"
     assert persisted.metadata["attempt_count"] == 2
     assert "terminal_reason" not in persisted.metadata
 
@@ -346,6 +349,7 @@ def test_save_stale_attempt_cannot_overwrite_newer_record(fake_volume):
     ("run_attempt", "blob_attempt", "expected"),
     [
         (None, None, TrainingRunStatus.COMPLETED),
+        (1, None, TrainingRunStatus.STOPPED),
         (2, 1, TrainingRunStatus.STOPPED),
         (2, 2, TrainingRunStatus.COMPLETED),
     ],
@@ -377,6 +381,7 @@ def test_stop_marks_completed_only_for_current_attempt_result(
     assert persisted.status is expected
     if expected is TrainingRunStatus.COMPLETED:
         assert persisted.completed_at is not None
+        assert run.completed_at == persisted.completed_at
         assert persisted.metadata.get("last_attempt_status") == "completed"
         assert "terminal_reason" not in (persisted.metadata or {})
     else:
