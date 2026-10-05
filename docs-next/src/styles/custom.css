@@ -979,6 +979,7 @@ button.tg-header__nav-link:focus-visible {
   display: block;
   width: 100%;
   height: auto;
+  margin-top: 0;
   border: 1px solid var(--tg-border);
   border-radius: 0.375rem;
   background: var(--tg-panel);
