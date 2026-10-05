@@ -36,7 +36,7 @@ def _image_patches() -> list[str]:
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class Kimi_K3_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
+class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
     """Kimi-K3 rank-32 LoRA recipe for 64k context on 8 B300:8 nodes."""
 
     image_run_commands: list[str] = field(default_factory=_image_patches)
