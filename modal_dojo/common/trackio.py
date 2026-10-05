@@ -461,11 +461,10 @@ def install_wandb_shim() -> None:
             # Processes that never called init() still have to finish(): resume
             # the run by name first so trackio never sees an uninitialized finish.
             init()
-        try:
-            return trackio.finish()
-        finally:
-            shim.run = None
-            shim.finished = True
+        result = trackio.finish()
+        shim.run = None
+        shim.finished = True
+        return result
 
     def save(glob_str: str, *_args: Any, **_kwargs: Any) -> Any:
         return trackio.save(glob_str)
