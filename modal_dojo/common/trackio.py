@@ -21,6 +21,7 @@ from modal_dojo.common.metrics import MetricConfig
 _DEFAULT_TRACKIO_VERSION = "0.34.0"
 _DEFAULT_MODAL_APP_NAME = "modal-dojo-trackio"
 _RUN_NAME_ENV = "MODAL_DOJO_TRACKIO_RUN_NAME"
+_PROJECT_ENV = "MODAL_DOJO_TRACKIO_PROJECT"
 _SHIM_MARKER = "_modal_dojo_trackio_adapter"
 
 
@@ -97,6 +98,7 @@ class TrackioConfig(MetricConfig):
         env = super().runtime_env(run_id=run_id, entity=entity)
         for key, value in (
             (_RUN_NAME_ENV, run_id),
+            (_PROJECT_ENV, self.project),
             ("TRACKIO_SPACE_ID", self.space_id),
             ("TRACKIO_SERVER_URL", self.server_url),
             ("TRACKIO_BUCKET_ID", self.bucket_id),
@@ -386,7 +388,11 @@ def install_wandb_shim() -> None:
     shim.Settings = _Settings
 
     def init(*args: Any, **kwargs: Any) -> _RunProxy:
-        project = kwargs.pop("project", args[0] if args else "") or "modal-dojo"
+        project = (
+            kwargs.pop("project", args[0] if args else "")
+            or os.environ.get(_PROJECT_ENV, "")
+            or "modal-dojo"
+        )
         framework_id = kwargs.pop("id", "")
         framework_name = kwargs.pop("name", "")
         requested_name = (
@@ -446,7 +452,9 @@ def install_wandb_shim() -> None:
 
     def finish(*_args: Any, **_kwargs: Any) -> Any:
         if shim.run is None:
-            return None
+            # Processes that never called init() still have to finish(): resume
+            # the run by name first so trackio never sees an uninitialized finish.
+            init()
         try:
             return trackio.finish()
         finally:
