@@ -133,7 +133,7 @@ def _peak_gib(
         ) / GIB
 
     path = str(get("custom_generate_function_path") or "")
-    mt = path.endswith("multi_turn.generate")
+    mt = path == "miles.rollout.generate_hub.multi_turn.generate"
     prompt = int(get("rollout_max_prompt_len") or 0)
     response = int(get("rollout_max_response_len") or 0)
     ctx = int(get("rollout_max_context_len") or 0)
@@ -191,8 +191,8 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
         return
     knobs = recipe._field_values() | recipe._escape_hatch_values()
     path = str(knobs.get("custom_generate_function_path") or "")
-    single_turn = path.endswith("single_turn.generate")
-    multi_turn_builtin = path.endswith("multi_turn.generate")
+    single_turn = path == "miles.rollout.generate_hub.single_turn.generate"
+    multi_turn_builtin = path == "miles.rollout.generate_hub.multi_turn.generate"
     if (
         path
         and not single_turn
