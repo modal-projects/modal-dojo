@@ -50,3 +50,17 @@ def test_context_config_keeps_base_identity_and_patches(context):
 def test_rejects_other_hardware():
     with pytest.raises(ValueError, match="B300 recipe"):
         build_recipe(gpu_type="H200")
+
+
+def test_two_request_recipe_budgets_cache_and_keeps_synchronous_training():
+    recipe = build_recipe()
+    assert recipe.sglang_server_concurrency == recipe.sglang_max_running_requests == 2
+    assert recipe.sglang_max_mamba_cache_size == 10
+    assert recipe.sglang_max_total_tokens == 3 * 65536
+    assert recipe.sglang_cuda_graph_bs_decode == [1, 2]
+    assert recipe.rollout_num_gpus_per_engine == 16
+    assert recipe.extra_config["sglang_chunked_prefill_size"] == 4096
+    assert not recipe.train_async
+    assert (
+        recipe.gpu_allocation == build_recipe(concurrency_per_engine=1).gpu_allocation
+    )
