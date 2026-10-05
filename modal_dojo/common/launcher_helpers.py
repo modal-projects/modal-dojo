@@ -601,6 +601,7 @@ async def complete_training_run(
         model_config=model,
         metrics=run_record.config["metrics"],
         group_id=group_id or "",
+        attempt_count=int(run_record.metadata.get("attempt_count") or 0),
         **run_record.metadata[CHECKPOINT_LOCATION_METADATA_KEY],
     )
     run_record.app_name = app_name

@@ -436,7 +436,7 @@ class TrainingRun(BaseModel):
         if not app_dead:
             stop_app(record.modal_app_id)
         finished_at = int(time.time())
-        completed = app_dead and _train_result_exists(record.training_run_id)
+        completed = app_dead and _train_result_exists(record)
         record.status = (
             TrainingRunStatus.COMPLETED if completed else TrainingRunStatus.STOPPED
         )
@@ -694,13 +694,14 @@ class TrainingRun(BaseModel):
                 except (TypeError, ValueError):
                     return 0
 
-            # A newer attempt's writes may move a stored STOPPED record back
-            # to RUNNING; same-or-older-attempt writes cannot.
-            if (
-                isinstance(stored, dict)
-                and stored.get("status") == TrainingRunStatus.STOPPED.value
-                and _attempt_count(merged_metadata.get("attempt_count"))
-                <= _attempt_count(stored_metadata.get("attempt_count"))
+            merged_attempt = _attempt_count(merged_metadata.get("attempt_count"))
+            stored_attempt = _attempt_count(stored_metadata.get("attempt_count"))
+            if isinstance(stored, dict) and (
+                merged_attempt < stored_attempt
+                or (
+                    stored.get("status") == TrainingRunStatus.STOPPED.value
+                    and merged_attempt <= stored_attempt
+                )
             ):
                 for key in (
                     "status",
@@ -711,12 +712,17 @@ class TrainingRun(BaseModel):
                 ):
                     payload[key] = stored.get(key)
                 for key in (
+                    "attempt_count",
+                    "attempt_starts",
                     "terminal_reason",
                     "last_attempt_status",
                     "last_attempt_ended_at",
+                    "last_attempt_started_at",
                 ):
                     if key in stored_metadata:
                         merged_metadata[key] = stored_metadata[key]
+                    else:
+                        merged_metadata.pop(key, None)
             payload["metadata"] = merged_metadata
             return payload
 
@@ -953,16 +959,21 @@ def mark_training_attempt_finished(
     run.metadata = metadata
 
 
-def _train_result_exists(training_run_id: str) -> bool:
-    """True when a train result blob was persisted for the run.
-
-    Best-effort: a transient store error falls back to False so it never
-    blocks an explicit stop.
-    """
+def _train_result_exists(record: "TrainingRun") -> bool:
     try:
-        vol_get(MetadataStore.TRAIN_RESULTS, training_run_id)
-        return True
+        blob = vol_get(MetadataStore.TRAIN_RESULTS, record.training_run_id)
     except Exception:
+        return False
+    blob_attempt = blob.get("attempt_count") if isinstance(blob, dict) else None
+    try:
+        run_attempt = int((record.metadata or {}).get("attempt_count") or 0)
+    except (TypeError, ValueError):
+        run_attempt = 0
+    if blob_attempt is None:
+        return run_attempt <= 1
+    try:
+        return int(blob_attempt) >= run_attempt
+    except (TypeError, ValueError):
         return False
 
 

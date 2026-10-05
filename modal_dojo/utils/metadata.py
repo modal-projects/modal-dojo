@@ -20,9 +20,6 @@ T = TypeVar("T")
 METADATA_VOLUME_NAME = "modal-dojo-metadata"
 _READ_CONCURRENCY = 16
 
-# Serializes read-modify-write cycles on summary docs within the process, so a
-# field-scoped patch can't interleave mid-flight with a full-item upsert.
-# Modal volumes have no CAS, so cross-process races remain possible.
 _summary_write_lock = threading.Lock()
 
 
@@ -907,14 +904,7 @@ def vol_patch_summary_fields(
     key: str = SUMMARY_KEY,
     payload_key: str = SUMMARY_ITEMS_KEY,
 ) -> bool:
-    """Update select fields of existing summary items, keyed by ``item_id_key``.
-
-    Each patch is ``{"id": ..., "set": {...}, "match": {...}}``: ``set`` fields
-    are written only when the stored item still equals every ``match`` field,
-    so a patch derived from an older snapshot can't overwrite a newer write —
-    e.g. a retried run's new ``modal_app_id``. Re-reads the doc under the
-    summary write lock. Returns True when the doc changed.
-    """
+    """Update select fields of existing summary items, keyed by ``item_id_key``."""
     by_id = {p.get("id"): p for p in patches if p.get("id") is not None}
     if not by_id:
         return False

@@ -398,3 +398,80 @@ def test_save_lets_retry_overwrite_stopped_status(fake_volume):
     assert persisted.ended_at is None
     assert "terminal_reason" not in persisted.metadata
     assert persisted.metadata["attempt_count"] == 2
+
+
+def test_save_stale_attempt_cannot_overwrite_newer_record(fake_volume):
+    stopped = _run(TrainingRunStatus.STOPPED)
+    stopped.ended_at = 200
+    stopped.metadata = {"terminal_reason": "stopped_by_user", "attempt_count": 1}
+    stopped.save()
+
+    retry = TrainingRun.from_id("run-1")
+    mark_training_attempt_started(retry, started_at=300)
+    retry.save()
+
+    stale = _run(TrainingRunStatus.STOPPED)
+    stale.ended_at = 400
+    stale.metadata = {"terminal_reason": "stopped_by_user", "attempt_count": 1}
+    stale.save()
+
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.RUNNING
+    assert persisted.ended_at is None
+    assert persisted.metadata["attempt_count"] == 2
+    assert "terminal_reason" not in persisted.metadata
+
+
+def test_stop_marks_stopped_when_train_result_is_from_earlier_attempt(
+    monkeypatch, fake_volume
+):
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: False
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app",
+        lambda app_id: pytest.fail("stop_app should not run"),
+    )
+    run = _run(TrainingRunStatus.RUNNING)
+    run.modal_app_id = "ap-1"
+    run.metadata = {"attempt_count": 2}
+    run.save()
+    vol_put(
+        MetadataStore.TRAIN_RESULTS,
+        "run-1",
+        {"training_run_id": "run-1", "attempt_count": 1},
+    )
+
+    assert run.stop() is True
+
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.STOPPED
+    assert persisted.metadata["terminal_reason"] == "stopped_by_user"
+
+
+def test_stop_marks_completed_when_train_result_matches_attempt(
+    monkeypatch, fake_volume
+):
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: False
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app",
+        lambda app_id: pytest.fail("stop_app should not run"),
+    )
+    run = _run(TrainingRunStatus.RUNNING)
+    run.modal_app_id = "ap-1"
+    run.started_at = 100
+    run.metadata = {"attempt_count": 2}
+    run.save()
+    vol_put(
+        MetadataStore.TRAIN_RESULTS,
+        "run-1",
+        {"training_run_id": "run-1", "attempt_count": 2},
+    )
+
+    assert run.stop() is True
+
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.COMPLETED
+    assert persisted.metadata.get("last_attempt_status") == "completed"

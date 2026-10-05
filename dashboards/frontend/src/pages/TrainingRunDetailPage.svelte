@@ -106,9 +106,11 @@
   // 5s poll stops instead of refetching the same 404 for as long as the page
   // stays open.
   let runMissing = $state(false);
+  let runGen = 0;
 
   async function loadRun(id, parentSignal) {
     if (parentSignal.aborted) return;
+    const gen = ++runGen;
     const controller = new AbortController();
     let timedOut = false;
     const abortRequest = () => controller.abort();
@@ -121,7 +123,7 @@
     runLoading = true;
     try {
       const nextRun = await fetchRun(id, { signal: controller.signal });
-      if (parentSignal.aborted) return;
+      if (parentSignal.aborted || gen !== runGen) return;
       if (nextRun === null) {
         run = null;
         runMissing = true;
@@ -1659,7 +1661,10 @@
         <RunStopButton
           {run}
           onStopped={(updated) => {
-            if (updated?.run_id === runId) run = updated;
+            if (updated?.run_id === runId) {
+              runGen++;
+              run = updated;
+            }
           }}
         />
       {/key}

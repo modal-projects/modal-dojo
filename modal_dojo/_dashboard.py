@@ -662,7 +662,6 @@ def fastapi_app():
     cache_entries: dict[str, tuple[float, list[JsonDict], float]] = {
         key: (0.0, [], 0.0) for key in cache_keys
     }
-    # A stale refresh can't re-pin data that was invalidated mid-load.
     cache_generations = {key: 0 for key in cache_keys}
 
     TIMING_CACHE_MAX_RUNS = 64
