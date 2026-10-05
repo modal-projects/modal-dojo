@@ -89,7 +89,7 @@ class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
     )
 
     @model_validator(mode="after")
-    def _keep_image_patches(self) -> "Kimi_K3_Long_Context_Recipe":
+    def _keep_image_patches(self) -> "Kimi_K3_LoRA_Long_Context_Recipe":
         patches = _image_patches()
         current = list(self.image_run_commands or [])
         if current[: len(patches)] != patches:
