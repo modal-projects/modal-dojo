@@ -418,7 +418,8 @@ class TrainingRun(BaseModel):
             reason: Value recorded in the run's ``terminal_reason`` metadata.
 
         Returns:
-            ``True`` if the run was stopped, ``False`` if it had already finished.
+            ``True`` if the run was stopped, ``False`` if it had already
+            finished; a terminal run's lingering app is still reaped, best effort.
 
         Raises:
             DojoError: The run has no Modal app yet.
@@ -427,6 +428,7 @@ class TrainingRun(BaseModel):
 
         record = TrainingRun.from_id(self.training_run_id)
         if record.status is not TrainingRunStatus.RUNNING:
+            record.close()
             return False
         if not record.modal_app_id:
             raise DojoError(

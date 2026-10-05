@@ -240,19 +240,27 @@ def test_stop_stops_app_and_persists_record(monkeypatch, fake_volume):
     assert run.completed_at is None
 
 
-def test_stop_is_noop_for_terminal_run(monkeypatch, fake_volume):
+def test_stop_reaps_lingering_app_for_terminal_run(monkeypatch, fake_volume):
     stopped: list[str] = []
+    reaped: list[str] = []
     monkeypatch.setattr(
         "modal_dojo.common.modal_lifecycle.stop_app",
         stopped.append,
     )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app_best_effort",
+        reaped.append,
+    )
     run = _run(TrainingRunStatus.RUNNING)
     run.modal_app_id = "ap-1"
     run.save()
-    _run(TrainingRunStatus.COMPLETED).save()
+    stored = _run(TrainingRunStatus.COMPLETED)
+    stored.modal_app_id = "ap-1"
+    stored.save()
 
     assert run.stop() is False
     assert stopped == []
+    assert reaped == ["ap-1"]
     assert TrainingRun.from_id("run-1").status is TrainingRunStatus.COMPLETED
 
 
