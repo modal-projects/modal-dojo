@@ -48,6 +48,39 @@ on the AWS B300 nodes. Full-model peak host memory still needs measurement.
 This larger RAM request can constrain scheduling. DP8, QAT and one TP8
 inference engine per node are not part of this configuration.
 
+## Startup and handoff performance
+
+The B300 configuration enables disk-backed Triton autotuning results as well
+as compiled-kernel caching. Active caches are staged onto each node's local
+disk before Ray starts; each node periodically publishes a separate archive
+to the existing checkpoint Volume. Archives are separated by image and GPU
+type. Legacy Triton group manifests are rebased to the stable local paths.
+Cache snapshots are best-effort: failed snapshots never fail training. The
+first run still has to tune previously unseen shapes; local caching is not
+a guarantee of a warm first step. `TRITON_PRINT_AUTOTUNING=1` reports that work.
+
+The image rebuilds the **same** pinned torch-memory-saver revision with an
+opt-in change to retain pinned CPU allocations for SGLang's `weights` tag.
+Every pause still copies fresh bytes, so mutable buffers and updated weights
+remain correct. Trainer tags, adapter buffers without CPU backup, and other
+recipes retain their existing behavior. This trades longer host-memory
+residency for fewer expensive allocation/free operations; retain the 3 TiB
+host limit until a full-model run measures its peak. Set
+`environment={"DOJO_TMS_RETAIN_BACKUP_TAG": ""}` to disable retention.
+
+`DOJO_MEMORY_HANDOFF` log records break release/resume into cache flush,
+static-state export/import, CPU-group barriers, allocator pause/resume, and
+existing CUDA synchronizations. They add no new synchronization. Keep using
+the dashboard's enclosing substeps for end-to-end timing; these nested log
+durations must not be added to the enclosing phase again.
+
+On October 5, a one-B300 1 GiB allocator proof passed three pause/resume
+cycles with changed weights each cycle. Subsequent pauses improved from
+approximately 78 ms to 19 ms and resumes from 31 ms to 19 ms. This isolates
+allocator overhead; full-model speedups and peak host memory remain to be
+validated. No checkpoint layout, precision, pipeline topology, context
+budget, or recomputation change is bundled with this experiment.
+
 The default text generator bounds each request to the remaining context, in
 both training and evaluation. With a 2,048-token prompt, the maximum response
 is 63,487 tokens, reserving the pinned scheduler's one-token boundary margin.
@@ -91,6 +124,9 @@ health checks alongside generation requests.
 ```bash
 # Local configuration check; no GPU allocation:
 uv run -m scripts.validate_kimi_k3_b300
+
+# Isolated allocator proof (one B300, no model loading):
+uv run modal run scripts/validate_kimi_k3_memory.py
 
 # Two near-64k full-model capacity updates (64 B300s):
 uv run -m scripts.validate_kimi_k3_b300 --mode capacity --launch

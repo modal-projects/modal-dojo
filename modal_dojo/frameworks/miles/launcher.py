@@ -935,10 +935,22 @@ def build_miles_app(
                 required=miles.model_name == "kimi_k3",
             )
 
+        from modal_dojo.frameworks.miles.kernel_cache import prepare_kernel_cache
+
+        runtime_environment, kernel_cache = await asyncio.to_thread(
+            prepare_kernel_cache,
+            environment,
+            node_rank=cluster.rank,
+            gpu_type=miles.gpu_type,
+        )
         cluster.start_ray()
 
         if not cluster.is_head:
-            await cluster.wait_forever()
+            try:
+                await cluster.wait_forever()
+            finally:
+                if kernel_cache is not None:
+                    await asyncio.to_thread(kernel_cache.close)
             return
         assert run_record is not None
 
@@ -982,7 +994,7 @@ def build_miles_app(
                     run_id=metric_run_id,
                     entity=metric_entity,
                 ),
-                environment=environment,
+                environment=runtime_environment,
                 substep_timing=miles.substep_timing,
                 extra_env={
                     "MODAL_DOJO_TRAINING_RUN_ID": training_run_id,
@@ -1003,7 +1015,11 @@ def build_miles_app(
             print(f"Runtime environment variables: {sorted(runtime_env['env_vars'])}")
 
             await set_status(MilesStatus.TRAINING)
-            result = await cluster.submit_and_tail(cmd, runtime_env=runtime_env)
+            try:
+                result = await cluster.submit_and_tail(cmd, runtime_env=runtime_env)
+            finally:
+                if kernel_cache is not None:
+                    await asyncio.to_thread(kernel_cache.close)
             shared.check_training_result(result, run_record)
             print(f"Ray job message: {result.message}")
 
