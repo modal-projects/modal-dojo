@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from modal_dojo.common.dataset import HuggingFaceDataset
 from modal_dojo.common.models import Qwen3_4B
 from modal_dojo.common.train import TrainConfig
@@ -60,12 +62,28 @@ def test_evaluate_forces_eval_only_recipe_on_given_dataset(monkeypatch) -> None:
     assert eval_config.dataset is eval_dataset
     assert eval_config.eval_dataset is eval_dataset
 
-    fields = eval_config.recipe._fields(
+    recipe = eval_config.recipe
+    assert recipe.eval_only is True
+    assert recipe.async_mode is False
+    assert recipe.eval_config is None
+    assert recipe.extra_config == {
+        "qkv_format": "bshd",
+        "lr_decay_iters": 1,
+        "lr_warmup_iters": 0,
+    }
+
+    fields = recipe._fields(
         dataset=eval_config.dataset,
         eval_dataset=eval_config.eval_dataset,
     )
     assert fields["num_rollout"] == 0
     assert fields.get("num_epoch") is None
-    assert fields["eval_interval"] == 1
+    assert fields["eval_interval"] == 50
     assert fields["n_samples_per_eval_prompt"] == n_samples
     assert fields["input_key"] == eval_dataset.input_key()
+
+
+def test_eval_only_rejects_sft_loss() -> None:
+    # Pydantic wraps the DojoConfigError in a ValidationError.
+    with pytest.raises(ValueError, match="sft_loss"):
+        SlimeRecipe(eval_only=True, loss_type="sft_loss")

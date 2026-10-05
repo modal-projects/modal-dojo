@@ -151,6 +151,7 @@ def _rollout_payload(
     rollout_extra_metrics: Any,
     rollout_time: Any,
     n_samples_arg: str = "n_samples_per_prompt",
+    reward_key: str | None = None,
 ) -> dict[str, Any] | None:
     if samples is None:
         return None
@@ -171,6 +172,7 @@ def _rollout_payload(
                 image_store=image_store,
                 include_trajectory=(i < trajectory_limit),
                 n_samples_per_prompt=n_per,
+                reward_key=reward_key,
             )
             for i, s in enumerate(samples)
         ]
@@ -257,6 +259,10 @@ def log_eval_rollout_data(
             extra_metrics,
             None,
             n_samples_arg="n_samples_per_eval_prompt",
+            # Mirrors upstream: dict rewards resolve via eval_reward_key, then
+            # reward_key, before the score is extracted.
+            reward_key=_arg_value(args, "eval_reward_key")
+            or _arg_value(args, "reward_key"),
         )
         TrainingRolloutResult.model_validate(payload).save()
     result = _call_hook(

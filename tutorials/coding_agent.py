@@ -52,6 +52,7 @@ def convert(root: Path) -> None:
     from agentic_rl.envs.harbor import convert as harbor
     from agentic_rl.envs.swe_rebench import convert as swerebench
 
+    root.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(root / "tasks", ignore_errors=True)
     rows = []
     for row in load_dataset(
