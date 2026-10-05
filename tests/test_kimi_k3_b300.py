@@ -11,8 +11,15 @@ def test_context_config_keeps_base_identity_and_patches(context):
     base = Kimi_K3_LoRA_Recipe()
     recipe = build_recipe(context_length=context)
     assert type(recipe) is type(base)
-    assert recipe.image_run_commands == base.image_run_commands
-    assert recipe.environment == base.environment
+    assert (
+        recipe.image_run_commands[: len(base.image_run_commands)]
+        == base.image_run_commands
+    )
+    assert recipe.environment == {
+        **base.environment,
+        "DOJO_TMS_RETAIN_BACKUP_TAG": "weights",
+        "DOJO_LOCAL_KERNEL_CACHE": "/tmp/dojo-kernel-cache/dev-202609251434",
+    }
     assert recipe.custom_generate_function is generate_with_context_limit
     assert recipe.ref_load == base.ref_load
     assert recipe.max_tokens_per_gpu * recipe.context_parallel_size == context
@@ -43,3 +50,17 @@ def test_context_config_keeps_base_identity_and_patches(context):
 def test_rejects_other_hardware():
     with pytest.raises(ValueError, match="B300 recipe"):
         build_recipe(gpu_type="H200")
+
+
+def test_two_request_recipe_budgets_cache_and_keeps_synchronous_training():
+    recipe = build_recipe()
+    assert recipe.sglang_server_concurrency == recipe.sglang_max_running_requests == 2
+    assert recipe.sglang_max_mamba_cache_size == 10
+    assert recipe.sglang_max_total_tokens == 3 * 65536
+    assert recipe.sglang_cuda_graph_bs_decode == [1, 2]
+    assert recipe.rollout_num_gpus_per_engine == 16
+    assert recipe.extra_config["sglang_chunked_prefill_size"] == 4096
+    assert not recipe.train_async
+    assert (
+        recipe.gpu_allocation == build_recipe(concurrency_per_engine=1).gpu_allocation
+    )

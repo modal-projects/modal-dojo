@@ -26,8 +26,8 @@ config = TrainConfig(
 | Trainer parallelism | TP4 × PP8 × CP2, DP1, EP8 |
 | Training / inference precision | BF16 rank-32 LoRA / native MXFP4 |
 | Inference engines | Four TP16 engines |
-| Active generation requests | One per engine, four cluster-wide |
-| Token pool per engine | 131,072 tokens |
+| Active generation requests | Two per engine, eight cluster-wide |
+| Token pool per engine | 196,608 tokens |
 | Chunked prefill | 4,096 tokens |
 | Update batch | Two prompts, four completions each |
 | Colocated handoff | Offload the active model before restoring the other |
@@ -48,6 +48,56 @@ on the AWS B300 nodes. Full-model peak host memory still needs measurement.
 This larger RAM request can constrain scheduling. DP8, QAT and one TP8
 inference engine per node are not part of this configuration.
 
+## Startup and handoff performance
+
+The B300 configuration enables disk-backed Triton autotuning results as well
+as compiled-kernel caching. Active caches are staged onto each node's local
+disk before Ray starts; each node periodically publishes a separate archive
+to the existing checkpoint Volume. Archives are separated by image and GPU
+type. Legacy Triton group manifests are rebased to the stable local paths.
+Cache snapshots are best-effort: failed snapshots never fail training. The
+first run still has to tune previously unseen shapes; local caching is not
+a guarantee of a warm first step. `TRITON_PRINT_AUTOTUNING=1` reports that work.
+
+The image rebuilds the **same** pinned torch-memory-saver revision with an
+opt-in change to retain pinned CPU allocations for SGLang's `weights` tag.
+Every pause still copies fresh bytes, so mutable buffers and updated weights
+remain correct. Trainer tags, adapter buffers without CPU backup, and other
+recipes retain their existing behavior. This trades longer host-memory
+residency for fewer expensive allocation/free operations; retain the 3 TiB
+host limit until a full-model run measures its peak. Set
+`environment={"DOJO_TMS_RETAIN_BACKUP_TAG": ""}` to disable retention.
+
+`DOJO_MEMORY_HANDOFF` log records break release/resume into cache flush,
+static-state export/import, CPU-group barriers, allocator pause/resume, and
+existing CUDA synchronizations. They add no new synchronization. Keep using
+the dashboard's enclosing substeps for end-to-end timing; these nested log
+durations must not be added to the enclosing phase again.
+
+On October 5, a one-B300 1 GiB allocator proof passed three pause/resume
+cycles with changed weights each cycle. Subsequent pauses improved from
+approximately 78 ms to 19 ms and resumes from 31 ms to 19 ms. This isolates
+allocator overhead; full-model speedups and peak host memory remain to be
+validated. No checkpoint layout, precision, pipeline topology, context
+budget, or recomputation change is bundled with this experiment.
+
+The B300 image also applies the K3-specific compact Marlin allocation patch:
+the TP16 expert intermediate width is 192, and the kernel supports keeping
+that width instead of padding it to 256. Other shapes retain the original
+128-element alignment. This preserves native MXFP4 and saves 25% of these
+expert weight/scale buffers (approximately 28 GiB per GPU across the full
+model, before other buffers). On October 5, the single-B300 kernel proof
+`ap-L5wfq1LoOr88M9av7hUu75` compared identical padded and compact weights at
+1, 16 and 128 tokens with nonzero LoRA updates. All comparisons passed with
+zero measured relative L2 difference in the final outputs. This does not
+prove full-engine loading, 64k concurrency or an end-to-end speedup.
+
+Generation health checks use the resident policy adapter when the engine has
+one LoRA slot and no CPU adapter backup. Switching to the base policy during
+a check can otherwise evict the only resident adapter. Both successful and
+timed-out checks release their adapter leases so subsequent updates/unloads
+can complete.
+
 The default text generator bounds each request to the remaining context, in
 both training and evaluation. With a 2,048-token prompt, the maximum response
 is 63,487 tokens, reserving the pinned scheduler's one-token boundary margin.
@@ -56,7 +106,8 @@ to the pinned Miles generator. Aborted samples retain their generated prefix;
 resuming does not reset the context budget.
 
 `build_recipe(context_length=131072)` explicitly selects 128k instead, with a
-65,536-token per-GPU packing budget and a 262,144-token inference pool.
+65,536-token per-GPU packing budget. The inference pool reserves one additional
+context window beyond the configured number of concurrent requests.
 The training budget is for packing microbatches, not a separate context limit
 or a memory guarantee.
 At CP2, the default 32,768 tokens per GPU permits approximately one 64k sequence
@@ -64,6 +115,39 @@ per microbatch. A smaller packing budget cannot shrink a single long sequence.
 Full uniform recomputation with `recompute_num_layers=1` already recomputes
 every transformer layer. Increasing that number changes the checkpoint segment
 size; it does not enable recomputation on more layers.
+
+## Inference scaling experiments
+
+Keep the synchronous, 64-GPU colocated baseline until the memory and workload
+proofs pass. Compare four TP16 engines with two active requests each against
+eight TP8 engines with one active request each, holding the eight-trajectory
+batch and simulated-context workload fixed. TP8 is a candidate, not a demonstrated full-model
+fit. Measure peak memory with the adapter, KV/KDA state and graphs loaded, not
+just checkpoint bytes. More episodes can cover sandbox/tool wait time; this
+is separate from the number of simultaneous decoding requests.
+
+Wide expert parallelism is a separate experiment from adding replicas. In the
+pinned SGLang source, K3 has expert all-to-all paths, but the production Marlin
+LoRA runner consumes `StandardDispatchOutput`; switching to DeepEP requires
+compatible dispatch/LoRA kernels and numerical validation. Standard-dispatch
+EP support does not establish DeepEP compatibility. Check expert-local adapter
+slicing, adapter refresh, KDA/MLA attention parallelism and cross-node transport
+before attempting a wide fleet. Keep quantization fixed for this comparison.
+
+An eight-request decode batch produces only 128 expert assignments per MoE
+layer with top-16 routing. At EP64 that is an average of two assignments per
+rank under balanced routing; actual skew and tool waits can reduce utilization.
+Wider EP needs a larger sustained batch to amortize dispatch and small GEMMs.
+Neither more GPUs nor more experts per fleet guarantees lower single-episode
+latency. Compare completed episodes/hour and GPU-seconds/episode in addition
+to generated tokens/second.
+
+A dedicated rollout fleet can still use synchronous updates: roll out with
+adapter version N, train, then synchronize version N+1 before the next batch.
+Keeping the trainer and inference on separate GPUs could remove inference
+offload/restore transitions, but requires an additional GPU budget and testing
+the disaggregated adapter transport. It does not remove the end-of-batch
+straggler barrier. No larger fleet is enabled by this configuration.
 
 ## Agent trajectories
 
@@ -92,8 +176,17 @@ health checks alongside generation requests.
 # Local configuration check; no GPU allocation:
 uv run -m scripts.validate_kimi_k3_b300
 
+# Isolated allocator proof (one B300, no model loading):
+uv run modal run scripts/validate_kimi_k3_memory.py
+
+# Compact MXFP4 + LoRA numerical proof (one B300):
+uv run modal run scripts/validate_kimi_k3_marlin.py
+
+# Pruned-model concurrent 64k generation and adapter refresh (one B300):
+uv run modal run scripts/validate_kimi_k3_throughput.py
+
 # Two near-64k full-model capacity updates (64 B300s):
-uv run -m scripts.validate_kimi_k3_b300 --mode capacity --launch
+uv run -m scripts.validate_kimi_k3_b300 --mode capacity --concurrency-per-engine 2 --launch
 
 # Explicit 128k capacity test:
 uv run -m scripts.validate_kimi_k3_b300 --context-length 131072 --rollouts 2 --launch
@@ -110,6 +203,27 @@ establish 60k-token assistant generation or customer-task performance. Decode mo
 is a separate stress test, and its forced generation length is not a production
 sampling setting. `--mode math` runs ordinary task rollouts with the context
 budget enforced; natural short completions do not validate long sequences.
+
+The throughput probe compares the same two requests sequentially and
+concurrently, after warming both shapes. Each request has 64,512 input tokens
+and 1,022 generated tokens. It also checks nonzero adapter refreshes and health
+checks followed by adapter unload. The single-GPU pruned model uses CuTe DSL
+MLA decode because TRTLLM MLA excludes its 96-head TP1 shape; production TP16
+retains TRTLLM MLA. This probe tests concurrency and adapter mechanics, not
+full-model throughput or memory fit. Set `K3_THROUGHPUT_GPUS=16` for a two-node
+TP16 probe when that capacity is available.
+
+On October 5, probe `ap-0dNeDRiAOraPsuBHJ6RHBD` passed adapter refresh,
+failed-update rollback, concurrent generation, health and adapter-unload checks.
+All measured requests reached 65,534 total tokens with finite logprobs.
+Aggregate generated throughput was 221–224 tokens/s sequentially and
+326–329 tokens/s concurrently (approximately 47% higher). These are pruned
+TP1 results, not a full-model speedup claim. The B300 recipe now defaults to
+two requests per engine; `concurrency_per_engine=1` restores the baseline.
+
+Capacity-run traces separately record generated tokens, masked observation
+tokens, per-generation latency and episode latency. Generated throughput
+excludes observation tokens.
 
 The current base recipe completed the
 [10-step K3 validation](https://modal-labs-helena-dev--training-gym-dashboard-fastapi-app.modal.run/training/legacy-mamba-e18bdc58b9cc)
@@ -150,5 +264,6 @@ Basic-baryon trained eight sequences of 130,973–131,070 tokens with finite
 gradients and saved its checkpoint, then failed during the inference-weight
 restore before its second rollout.
 
-The explicit 128k option, higher concurrency and real agent harnesses require
-their own end-to-end validation. The completed 64k run does not establish them.
+Before claiming validated long-context support, check actual sequence lengths,
+finite gradients, correct rewards and loss masks, peak memory, substep timings,
+checkpoint saves, and a subsequent rollout using the updated adapter.
