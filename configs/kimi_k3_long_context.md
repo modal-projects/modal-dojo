@@ -81,6 +81,17 @@ allocator overhead; full-model speedups and peak host memory remain to be
 validated. No checkpoint layout, precision, pipeline topology, context
 budget, or recomputation change is bundled with this experiment.
 
+The B300 image also applies the K3-specific compact Marlin allocation patch:
+the TP16 expert intermediate width is 192, and the kernel supports keeping
+that width instead of padding it to 256. Other shapes retain the original
+128-element alignment. This preserves native MXFP4 and saves 25% of these
+expert weight/scale buffers (approximately 28 GiB per GPU across the full
+model, before other buffers). On October 5, the single-B300 kernel proof
+`ap-L5wfq1LoOr88M9av7hUu75` compared identical padded and compact weights at
+1, 16 and 128 tokens with nonzero LoRA updates. All comparisons passed with
+zero measured relative L2 difference in the final outputs. This does not
+prove full-engine loading, 64k concurrency or an end-to-end speedup.
+
 The default text generator bounds each request to the remaining context, in
 both training and evaluation. With a 2,048-token prompt, the maximum response
 is 63,487 tokens, reserving the pinned scheduler's one-token boundary margin.
@@ -97,6 +108,39 @@ per microbatch. A smaller packing budget cannot shrink a single long sequence.
 Full uniform recomputation with `recompute_num_layers=1` already recomputes
 every transformer layer. Increasing that number changes the checkpoint segment
 size; it does not enable recomputation on more layers.
+
+## Inference scaling experiments
+
+Keep the synchronous, 64-GPU colocated baseline until the memory and workload
+proofs pass. Compare four TP16 engines with two active requests each against
+eight TP8 engines with one active request each, holding the eight-trajectory
+batch and SWE-bench tasks fixed. TP8 is a candidate, not a demonstrated full-model
+fit. Measure peak memory with the adapter, KV/KDA state and graphs loaded, not
+just checkpoint bytes. More episodes can cover sandbox/tool wait time; this
+is separate from the number of simultaneous decoding requests.
+
+Wide expert parallelism is a separate experiment from adding replicas. In the
+pinned SGLang source, K3 has expert all-to-all paths, but the production Marlin
+LoRA runner consumes `StandardDispatchOutput`; switching to DeepEP requires
+compatible dispatch/LoRA kernels and numerical validation. Standard-dispatch
+EP support does not establish DeepEP compatibility. Check expert-local adapter
+slicing, adapter refresh, KDA/MLA attention parallelism and cross-node transport
+before attempting a wide fleet. Keep quantization fixed for this comparison.
+
+An eight-request decode batch produces only 128 expert assignments per MoE
+layer with top-16 routing. At EP64 that is an average of two assignments per
+rank under balanced routing; actual skew and tool waits can reduce utilization.
+Wider EP needs a larger sustained batch to amortize dispatch and small GEMMs.
+Neither more GPUs nor more experts per fleet guarantees lower single-episode
+latency. Compare completed episodes/hour and GPU-seconds/episode in addition
+to generated tokens/second.
+
+A dedicated rollout fleet can still use synchronous updates: roll out with
+adapter version N, train, then synchronize version N+1 before the next batch.
+Keeping the trainer and inference on separate GPUs could remove inference
+offload/restore transitions, but requires an additional GPU budget and testing
+the disaggregated adapter transport. It does not remove the end-of-batch
+straggler barrier. No larger fleet is enabled by this configuration.
 
 ## Agent trajectories
 
@@ -127,6 +171,9 @@ uv run -m scripts.validate_kimi_k3_b300
 
 # Isolated allocator proof (one B300, no model loading):
 uv run modal run scripts/validate_kimi_k3_memory.py
+
+# Compact MXFP4 + LoRA numerical proof (one B300):
+uv run modal run scripts/validate_kimi_k3_marlin.py
 
 # Two near-64k full-model capacity updates (64 B300s):
 uv run -m scripts.validate_kimi_k3_b300 --mode capacity --launch

@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from modal_dojo.frameworks.miles.modal_helpers.patches import (
+    patch_k3_marlin_padding as padding,
     patch_sglang_offload_timing as timing,
     patch_tms_retain_backup as backup,
 )
@@ -11,7 +12,8 @@ FIXTURES = Path(__file__).parent / "testdata" / "k3"
 
 
 @pytest.mark.parametrize(
-    "patcher, filename", [(timing, "weight_updater.py"), (backup, "tms_core.cpp")]
+    "patcher, filename",
+    [(timing, "weight_updater.py"), (backup, "tms_core.cpp"), (padding, "mxfp4.py")],
 )
 def test_pinned_source_and_idempotence(tmp_path, patcher, filename):
     target = tmp_path / filename
@@ -35,7 +37,7 @@ def test_pinned_source_and_idempotence(tmp_path, patcher, filename):
             "_import_static_state(",
         ):
             assert patched.count(operation) == source.count(operation)
-    else:
+    elif patcher is backup:
         # Retain the allocation only: both transfers must remain unconditional
         # so updated weights and mutable model buffers are never restored stale.
         assert patched.count("CUDA_ERROR_CHECK(cudaMemcpy(") == source.count(
@@ -43,6 +45,11 @@ def test_pinned_source_and_idempotence(tmp_path, patcher, filename):
         )
         assert "metadata.tag != retained_tag" in patched
         assert "std::getenv" in patched
+    else:
+        compile(patched, filename, "exec")
+        # Only the problematic K3 TP16 shape changes. Kernel, checkpoint
+        # layout, quantization and other models retain their existing behavior.
+        assert source.replace(padding.ANCHOR, padding.REPLACEMENT) == patched
 
 
 def test_native_patch_rejects_drift_without_writing(tmp_path):
