@@ -29,6 +29,8 @@ BASE_RECIPES = {"SlimeRecipe", "MilesRecipe"}
 FRAMEWORK_BASES = frozenset({*BASE_RECIPES, "MilesConfig"})
 MODEL_CONFIGS = {name.lower(): getattr(models, name) for name in models.__all__}
 FAMILY_RE = re.compile(r"^([A-Za-z]+(?:\d+(?:\.\d+)*|\d+)?)")
+# Families whose slug prefix does not title-case into the vendor's spelling.
+FAMILY_OVERRIDES = {"gpt-oss": "GPT-OSS"}
 HF_URL = "https://huggingface.co"
 
 
@@ -50,6 +52,9 @@ def model_key(recipe_name: str) -> str:
 
 def family_of(hf_id: str) -> str:
     slug = hf_id.rsplit("/", 1)[-1]
+    for prefix, family in FAMILY_OVERRIDES.items():
+        if slug.lower().startswith(prefix):
+            return family
     match = FAMILY_RE.match(slug)
     family = match.group(1) if match else slug
     return family.title() if family.islower() else family

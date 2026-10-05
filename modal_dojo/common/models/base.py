@@ -66,6 +66,14 @@ class ModelArchitecture:
         mscale: YaRN mscale applied to RoPE.
         mscale_all_dim: YaRN mscale applied across all rotary dimensions.
         no_rope_fusion: Disable fused RoPE kernels.
+        max_position_embeddings: Maximum sequence length the position
+            embeddings cover.
+        softmax_type: Attention softmax variant; ``learnable`` adds GPT-OSS
+            style attention sinks.
+        window_size: Sliding-window attention as Megatron's ``left,right``
+            token counts.
+        window_attn_skip_freq: Use full attention on every Nth layer when
+            sliding windows are enabled.
     """
 
     num_layers: int = 0
@@ -120,6 +128,10 @@ class ModelArchitecture:
     mscale: float | None = None
     mscale_all_dim: float | None = None
     no_rope_fusion: bool = False
+    max_position_embeddings: int = 0
+    softmax_type: str = ""
+    window_size: str = ""
+    window_attn_skip_freq: int = 0
 
 
 @dataclass
@@ -533,6 +545,59 @@ def parse_inkling_response(text: str) -> ParsedResponse:
             content.append(body.strip())
         elif call := _parse_json_tool_block(body.strip()):
             tool_calls.append(call)
+
+    return ParsedResponse(
+        content="\n".join(part for part in content if part),
+        tool_calls=tool_calls,
+        thinking="\n".join(part for part in thinking if part) or None,
+    )
+
+
+_GPT_OSS_CHANNEL_RE = re.compile(
+    r"<\|channel\|>(?P<channel>[a-z]+)(?P<header>(?:[^<]|<\|constrain\|>)*)<\|message\|>"
+    r"(?P<body>.*?)(?=<\|(?:end|return|call|start|channel)\|>|$)",
+    re.DOTALL,
+)
+_GPT_OSS_RECIPIENT_RE = re.compile(r"to=(?:functions\.)?([A-Za-z0-9_.\-]+)")
+# Decoding without special tokens collapses the channel markup to bare words.
+_GPT_OSS_STRIPPED_RE = re.compile(
+    r"^(?:analysis(?P<analysis>.*?))?assistantfinal(?P<final>.*)$", re.DOTALL
+)
+
+
+def parse_gpt_oss_response(text: str) -> ParsedResponse:
+    """Parse GPT-OSS Harmony output into structured content.
+
+    Reasoning is the ``analysis`` channel, the answer the ``final`` channel,
+    and a tool call a ``commentary`` channel addressed ``to=functions.NAME``
+    with a JSON body. Also accepts text decoded without special tokens, where
+    the markup collapses to ``analysis...assistantfinal...``. A response cut
+    off mid-channel still yields that channel.
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    if "<|channel|>" not in text:
+        if match := _GPT_OSS_STRIPPED_RE.match(text.strip()):
+            return ParsedResponse(
+                content=match["final"].strip(),
+                thinking=(match["analysis"] or "").strip() or None,
+            )
+        return ParsedResponse(content=text.strip())
+
+    thinking: list[str] = []
+    content: list[str] = []
+    tool_calls: list[ToolCall] = []
+    for match in _GPT_OSS_CHANNEL_RE.finditer(text):
+        body = match["body"].strip()
+        if recipient := _GPT_OSS_RECIPIENT_RE.search(match["header"]):
+            try:
+                arguments = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                arguments = {"raw": body}
+            tool_calls.append(ToolCall(name=recipient.group(1), arguments=arguments))
+        elif match["channel"] == "analysis":
+            thinking.append(body)
+        elif body:
+            content.append(body)
 
     return ParsedResponse(
         content="\n".join(part for part in content if part),

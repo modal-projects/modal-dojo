@@ -82,6 +82,11 @@ _EXPORTS = {
     "ModelConfig": ("modal_dojo.common.models", "ModelConfig"),
     "Inkling_Small": ("modal_dojo.common.models", "Inkling_Small"),
     "Inkling_Small_LoRA": ("modal_dojo.common.models", "Inkling_Small_LoRA"),
+    "GPT_OSS_120B": ("modal_dojo.common.models", "GPT_OSS_120B"),
+    "GPT_OSS_120B_LoRA_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "GPT_OSS_120B_LoRA_Recipe",
+    ),
     "Inkling_Small_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
         "Inkling_Small_Recipe",
@@ -235,6 +240,8 @@ __all__ = [
     "ModalCaptureError",
     "ModelArchitecture",
     "ModelConfig",
+    "GPT_OSS_120B",
+    "GPT_OSS_120B_LoRA_Recipe",
     "Inkling_Small",
     "Inkling_Small_LoRA",
     "Inkling_Small_Recipe",

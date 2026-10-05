@@ -794,6 +794,18 @@ class SlimeRecipe(BaseTrainRecipe):
                 if arch.rotary_percent != 1.0
                 else {}
             ),
+            **(
+                {"max_position_embeddings": arch.max_position_embeddings}
+                if arch.max_position_embeddings
+                else {}
+            ),
+            **({"softmax_type": arch.softmax_type} if arch.softmax_type else {}),
+            **({"window_size": arch.window_size} if arch.window_size else {}),
+            **(
+                {"window_attn_skip_freq": arch.window_attn_skip_freq}
+                if arch.window_attn_skip_freq
+                else {}
+            ),
         }
 
     def validate_model_parallelism(self, model: "ModelConfig") -> None:

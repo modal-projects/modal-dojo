@@ -217,6 +217,14 @@ def _append_extended_arch_args(extra_args: list[str], arch: Any) -> None:
         extra_args.append("--use-gated-attention")
     if arch.attention_output_gate:
         extra_args.append("--attention-output-gate")
+    if arch.max_position_embeddings:
+        extra_args.append(f"--max-position-embeddings {arch.max_position_embeddings}")
+    if arch.softmax_type:
+        extra_args.append(f"--softmax-type {arch.softmax_type}")
+    if arch.window_size:
+        extra_args.append(f"--window-size {arch.window_size}")
+    if arch.window_attn_skip_freq:
+        extra_args.append(f"--window-attn-skip-freq {arch.window_attn_skip_freq}")
 
 
 def get_checkpoint_conversion_policy(

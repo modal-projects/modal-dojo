@@ -815,6 +815,10 @@ class MilesRecipe(BaseTrainRecipe):
             "rotary_percent": arch.rotary_percent
             if arch.rotary_percent != 1.0
             else None,
+            "max_position_embeddings": arch.max_position_embeddings,
+            "softmax_type": arch.softmax_type,
+            "window_size": arch.window_size,
+            "window_attn_skip_freq": arch.window_attn_skip_freq,
         }
         fields.update({k: v for k, v in optional.items() if v not in (None, "", 0)})
         for key in ("moe_aux_loss_coeff", "moe_router_bias_update_rate"):
@@ -909,6 +913,9 @@ class MilesRecipe(BaseTrainRecipe):
         from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash_lora import (
             GLM_5_3_Flash_LoRA_Recipe,
         )
+        from modal_dojo.train_recipes.miles_recipe.gpt_oss_120b import (
+            GPT_OSS_120B_LoRA_Recipe,
+        )
         from modal_dojo.common.models.inkling_small import Inkling_Small_LoRA
         from modal_dojo.train_recipes.miles_recipe.inkling import (
             Inkling_Small_LoRA_Recipe,
@@ -932,6 +939,8 @@ class MilesRecipe(BaseTrainRecipe):
             return Moonlight_16B_A3B_Recipe()
         if model_config.model_name == "deepseek-ai/DeepSeek-V4.1-Flash":
             return DeepSeek_V4_1_Flash_Recipe()
+        if model_config.model_name == "openai/gpt-oss-120b":
+            return GPT_OSS_120B_LoRA_Recipe()
         if model_config.model_name == "google/gemma-4-26B-A4B-it":
             return Gemma4_26B_A4B_Recipe()
         if model_config.model_name == "moonshotai/Kimi-K3":
