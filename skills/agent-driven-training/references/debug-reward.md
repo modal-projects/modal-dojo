@@ -3,6 +3,11 @@
 Use this reference when reward is flat, declining, saturated, unexpectedly
 volatile, or improving suspiciously fast.
 
+For training reward improving without evaluation gains, follow the
+[train–eval investigation](../../rl-debugging/references/train-eval-gap.md).
+Compare the underlying datasets, responses, and scoring paths before inferring
+overfitting or changing the reward or recipe.
+
 ## Characterize the trajectory
 
 ```bash

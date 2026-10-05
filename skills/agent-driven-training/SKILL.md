@@ -87,6 +87,11 @@ test.
 - Slow or unstable steps: read
   [debug-systems.md](references/debug-systems.md).
 
+For RL diagnosis, including training reward improving without held-out gains,
+entropy collapse, log-probability mismatch, or ineffective updates, also read
+[rl-debugging](../rl-debugging/SKILL.md). It provides the handbook and a detailed
+comparison of training/evaluation datasets, responses, and scoring paths.
+
 Change one setting at a time and repeat the smoke test with a fresh run ID.
 
 ## 4. Promote
