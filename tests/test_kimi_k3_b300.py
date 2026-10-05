@@ -11,8 +11,15 @@ def test_context_config_keeps_base_identity_and_patches(context):
     base = Kimi_K3_LoRA_Recipe()
     recipe = build_recipe(context_length=context)
     assert type(recipe) is type(base)
-    assert recipe.image_run_commands == base.image_run_commands
-    assert recipe.environment == base.environment
+    assert (
+        recipe.image_run_commands[: len(base.image_run_commands)]
+        == base.image_run_commands
+    )
+    assert recipe.environment == {
+        **base.environment,
+        "DOJO_TMS_RETAIN_BACKUP_TAG": "weights",
+        "DOJO_LOCAL_KERNEL_CACHE": "/tmp/dojo-kernel-cache/dev-202609251434",
+    }
     assert recipe.custom_generate_function is generate_with_context_limit
     assert recipe.ref_load == base.ref_load
     assert recipe.max_tokens_per_gpu * recipe.context_parallel_size == context

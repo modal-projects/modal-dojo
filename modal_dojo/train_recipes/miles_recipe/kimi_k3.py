@@ -25,6 +25,7 @@ _PATCHES = (
     "patch_ipc_bucket_empty_cache",
     "patch_checkpoint_local_dirs",
     "patch_lora_initial_offload",
+    "patch_sglang_offload_timing",
 )
 
 # Includes K3 support in Miles, Megatron, and SGLang.
@@ -79,6 +80,10 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
             # Dequantize on read to avoid an intermediate BF16 HF checkpoint.
             "CONVERT_DEQUANT_MXFP4": "1",
             "TRITON_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/triton",
+            # Compiled binaries alone do not cache autotuner decisions. Without
+            # this, each process re-benchmarks kernel candidates on first use.
+            "TRITON_CACHE_AUTOTUNING": "1",
+            "TRITON_PRINT_AUTOTUNING": "1",
             "TORCHINDUCTOR_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/torchinductor",
             "TILELANG_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/tilelang",
             "SGLANG_CACHE_DIR": f"{_KERNEL_CACHE_ROOT}/sglang",
