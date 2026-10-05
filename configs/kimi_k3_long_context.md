@@ -140,6 +140,21 @@ Performance optimization remains separate from this capacity result. Observed
 host usage reached approximately 1,898 GiB/node, but this was not a measured
 high-water mark; retain the configured headroom.
 
+An audit of the complete captured app log found no fatal CUDA/NCCL errors,
+OOMs or nonfinite training metrics. It did find four caught startup
+`/freeze_gc` connection-refused exceptions: the optional GC-freeze request raced
+HTTP readiness when server warmup was skipped. Generation health checks then
+returned 503 during first-request initialization; all four engines recovered,
+with roughly seven minutes from their ready messages to successful checks.
+These are startup/performance issues, not a failed training cycle.
+
+The first training pass also warned about lazy creation of two-rank NCCL
+communicators and mismatched AccumulateGrad streams, which can add
+synchronization. The log alone does not attribute the long first pass to any
+one cause. The FlashInfer FA2 warning originates in the prefill wrapper; the
+logged decode backend is TRTLLM MLA. Follow-up optimization work should address
+these warnings without treating them as evidence of corrupted training.
+
 Earlier checks on the same pinned runtime verified argument parsing, token
 alignment, masked observations, and a 130,048-token prefill on a four-layer
 model. Those checks do not establish full-model training capacity. Historical
