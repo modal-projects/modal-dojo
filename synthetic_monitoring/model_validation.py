@@ -20,7 +20,6 @@ from pathlib import Path
 import modal
 
 from modal_dojo.common.models.validation import _ValidationConfig
-from modal_dojo.common.modal_lifecycle import stop_app_best_effort
 from modal_dojo.common.run import TrainingRun, TrainingRunStatus
 from scripts.validate_model_configs import ValidationResult, run_base_training
 from synthetic_monitoring.chart import RunPoint, render_timing_history_chart
@@ -284,7 +283,7 @@ def monitor(model: str = "", num_steps: int = 1) -> dict:
             error = _format_error(exc, QUICKSTART_NAME)
             print(f"error: probe failed for {QUICKSTART_NAME}: {error}")
             if run is not None:
-                stop_app_best_effort(run.modal_app_id)
+                run.close()
             url = _lookup_app_url(run.training_run_id) if run else None
             point = RunPoint(
                 ts=time.time(),
