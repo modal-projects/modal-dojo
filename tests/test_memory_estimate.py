@@ -267,7 +267,7 @@ def test_unknown_custom_path_warns() -> None:
     assert any("lower bound" in str(w.message) for w in caught)
 
 
-def test_asr_preset_does_not_warn() -> None:
+def test_asr_preset_warns() -> None:
     from modal_dojo.common.models.qwen3_asr_1_7b import Qwen3_ASR_1_7B
     from modal_dojo.train_recipes.slime_recipe.qwen3_asr_1_7b import (
         Qwen3_ASR_1_7B_Recipe,
@@ -278,4 +278,4 @@ def test_asr_preset_does_not_warn() -> None:
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         maybe_warn_gpu_oom(recipe, Qwen3_ASR_1_7B())
-    assert not [w for w in caught if "lower bound" in str(w.message)]
+    assert any("lower bound" in str(w.message) for w in caught)
