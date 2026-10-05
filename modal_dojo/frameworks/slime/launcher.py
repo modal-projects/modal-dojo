@@ -904,7 +904,9 @@ def build_slime_app(
 
             await set_status(SlimeStatus.ROLLOUT_INITIALIZING)
             await run_cluster_preflight(
-                cluster, gpus_per_node=slime.actor_num_gpus_per_node
+                cluster,
+                slime.gpu_allocation,
+                env=runtime_env.get("env_vars", {}),
             )
             async with cluster.forward_dashboard() as tunnel:
                 print(f"Ray dashboard: {tunnel.url}")

@@ -1005,7 +1005,9 @@ def build_miles_app(
 
             await set_status(MilesStatus.TRAINING)
             await run_cluster_preflight(
-                cluster, gpus_per_node=miles.actor_num_gpus_per_node
+                cluster,
+                miles.gpu_allocation,
+                env=runtime_env.get("env_vars", {}),
             )
             result = await cluster.submit_and_tail(cmd, runtime_env=runtime_env)
             shared.check_training_result(result, run_record)

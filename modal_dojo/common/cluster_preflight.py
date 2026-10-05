@@ -1,18 +1,21 @@
 """NCCL gang preflight run between cluster bring-up and framework start.
 
-A cheap all_gather + all_to_all smoke test across every gang GPU, submitted
-as a short Ray job before the framework driver. A dead rank or stalled link
-shows up here in ~seconds with the offending ranks named, instead of as a
-600s collective watchdog timeout deep into a training run.
+A cheap all_gather + all_to_all smoke test across every allocated GPU,
+submitted as a short Ray job before the framework driver. A dead rank or
+stalled link shows up here in ~seconds with the offending ranks named,
+instead of as a 600s collective watchdog timeout deep into a training run.
 """
 
 import shlex
+from typing import TYPE_CHECKING
 
 from .ray_cluster import ModalRayCluster
 
+if TYPE_CHECKING:
+    from ..train_recipes.gpu_allocation import GpuAllocation
+
 _SMOKE_SRC = """\
 import os
-import socket
 import sys
 from datetime import timedelta
 
@@ -28,8 +31,8 @@ ray.init(address="auto")
 
 @ray.remote(num_gpus=1)
 class _Probe:
-    def run(self, rank, master_addr):
-        os.environ["MASTER_ADDR"] = master_addr
+    def run(self, rank):
+        os.environ["MASTER_ADDR"] = os.environ["PREFLIGHT_MASTER_ADDR"]
         os.environ["MASTER_PORT"] = "29501"
         dist.init_process_group(
             "nccl",
@@ -37,7 +40,7 @@ class _Probe:
             world_size=world,
             timeout=timedelta(seconds=timeout_s),
         )
-        t = torch.ones(1, device="cuda")
+        t = torch.ones(world, device="cuda")
         dist.all_gather([torch.empty_like(t) for _ in range(world)], t)
         dist.all_to_all_single(t, t)
         dist.barrier()
@@ -45,9 +48,8 @@ class _Probe:
 
 
 probes = [_Probe.remote() for _ in range(world)]
-master_addr = socket.gethostbyname(socket.gethostname())
 refs = {
-    probe.run.remote(rank, master_addr): rank
+    probe.run.remote(rank): rank
     for rank, probe in enumerate(probes)
 }
 done, pending = ray.wait(
@@ -63,9 +65,8 @@ for ref in done:
 
 stalled = sorted(refs[ref] for ref in pending)
 if failures or stalled:
-    if failures:
-        for rank, err in sorted(failures.items()):
-            print(f"preflight rank {rank} failed: {err}")
+    for rank, err in sorted(failures.items()):
+        print(f"preflight rank {rank} failed: {err}")
     if stalled:
         print(f"preflight ranks stalled: {stalled}")
     sys.exit(1)
@@ -76,16 +77,26 @@ print(f"NCCL preflight OK: all_gather + all_to_all across {world} ranks")
 
 async def run_cluster_preflight(
     cluster: ModalRayCluster,
+    allocation: "GpuAllocation",
     *,
-    gpus_per_node: int,
+    env: dict[str, str] | None = None,
     timeout_s: float = 120.0,
 ) -> None:
     """Smoke-test NCCL collectives across the gang before training starts.
 
     Skips single-GPU clusters. Raises ``RuntimeError`` naming any stalled or
     failed ranks when the smoke test does not succeed.
+
+    Args:
+        cluster: Started gang cluster (head node only).
+        allocation: Resolved ``GpuAllocation``; every allocated GPU gets a
+            probe so disaggregated rollout/critic GPUs are covered too.
+        env: Extra environment (e.g. the recipe's training env vars) applied
+            to the probes so the smoke test exercises the same NCCL
+            configuration as training.
+        timeout_s: Budget for probe init, collectives, and the driver wait.
     """
-    world = cluster.n_nodes * gpus_per_node
+    world = allocation.total_gpus
     if world <= 1:
         return
 
@@ -97,6 +108,8 @@ async def run_cluster_preflight(
             "env_vars": {
                 "PREFLIGHT_WORLD": str(world),
                 "PREFLIGHT_TIMEOUT_S": str(timeout_s),
+                "PREFLIGHT_MASTER_ADDR": cluster.head_addr,
+                **(env or {}),
             }
         },
     )
