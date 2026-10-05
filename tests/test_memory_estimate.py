@@ -161,7 +161,6 @@ def test_max_seq_len_capped_multi_turn_does_not_warn() -> None:
 
 
 def test_context_len_alone_does_not_cap_agentic() -> None:
-    # rollout_max_context_len bounds each request, not the assembled session.
     model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
     recipe.extra_config = {
         "custom_generate_function_path": "miles.rollout.generate_hub.agentic_tool_call.generate",
@@ -210,7 +209,7 @@ def test_max_seq_len_ignored_for_single_turn() -> None:
         "micro_batch_size": 1,
         "rollout_max_prompt_len": 512,
         "rollout_max_response_len": 128,
-        "max_seq_len": 16,  # smaller than prompt+response; not enforced
+        "max_seq_len": 16,
         "recompute_granularity": "full",
     }
     peak, raised = _peak_gib(_QWEN3_5_4B, knobs, 80.0)
@@ -219,7 +218,6 @@ def test_max_seq_len_ignored_for_single_turn() -> None:
 
 
 def test_multi_turn_path_warns_despite_max_seq_len() -> None:
-    # miles multi_turn bounds each request, not the assembled session.
     model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
     recipe.extra_config = {
         "custom_generate_function_path": "miles.rollout.generate_hub.multi_turn.generate",

@@ -132,11 +132,6 @@ def _peak_gib(
             (dense_p + expert_p) * 6 + dense_p * opt / d_div + expert_p * opt / e_div
         ) / GIB
 
-    # Largest bound the config provides. max_seq_len caps a session sample for
-    # custom generators that consume it; the miles multi_turn builtin assembles
-    # one sample from up to generate_max_turns requests each bounded by
-    # rollout_max_context_len; single-turn samples are bounded by
-    # rollout_max_context_len or prompt + response.
     path = str(get("custom_generate_function_path") or "")
     mt = path.endswith("multi_turn.generate")
     prompt = int(get("rollout_max_prompt_len") or 0)
@@ -195,10 +190,6 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     if hasattr(recipe, "train_backend") and recipe.train_backend != "megatron":
         return
     knobs = recipe._field_values() | recipe._escape_hatch_values()
-    # A custom generate function can produce a sample of arbitrary length
-    # (e.g. a multi-turn session or an untruncated transcript), so prompt +
-    # response underestimates it. Warn on any custom path except the bounded
-    # single_turn builtin and runs that set max_seq_len as a session cap.
     path = str(knobs.get("custom_generate_function_path") or "")
     single_turn = path.endswith("single_turn.generate")
     multi_turn_builtin = path.endswith("multi_turn.generate")
