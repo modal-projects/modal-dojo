@@ -231,6 +231,22 @@ def test_multi_turn_path_warns_despite_max_seq_len() -> None:
     assert any("lower bound" in str(w.message) for w in caught)
 
 
+def test_multi_turn_cap_scales_with_turns() -> None:
+    knobs = {
+        "actor_num_nodes": 1,
+        "actor_num_gpus_per_node": 1,
+        "use_dynamic_batch_size": False,
+        "micro_batch_size": 1,
+        "rollout_max_context_len": 512,
+        "generate_max_turns": 8,
+        "recompute_granularity": "full",
+        "custom_generate_function_path": "miles.rollout.generate_hub.multi_turn.generate",
+    }
+    with_turns, _ = _peak_gib(_QWEN3_5_4B, knobs, 80.0)
+    one_turn, _ = _peak_gib(_QWEN3_5_4B, {**knobs, "generate_max_turns": 1}, 80.0)
+    assert with_turns > one_turn
+
+
 def test_single_turn_generate_path_does_not_warn() -> None:
     model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
     recipe.extra_config = {

@@ -139,13 +139,19 @@ def _peak_gib(
     agentic = "agentic" in path
     cap_name = "max_seq_len" if agentic else "rollout_max_context_len"
     cap = int(get(cap_name) or 0)
+    if cap and "multi_turn" in path:
+        # Per-request bound; the session can fill it once per turn.
+        cap *= int(get("generate_max_turns") or 1)
     prompt = get("rollout_max_prompt_len")
     response = get("rollout_max_response_len")
     sample = cap or (int(prompt or 0) + int(response or 0))
 
     def raise_sample_len() -> None:
         if cap:
-            raise_(cap_name, cap)
+            raise_(cap_name, get(cap_name))
+            raise_(
+                "generate_max_turns", get("generate_max_turns"), "multi_turn" in path
+            )
         else:
             raise_("rollout_max_prompt_len", prompt, bool(prompt))
             raise_("rollout_max_response_len", response, bool(response))
