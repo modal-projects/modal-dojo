@@ -13,6 +13,12 @@ import re
 
 _MAX_LINES = 4
 _MAX_CHARS = 2000
+# Bounded lookahead for an in-progress traceback block. Tracebacks longer than
+# this commit their header line only.
+_MAX_TRACEBACK_LINES = 400
+# Foreign log lines tolerated between a "During handling" chain marker and the
+# chained traceback that follows it (other ranks' output interleaves freely).
+_MAX_INTERLEAVE = 8
 
 _TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\)")
 # The exception line closing a traceback block, e.g. "torch.OutOfMemoryError:
@@ -33,7 +39,9 @@ _SIGNATURE_RES = [
         r"ModuleNotFoundError|ImportError|DeserializationError|RayActorError|"
         r"ActorDiedError|WorkerCrashedError)\b"
     ),
-    re.compile(r"exited? with (?:exit )?code \d+|received SIG(?:KILL|TERM|SEGV)"),
+    re.compile(
+        r"exited? with (?:exit )?code (?!0\b)\d+|received SIG(?:KILL|TERM|SEGV)"
+    ),
 ]
 
 
@@ -50,6 +58,7 @@ def _traceback_excerpt(lines: list[str], start: int) -> tuple[str | None, int]:
     exception_line: str | None = None
     expect_chain = False
     in_block = True
+    interleave = 0
     end = start + 1
     for end in range(start + 1, len(lines)):
         line = lines[end]
@@ -73,48 +82,97 @@ def _traceback_excerpt(lines: list[str], start: int) -> tuple[str | None, int]:
         if stripped.startswith(("During handling", "The above exception")):
             expect_chain = True
             continue
-        if expect_chain and _TRACEBACK_RE.search(stripped):
-            expect_chain = False
-            in_block = True
-            continue
+        if expect_chain:
+            if _TRACEBACK_RE.search(stripped):
+                expect_chain = False
+                in_block = True
+                interleave = 0
+                continue
+            # Another rank's line interleaved between the chain marker and the
+            # chained traceback; tolerate a few before giving up on the chain.
+            if interleave < _MAX_INTERLEAVE:
+                interleave += 1
+                continue
         break
     else:
         end = len(lines)
     return exception_line, end
 
 
+class FailureExcerpt:
+    """Collects the first fatal signatures from a streamed log, line by line.
+
+    Memory is bounded: it keeps only the collected excerpt lines plus one
+    in-progress traceback block (needed to reach its exception line), so a
+    failure early in an arbitrarily long log is still attributed. Feed each
+    line via :meth:`feed`; call :meth:`result` when the stream ends.
+    """
+
+    def __init__(self) -> None:
+        self._excerpt: list[str] = []
+        self._pending: list[str] | None = None  # in-progress traceback block
+        self._done = False
+
+    def feed(self, line: str) -> None:
+        if self._done:
+            return
+        if self._pending is not None:
+            self._pending.append(line)
+            if len(self._pending) > _MAX_TRACEBACK_LINES:
+                overflow = self._pending[-1]
+                self._commit(self._pending[0].strip())
+                self._pending = None
+                self.feed(overflow)
+                return
+            excerpt, end = _traceback_excerpt(self._pending, 0)
+            if end == len(self._pending):
+                # Block still open.
+                return
+            block, self._pending = self._pending, None
+            self._commit(excerpt or block[0].strip())
+            # Lines buffered past the block's end may carry signatures.
+            for extra in block[end:]:
+                self.feed(extra)
+            return
+        stripped = line.strip()
+        if _TRACEBACK_RE.search(stripped):
+            self._pending = [line]
+            return
+        for pattern in _SIGNATURE_RES:
+            if pattern.search(stripped):
+                self._commit(stripped)
+                return
+
+    def _commit(self, text: str) -> None:
+        if self._excerpt and self._excerpt[-1] == text:
+            return
+        self._excerpt.append(text)
+        if len(self._excerpt) >= _MAX_LINES:
+            self._done = True
+
+    def result(self) -> str | None:
+        if self._pending is not None:
+            excerpt, _ = _traceback_excerpt(self._pending, 0)
+            self._commit(excerpt or self._pending[0].strip())
+            self._pending = None
+        if not self._excerpt:
+            return None
+        text = "\n".join(self._excerpt)
+        if len(text) > _MAX_CHARS:
+            text = text[:_MAX_CHARS] + "..."
+        return text
+
+
 def extract_failure_excerpt(lines: list[str]) -> str | None:
     """Return a compact excerpt naming the first fatal event in ``lines``.
 
     Prefers the exception line of the first Python traceback in the stream;
-    falls back to the earliest line matching a fatal signature (NCCL watchdog
+    falls back to the earliest lines matching a fatal signature (NCCL watchdog
     timeouts, OOMs, actor deaths, non-zero rank exits). Returns ``None`` when
     nothing in the stream looks like a failure — callers should keep their
     existing message in that case.
     """
-    excerpt: list[str] = []
-    skip_until = -1
-    for i, line in enumerate(lines):
-        if i < skip_until:
-            continue
-        stripped = line.strip()
-        matched: str | None = None
-        if _TRACEBACK_RE.search(stripped):
-            matched, skip_until = _traceback_excerpt(lines, i)
-            if matched is None:
-                matched = stripped
-        else:
-            for pattern in _SIGNATURE_RES:
-                if pattern.search(stripped):
-                    matched = stripped
-                    break
-        if matched is not None and (not excerpt or matched != excerpt[-1]):
-            excerpt.append(matched)
-            if len(excerpt) >= _MAX_LINES:
-                break
-    if not excerpt:
-        return None
-    text = "\n".join(excerpt)
-    if len(text) > _MAX_CHARS:
-        text = text[:_MAX_CHARS] + "..."
-    return text
+    collector = FailureExcerpt()
+    for line in lines:
+        collector.feed(line)
+    return collector.result()

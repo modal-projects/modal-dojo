@@ -13,13 +13,12 @@ import inspect
 import os
 import subprocess
 import time
-from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from modal.experimental import clustered
 
-from modal_dojo.common.failure_extract import extract_failure_excerpt
+from modal_dojo.common.failure_extract import FailureExcerpt
 from modal_dojo.train_recipes.gpu_allocation import _normalize_gpu_type
 
 RAY_PORT = 6379
@@ -337,7 +336,9 @@ class ModalRayCluster:
         # Bounded tail of every streamed line, kept for failure attribution on
         # a non-success result — the first fatal signature is usually a worker
         # traceback that precedes Ray's generic driver error.
-        log_tail: deque[str] = deque(maxlen=4000)
+        # Streamed per-line so a failure early in a long log is still
+        # attributed; the collector's memory is bounded.
+        failure_excerpt = FailureExcerpt()
         retry_count = 0
 
         async def _poll_status() -> str | None:
@@ -357,13 +358,15 @@ class ModalRayCluster:
                 if inspect.isawaitable(log_stream):
                     log_stream = await log_stream
                 if hasattr(log_stream, "__aiter__"):
-                    async for line in log_stream:
-                        log_tail.append(line)
-                        print(line, end="", flush=True)
+                    async for chunk in log_stream:
+                        for line in chunk.splitlines():
+                            failure_excerpt.feed(line)
+                        print(chunk, end="", flush=True)
                 else:
-                    for line in log_stream:
-                        log_tail.append(line)
-                        print(line, end="", flush=True)
+                    for chunk in log_stream:
+                        for line in chunk.splitlines():
+                            failure_excerpt.feed(line)
+                        print(chunk, end="", flush=True)
 
             tail_task = asyncio.create_task(_tail_logs())
             try:
@@ -415,7 +418,7 @@ class ModalRayCluster:
                 pass
             suffix = f": {message}" if message else ""
             print(f"Ray job {job_id} finished with status: {status}{suffix}")
-            error_excerpt = extract_failure_excerpt(list(log_tail))
+            error_excerpt = failure_excerpt.result()
             if error_excerpt:
                 print(f"First fatal log signature:\n{error_excerpt}")
             return ModalRayJobResult(
