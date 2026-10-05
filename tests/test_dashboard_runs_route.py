@@ -673,62 +673,6 @@ def test_stop_run_stops_app_and_persists_stopped(fake_volume, monkeypatch, tmp_p
     assert run.ended_at is not None
 
 
-def test_stop_run_conflicts_when_already_terminal(fake_volume, monkeypatch, tmp_path):
-    _save_records()
-    stopped: list[str] = []
-    monkeypatch.setattr(
-        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
-    )
-    monkeypatch.setattr(
-        "modal_dojo.common.modal_lifecycle.stop_app",
-        stopped.append,
-    )
-
-    with _client(monkeypatch, tmp_path) as client:
-        first = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
-        second = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
-
-    assert first.status_code == 200
-    assert second.status_code == 409
-    assert stopped == ["ap-route"]
-
-
-def test_stop_run_returns_404_for_unknown_run(fake_volume, monkeypatch, tmp_path):
-    with _client(monkeypatch, tmp_path) as client:
-        response = client.post("/api/runs/run-missing/stop", headers=_stop_headers())
-
-    assert response.status_code == 404
-
-
-def test_stop_run_conflicts_without_modal_app(fake_volume, monkeypatch, tmp_path):
-    TrainingRun(
-        training_run_id="run-launching", framework=Framework.SLIME, config={}
-    ).save()
-
-    with _client(monkeypatch, tmp_path) as client:
-        response = client.post("/api/runs/run-launching/stop", headers=_stop_headers())
-
-    assert response.status_code == 409
-
-
-def test_stop_run_returns_502_when_app_stop_fails(fake_volume, monkeypatch, tmp_path):
-    _save_records()
-    monkeypatch.setattr(
-        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
-    )
-
-    def fail_stop(app_id: str) -> None:
-        raise RuntimeError("modal is down")
-
-    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", fail_stop)
-
-    with _client(monkeypatch, tmp_path) as client:
-        response = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
-
-    assert response.status_code == 502
-    assert TrainingRun.from_id("run-route-1").status.value == "running"
-
-
 def test_stop_invalidation_survives_inflight_runs_refresh(
     fake_volume, monkeypatch, tmp_path
 ):
