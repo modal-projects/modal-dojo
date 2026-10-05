@@ -38,8 +38,8 @@ modal-dojo setup
     <a href="https://modal-cdn.com/cdnbot/substep1_a17bacdc.webm">Watch the Modal Dojo dashboard substep view.</a>
   </video>
   <video autoplay muted loop playsinline width="100%">
-    <source src="https://modal-cdn.com/cdnbot/rollout1_660ef89c.webm" type="video/webm">
-    <a href="https://modal-cdn.com/cdnbot/rollout1_660ef89c.webm">Watch the Modal Dojo dashboard rollout view.</a>
+    <source src="https://modal-cdn.com/cdnbot/rollout1_15a56ce1.webm" type="video/webm">
+    <a href="https://modal-cdn.com/cdnbot/rollout1_15a56ce1.webm">Watch the Modal Dojo dashboard rollout view.</a>
   </video>
 </div>
 
