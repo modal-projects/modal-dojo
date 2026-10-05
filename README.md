@@ -34,8 +34,12 @@ modal-dojo setup
 
 <div class="tg-dashboard-previews">
   <video autoplay muted loop playsinline width="100%">
-    <source src="https://modal-cdn.com/cdnbot/dashboard-4k_8aec4747.webm" type="video/webm">
-    <a href="https://modal-cdn.com/cdnbot/dashboard-4k_8aec4747.webm">Watch the Modal Dojo dashboard walkthrough.</a>
+    <source src="https://modal-cdn.com/cdnbot/substep_f375f94e.webm" type="video/webm">
+    <a href="https://modal-cdn.com/cdnbot/substep_f375f94e.webm">Watch the Modal Dojo dashboard substep view.</a>
+  </video>
+  <video autoplay muted loop playsinline width="100%">
+    <source src="https://modal-cdn.com/cdnbot/rollout_6a084ba6.webm" type="video/webm">
+    <a href="https://modal-cdn.com/cdnbot/rollout_6a084ba6.webm">Watch the Modal Dojo dashboard rollout view.</a>
   </video>
 </div>
 
