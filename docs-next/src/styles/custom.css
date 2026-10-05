@@ -968,6 +968,10 @@ button.tg-header__nav-link:focus-visible {
 }
 
 .tg-dashboard-previews {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 0.75rem;
   margin: 1.5rem 0 2rem;
 }
 
@@ -1715,6 +1719,10 @@ dialog {
 
   .tg-header__menu {
     display: block;
+  }
+
+  .tg-dashboard-previews {
+    grid-template-columns: 1fr;
   }
 
   .tg-header site-search.tg-header__search button[data-open-modal] {
