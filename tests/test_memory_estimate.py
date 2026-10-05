@@ -256,3 +256,12 @@ def test_single_turn_generate_path_does_not_warn() -> None:
         warnings.simplefilter("always")
         maybe_warn_gpu_oom(recipe, model)
     assert not [w for w in caught if "lower bound" in str(w.message)]
+
+
+def test_unknown_custom_path_warns() -> None:
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {"custom_generate_function_path": "my_pkg.my_rollout"}
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert any("lower bound" in str(w.message) for w in caught)

@@ -132,29 +132,27 @@ def _peak_gib(
             (dense_p + expert_p) * 6 + dense_p * opt / d_div + expert_p * opt / e_div
         ) / GIB
 
-    # max_seq_len caps a whole session sample, honored by agentic generators.
-    # rollout_max_context_len bounds each generation request, so it only bounds
-    # a sample for single-turn generation. Default: prompt + one response.
+    # Largest bound the config provides. max_seq_len caps a session sample for
+    # custom generators that consume it; the miles multi_turn builtin assembles
+    # one sample from up to generate_max_turns requests each bounded by
+    # rollout_max_context_len; single-turn samples are bounded by
+    # rollout_max_context_len or prompt + response.
     path = str(get("custom_generate_function_path") or "")
-    agentic = "agentic" in path
-    cap_name = "max_seq_len" if agentic else "rollout_max_context_len"
-    cap = int(get(cap_name) or 0)
-    if cap and "multi_turn" in path:
-        # Per-request bound; the session can fill it once per turn.
-        cap *= int(get("generate_max_turns") or 1)
-    prompt = get("rollout_max_prompt_len")
-    response = get("rollout_max_response_len")
-    sample = cap or (int(prompt or 0) + int(response or 0))
+    mt = path.endswith("multi_turn.generate")
+    prompt = int(get("rollout_max_prompt_len") or 0)
+    response = int(get("rollout_max_response_len") or 0)
+    ctx = int(get("rollout_max_context_len") or 0)
+    msl = int(get("max_seq_len") or 0) if path else 0
+    sample = max(prompt + response, ctx, msl)
+    if mt and ctx:
+        sample = max(sample, ctx * int(get("generate_max_turns") or 1))
 
     def raise_sample_len() -> None:
-        if cap:
-            raise_(cap_name, get(cap_name))
-            raise_(
-                "generate_max_turns", get("generate_max_turns"), "multi_turn" in path
-            )
-        else:
-            raise_("rollout_max_prompt_len", prompt, bool(prompt))
-            raise_("rollout_max_response_len", response, bool(response))
+        raise_("max_seq_len", get("max_seq_len"), bool(msl))
+        raise_("rollout_max_context_len", ctx, bool(ctx))
+        raise_("generate_max_turns", get("generate_max_turns"), mt and bool(ctx))
+        raise_("rollout_max_prompt_len", prompt, bool(prompt))
+        raise_("rollout_max_response_len", response, bool(response))
 
     if get("use_dynamic_batch_size"):
         mtp = int(get("max_tokens_per_gpu") or 0)
@@ -197,16 +195,24 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     if hasattr(recipe, "train_backend") and recipe.train_backend != "megatron":
         return
     knobs = recipe._field_values() | recipe._escape_hatch_values()
-    # Multi-turn generators assemble a session of turns into one sample; a
-    # callable can't be identified, so warn only on known path names.
+    # A custom generate function can produce a sample of arbitrary length
+    # (e.g. a multi-turn session), so prompt + response underestimates it.
+    # Warn on any custom path except the bounded single_turn builtin and
+    # runs that set max_seq_len as a session cap. Callable fields can't be
+    # identified, so they don't trigger this.
     path = str(knobs.get("custom_generate_function_path") or "")
-    multi_turn = "agentic" in path or "multi_turn" in path
-    # Only agentic generators honor max_seq_len as a session cap.
-    if multi_turn and not ("agentic" in path and knobs.get("max_seq_len")):
+    single_turn = path.endswith("single_turn.generate")
+    multi_turn_builtin = path.endswith("multi_turn.generate")
+    if (
+        path
+        and not single_turn
+        and not (knobs.get("max_seq_len") and not multi_turn_builtin)
+    ):
         warnings.warn(
-            "Multi-turn rollouts can exceed "
+            "A custom generate function can produce samples longer than "
             "rollout_max_prompt_len + rollout_max_response_len, so the OOM "
-            "estimate is a lower bound. Set max_seq_len to cap sample length.",
+            "estimate is a lower bound. Set max_seq_len where the generator "
+            "supports it to bound sample length.",
             UserWarning,
             stacklevel=3,
         )
