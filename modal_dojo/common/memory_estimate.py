@@ -132,12 +132,11 @@ def _peak_gib(
             (dense_p + expert_p) * 6 + dense_p * opt / d_div + expert_p * opt / e_div
         ) / GIB
 
-    # max_seq_len caps a whole session sample, honored by agentic/multi-turn
-    # generators. rollout_max_context_len bounds each generation request, so it
-    # only bounds a sample for single-turn generation. Default: prompt + one
-    # response.
+    # max_seq_len caps a whole session sample, honored by agentic generators.
+    # rollout_max_context_len bounds each generation request, so it only bounds
+    # a sample for single-turn generation. Default: prompt + one response.
     path = str(get("custom_generate_function_path") or "")
-    agentic = "agentic" in path or "multi_turn" in path
+    agentic = "agentic" in path
     cap_name = "max_seq_len" if agentic else "rollout_max_context_len"
     cap = int(get(cap_name) or 0)
     prompt = get("rollout_max_prompt_len")
@@ -196,7 +195,8 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     # callable can't be identified, so warn only on known path names.
     path = str(knobs.get("custom_generate_function_path") or "")
     multi_turn = "agentic" in path or "multi_turn" in path
-    if multi_turn and not knobs.get("max_seq_len"):
+    # Only agentic generators honor max_seq_len as a session cap.
+    if multi_turn and not ("agentic" in path and knobs.get("max_seq_len")):
         warnings.warn(
             "Multi-turn rollouts can exceed "
             "rollout_max_prompt_len + rollout_max_response_len, so the OOM "

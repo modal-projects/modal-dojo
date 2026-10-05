@@ -218,6 +218,19 @@ def test_max_seq_len_ignored_for_single_turn() -> None:
     assert raised.get("rollout_max_prompt_len") == 512
 
 
+def test_multi_turn_path_warns_despite_max_seq_len() -> None:
+    # miles multi_turn bounds each request, not the assembled session.
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {
+        "custom_generate_function_path": "miles.rollout.generate_hub.multi_turn.generate",
+        "max_seq_len": 16384,
+    }
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert any("lower bound" in str(w.message) for w in caught)
+
+
 def test_single_turn_generate_path_does_not_warn() -> None:
     model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
     recipe.extra_config = {
