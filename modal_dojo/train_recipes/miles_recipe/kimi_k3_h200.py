@@ -101,6 +101,11 @@ class Kimi_K3_H200_LoRA_Recipe(MilesRecipe):
     eval_max_response_len: int = 65536
     sglang_mem_fraction_static: float = 0.95
     extra_config: dict | None = field(default_factory=_extra_config)
+    train_env_vars: dict | str | None = field(
+        default_factory=lambda: {
+            "PYTORCH_CUDA_ALLOC_CONF": "garbage_collection_threshold:0.8,roundup_power2_divisions:[512:0,>:8],max_split_size_mb:512,per_process_memory_fraction:0.92"
+        }
+    )
 
     model_config_class: ClassVar[type[ModelConfig]] = Kimi_K3
     docker_image: str = _DOCKER_IMAGE
