@@ -197,15 +197,14 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     knobs = recipe._field_values() | recipe._escape_hatch_values()
     # A custom generate function can produce a sample of arbitrary length
     # (e.g. a multi-turn session), so prompt + response underestimates it.
-    # Warn on any custom path except the bounded single_turn builtin and
-    # runs that set max_seq_len as a session cap. Callable fields can't be
-    # identified, so they don't trigger this.
+    # Warn on any custom path except generators known to bound their sample to
+    # a single request and runs that set max_seq_len as a session cap.
     path = str(knobs.get("custom_generate_function_path") or "")
-    single_turn = path.endswith("single_turn.generate")
+    single_request = path.endswith(("single_turn.generate", "transcription_rollout"))
     multi_turn_builtin = path.endswith("multi_turn.generate")
     if (
         path
-        and not single_turn
+        and not single_request
         and not (knobs.get("max_seq_len") and not multi_turn_builtin)
     ):
         warnings.warn(

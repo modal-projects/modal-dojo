@@ -267,10 +267,15 @@ def test_unknown_custom_path_warns() -> None:
     assert any("lower bound" in str(w.message) for w in caught)
 
 
-def test_callable_generate_field_does_not_warn() -> None:
-    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
-    recipe.custom_generate_function = lambda *a, **k: None
+def test_asr_preset_does_not_warn() -> None:
+    from modal_dojo.common.models.qwen3_asr_1_7b import Qwen3_ASR_1_7B
+    from modal_dojo.train_recipes.slime_recipe.qwen3_asr_1_7b import (
+        Qwen3_ASR_1_7B_Recipe,
+    )
+
+    recipe = Qwen3_ASR_1_7B_Recipe()
+    assert (recipe.extra_config or {}).get("custom_generate_function_path")
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        maybe_warn_gpu_oom(recipe, model)
+        maybe_warn_gpu_oom(recipe, Qwen3_ASR_1_7B())
     assert not [w for w in caught if "lower bound" in str(w.message)]
