@@ -18,7 +18,7 @@ def retained_backup_image_commands():
     ]
 
 
-def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides):
+def build_recipe(*, context_length=65536, concurrency_per_engine=2, **overrides):
     if context_length not in (65536, 131072):
         raise ValueError("Choose a target shape: 65536 or 131072 tokens")
     if concurrency_per_engine not in (1, 2, 4, 8):
@@ -35,6 +35,7 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
     settings["environment"] = environment
     settings["image_run_commands"] = [
         f"echo {encode_patch('patch_k3_marlin_padding', _PATCH_DIR)} | base64 -d | python3",
+        f"echo {encode_patch('patch_k3_lora_health', _PATCH_DIR)} | base64 -d | python3",
         *retained_backup_image_commands(),
         *(overrides.pop("image_run_commands", None) or []),
     ]

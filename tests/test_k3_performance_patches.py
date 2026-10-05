@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from modal_dojo.frameworks.miles.modal_helpers.patches import (
+    patch_k3_lora_health as health,
     patch_k3_marlin_padding as padding,
     patch_sglang_offload_timing as timing,
     patch_tms_retain_backup as backup,
@@ -13,7 +14,12 @@ FIXTURES = Path(__file__).parent / "testdata" / "k3"
 
 @pytest.mark.parametrize(
     "patcher, filename",
-    [(timing, "weight_updater.py"), (backup, "tms_core.cpp"), (padding, "mxfp4.py")],
+    [
+        (timing, "weight_updater.py"),
+        (backup, "tms_core.cpp"),
+        (padding, "mxfp4.py"),
+        (health, "http_server.py"),
+    ],
 )
 def test_pinned_source_and_idempotence(tmp_path, patcher, filename):
     target = tmp_path / filename
@@ -45,11 +51,18 @@ def test_pinned_source_and_idempotence(tmp_path, patcher, filename):
         )
         assert "metadata.tag != retained_tag" in patched
         assert "std::getenv" in patched
-    else:
+    elif patcher is padding:
         compile(patched, filename, "exec")
         # Only the problematic K3 TP16 shape changes. Kernel, checkpoint
         # layout, quantization and other models retain their existing behavior.
         assert source.replace(padding.ANCHOR, padding.REPLACEMENT) == patched
+    else:
+        compile(patched, filename, "exec")
+        assert "lora_path=health_lora_path" in patched
+        assert (
+            patched.count("._finalize_lora_lease(")
+            == source.count("._finalize_lora_lease(") + 2
+        )
 
 
 def test_native_patch_rejects_drift_without_writing(tmp_path):

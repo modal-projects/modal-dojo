@@ -48,6 +48,8 @@ def observation_prefix(rendered_suffix, generated_text):
 
 
 async def generate_probe(input):
+    import time
+
     from miles.rollout.base_types import GenerateFnOutput
     from miles.rollout.generate_utils.generate_endpoint_utils import (
         compute_routing_headers,
@@ -57,6 +59,7 @@ async def generate_probe(input):
     from miles.utils.types import Sample
 
     args, sample, tok = input.args, input.sample, input.state.tokenizer
+    episode_started = time.monotonic()
     limit = args.sglang_context_length
     mode = args.k3_validation_mode
     sample.tokens = tok.encode(sample.prompt, add_special_tokens=False)
@@ -69,6 +72,8 @@ async def generate_probe(input):
     turns = []
 
     async def generate_turn(requested, *, force_length=False):
+        started = time.monotonic()
+        input_length = len(sample.tokens)
         budget = generation_budget(limit, len(sample.tokens), requested)
         if not budget:
             raise ValueError("No generation space remains")
@@ -99,6 +104,8 @@ async def generate_probe(input):
             {
                 "generated_tokens": len(tokens),
                 "finish_reason": info.get("finish_reason"),
+                "input_tokens": input_length,
+                "seconds": time.monotonic() - started,
             }
         )
         print(
@@ -170,6 +177,10 @@ async def generate_probe(input):
             "k3_generated_tokens": sum(sample.loss_mask),
             "k3_observation_tokens": len(sample.loss_mask) - sum(sample.loss_mask),
             "k3_turns": turns,
+            "k3_episode_seconds": time.monotonic() - episode_started,
+            # Do not count the large masked observation as generated throughput.
+            "k3_generated_tokens_per_second": sum(sample.loss_mask)
+            / max(time.monotonic() - episode_started, 1e-9),
         }
     )
     assert len(sample.tokens) <= limit
@@ -265,10 +276,17 @@ def build_config(
     context_length=65536,
     rollouts=2,
     decode_tokens=57344,
+    concurrency_per_engine=None,
 ):
     from modal_dojo import HuggingFaceDataset, Kimi_K3, TrainConfig
 
+    concurrency = (
+        {}
+        if concurrency_per_engine is None
+        else {"concurrency_per_engine": concurrency_per_engine}
+    )
     recipe = build_recipe(
+        **concurrency,
         context_length=context_length,
         num_rollout=rollouts,
         rm_type="deepscaler",
@@ -317,9 +335,15 @@ def main(build_recipe, *, gpu_type, context_lengths):
     parser.add_argument("--rollouts", type=int, default=2)
     parser.add_argument("--decode-tokens", type=int, default=57344)
     parser.add_argument("--launch", action="store_true")
+    parser.add_argument("--concurrency-per-engine", type=int, choices=(1, 2, 4, 8))
     args = parser.parse_args()
     config = build_config(
-        build_recipe, args.mode, args.context_length, args.rollouts, args.decode_tokens
+        build_recipe,
+        args.mode,
+        args.context_length,
+        args.rollouts,
+        args.decode_tokens,
+        args.concurrency_per_engine,
     )
     print(config.recipe.gpu_allocation.summary())
     if args.launch:
@@ -331,6 +355,7 @@ def main(build_recipe, *, gpu_type, context_lengths):
             "rollouts": args.rollouts,
             "decode_tokens": args.decode_tokens,
             "gpu_type": gpu_type,
+            "concurrency_per_engine": config.recipe.sglang_server_concurrency,
         }
         dest = Path(".modal-dojo/new_models") / f"Kimi_K3_{gpu_type}"
         dest.mkdir(parents=True, exist_ok=True)
