@@ -34,6 +34,7 @@ def build_recipe(*, context_length=65536, concurrency_per_engine=1, **overrides)
     environment.update(overrides.pop("environment", None) or {})
     settings["environment"] = environment
     settings["image_run_commands"] = [
+        f"echo {encode_patch('patch_k3_marlin_padding', _PATCH_DIR)} | base64 -d | python3",
         *retained_backup_image_commands(),
         *(overrides.pop("image_run_commands", None) or []),
     ]
