@@ -15,6 +15,9 @@ from modal_dojo.train_recipes.miles_recipe.inkling import (
 from modal_dojo.train_recipes.miles_recipe.kimi_k3 import (
     Kimi_K3_LoRA_Recipe,
 )
+from modal_dojo.train_recipes.miles_recipe.kimi_k3_long_context import (
+    Kimi_K3_Long_Context_Recipe,
+)
 from modal_dojo.train_recipes.miles_recipe.moonlight_16b_a3b import (
     Moonlight_16B_A3B_Recipe,
 )
@@ -30,6 +33,7 @@ __all__ = [
     "Inkling_Small_Recipe",
     "Inkling_Small_LoRA_Recipe",
     "Kimi_K3_LoRA_Recipe",
+    "Kimi_K3_Long_Context_Recipe",
     "Moonlight_16B_A3B_Recipe",
     "Qwen3_5_4B_Miles_Recipe",
 ]

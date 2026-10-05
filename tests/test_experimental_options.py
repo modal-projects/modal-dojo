@@ -38,3 +38,17 @@ def test_recipe_can_disable_efa():
 
 def test_none_train_function_kwargs():
     assert experimental_options(SimpleNamespace(train_function_kwargs=None)) == {}
+
+
+def test_high_priority_dropped_for_non_clustered_functions():
+    recipe = _recipe(experimental_options={"efa_disabled": True, "priority": "high"})
+    assert experimental_options(recipe) == {"efa_disabled": True, "priority": "high"}
+    assert experimental_options(recipe, clustered=False) == {"efa_disabled": True}
+
+    legacy = _recipe(experimental_options={"high_priority": True})
+    assert experimental_options(legacy, clustered=False) == {}
+
+
+def test_low_priority_kept_for_non_clustered_functions():
+    recipe = _recipe(experimental_options={"priority": "low"})
+    assert experimental_options(recipe, clustered=False) == {"priority": "low"}
