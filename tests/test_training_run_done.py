@@ -77,7 +77,7 @@ def test_context_manager_leaves_app_running_on_exception(monkeypatch):
     assert stopped == []
 
 
-def test_close_is_idempotent(monkeypatch):
+def test_stop_reaps_terminal_run_once(monkeypatch, fake_volume):
     stopped: list[str] = []
 
     monkeypatch.setattr(
@@ -85,9 +85,10 @@ def test_close_is_idempotent(monkeypatch):
     )
     run = _run(TrainingRunStatus.COMPLETED)
     run.modal_app_id = "ap-1"
+    run.save()
 
-    run.close()
-    run.close()
+    assert run.stop() is False
+    assert run.stop() is False
 
     assert stopped == ["ap-1"]
 
@@ -173,7 +174,7 @@ def test_wait_timeout_does_not_mark_failed(fake_volume):
     assert run.error is None
 
 
-def test_wait_all_closes_each_run_when_that_run_is_done(monkeypatch, fake_volume):
+def test_wait_all_stops_each_run_app_when_done(monkeypatch, fake_volume):
     stopped: list[str] = []
 
     monkeypatch.setattr(
@@ -240,19 +241,27 @@ def test_stop_stops_app_and_persists_record(monkeypatch, fake_volume):
     assert run.completed_at is None
 
 
-def test_stop_is_noop_for_terminal_run(monkeypatch, fake_volume):
+def test_stop_reaps_lingering_app_for_terminal_run(monkeypatch, fake_volume):
     stopped: list[str] = []
+    reaped: list[str] = []
     monkeypatch.setattr(
         "modal_dojo.common.modal_lifecycle.stop_app",
         stopped.append,
     )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app_best_effort",
+        reaped.append,
+    )
     run = _run(TrainingRunStatus.RUNNING)
     run.modal_app_id = "ap-1"
     run.save()
-    _run(TrainingRunStatus.COMPLETED).save()
+    stored = _run(TrainingRunStatus.COMPLETED)
+    stored.modal_app_id = "ap-1"
+    stored.save()
 
     assert run.stop() is False
     assert stopped == []
+    assert reaped == ["ap-1"]
     assert TrainingRun.from_id("run-1").status is TrainingRunStatus.COMPLETED
 
 

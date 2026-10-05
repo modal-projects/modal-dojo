@@ -374,7 +374,7 @@ class TrainingRun(BaseModel):
     ) -> "TrainingRun":
         self.wait(timeout=timeout)
         if stop_app_on_success:
-            self.close()
+            self._stop_app(self.modal_app_id)
         print(f"Training complete: {self.training_run_id}")
         return self
 
@@ -385,13 +385,13 @@ class TrainingRun(BaseModel):
         *,
         poll_interval: float = 30,
     ) -> list["TrainingRun"]:
-        """Wait for every run. Close each run when that run is done."""
+        """Wait for every run. Stop each run's app when that run is done."""
         pending = list(runs)
         while pending:
             still_running: list[TrainingRun] = []
             for run in pending:
                 if run.done():
-                    run.close()
+                    run._stop_app(run.modal_app_id)
                 else:
                     still_running.append(run)
             pending = still_running
@@ -399,34 +399,35 @@ class TrainingRun(BaseModel):
                 time.sleep(poll_interval)
         return list(runs)
 
-    def close(self) -> None:
-        """Stop the run's Modal app, best effort, without updating the run record.
-
-        Safe to call more than once. Use ``stop()`` to cancel a live run and record it as stopped.
-        """
-        if self._closed:
+    def _stop_app(self, app_id: str | None) -> None:
+        if self._closed or not app_id:
             return
         self._closed = True
         from modal_dojo.common.modal_lifecycle import stop_app_best_effort
 
-        stop_app_best_effort(self.modal_app_id)
+        stop_app_best_effort(app_id)
 
     def stop(self, *, reason: str = "stopped_by_user") -> bool:
-        """Stop the run's Modal app and record the run as ``stopped``.
+        """Stop the run's Modal app; a live run is recorded ``stopped``.
+
+        A live run whose app already died is reconciled instead: ``completed``
+        when its train result exists, ``stopped`` otherwise. An already-terminal
+        run only reaps a lingering app, best effort.
 
         Args:
             reason: Value recorded in the run's ``terminal_reason`` metadata.
 
         Returns:
-            ``True`` if the run was stopped, ``False`` if it had already finished.
+            ``True`` if the run was live, ``False`` if it had already finished.
 
         Raises:
-            DojoError: The run has no Modal app yet.
+            DojoError: The run is live but has no Modal app yet.
         """
         from modal_dojo.common.modal_lifecycle import app_live_status, stop_app
 
         record = TrainingRun.from_id(self.training_run_id)
         if record.status is not TrainingRunStatus.RUNNING:
+            self._stop_app(record.modal_app_id)
             return False
         if not record.modal_app_id:
             raise DojoError(
@@ -464,7 +465,7 @@ class TrainingRun(BaseModel):
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
         if exc_type is None:
-            self.close()
+            self._stop_app(self.modal_app_id)
 
     def __await__(self):
         import asyncio
