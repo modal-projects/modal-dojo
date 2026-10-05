@@ -4,7 +4,7 @@ description: >-
   Owns the complete Modal Dojo lifecycle or one requested stage: configure,
   prove, smoke test, monitor, diagnose, continue, and promote.
   Diagnoses reward, entropy, log-probability, gradient, evaluation, runtime,
-  timing, and async scaling symptoms using the RL Quick Reference Handbook.
+  timing, and async scaling symptoms.
 when_to_use: >-
   User asks to train, post-train, fine-tune, or improve a model; launch a
   config; inspect run status or logs; debug failure, reward, or performance;
@@ -43,8 +43,8 @@ interventions, and verification for that symptom.
 | 07 | Steps are slow or timing totals look wrong | [Timing](references/debug-systems.md) |
 | 08 | Async or more GPUs do not help | [Async and scaling](references/debug-async.md) |
 
-The references adapt the supplied RL Quick Reference Handbook and incorporate
-repository-specific operational checks. Published sources and recorded examples provide background, not
+The references include repository-specific operational checks.
+Published sources and recorded examples provide background, not
 evidence about the current run. Data, infrastructure, and algorithms interact;
 metric patterns suggest hypotheses rather than establishing causes.
 
@@ -73,7 +73,7 @@ needed when they cannot distinguish the leading explanations.
 Connect each leading hypothesis to evidence and a check that could disprove
 it. Prefer replaying saved responses, inspecting an affected batch, or comparing
 fixed prefixes when these can resolve the question. Verify framework support
-and actual implementation before turning a handbook method into a recipe flag.
+and actual implementation before turning a proposed method into a recipe flag.
 
 For an authorized experiment, change one causal factor and hold the relevant
 workload, budgets, resources, and measurement protocol fixed. Judge success by
