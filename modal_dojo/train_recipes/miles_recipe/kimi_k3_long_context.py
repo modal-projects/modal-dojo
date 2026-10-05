@@ -9,7 +9,7 @@ from modal_dojo.train_recipes.miles_recipe.kimi_k3 import Kimi_K3_LoRA_Recipe
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class Kimi_K3_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
+class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
     """Kimi-K3 rank-32 LoRA recipe for 64k context on 8 B300:8 nodes."""
 
     # ── Colocation and weight sync ───────────────────────────────────────────
