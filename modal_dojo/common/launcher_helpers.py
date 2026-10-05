@@ -743,7 +743,14 @@ async def training_run_lifecycle(run_record: TrainingRun, status_token: str = ""
 def check_training_result(result: Any, run_record: TrainingRun) -> None:
     if not result.is_success:
         training_run_id = run_record.training_run_id
-        message = result.message or f"Ray job finished with status: {result.status}"
+        # Prefer the first fatal signature found in the streamed logs over
+        # Ray's driver-side message, which is usually cascade noise from a
+        # dead rank (actor unavailable, "rank exited code 1").
+        message = (
+            getattr(result, "error_excerpt", None)
+            or result.message
+            or f"Ray job finished with status: {result.status}"
+        )
         error = RuntimeError(f"{message} (training_run_id={training_run_id})")
         error.training_run_id = training_run_id  # pyright: ignore[reportAttributeAccessIssue]
         run_record.error_message = str(error)

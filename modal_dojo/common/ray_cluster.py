@@ -13,11 +13,13 @@ import inspect
 import os
 import subprocess
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from modal.experimental import clustered
 
+from modal_dojo.common.failure_extract import extract_failure_excerpt
 from modal_dojo.train_recipes.gpu_allocation import _normalize_gpu_type
 
 RAY_PORT = 6379
@@ -145,6 +147,10 @@ class ModalRayJobResult:
     status: str
     is_success: bool
     message: str | None = None
+    # Excerpt of the first fatal event found in the streamed logs; usually a
+    # better cause than ``message`` (Ray's driver-side error is often cascade
+    # noise from a dead rank). None when the stream held no failure signature.
+    error_excerpt: str | None = None
 
 
 class ModalRayCluster:
@@ -328,6 +334,10 @@ class ModalRayCluster:
         print(f"Submitted Ray job: {job_id}")
 
         _TERMINAL = {"SUCCEEDED", "FAILED", "STOPPED"}
+        # Bounded tail of every streamed line, kept for failure attribution on
+        # a non-success result — the first fatal signature is usually a worker
+        # traceback that precedes Ray's generic driver error.
+        log_tail: deque[str] = deque(maxlen=4000)
         retry_count = 0
 
         async def _poll_status() -> str | None:
@@ -348,9 +358,11 @@ class ModalRayCluster:
                     log_stream = await log_stream
                 if hasattr(log_stream, "__aiter__"):
                     async for line in log_stream:
+                        log_tail.append(line)
                         print(line, end="", flush=True)
                 else:
                     for line in log_stream:
+                        log_tail.append(line)
                         print(line, end="", flush=True)
 
             tail_task = asyncio.create_task(_tail_logs())
@@ -403,8 +415,14 @@ class ModalRayCluster:
                 pass
             suffix = f": {message}" if message else ""
             print(f"Ray job {job_id} finished with status: {status}{suffix}")
+            error_excerpt = extract_failure_excerpt(list(log_tail))
+            if error_excerpt:
+                print(f"First fatal log signature:\n{error_excerpt}")
             return ModalRayJobResult(
-                status=status, is_success=status == "SUCCEEDED", message=message
+                status=status,
+                is_success=status == "SUCCEEDED",
+                message=message,
+                error_excerpt=error_excerpt,
             )
         return ModalRayJobResult(status=status, is_success=status == "SUCCEEDED")
 
