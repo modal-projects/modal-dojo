@@ -8,6 +8,8 @@ file: megatron/core/dist_checkpointing/serialization.py
 """
 
 from pathlib import Path
+import re
+from textwrap import dedent, indent
 
 ACTOR = Path("/root/miles/miles/backends/megatron_utils/actor.py")
 GROUP = Path("/root/miles/miles/ray/train/group.py")
@@ -67,16 +69,30 @@ def apply(
     changes = []
     for path in (actor, group, serialization):
         source = path.read_text()
+        if path == group:
+            match = re.search(
+                rf"(?m)^( +)(?:# {MARKER}|{re.escape(WAIT_ANCHOR.strip())})$",
+                source,
+            )
+            if match is None:
+                raise RuntimeError(f"{path}: unexpected weight update indentation")
+            replacements = [
+                (indent(dedent(old), match[1]), indent(dedent(new), match[1]))
+                for old, new in (
+                    (WAIT_ANCHOR, WAIT_REPLACEMENT),
+                    (END_ANCHOR, END_REPLACEMENT),
+                )
+            ]
         if MARKER in source:
             required = (
-                (WAIT_REPLACEMENT, END_REPLACEMENT) if path == group else (HELPER,)
+                tuple(new for _, new in replacements) if path == group else (HELPER,)
             )
             if any(source.count(fragment) != 1 for fragment in required):
                 raise RuntimeError(f"{path}: unexpected patched startup timing source")
             continue
         if path == group:
-            source = _replace(source, WAIT_ANCHOR, WAIT_REPLACEMENT, path)
-            source = _replace(source, END_ANCHOR, END_REPLACEMENT, path)
+            for old, new in replacements:
+                source = _replace(source, old, new, path)
         else:
             source = _replace(source, LOGGER, LOGGER + HELPER, path)
             if path == actor:
