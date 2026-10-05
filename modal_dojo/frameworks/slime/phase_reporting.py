@@ -251,7 +251,6 @@ def log_eval_rollout_data(
     )
 
     if _arg_value(args, "num_rollout") == 0:
-        # Custom eval functions may return reward-only results without samples.
         samples = [s for d in data.values() for s in d.get("samples") or []]
         payload = _rollout_payload(
             rollout_id,
@@ -260,8 +259,6 @@ def log_eval_rollout_data(
             extra_metrics,
             None,
             n_samples_arg="n_samples_per_eval_prompt",
-            # Mirrors upstream: dict rewards resolve via eval_reward_key, then
-            # reward_key, before the score is extracted.
             reward_key=_arg_value(args, "eval_reward_key")
             or _arg_value(args, "reward_key"),
         )

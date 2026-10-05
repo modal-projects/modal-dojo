@@ -103,9 +103,6 @@ _HOOK_WRAPPER_PATHS = {
     "custom_megatron_before_train_step_hook": "modal_dojo.frameworks.slime.phase_reporting.before_train_step_hook",
 }
 
-# extra_config keys that would defeat an eval-only run (re-enable training,
-# override the sampled count, or skip eval generation); the eval-only
-# validator strips them so the recipe's own fields win.
 _EVAL_ONLY_STRIP_KEYS = (
     "num_rollout",
     "num_epoch",
@@ -690,8 +687,6 @@ class SlimeRecipe(BaseTrainRecipe):
             for k, v in (self.extra_config or {}).items()
             if k not in _EVAL_ONLY_STRIP_KEYS
         }
-        # lr_* flags exist only to keep megatron's scheduler from asserting on
-        # a run that saves nothing; num_rollout=0 is what makes it eval-only.
         object.__setattr__(
             self,
             "extra_config",
@@ -699,11 +694,8 @@ class SlimeRecipe(BaseTrainRecipe):
         )
         object.__setattr__(self, "num_rollout", 0)
         object.__setattr__(self, "num_epoch", None)
-        # The sync driver's eval-only branch keys on eval_interval; async_mode
-        # would otherwise select train_async.py, which has no eval path.
         object.__setattr__(self, "eval_interval", self.eval_interval or 1)
         object.__setattr__(self, "async_mode", False)
-        # Per-dataset eval config would shadow the recipe's eval fields.
         object.__setattr__(self, "eval_config", None)
         return self
 

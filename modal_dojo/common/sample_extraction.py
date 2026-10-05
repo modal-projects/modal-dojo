@@ -717,8 +717,6 @@ def _sample_to_dict(
 
     response_text = _coerce_text(response)
     # Score via gym Sample: numeric reward, else metadata["shaped_reward"] (OPD).
-    # Eval rewards can be dicts; upstream resolves them via
-    # eval_reward_key/reward_key before scoring.
     if reward_key is not None and isinstance(reward, dict):
         reward = reward.get(reward_key)
     numeric_reward = (

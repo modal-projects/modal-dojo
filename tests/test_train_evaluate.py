@@ -84,6 +84,5 @@ def test_evaluate_forces_eval_only_recipe_on_given_dataset(monkeypatch) -> None:
 
 
 def test_eval_only_rejects_sft_loss() -> None:
-    # Pydantic wraps the DojoConfigError in a ValidationError.
     with pytest.raises(ValueError, match="sft_loss"):
         SlimeRecipe(eval_only=True, loss_type="sft_loss")
