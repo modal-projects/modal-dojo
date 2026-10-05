@@ -386,6 +386,7 @@ def install_wandb_shim() -> None:
     shim.__path__ = []
     setattr(shim, _SHIM_MARKER, True)
     shim.run = None
+    shim.finished = False
     shim.config = {}
     shim.Settings = _Settings
 
@@ -421,7 +422,7 @@ def install_wandb_shim() -> None:
         run = trackio.init(
             project=project,
             name=requested_name or None,
-            group=kwargs.pop("group", None) or os.environ.get(_GROUP_ENV) or None,
+            group=kwargs.pop("group", os.environ.get(_GROUP_ENV) or None),
             config=config,
             resume=resume,
             embed=False,
@@ -429,6 +430,7 @@ def install_wandb_shim() -> None:
         )
         proxy = _RunProxy(run, requested_name or run.name)
         shim.run = proxy
+        shim.finished = False
         shim.config = run.config
         # Materialize the remote run before Slime's worker processes resume it.
         trackio.log({}, step=-1)
@@ -454,6 +456,8 @@ def install_wandb_shim() -> None:
 
     def finish(*_args: Any, **_kwargs: Any) -> Any:
         if shim.run is None:
+            if shim.finished:
+                return None
             # Processes that never called init() still have to finish(): resume
             # the run by name first so trackio never sees an uninitialized finish.
             init()
@@ -461,6 +465,7 @@ def install_wandb_shim() -> None:
             return trackio.finish()
         finally:
             shim.run = None
+            shim.finished = True
 
     def save(glob_str: str, *_args: Any, **_kwargs: Any) -> Any:
         return trackio.save(glob_str)
