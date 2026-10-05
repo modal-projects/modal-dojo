@@ -35,6 +35,7 @@ from modal_dojo.common.metrics import (
     metric_secrets,
     preflight_metric,
 )
+from modal_dojo.common.cluster_preflight import run_cluster_preflight
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.ray_cluster import (
     clustered_if,
@@ -1003,6 +1004,9 @@ def build_miles_app(
             print(f"Runtime environment variables: {sorted(runtime_env['env_vars'])}")
 
             await set_status(MilesStatus.TRAINING)
+            await run_cluster_preflight(
+                cluster, gpus_per_node=miles.actor_num_gpus_per_node
+            )
             result = await cluster.submit_and_tail(cmd, runtime_env=runtime_env)
             shared.check_training_result(result, run_record)
             print(f"Ray job message: {result.message}")
