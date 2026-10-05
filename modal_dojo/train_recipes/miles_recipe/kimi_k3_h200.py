@@ -33,6 +33,7 @@ _PATCHES = (
     "patch_k3_h200_backward_cache",
     "patch_k3_h200_checkpoint_offload",
     "patch_k3_h200_startup_timing",
+    "patch_k3_h200_lora_offload_export",
 )
 _DOCKER_IMAGE = "radixark/miles:dev-202609251434"
 _KERNEL_CACHE_ROOT = f"/checkpoints/.kernel-cache/{_DOCKER_IMAGE.split(':')[-1]}"
