@@ -22,6 +22,7 @@ _DEFAULT_TRACKIO_VERSION = "0.34.0"
 _DEFAULT_MODAL_APP_NAME = "modal-dojo-trackio"
 _RUN_NAME_ENV = "MODAL_DOJO_TRACKIO_RUN_NAME"
 _PROJECT_ENV = "MODAL_DOJO_TRACKIO_PROJECT"
+_GROUP_ENV = "MODAL_DOJO_TRACKIO_GROUP"
 _SHIM_MARKER = "_modal_dojo_trackio_adapter"
 
 
@@ -99,6 +100,7 @@ class TrackioConfig(MetricConfig):
         for key, value in (
             (_RUN_NAME_ENV, run_id),
             (_PROJECT_ENV, self.project),
+            (_GROUP_ENV, self.group),
             ("TRACKIO_SPACE_ID", self.space_id),
             ("TRACKIO_SERVER_URL", self.server_url),
             ("TRACKIO_BUCKET_ID", self.bucket_id),
@@ -419,7 +421,7 @@ def install_wandb_shim() -> None:
         run = trackio.init(
             project=project,
             name=requested_name or None,
-            group=kwargs.pop("group", None),
+            group=kwargs.pop("group", None) or os.environ.get(_GROUP_ENV) or None,
             config=config,
             resume=resume,
             embed=False,

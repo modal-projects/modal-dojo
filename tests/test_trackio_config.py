@@ -36,6 +36,7 @@ def test_trackio_config_is_provider_specific_without_provider_or_label_fields():
         "MODAL_DOJO_METRIC_PROVIDER": "trackio",
         "MODAL_DOJO_TRACKIO_RUN_NAME": "run-a2",
         "MODAL_DOJO_TRACKIO_PROJECT": "rl",
+        "MODAL_DOJO_TRACKIO_GROUP": "baseline",
         "TRACKIO_SPACE_ID": "modal-labs/training-metrics",
         "TRACKIO_BUCKET_ID": "modal-labs/training-metrics",
     }
