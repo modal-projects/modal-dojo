@@ -431,7 +431,10 @@ def train(args):
 
 def test_executor_driver_tolerates_missing_grad_buffer_offload(miles, tmp_path, capsys):
     """The K3-only gradient offload is optional on other executor layouts."""
-    src = _EXECUTOR_TRAIN.replace("        actor_model.offload_grad_buffer()\n", "")
+    src = _EXECUTOR_TRAIN.replace(
+        "        actor_model.offload_grad_buffer()\n",
+        "        # offload_grad_buffer handled elsewhere\n",
+    )
     patched = miles._patch_executor_driver(src, tmp_path / "train.py")
     assert "_tg_time_phase('generate_rollouts')" in patched
     assert "offload_train_gradients" not in patched

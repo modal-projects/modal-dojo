@@ -736,7 +736,7 @@ def _patch_executor_driver(src: str, path: Path) -> str:
     src = _wrap_calls(
         src, "train", calls, optional=frozenset({"actor_model.offload_grad_buffer"})
     )
-    if "offload_grad_buffer" not in src:
+    if _phase("offload_train_gradients") not in src:
         print(
             f"WARNING: {path}: no offload_grad_buffer; offload_train_gradients skipped"
         )
