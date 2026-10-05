@@ -139,6 +139,32 @@ def test_training_run_save_survives_unmounted_volume(fake_volume, fw):
     assert json.loads(blob)["framework"] == fw.value
 
 
+@pytest.mark.parametrize("is_async", [False, True])
+def test_vol_put_retries_exhausted_volume(fake_volume, monkeypatch, is_async):
+    """``too many layers in volume`` is transient: the write retries and lands."""
+    from modal.exception import ResourceExhaustedError
+
+    flaky = 1
+    real_batch_upload = fake_volume.batch_upload
+
+    def batch_upload(force: bool = False):
+        nonlocal flaky
+        if flaky:
+            flaky -= 1
+            raise ResourceExhaustedError(
+                "too many layers in volume. Please wait and retry."
+            )
+        return real_batch_upload(force)
+
+    monkeypatch.setattr(fake_volume, "batch_upload", batch_upload)
+    put = metadata.vol_put(
+        MetadataStore.TRAINING_RUNS, "t4", {"a": 1}, is_async=is_async
+    )
+    if is_async:
+        asyncio.run(put)
+    assert fake_volume.files[f"{MetadataStore.TRAINING_RUNS.value}/t4.json"]
+
+
 @pytest.mark.parametrize("fw", list(Framework))
 def test_train_result_blob_save_survives_unmounted_volume(fake_volume, fw):
     """``save_train_result_blob()`` completes when reload() raises, for every framework."""

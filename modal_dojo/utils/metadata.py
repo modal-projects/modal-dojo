@@ -230,6 +230,41 @@ def vol_put(
 ) -> None: ...
 
 
+_WRITE_ATTEMPTS = 3
+
+
+def _run_write(commit: Callable[[], T]) -> T:
+    """Commit a volume write, retrying ``too many layers`` exhaustion.
+
+    Volume commits go through a fixed-size layer queue that drains in seconds;
+    concurrent writers (e.g. a synmon fan-out) can fill it transiently.
+    """
+    from modal.exception import ResourceExhaustedError
+
+    for attempt in range(_WRITE_ATTEMPTS):
+        try:
+            return commit()
+        except ResourceExhaustedError:
+            if attempt == _WRITE_ATTEMPTS - 1:
+                raise
+            time.sleep(2**attempt)
+    raise AssertionError("unreachable")
+
+
+async def _arun_write(commit: Callable[[], Awaitable[T]]) -> T:
+    """``_run_write`` for async commits."""
+    from modal.exception import ResourceExhaustedError
+
+    for attempt in range(_WRITE_ATTEMPTS):
+        try:
+            return await commit()
+        except ResourceExhaustedError:
+            if attempt == _WRITE_ATTEMPTS - 1:
+                raise
+            await asyncio.sleep(2**attempt)
+    raise AssertionError("unreachable")
+
+
 def vol_put(
     store: MetadataStore | str,
     key: str,
@@ -246,13 +281,17 @@ def vol_put(
     path = f"{_store_path(store)}/{key}.json"
     if is_async:
 
-        async def _run() -> None:
+        async def _put() -> None:
             async with vol.batch_upload(force=True) as batch:
                 batch.put_file(io.BytesIO(data), path)
 
-        return _run()
-    with vol.batch_upload(force=True) as batch:
-        batch.put_file(io.BytesIO(data), path)
+        return _arun_write(_put)
+
+    def _put() -> None:
+        with vol.batch_upload(force=True) as batch:
+            batch.put_file(io.BytesIO(data), path)
+
+    _run_write(_put)
 
 
 @overload
@@ -287,15 +326,19 @@ def vol_put_many(
     }
     if is_async:
 
-        async def _run() -> None:
+        async def _put() -> None:
             async with vol.batch_upload(force=True) as batch:
                 for path, payload in data.items():
                     batch.put_file(io.BytesIO(payload), path)
 
-        return _run()
-    with vol.batch_upload(force=True) as batch:
-        for path, payload in data.items():
-            batch.put_file(io.BytesIO(payload), path)
+        return _arun_write(_put)
+
+    def _put() -> None:
+        with vol.batch_upload(force=True) as batch:
+            for path, payload in data.items():
+                batch.put_file(io.BytesIO(payload), path)
+
+    _run_write(_put)
 
 
 @overload
