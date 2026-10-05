@@ -192,12 +192,9 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
         return
     knobs = recipe._field_values() | recipe._escape_hatch_values()
     peak, raised = _peak_gib(arch, knobs, gpu_gib)
-    multi_turn_hooks = (
-        "custom_generate_function",
-        "custom_generate_function_path",
-        "rollout_function",
-        "rollout_function_path",
-    )
+    multi_turn_hooks = ["custom_generate_function", "custom_generate_function_path"]
+    if knobs.get("loss_type") != "sft_loss":
+        multi_turn_hooks += ["rollout_function", "rollout_function_path"]
     if any(knobs.get(k) for k in multi_turn_hooks) and not knobs.get(
         "rollout_max_context_len"
     ):
