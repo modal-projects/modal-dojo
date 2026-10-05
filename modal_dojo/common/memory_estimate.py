@@ -132,18 +132,21 @@ def _peak_gib(
             (dense_p + expert_p) * 6 + dense_p * opt / d_div + expert_p * opt / e_div
         ) / GIB
 
-    # max_seq_len bounds a whole sample (incl. multi-turn); rollout_max_context_len
-    # bounds each generation request's context. A sample can reach either, so use
-    # the larger bound; the default is prompt + single response length.
-    caps = [int(get(k) or 0) for k in ("max_seq_len", "rollout_max_context_len")]
+    # max_seq_len caps a whole session sample, honored by agentic/multi-turn
+    # generators. rollout_max_context_len bounds each generation request, so it
+    # only bounds a sample for single-turn generation. Default: prompt + one
+    # response.
+    path = str(get("custom_generate_function_path") or "")
+    agentic = "agentic" in path or "multi_turn" in path
+    cap_name = "max_seq_len" if agentic else "rollout_max_context_len"
+    cap = int(get(cap_name) or 0)
     prompt = get("rollout_max_prompt_len")
     response = get("rollout_max_response_len")
-    sample = max(caps) or (int(prompt or 0) + int(response or 0))
+    sample = cap or (int(prompt or 0) + int(response or 0))
 
     def raise_sample_len() -> None:
-        if max(caps):
-            raise_("max_seq_len", get("max_seq_len"), bool(caps[0]))
-            raise_("rollout_max_context_len", caps[1], bool(caps[1]))
+        if cap:
+            raise_(cap_name, cap)
         else:
             raise_("rollout_max_prompt_len", prompt, bool(prompt))
             raise_("rollout_max_response_len", response, bool(response))
@@ -192,10 +195,8 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     # Multi-turn generators assemble a session of turns into one sample; a
     # callable can't be identified, so warn only on known path names.
     path = str(knobs.get("custom_generate_function_path") or "")
-    multi_turn = "agentic_tool_call" in path or "multi_turn" in path
-    if multi_turn and not (
-        knobs.get("max_seq_len") or knobs.get("rollout_max_context_len")
-    ):
+    multi_turn = "agentic" in path or "multi_turn" in path
+    if multi_turn and not knobs.get("max_seq_len"):
         warnings.warn(
             "Multi-turn rollouts can exceed "
             "rollout_max_prompt_len + rollout_max_response_len, so the OOM "

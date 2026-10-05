@@ -148,21 +148,40 @@ def test_multi_turn_without_cap_warns() -> None:
     assert any("max_seq_len" in str(w.message) for w in caught)
 
 
-@pytest.mark.parametrize(
-    "cap",
-    [{"max_seq_len": 16384}, {"rollout_max_context_len": 16384}],
-    ids=["max_seq_len", "rollout_max_context_len"],
-)
-def test_capped_multi_turn_does_not_warn(cap) -> None:
+def test_max_seq_len_capped_multi_turn_does_not_warn() -> None:
     model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
     recipe.extra_config = {
         "custom_generate_function_path": "miles.rollout.generate_hub.agentic_tool_call.generate",
-        **cap,
+        "max_seq_len": 16384,
     }
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         maybe_warn_gpu_oom(recipe, model)
     assert not [w for w in caught if "lower bound" in str(w.message)]
+
+
+def test_context_len_alone_does_not_cap_agentic() -> None:
+    # rollout_max_context_len bounds each request, not the assembled session.
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {
+        "custom_generate_function_path": "miles.rollout.generate_hub.agentic_tool_call.generate",
+        "rollout_max_context_len": 16384,
+    }
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert any("lower bound" in str(w.message) for w in caught)
+
+
+def test_agentic_rl_path_warns() -> None:
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {
+        "custom_generate_function_path": "agentic_rl.generate.generate"
+    }
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert any("lower bound" in str(w.message) for w in caught)
 
 
 def test_max_seq_len_bounds_sample() -> None:
@@ -175,11 +194,28 @@ def test_max_seq_len_bounds_sample() -> None:
         "rollout_max_response_len": 128,
         "max_seq_len": 1024,
         "recompute_granularity": "full",
+        "custom_generate_function_path": "agentic_rl.generate.generate",
     }
     bounded, raised = _peak_gib(_QWEN3_5_4B, knobs, 80.0)
     uncapped, _ = _peak_gib(_QWEN3_5_4B, {**knobs, "max_seq_len": None}, 80.0)
     assert bounded > uncapped
     assert raised.get("max_seq_len") == 1024
+
+
+def test_max_seq_len_ignored_for_single_turn() -> None:
+    knobs = {
+        "actor_num_nodes": 1,
+        "actor_num_gpus_per_node": 1,
+        "use_dynamic_batch_size": False,
+        "micro_batch_size": 1,
+        "rollout_max_prompt_len": 512,
+        "rollout_max_response_len": 128,
+        "max_seq_len": 16,  # smaller than prompt+response; not enforced
+        "recompute_granularity": "full",
+    }
+    peak, raised = _peak_gib(_QWEN3_5_4B, knobs, 80.0)
+    assert "max_seq_len" not in raised
+    assert raised.get("rollout_max_prompt_len") == 512
 
 
 def test_single_turn_generate_path_does_not_warn() -> None:
