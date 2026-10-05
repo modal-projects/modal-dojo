@@ -32,6 +32,7 @@ _PATCHES = (
     "patch_k3_fp8_checkpoint",
     "patch_k3_h200_backward_cache",
     "patch_k3_h200_checkpoint_offload",
+    "patch_k3_h200_startup_timing",
 )
 _DOCKER_IMAGE = "radixark/miles:dev-202609251434"
 _KERNEL_CACHE_ROOT = f"/checkpoints/.kernel-cache/{_DOCKER_IMAGE.split(':')[-1]}"
@@ -137,10 +138,10 @@ class Kimi_K3_H200_LoRA_Recipe(MilesRecipe):
         }
     )
     megatron_to_hf_mode: str = "raw"
-    ref_load: str = "/checkpoints/Kimi-K3_torch_dist"
-    conversion_tensor_model_parallel_size: int = 32
-    conversion_pipeline_model_parallel_size: int = 1
-    conversion_expert_model_parallel_size: int = 64
+    ref_load: str = "/checkpoints/Kimi-K3_H200_tp2_pp8_ep8_12_9_torch_dist"
+    conversion_tensor_model_parallel_size: int = 2
+    conversion_pipeline_model_parallel_size: int = 8
+    conversion_expert_model_parallel_size: int = 8
     conversion_expert_tensor_parallel_size: int = 1
     convert_ephemeral_disk_mb: int | None = 2 * 1024 * 1024
     download_timeout_seconds: int | None = 8 * 60 * 60
@@ -204,6 +205,8 @@ class Kimi_K3_H200_LoRA_Recipe(MilesRecipe):
     sglang_mamba_radix_cache_strategy: str | None = "extra_buffer"
     sglang_cuda_graph_bs_decode: list[int] | None = field(default_factory=lambda: [1])
     sglang_cuda_graph_backend_prefill: str | None = "disabled"
+    sglang_weight_loader_prefetch_checkpoints: bool = True
+    sglang_weight_loader_prefetch_num_threads: int = 1
     rollout_health_check_first_wait: int = 7200
 
     @model_validator(mode="after")

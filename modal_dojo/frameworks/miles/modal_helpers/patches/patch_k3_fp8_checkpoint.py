@@ -16,11 +16,17 @@ LOAD_MARKER = "PATCHED_K3_FP8_LOAD_CPU"
 LOAD_ANCHOR = "    force_all_tensors_to_non_fp8(sharded_state_dict)\n"
 LOAD_REPLACEMENT = f"""    # {LOAD_MARKER}
     from .dict_utils import nested_values
+    from .mapping import ShardedTensor, ShardedTensorFactory
     from ..fp8_utils import dequantize_fp8_tensor, is_float8tensor
 
     for value in nested_values(sharded_state_dict):
         if hasattr(value, "data") and is_float8tensor(value.data):
-            value.data = dequantize_fp8_tensor(value.data).cpu()
+            if isinstance(value, (ShardedTensor, ShardedTensorFactory)) and not getattr(
+                value, "allow_shape_mismatch", False
+            ):
+                value.data = torch.empty(value.data.shape, dtype=value.data.dtype, device="cpu")
+            else:
+                value.data = dequantize_fp8_tensor(value.data).cpu()
 """
 LORA_MARKER = "PATCHED_K3_FROZEN_FP8_INIT_RELEASE"
 LORA_ANCHOR = """    for parameter in model.parameters():
