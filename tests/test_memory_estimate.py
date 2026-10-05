@@ -137,9 +137,12 @@ def test_lora_recipe_estimated() -> None:
     assert "optimizer_cpu_offload" not in raised
 
 
-def test_multi_turn_without_context_cap_warns() -> None:
+@pytest.mark.parametrize(
+    "hook", ["custom_generate_function_path", "rollout_function_path"]
+)
+def test_multi_turn_without_context_cap_warns(hook: str) -> None:
     model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
-    recipe.extra_config = {"custom_generate_function_path": "pkg.generate"}
+    recipe.extra_config = {hook: "pkg.fn"}
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         maybe_warn_gpu_oom(recipe, model)
