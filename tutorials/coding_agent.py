@@ -142,7 +142,9 @@ def probed_tasks(config: TrainConfig) -> frozenset[str]:
     unusable = set()
     for sample in config.evaluate(config.dataset, n_samples=PROBE_SAMPLES):
         task = sample.metadata["instance_id"]
-        rewards[task, sample.rollout_index] += sample.score
+        # sample_index is the driver's unique per-response index; rollout_index
+        # is stamped by the generate fn and may repeat across responses.
+        rewards[task, sample.sample_index] += sample.score
         if sample.metadata.get("remove_sample"):
             unusable.add(task)
     solved = defaultdict(set)

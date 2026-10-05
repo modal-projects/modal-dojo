@@ -588,6 +588,8 @@ class TrainConfig:
         """Sample ``n_samples`` rollouts per ``dataset`` row without training."""
         if not isinstance(self.recipe, SlimeRecipe):
             raise DojoConfigError("evaluate() requires a Slime recipe")
+        if n_samples < 1:
+            raise DojoConfigError("evaluate() requires n_samples >= 1")
         run = _dc.replace(
             self,
             dataset=dataset,

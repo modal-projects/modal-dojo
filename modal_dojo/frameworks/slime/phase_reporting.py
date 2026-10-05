@@ -251,7 +251,8 @@ def log_eval_rollout_data(
     )
 
     if _arg_value(args, "num_rollout") == 0:
-        samples = [s for d in data.values() for s in d["samples"]]
+        # Custom eval functions may return reward-only results without samples.
+        samples = [s for d in data.values() for s in d.get("samples") or []]
         payload = _rollout_payload(
             rollout_id,
             args,
