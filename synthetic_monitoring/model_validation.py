@@ -45,7 +45,7 @@ probe_image = (
     )
 )
 
-slack_secret = modal.Secret.from_name("gym-bot-slack", environment_name=MODAL_ENV)
+slack_secret = modal.Secret.from_name("dojo-bot-slack", environment_name=MODAL_ENV)
 hf_secret = modal.Secret.from_name("huggingface-secret", environment_name="main")
 
 app = modal.App("gym-synmon-launcher")
