@@ -671,10 +671,11 @@ def _wrap_function(src: str, name: str, context: str) -> str:
 def _wrap_calls(
     src: str,
     function: str,
-    calls: dict[str, str],
-    optional: frozenset[str] = frozenset(),
+    required: dict[str, str],
+    optional: dict[str, str] = {},
 ) -> str:
     """Wrap call statements within their original scopes."""
+    calls = required | optional
     spans = []
     seen = set()
 
@@ -697,7 +698,7 @@ def _wrap_calls(
 
     for node in _function(src, function).body:
         visit(node)
-    if missing := calls.keys() - seen - optional:
+    if missing := required.keys() - seen:
         raise RuntimeError(f"{function}: timing calls missing: {sorted(missing)}")
     for start, end, context in sorted(spans, reverse=True):
         src = _wrap_span(src, start, end, context)
@@ -728,13 +729,15 @@ def _patch_executor_driver(src: str, path: Path) -> str:
             "critic_model.offload": _phase("offload_train"),
             "offload_train": _phase("offload_train"),
             "actor_model.clear_memory": _phase("clear_train_memory"),
-            "actor_model.offload_grad_buffer": _phase("offload_train_gradients"),
             "inference_controller.onload_weights": _phase("onload_rollout_weights"),
             "save": _phase("checkpoint_save"),
         }
     )
     src = _wrap_calls(
-        src, "train", calls, optional=frozenset({"actor_model.offload_grad_buffer"})
+        src,
+        "train",
+        calls,
+        optional={"actor_model.offload_grad_buffer": _phase("offload_train_gradients")},
     )
     if _phase("offload_train_gradients") not in src:
         print(
@@ -825,24 +828,19 @@ def patch_executor_package(root: Path) -> None:
             print(f"WARNING: {path} substep timing patch skipped: {exc}")
 
 
-def _patch_entrypoint(path: Path, wraps: list[tuple[str, str]]) -> None:
-    try:
-        _patch_file(path, wraps)
-    except Exception as exc:
-        print(f"WARNING: {path} substep timing patch skipped: {exc}")
-
-
 def main() -> None:
     """Patch this image's framework checkout, if it has one."""
     if not ROOT.is_dir():
         return
-    if (ROOT / "miles/ray/rollout/rollout_executor.py").exists():
-        _patch_entrypoint(ROOT / "train.py", _SYNC_PHASE_WRAPS)
-        patch_executor_package(ROOT)
-        _patch_entrypoint(ROOT / "train_async.py", _ASYNC_PHASE_WRAPS)
-        return
     for name, wraps in ENTRYPOINTS.items():
-        _patch_entrypoint(ROOT / name, wraps)
+        path = ROOT / name
+        try:
+            _patch_file(path, wraps)
+        except Exception as exc:
+            print(f"WARNING: {path} substep timing patch skipped: {exc}")
+    if (ROOT / "miles/ray/rollout/rollout_executor.py").exists():
+        patch_executor_package(ROOT)
+        return
     for target in PACKAGE_TARGETS:
         patch_package_file(ROOT, target)
 
