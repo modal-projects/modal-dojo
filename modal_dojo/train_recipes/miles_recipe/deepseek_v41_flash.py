@@ -22,7 +22,11 @@ from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 # the sglang tree from the published image's layer
 # (patch_deepseek_v41_sglang_tree). Replace all of it with a single published tag
 # once the PR lands in a nightly.
-_MILES_PR = "pull/3179/head"  # 6a54b4629c4259f4733990a7fcd6c77c3c56296e
+# Pinned to a commit, not pull/3179/head: the PR head moved under us (the image
+# patches below anchor exact upstream sources, e.g. the chat-template family
+# table, and the moving ref broke them). Bump deliberately and re-check the
+# patch anchors when the PR advances.
+_MILES_PR = "6a54b4629c4259f4733990a7fcd6c77c3c56296e"  # pull/3179 head
 
 # Local write buffer for the params-only save (~1.1 TB bf16 over 8 nodes, so
 # ~140 GB a node) on top of the CPU-offloaded optimizer's own host usage.
