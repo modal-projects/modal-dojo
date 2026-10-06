@@ -53,6 +53,10 @@ def test_critic_hf_load_skips_value_head_only_and_is_idempotent() -> None:
     assert patcher.MARKER in patched
     assert 'getattr(ddp_model[0], "role", None) == "critic"' in patched
     assert (
+        'AutoMapping.register_module_type("LinearForLastLayer", "replicated")'
+        in patched
+    )
+    assert (
         'allowed_mismatched_params=["*output_layer.weight"] if is_critic else None'
         in patched
     )

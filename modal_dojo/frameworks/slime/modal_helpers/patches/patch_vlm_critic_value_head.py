@@ -10,9 +10,10 @@ Two edits, applied together or not at all:
 
 * ``model_provider.py``: attach the value head to ``model.language_model`` when the
   model has one (unchanged for plain GPT models).
-* ``checkpoint.py``: when a critic loads HF weights, let the policy's vocab-sized
-  ``lm_head`` skip the 1-output value head (which keeps its fresh init) instead of
-  failing the load with a shape mismatch. The actor's load stays strict.
+* ``checkpoint.py``: when a critic loads HF weights, register slime's value-head class
+  with Megatron-Bridge (the image's Bridge predates its built-in registration) and let
+  the policy's vocab-sized ``lm_head`` skip the 1-output value head, which keeps its
+  fresh init. The actor's load stays strict.
 
 Both files are left alone when their bridge code path does not exist (newer slime
 removed it). Executed at image-build time via ``python3 <this file>``.
@@ -56,6 +57,10 @@ LOAD_ANCHOR = """\
 LOAD_REPLACEMENT = f"""\
         # {MARKER}: the policy lm_head does not fit the critic's 1-output value head.
         is_critic = getattr(ddp_model[0], "role", None) == "critic"
+        if is_critic:
+            from megatron.bridge.models.conversion.param_mapping import AutoMapping
+
+            AutoMapping.register_module_type("LinearForLastLayer", "replicated")
         bridge.load_hf_weights(
             ddp_model, allowed_mismatched_params=["*output_layer.weight"] if is_critic else None
         )
