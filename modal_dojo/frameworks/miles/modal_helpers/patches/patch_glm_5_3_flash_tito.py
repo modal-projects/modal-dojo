@@ -1,3 +1,13 @@
+"""
+image: radixark/miles:glm53next
+commit: https://github.com/radixark/miles/commit/5a5353d36c9133958f9ddb62c93be463bc849f88
+file: miles/utils/chat_template_utils/tito_tokenizer.py
+
+Backport GLM53 TITO support from https://github.com/radixark/miles/pull/3087
+while retaining the pinned GLM LoRA/Bridge stack. Uses the native template
+with clear_thinking=False and enable_thinking=True for text sessions.
+"""
+
 from pathlib import Path
 
 GLM53_TOKENIZER = """class GLM53TITOTokenizer(GLM47TITOTokenizer):
