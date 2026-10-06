@@ -217,7 +217,7 @@ class ModalRayCluster:
             rank, head_addr, node_ip = 0, "127.0.0.1", "127.0.0.1"
         else:
             cluster = modal.Cluster.from_context()
-            ips = list(cluster.container_ips() or [])
+            ips = list(cluster.container_ips(family="ipv4") or [])
             if len(ips) != n_nodes:
                 raise RuntimeError(
                     f"Modal cluster size mismatch: expected {n_nodes} nodes, got {len(ips)}"

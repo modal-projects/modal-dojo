@@ -34,7 +34,7 @@ def get_modal_cluster_context(n_nodes: int) -> tuple[int, str, str, int]:
     import modal
 
     cluster = modal.Cluster.from_context()
-    actual_nodes = len(cluster.container_ips())
+    actual_nodes = len(cluster.container_ips(family="ipv4"))
     if actual_nodes != n_nodes:
         raise RuntimeError(
             f"cluster size mismatch: expected {n_nodes} node(s), got {actual_nodes}"
@@ -42,8 +42,8 @@ def get_modal_cluster_context(n_nodes: int) -> tuple[int, str, str, int]:
     rank = cluster.container_rank()
     return (
         rank,
-        cluster.container_ips()[0],
-        cluster.container_ips()[rank],
+        cluster.container_ips(family="ipv4")[0],
+        cluster.container_ips(family="ipv4")[rank],
         actual_nodes,
     )
 

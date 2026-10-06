@@ -702,8 +702,8 @@ def build_miles_app(
 
             cluster = modal.Cluster.from_context()
             node_rank = cluster.container_rank()
-            master_addr = cluster.container_ips()[0]
-            nnodes = len(cluster.container_ips())
+            master_addr = cluster.container_ips(family="ipv4")[0]
+            nnodes = len(cluster.container_ips(family="ipv4"))
 
         torchrun_args = [f"--nproc-per-node={nproc_per_node}"]
         if nnodes > 1:
