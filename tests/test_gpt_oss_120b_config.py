@@ -26,6 +26,9 @@ def test_base_recipe_is_the_lora_recipe() -> None:
     assert isinstance(recipe, GPT_OSS_120B_LoRA_Recipe)
     assert recipe.megatron_to_hf_mode == "bridge"
     assert recipe.lora_rank == recipe.sglang_max_lora_rank == 32
+    request_mib, limit_mib = recipe.memory
+    assert request_mib >= 1792 * 1024
+    assert limit_mib >= request_mib
 
 
 def test_recipe_emits_gpt_oss_attention_flags() -> None:
