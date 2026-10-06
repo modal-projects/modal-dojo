@@ -192,12 +192,14 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
         return
     knobs = recipe._field_values() | recipe._escape_hatch_values()
     peak, raised = _peak_gib(arch, knobs, gpu_gib)
-    if (
-        knobs.get("custom_generate_function")
-        or knobs.get("custom_generate_function_path")
-    ) and not knobs.get("rollout_max_context_len"):
+    multi_turn_hooks = ["custom_generate_function", "custom_generate_function_path"]
+    if knobs.get("loss_type") != "sft_loss":
+        multi_turn_hooks += ["rollout_function", "rollout_function_path"]
+    if any(knobs.get(k) for k in multi_turn_hooks) and not knobs.get(
+        "rollout_max_context_len"
+    ):
         warnings.warn(
-            "Multi-turn rollouts (custom_generate_function) can grow a sample past "
+            "Multi-turn rollouts (custom_generate_function / rollout_function) can grow a sample past "
             "rollout_max_prompt_len + rollout_max_response_len, so the GPU OOM "
             "estimate is a lower bound. Set rollout_max_context_len to cap sample length.",
             UserWarning,
