@@ -13,6 +13,10 @@ from modal_dojo.train_recipes.miles_recipe.kimi_k3 import (
 )
 
 _PATCHES = (
+    "patch_sglang_freeze_gc",
+    "patch_k3_ddp_stream",
+    "patch_k3_kernel_warmup",
+    "patch_checkpoint_tensor_reads",
     "patch_sglang_offload_timing",
     "patch_k3_marlin_padding",
     "patch_k3_lora_health",
@@ -46,6 +50,8 @@ class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
             # Cache autotuning decisions as well as compiled kernels.
             "TRITON_CACHE_AUTOTUNING": "1",
             "TRITON_PRINT_AUTOTUNING": "1",
+            # Warm each pipeline stage before the first training microbatch.
+            "DOJO_K3_KERNEL_WARMUP": "1",
             # Reuse host allocations while copying fresh weights on every pause.
             "DOJO_TMS_RETAIN_BACKUP_TAG": "weights",
         }
