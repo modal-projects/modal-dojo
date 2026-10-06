@@ -48,6 +48,7 @@ def deploy_base_model():
     base_deployment = CustomDeployment.launch(
         model,
         unauthenticated=True,
+        app_name="audio-asr-baseline",
     )
     base_deployment.wait_until_ready()
     print(f"base model deployed to {base_deployment.url}")
@@ -225,6 +226,7 @@ def deploy_trained_model(checkpoint):
         model,
         checkpoint,
         unauthenticated=True,
+        app_name="audio-asr-trained",
     )
     trained_deployment.wait_until_ready()
     print(f"checkpoint deployed to {trained_deployment.url}")
