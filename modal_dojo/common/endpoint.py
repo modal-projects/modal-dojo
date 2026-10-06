@@ -21,6 +21,38 @@ from modal_dojo.common.openai_messages import _messages_to_openai
 from modal_dojo.model import ModelConfig
 
 
+def _stop_endpoint(endpoint_name: str, environment: str | None) -> None:
+    stop = [
+        sys.executable,
+        "-m",
+        "modal",
+        "endpoint",
+        "stop",
+        endpoint_name,
+        "--yes",
+    ]
+    if environment:
+        stop.extend(["--env", environment])
+    stopped = subprocess.run(
+        stop, check=False, capture_output=True, text=True, timeout=120
+    )
+    if stopped.returncode != 0:
+        text = f"{stopped.stdout or ''}{stopped.stderr or ''}"
+        if not re.search(
+            r"endpoint '[^']+' not found|endpoint .+ is already stopped",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            sys.stdout.write(stopped.stdout or "")
+            sys.stderr.write(stopped.stderr or "")
+            raise subprocess.CalledProcessError(
+                stopped.returncode,
+                stop,
+                output=stopped.stdout,
+                stderr=stopped.stderr,
+            )
+
+
 class Endpoint:
     """Controls a [Modal Endpoint](https://modal.com/docs/guide/endpoints) that
     persists until stopped.
@@ -30,14 +62,12 @@ class Endpoint:
         endpoint_name: Modal Endpoint name.
         model_name: Base model ID sent in request bodies.
         requires_proxy_auth: Whether a proxy token is required to use the endpoint.
-        environment: Modal environment the endpoint was created in.
     """
 
     url: str
     endpoint_name: str
     model_name: str
     requires_proxy_auth: bool
-    environment: str | None
 
     def __init__(
         self,
@@ -46,13 +76,11 @@ class Endpoint:
         endpoint_name: str,
         model_name: str,
         requires_proxy_auth: bool,
-        environment: str | None = None,
     ):
         self.endpoint_name = endpoint_name
         self.model_name = model_name
         self.url = url.rstrip("/")
         self.requires_proxy_auth = requires_proxy_auth
-        self.environment = environment
 
     @classmethod
     def launch(
@@ -134,10 +162,9 @@ class Endpoint:
             endpoint_name=endpoint_name,
             model_name=model_name,
             requires_proxy_auth=not unauthenticated,
-            environment=environment,
         )
         if recreate_if_existing:
-            endpoint.stop()
+            _stop_endpoint(endpoint_name, environment)
 
         command = [
             sys.executable,
@@ -199,35 +226,7 @@ class Endpoint:
 
     def stop(self) -> None:
         """Stop this endpoint and terminate its containers."""
-        stop = [
-            sys.executable,
-            "-m",
-            "modal",
-            "endpoint",
-            "stop",
-            self.endpoint_name,
-            "--yes",
-        ]
-        if self.environment:
-            stop.extend(["--env", self.environment])
-        stopped = subprocess.run(
-            stop, check=False, capture_output=True, text=True, timeout=120
-        )
-        if stopped.returncode != 0:
-            text = f"{stopped.stdout or ''}{stopped.stderr or ''}"
-            if not re.search(
-                r"endpoint '[^']+' not found|endpoint .+ is already stopped",
-                text,
-                flags=re.IGNORECASE,
-            ):
-                sys.stdout.write(stopped.stdout or "")
-                sys.stderr.write(stopped.stderr or "")
-                raise subprocess.CalledProcessError(
-                    stopped.returncode,
-                    stop,
-                    output=stopped.stdout,
-                    stderr=stopped.stderr,
-                )
+        _stop_endpoint(self.endpoint_name, None)
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}

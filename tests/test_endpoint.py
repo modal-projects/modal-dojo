@@ -159,15 +159,12 @@ def fake_modal_cli(monkeypatch: pytest.MonkeyPatch, clock: _FakeClock):
     return _install
 
 
-def _endpoint(
-    *, requires_proxy_auth: bool = False, environment: str | None = None
-) -> Endpoint:
+def _endpoint(*, requires_proxy_auth: bool = False) -> Endpoint:
     return Endpoint(
         "https://ws--ep.modal.run",
         endpoint_name="my-ft",
         model_name="model",
         requires_proxy_auth=requires_proxy_auth,
-        environment=environment,
     )
 
 
@@ -697,7 +694,7 @@ def test_launch_times_out_when_no_url_is_published(
 def test_stop_invokes_modal_endpoint_stop(fake_modal_cli) -> None:
     cli = fake_modal_cli()
 
-    _endpoint(environment="dev").stop()
+    _endpoint().stop()
 
     assert [command[4] for command in cli.commands] == ["stop"]
     assert cli.commands[0][1:] == [
@@ -707,8 +704,6 @@ def test_stop_invokes_modal_endpoint_stop(fake_modal_cli) -> None:
         "stop",
         "my-ft",
         "--yes",
-        "--env",
-        "dev",
     ]
     assert cli.run_kwargs[0] == {
         "check": False,
