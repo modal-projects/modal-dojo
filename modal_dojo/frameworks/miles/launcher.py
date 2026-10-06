@@ -951,6 +951,16 @@ def build_miles_app(
 
             os.makedirs(save_root, exist_ok=True)
 
+            hf_ref: str | None = None
+            if model and miles.megatron_to_hf_mode == "bridge" and not miles.ref_load:
+                from huggingface_hub import snapshot_download
+
+                hf_ref = (
+                    str(model.model_path)
+                    if model.model_path
+                    else snapshot_download(model.model_name, local_files_only=True)
+                )
+
             resume_checkpoint = torch_dist_resume_checkpoint(
                 save_root, is_complete=_is_resumable_checkpoint
             )
@@ -965,6 +975,8 @@ def build_miles_app(
                         f"WARNING: {save_root} holds saves of interrupted writes that cannot be resumed "
                         f"({', '.join(unresumable)}). Resuming into one of these would load a partial save."
                     )
+                if resume_checkpoint is None and hf_ref:
+                    object.__setattr__(miles, "ref_load", hf_ref)
                 cmd = build_train_cmd(
                     miles,
                     MILES_ROOT,
