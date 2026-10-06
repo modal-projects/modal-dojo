@@ -27,7 +27,7 @@ def test_base_recipe_is_the_lora_recipe() -> None:
     assert recipe.megatron_to_hf_mode == "bridge"
     assert recipe.lora_rank == recipe.sglang_max_lora_rank == 32
     request_mib, limit_mib = recipe.memory
-    assert request_mib >= 1792 * 1024
+    assert request_mib >= 1536 * 1024
     assert limit_mib >= request_mib
 
 

@@ -26,7 +26,9 @@ class GPT_OSS_120B_LoRA_Recipe(MilesRecipe):
     # Each of the eight bridge ranks mmaps the whole 65 GB MXFP4 checkpoint and
     # the sandbox charges those file pages to the container, on top of the BF16
     # host backups of the frozen base; a 512 GiB request was killed mid-load.
-    memory: tuple[int, int] = (1792 * 1024, 2048 * 1024)
+    # 1.5 TiB is the largest request that still schedules on 1.8-2 TiB H100
+    # hosts (90% of host RAM is allocatable); 1792 GiB only fits 2 TiB hosts.
+    memory: tuple[int, int] = (1536 * 1024, 2048 * 1024)
 
     # ── Cluster: TP8 x EP8 on one node (DP1), as in upstream's 20B run ──────
     actor_num_gpus_per_node: int = 8
