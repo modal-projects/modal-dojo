@@ -111,6 +111,9 @@ _PATCH_GDN_PACKED_SEQ_B64 = encode_patch("patch_gdn_packed_seq", _MEGATRON_PATCH
 _PATCH_BRIDGE_PER_TOKEN_LOSS_B64 = encode_patch(
     "patch_bridge_provider_per_token_loss", _SLIME_PATCHES
 )
+_PATCH_VLM_CRITIC_VALUE_HEAD_B64 = encode_patch(
+    "patch_vlm_critic_value_head", _SLIME_PATCHES
+)
 _PATCH_STOP_TOKEN_DIAG_B64 = encode_patch("patch_stop_token_diagnostic", _SLIME_PATCHES)
 # The Qwen3-ASR Megatron->HF converter (registers the qwen3_asr mapping incl. the
 # audio tower). It lives in the base image — not the ASR recipe — because torch_dist
@@ -493,6 +496,7 @@ def build_slime_app(
     if slime.megatron_to_hf_mode == "bridge":
         train_image = train_image.run_commands(
             f"echo {_PATCH_BRIDGE_PER_TOKEN_LOSS_B64} | base64 -d | python3",
+            f"echo {_PATCH_VLM_CRITIC_VALUE_HEAD_B64} | base64 -d | python3",
         )
 
     # ── Volumes ──────────────────────────────────────────────────────────────
