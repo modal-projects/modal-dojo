@@ -1,5 +1,7 @@
 """Kimi-K3 LoRA GRPO recipe with a 64k context window."""
 
+import base64
+import zlib
 from dataclasses import field
 
 from pydantic import ConfigDict, model_validator
@@ -25,13 +27,21 @@ _PATCHES = (
 )
 
 
+def _compressed_patch(name: str) -> str:
+    # Keep the recipe below Modal's serialized-function size limit.
+    payload = base64.b64encode(
+        zlib.compress((_PATCH_DIR / f"{name}.py").read_bytes(), level=9)
+    ).decode()
+    return (
+        f"echo {payload} | base64 -d | python3 -c "
+        "'import sys,zlib; exec(zlib.decompress(sys.stdin.buffer.read()))'"
+    )
+
+
 def _image_patches() -> list[str]:
     return [
         *_base_image_patches(),
-        *[
-            f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
-            for name in _PATCHES
-        ],
+        *[_compressed_patch(name) for name in _PATCHES],
         # Retain pinned CPU allocations using the image's allocator revision.
         "git clone https://github.com/fzyzcjy/torch_memory_saver.git /tmp/dojo-tms "
         "&& git -C /tmp/dojo-tms checkout b5588e83de86412a48689a6583a4b567e75f7acc",
