@@ -71,8 +71,10 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "H200"
     # The fp32 optimizer state is offloaded to host RAM: ~8.5B params per GPU at
-    # 12 bytes each is ~100 GiB per rank.
-    memory: tuple[int, int] = (1024, int(2 * 1024 * 1024))
+    # 12 bytes each is ~100 GiB per rank, and ~21B params/rank at 4 nodes is
+    # ~250 GiB. 8 ranks/node vs a 2 TiB cap already OOMs; 2.75 TiB leaves
+    # ~200 GiB for worker overhead on the ~2.95 TiB B300 nodes.
+    memory: tuple[int, int] = (1024, int(2.75 * 1024 * 1024))
 
     # V4.1's DSA indexer, CSA compression and Engram memory are not
     # representable as a ModelArchitecture, so the launcher renders upstream's
