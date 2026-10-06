@@ -216,15 +216,13 @@ class ModalRayCluster:
             # Modal may omit container IPv4s for size-1 clustered functions.
             rank, head_addr, node_ip = 0, "127.0.0.1", "127.0.0.1"
         else:
-            import modal.experimental
-
-            info = modal.experimental.get_cluster_info()
-            ips = list(info.container_ipv4_ips or [])
+            cluster = modal.Cluster.from_context()
+            ips = list(cluster.container_ips() or [])
             if len(ips) != n_nodes:
                 raise RuntimeError(
                     f"Modal cluster size mismatch: expected {n_nodes} nodes, got {len(ips)}"
                 )
-            rank = info.rank
+            rank = cluster.container_rank()
             head_addr = ips[0]
             node_ip = ips[rank]
 

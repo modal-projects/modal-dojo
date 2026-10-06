@@ -698,12 +698,12 @@ def build_miles_app(
         if num_nodes == 1:
             node_rank, master_addr, nnodes = 0, "127.0.0.1", 1
         else:
-            import modal.experimental
+            import modal
 
-            info = modal.experimental.get_cluster_info()
-            node_rank = info.rank
-            master_addr = info.container_ipv4_ips[0]
-            nnodes = len(info.container_ipv4_ips)
+            cluster = modal.Cluster.from_context()
+            node_rank = cluster.container_rank()
+            master_addr = cluster.container_ips()[0]
+            nnodes = len(cluster.container_ips())
 
         torchrun_args = [f"--nproc-per-node={nproc_per_node}"]
         if nnodes > 1:
