@@ -975,7 +975,7 @@ def build_miles_app(
                         f"WARNING: {save_root} holds saves of interrupted writes that cannot be resumed "
                         f"({', '.join(unresumable)}). Resuming into one of these would load a partial save."
                     )
-                if resume_checkpoint is None and hf_ref:
+                if hf_ref:
                     object.__setattr__(miles, "ref_load", hf_ref)
                 cmd = build_train_cmd(
                     miles,
