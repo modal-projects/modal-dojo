@@ -55,6 +55,7 @@ def _image_commands() -> list[str]:
                 "patch_glm_5_3_flash_kda",
                 "patch_glm_5_3_flash_lora_kda_backward",
                 "patch_glm_5_3_flash_lora_timing",
+                "patch_glm_5_3_flash_tito",
             )
         ],
     ]
@@ -62,18 +63,30 @@ def _image_commands() -> list[str]:
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
-    """GLM-5.3-Flash rank-16 bridge LoRA on three nodes of eight H200 GPUs."""
+    """GLM-5.3-Flash rank-16 bridge LoRA on three nodes of eight H200 GPUs.
+
+    Text TITO sessions are enabled by default. Custom multi-turn rollouts must
+    use Miles' session API to retain generated token IDs across turns. The
+    upstream ``glm53`` contract uses the native template with thinking enabled
+    and retained in history; multimodal TITO is not supported.
+    """
 
     model_config_class: ClassVar[type[ModelConfig]] = GLM_5_3_Flash_LoRA
     docker_image: str = (
         "radixark/miles:glm53next@sha256:"
         "66725f740a6013b00d27e21fdfd480a24b0d3b5c61840342e9405bf1e09e5162"
     )
+    # This experimental branch carries GLM LoRA support absent from the main
+    # commit of miles#3087. Backport its tokenizer contract in _image_commands
+    # instead of replacing the driver/model code required by the Bridge pin.
     miles_git_ref: str | None = "5a5353d36c9133958f9ddb62c93be463bc849f88"
     sglang_git_ref: str | None = "94c97e3a7d7ab1dcbba82f4c09046d2c209b1aa7"
     image_run_commands: list[str] = field(default_factory=_image_commands)
     miles_model_name: str = "glm5.3-flash"
     model_name: str = "glm5_next"
+
+    use_session_server: bool | str = True
+    tito_model: str = "glm53"
 
     gpu_type: str = "H200"
     memory: tuple[int, int] = (1024, 2 * 1024 * 1024)
