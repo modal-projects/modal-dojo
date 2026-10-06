@@ -166,20 +166,6 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
         return self
 
     @model_validator(mode="after")
-    def _check_global_batch_size(self) -> "GLM_5_3_Flash_LoRA_Recipe":
-        dp_size = (self.actor_num_nodes * self.actor_num_gpus_per_node) // (
-            self.tensor_model_parallel_size
-            * self.pipeline_model_parallel_size
-            * self.context_parallel_size
-        )
-        if self.global_batch_size % (self.micro_batch_size * dp_size):
-            raise ValueError(
-                f"global_batch_size ({self.global_batch_size}) must be divisible "
-                f"by micro_batch_size * data parallel size ({self.micro_batch_size * dp_size})"
-            )
-        return self
-
-    @model_validator(mode="after")
     def _keep_image_commands(self) -> "GLM_5_3_Flash_LoRA_Recipe":
         required = _image_commands()
         current = self.image_run_commands or []
