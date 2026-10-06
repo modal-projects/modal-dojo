@@ -342,6 +342,7 @@ def _build_miles_base_image(
         and recipe.environment.get("MILES_REINSTALL_RDMA", "1") != "0"
     ):
         image = image.run_commands(RDMA_RUNTIME_INSTALL_COMMAND)
+    image = image.env({"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"})
     if recipe.image_env:
         image = image.env(recipe.image_env)
 
