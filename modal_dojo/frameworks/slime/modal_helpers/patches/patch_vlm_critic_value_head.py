@@ -1,9 +1,9 @@
-"""Fix slime's bridge-mode PPO critic for VLMs such as Qwen3-VL.
-
-The critic's value head is assigned to the wrapper model, but the wrapper's forward()
-runs ``language_model``'s own vocab-sized head. Attach the value head to
-``language_model`` instead, and let the critic's HF load skip the policy ``lm_head``
-(registering the value-head class, which the image's Megatron-Bridge doesn't know).
+"""
+image: slimerl/slime:nightly-dev-20260722a
+commit: https://github.com/THUDM/slime/commit/e70e6476632ebd551d5eb82186ad1cc948e0d8f5
+file: slime/slime/backends/megatron_utils/model_provider.py::_get_model_provider_func
+commit: https://github.com/THUDM/slime/commit/ce4be8ece9c4496ddfb7355b035908e579b1bd1b
+file: slime/slime/backends/megatron_utils/checkpoint.py::_load_checkpoint_hf
 """
 
 from __future__ import annotations
