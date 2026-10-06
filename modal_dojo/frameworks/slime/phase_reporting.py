@@ -27,6 +27,7 @@ from modal_dojo.common.timing_recorder import (
     recording_lane_on_reporting_rank as recording_lane_on_reporting_rank,
     time_phase as time_phase,
 )
+from modal_dojo.common.training_rollout import TrainingRolloutResult
 
 from .advantage_reporting import (
     _advantage_samples_payload as _advantage_samples_payload,
@@ -136,8 +137,24 @@ def report_rollout_samples(
     rollout_time: Any,
 ) -> None:
     """Post one TrainingRolloutResult-shaped payload to the dashboard."""
+    payload = _rollout_payload(
+        rollout_id, args, samples, rollout_extra_metrics, rollout_time
+    )
+    if payload is not None:
+        _enqueue_rollout(payload)
+
+
+def _rollout_payload(
+    rollout_id: int,
+    args: Any,
+    samples: Any,
+    rollout_extra_metrics: Any,
+    rollout_time: Any,
+    n_samples_arg: str = "n_samples_per_prompt",
+    reward_key: str | None = None,
+) -> dict[str, Any] | None:
     if samples is None:
-        return
+        return None
     parser = _response_parser()
     # Trace/trajectory only the first N samples (traces also gated by an enable flag)
     # so the payload stays small — the caps keep volume growth well under 1%. Images
@@ -145,7 +162,7 @@ def report_rollout_samples(
     trace_limit = _trace_sample_limit() if _trace_enabled() else 0
     trajectory_limit = _trajectory_sample_limit()
     image_store = RolloutImageStore(_image_limit())
-    n_per = _positive_int(_arg_value(args, "n_samples_per_prompt")) or 1
+    n_per = _positive_int(_arg_value(args, n_samples_arg)) or 1
     try:
         sample_dicts = [
             _sample_to_dict(
@@ -155,11 +172,12 @@ def report_rollout_samples(
                 image_store=image_store,
                 include_trajectory=(i < trajectory_limit),
                 n_samples_per_prompt=n_per,
+                reward_key=reward_key,
             )
             for i, s in enumerate(samples)
         ]
     except TypeError:
-        return
+        return None
     payload = {
         **_run_context(args),
         "rollout_id": int(rollout_id),
@@ -173,7 +191,7 @@ def report_rollout_samples(
             payload["rollout_time"] = float(rollout_time)
         except (TypeError, ValueError):
             pass
-    _enqueue_rollout(payload)
+    return payload
 
 
 def _call_hook(path_key: str, args: Any, *hook_args: Any, **hook_kwargs: Any) -> Any:
@@ -231,6 +249,20 @@ def log_eval_rollout_data(
         sample_count=len(data) if hasattr(data, "__len__") else None,
         metrics=extra_metrics,
     )
+
+    if _arg_value(args, "num_rollout") == 0:
+        samples = [s for d in data.values() for s in d.get("samples") or []]
+        payload = _rollout_payload(
+            rollout_id,
+            args,
+            samples,
+            extra_metrics,
+            None,
+            n_samples_arg="n_samples_per_eval_prompt",
+            reward_key=_arg_value(args, "eval_reward_key")
+            or _arg_value(args, "reward_key"),
+        )
+        TrainingRolloutResult.model_validate(payload).save()
     result = _call_hook(
         CUSTOM_EVAL_ROLLOUT_LOG_FUNCTION_PATH_KEY,
         args,

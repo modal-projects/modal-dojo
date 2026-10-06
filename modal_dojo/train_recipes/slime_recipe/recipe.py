@@ -48,6 +48,7 @@ SlimeLossMaskType = Literal["qwen", "qwen3", "qwen3_5", "distill_qwen"]
 _SLIME_SKIP = {
     "environment",
     "async_mode",
+    "eval_only",
     "metrics",
     "name",
     "app_tags",
@@ -101,6 +102,14 @@ _HOOK_WRAPPER_PATHS = {
     "custom_megatron_before_log_prob_hook": "modal_dojo.frameworks.slime.phase_reporting.before_log_prob_hook",
     "custom_megatron_before_train_step_hook": "modal_dojo.frameworks.slime.phase_reporting.before_train_step_hook",
 }
+
+_EVAL_ONLY_STRIP_KEYS = (
+    "num_rollout",
+    "num_epoch",
+    "eval_interval",
+    "n_samples_per_eval_prompt",
+    "debug_train_only",
+)
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
@@ -352,6 +361,9 @@ class SlimeRecipe(BaseTrainRecipe):
             Max generated tokens per eval sample.
         eval_top_p:
             Nucleus-sampling top-p for eval generation.
+        eval_temperature:
+            Sampling temperature for eval generation; ``None`` uses
+            ``rollout_temperature``.
         eval_config:
             Evaluation defaults and datasets written to ``--eval-config`` as YAML.
 
@@ -362,6 +374,10 @@ class SlimeRecipe(BaseTrainRecipe):
             Overlap rollout generation and training with slime's one-step off-policy
             ``train_async.py``. Ignored with ``loss_type="sft_loss"``, which always
             runs ``train.py``.
+        eval_only:
+            Normalize the recipe for a generate-only evaluation run: zero
+            training iterations, the sync driver, and the eval dataset as the
+            rollout source. Set by ``TrainConfig.evaluate()``.
         metrics:
             Metric tracker settings; expands to slime's W&B-compatible flags.
             Defaults to the dashboard-only tracker; ``None`` disables metric
@@ -561,6 +577,7 @@ class SlimeRecipe(BaseTrainRecipe):
     n_samples_per_eval_prompt: int = 2
     eval_max_response_len: int = 4096
     eval_top_p: float = 1.0
+    eval_temperature: float | None = None
     eval_config: dict | None = None
 
     # ── Launcher instructions ─────────────────────────
@@ -572,6 +589,7 @@ class SlimeRecipe(BaseTrainRecipe):
         }
     )
     async_mode: bool = False
+    eval_only: bool = False
     metrics: MetricConfig | None = field(default_factory=DashboardMetricConfig)
     image_overlay: Callable[[modal.Image], modal.Image] | None = None
     local_slime: str | None = None
@@ -656,6 +674,29 @@ class SlimeRecipe(BaseTrainRecipe):
     def _validate_gpu_allocation(self) -> "SlimeRecipe":
         validate_multi_node_gpu_count(resolve_gpu_allocation(self), self.gpu_type)
         validate_megatron_actor_parallelism(self)
+        return self
+
+    @model_validator(mode="after")
+    def _apply_eval_only(self) -> "SlimeRecipe":
+        if not self.eval_only:
+            return self
+        if self.loss_type == "sft_loss":
+            raise DojoConfigError("eval_only does not support loss_type='sft_loss'")
+        hatch = {
+            k: v
+            for k, v in (self.extra_config or {}).items()
+            if k not in _EVAL_ONLY_STRIP_KEYS
+        }
+        object.__setattr__(
+            self,
+            "extra_config",
+            {**hatch, "lr_decay_iters": 1, "lr_warmup_iters": 0},
+        )
+        object.__setattr__(self, "num_rollout", 0)
+        object.__setattr__(self, "num_epoch", None)
+        object.__setattr__(self, "eval_interval", self.eval_interval or 1)
+        object.__setattr__(self, "async_mode", False)
+        object.__setattr__(self, "eval_config", None)
         return self
 
     # ── Container → slime flag converters ────────────────────────────────────
