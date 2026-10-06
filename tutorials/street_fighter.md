@@ -14,6 +14,11 @@ on Street Fighter III using self-play. To enable this, we use the
 [OnlineRollout](https://gym.modal.dev/reference/onlinerollout) class and a
 custom generate function.
 
+<video controls autoplay muted loop playsinline width="100%">
+  <source src="https://modal-cdn.com/cdnbot/iter49_vs_cpu1_Gouki_vs_Chun-Li_win_7c06e16b.mp4" type="video/mp4">
+  <a href="https://modal-cdn.com/cdnbot/iter49_vs_cpu1_Gouki_vs_Chun-Li_win_7c06e16b.mp4">Watch a trained Gouki defeat CPU Chun-Li.</a>
+</video>
+
 You can find the [full code here](https://github.com/modal-projects/sf3/tree/main/src/train).
 
 ## Creating the environment and reward function
