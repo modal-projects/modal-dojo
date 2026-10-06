@@ -713,6 +713,23 @@ def test_stop_invokes_modal_endpoint_stop(fake_modal_cli) -> None:
     }
 
 
+def test_stop_forwards_environment_arg(fake_modal_cli) -> None:
+    cli = fake_modal_cli()
+
+    _endpoint().stop(environment="dev")
+
+    assert cli.commands[0][1:] == [
+        "-m",
+        "modal",
+        "endpoint",
+        "stop",
+        "my-ft",
+        "--yes",
+        "--env",
+        "dev",
+    ]
+
+
 def test_stop_tolerates_missing_endpoint(fake_modal_cli) -> None:
     cli = fake_modal_cli(stop_returncode=1)
     cli._stop_stderr = "Endpoint 'my-ft' not found in environment 'ajhinh-dev'."

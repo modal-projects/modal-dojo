@@ -21,38 +21,6 @@ from modal_dojo.common.openai_messages import _messages_to_openai
 from modal_dojo.model import ModelConfig
 
 
-def _stop_endpoint(endpoint_name: str, environment: str | None) -> None:
-    stop = [
-        sys.executable,
-        "-m",
-        "modal",
-        "endpoint",
-        "stop",
-        endpoint_name,
-        "--yes",
-    ]
-    if environment:
-        stop.extend(["--env", environment])
-    stopped = subprocess.run(
-        stop, check=False, capture_output=True, text=True, timeout=120
-    )
-    if stopped.returncode != 0:
-        text = f"{stopped.stdout or ''}{stopped.stderr or ''}"
-        if not re.search(
-            r"endpoint '[^']+' not found|endpoint .+ is already stopped",
-            text,
-            flags=re.IGNORECASE,
-        ):
-            sys.stdout.write(stopped.stdout or "")
-            sys.stderr.write(stopped.stderr or "")
-            raise subprocess.CalledProcessError(
-                stopped.returncode,
-                stop,
-                output=stopped.stdout,
-                stderr=stopped.stderr,
-            )
-
-
 class Endpoint:
     """Controls a [Modal Endpoint](https://modal.com/docs/guide/endpoints) that
     persists until stopped.
@@ -164,7 +132,7 @@ class Endpoint:
             requires_proxy_auth=not unauthenticated,
         )
         if recreate_if_existing:
-            _stop_endpoint(endpoint_name, environment)
+            endpoint.stop(environment)
 
         command = [
             sys.executable,
@@ -224,9 +192,43 @@ class Endpoint:
                 f"Timed out waiting for a URL for endpoint {endpoint_name!r}"
             )
 
-    def stop(self) -> None:
-        """Stop this endpoint and terminate its containers."""
-        _stop_endpoint(self.endpoint_name, None)
+    def stop(self, environment: str | None = None) -> None:
+        """Stop this endpoint and terminate its containers.
+
+        Args:
+            environment:
+                Modal environment the endpoint lives in. Defaults to the
+                environment the Modal CLI resolves at call time.
+        """
+        stop = [
+            sys.executable,
+            "-m",
+            "modal",
+            "endpoint",
+            "stop",
+            self.endpoint_name,
+            "--yes",
+        ]
+        if environment:
+            stop.extend(["--env", environment])
+        stopped = subprocess.run(
+            stop, check=False, capture_output=True, text=True, timeout=120
+        )
+        if stopped.returncode != 0:
+            text = f"{stopped.stdout or ''}{stopped.stderr or ''}"
+            if not re.search(
+                r"endpoint '[^']+' not found|endpoint .+ is already stopped",
+                text,
+                flags=re.IGNORECASE,
+            ):
+                sys.stdout.write(stopped.stdout or "")
+                sys.stderr.write(stopped.stderr or "")
+                raise subprocess.CalledProcessError(
+                    stopped.returncode,
+                    stop,
+                    output=stopped.stdout,
+                    stderr=stopped.stderr,
+                )
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
