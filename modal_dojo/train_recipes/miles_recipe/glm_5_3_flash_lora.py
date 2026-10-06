@@ -77,7 +77,6 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     model_name: str = "glm5_next"
 
     use_session_server: bool | str = True
-    session_server_workers: int = 1
     tito_model: str = "glm53"
 
     gpu_type: str = "H200"
