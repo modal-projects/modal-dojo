@@ -218,18 +218,19 @@ def train(config):
     results = []
     with config.launch() as run, ThreadPoolExecutor() as evals:
         print(f"run id: {run.training_run_id}")
-        checkpoint, pending = None, []
+        pending, seen = [], set()
         terminal_status = terminal_error = None
         while True:
             done = run.done()
             if done and terminal_status is None:
                 terminal_status = run.status.value
                 terminal_error = run.error
-            latest = run.latest_checkpoint()
-            if latest is not None and latest != checkpoint:
-                checkpoint = latest
-                print(f"new checkpoint: {checkpoint.path}")
-                pending.append(evals.submit(eval_checkpoint, checkpoint))
+            for ckpt in run.checkpoints():
+                if ckpt.path in seen:
+                    continue
+                seen.add(ckpt.path)
+                print(f"new checkpoint: {ckpt.path}")
+                pending.append(evals.submit(eval_checkpoint, ckpt))
             if done:
                 break
             time.sleep(30)
