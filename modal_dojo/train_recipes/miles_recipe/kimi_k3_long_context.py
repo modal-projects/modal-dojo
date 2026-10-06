@@ -2,15 +2,54 @@
 
 from dataclasses import field
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
-from modal_dojo.train_recipes.miles_recipe.kimi_k3 import Kimi_K3_LoRA_Recipe
+from modal_dojo.common.patches import encode_patch
+from modal_dojo.train_recipes.miles_recipe.kimi_k3 import (
+    Kimi_K3_LoRA_Recipe,
+    _PATCH_DIR,
+    _image_patches as _base_image_patches,
+)
+
+_PATCHES = (
+    "patch_sglang_offload_timing",
+    "patch_k3_marlin_padding",
+    "patch_k3_lora_health",
+)
+
+
+def _image_patches() -> list[str]:
+    return [
+        *_base_image_patches(),
+        *[
+            f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
+            for name in _PATCHES
+        ],
+        # Retain pinned CPU allocations using the image's allocator revision.
+        "git clone https://github.com/fzyzcjy/torch_memory_saver.git /tmp/dojo-tms "
+        "&& git -C /tmp/dojo-tms checkout b5588e83de86412a48689a6583a4b567e75f7acc",
+        f"echo {encode_patch('patch_tms_retain_backup', _PATCH_DIR)} | base64 -d | python3",
+        "TMS_CUDA_MAJOR=13 uv pip install --python /opt/sglang/bin/python "
+        "--no-deps --no-build-isolation --reinstall /tmp/dojo-tms",
+    ]
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
     """Kimi-K3 rank-32 LoRA recipe for 64k context on 8 B300:8 nodes."""
+
+    image_run_commands: list[str] = field(default_factory=_image_patches)
+    environment: dict[str, str] = field(
+        default_factory=lambda: {
+            **Kimi_K3_LoRA_Recipe().environment,
+            # Cache autotuning decisions as well as compiled kernels.
+            "TRITON_CACHE_AUTOTUNING": "1",
+            "TRITON_PRINT_AUTOTUNING": "1",
+            # Reuse host allocations while copying fresh weights on every pause.
+            "DOJO_TMS_RETAIN_BACKUP_TAG": "weights",
+        }
+    )
 
     # ── Colocation and weight sync ───────────────────────────────────────────
     # Offload the active model before restoring the other to avoid GPU overlap.
@@ -31,14 +70,17 @@ class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
     max_tokens_per_gpu: int = 32768
     log_probs_max_tokens_per_gpu: int = 32768
 
-    # ── SGLang: one TP16 engine spans two nodes ──────────────────────────────
+    # ── SGLang: one TP8 engine per node ──────────────────────────────────────
+    rollout_num_gpus_per_engine: int = 8
+    sglang_mem_fraction_static: float = 0.94
     sglang_context_length: int = 65536
     sglang_chunked_prefill_size: int = 4096
     sglang_server_concurrency: int | None = 1
     sglang_max_running_requests: int | None = 1
     sglang_max_mamba_cache_size: int = 5
-    # One active sequence plus one context window of cache headroom.
     sglang_max_total_tokens: int = 131072
+    sglang_decode_attention_backend: str | None = "triton"
+    sglang_page_size: int = 1
     sglang_cuda_graph_bs_decode: list[int] | None = field(default_factory=lambda: [1])
 
     # ── Config overrides ─────────────────────────────────────────────────────
@@ -46,3 +88,15 @@ class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
     extra_config: dict | None = field(
         default_factory=lambda: {"rollout_max_prompt_len": None}
     )
+
+    @model_validator(mode="after")
+    def _keep_image_patches(self) -> "Kimi_K3_LoRA_Long_Context_Recipe":
+        patches = _image_patches()
+        current = list(self.image_run_commands or [])
+        if current[: len(patches)] != patches:
+            object.__setattr__(
+                self,
+                "image_run_commands",
+                [*patches, *(c for c in current if c not in patches)],
+            )
+        return self
