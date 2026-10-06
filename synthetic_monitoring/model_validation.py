@@ -29,6 +29,7 @@ PROBE_TIMEOUT_S = 2 * 60 * 60
 CLEANUP_GRACE_S = 5 * 60
 LAUNCH_TIMEOUT_S = PROBE_TIMEOUT_S + CLEANUP_GRACE_S + 30 * 60
 MODAL_ENV = "training-gym"
+SLACK_CHANNEL_ID = "C0B2K1D6Q4D"
 HISTORY_DICT_NAME = "gym-synmon-timing-baselines"
 QUICKSTART_NAME = "quickstart"
 
@@ -201,7 +202,7 @@ def _post_report(rows: list[dict]) -> None:
     from slack_sdk.errors import SlackApiError
 
     client = WebClient(token=os.environ["SLACK_BOT_TOKEN"])
-    channel = os.environ["SLACK_CHANNEL_ID"]
+    channel = SLACK_CHANNEL_ID
     try:
         client.conversations_join(channel=channel)
     except SlackApiError as exc:
