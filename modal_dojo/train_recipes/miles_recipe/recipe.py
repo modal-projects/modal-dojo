@@ -738,6 +738,12 @@ class MilesRecipe(BaseTrainRecipe):
         return self
 
     @model_validator(mode="after")
+    def _check_kl_ref_load(self) -> "MilesRecipe":
+        if (self.use_kl_loss or self.kl_coef != 0) and not self.ref_load:
+            raise ValueError("KL loss requires ref_load")
+        return self
+
+    @model_validator(mode="after")
     def _warn_routing_replay_with_custom_rollout(self) -> "MilesRecipe":
         if not self.use_rollout_routing_replay:
             return self
