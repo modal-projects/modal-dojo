@@ -38,7 +38,7 @@ For **out-of-memory (OOM)** errors, identify the failing **rank, phase and alloc
 | **Model weights** | Tensor parallelism (TP), pipeline parallelism (PP), or parameter sharding. |
 | **Gradients / optimizer states** | State sharding; CPU offload. |
 | **MoE expert weights** | Expert parallelism (EP). |
-| **Logits / log-probabilities / entropy** | Smaller token chunks; supported [**fused computation**](https://github.com/linkedin/Liger-Kernel#fused-scaled-cross-entropy) that avoids full token-by-vocabulary intermediates. |
+| **Logits / log-probabilities / entropy** | Smaller token chunks; supported **fused computation** that avoids full token-by-vocabulary intermediates. |
 | **Rollout prefill** | Smaller prefill chunks; reserve activation/workspace memory outside the cache pool. |
 | **Rollout decoding** | Lower request concurrency; inspect key/value (KV) cache capacity and retained session state. |
 | **Weight publication / colocated transitions** | Reduce duplicate weights and transfer buffers; release or offload inactive state. |

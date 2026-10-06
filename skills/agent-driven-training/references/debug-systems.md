@@ -7,13 +7,15 @@
 - **With a comparable run or benchmark:** compare steady-state timings at similar token counts and concurrency. Investigate unexplained regressions; a known-working recipe is not necessarily efficient.
 - **Without one:** profile a short run after warmup using representative inputs. Record phase times, token counts and throughput across several updates. Use this as the baseline for controlled changes.
 
-Separate startup (image build, capacity placement, model download/conversion,
-engine initialization) from steady-state updates. Check cache misses and startup
-logs before tuning the training loop. Keep topology fixed unless it is the
-variable under test: changing topology may invalidate converted/shared-cache
-layouts and introduce a new startup cost.
+Startup/conversion: distinguish image build, cache miss, download,
+conversion, and capacity scheduling before tuning the training loop.
 
-**Use cost estimates as a sanity check.** Transfer time is roughly **bytes transferred / effective bandwidth**. Full weight synchronization also includes export, resharding, loading and synchronization overhead. [Published transfer estimates](https://modal.com/blog/reinforcement-learning-infrastructure-problem) are useful only with their stated bandwidth and transfer assumptions.
+Change one setting at a time. Keep the model, dataset slice, GPU topology, and
+measurement window fixed unless topology is the variable under test. Changing
+topology can invalidate converted or shared-cache layouts and introduce a new
+startup cost.
+
+**Use cost estimates as a sanity check.** Transfer time is roughly **bytes transferred / effective bandwidth**. Full weight synchronization also includes export, resharding, loading and synchronization overhead.
 
 Then find the **critical path**: the work that determines when the next batch or update can finish. Prioritize unexplained delays and avoidable work on this path.
 
@@ -40,13 +42,13 @@ sandbox or legitimately expensive work.
 | **Rollout decoding** | Active/queued requests and KV-cache pressure. Tune request concurrency and engine parallelism. Test supported **low-precision rollout** or **speculative decoding**, including conversion/draft costs. |
 | **Trainer computation** | Microbatching, packing and work per GPU. Reduce recomputation when memory permits. |
 | **Communication / load imbalance** | Token and expert load across ranks; collective time and network topology. Revisit TP/EP/CP/PP and state sharding against their communication costs. [Parallelism guide](https://docs.nvidia.com/nemo/megatron-bridge/0.3.1/parallelisms.html) |
-| **Tools / sandbox** | Queueing, startup, execution and retries. Check CPU throttling, RAM pressure and I/O; tune sandbox concurrency and per-sandbox resources. [Resource limits](https://docs.docker.com/engine/containers/resource_constraints/) |
+| **Tools / sandbox** | Queueing, startup, execution and retries. Check CPU throttling, RAM pressure and I/O; tune sandbox concurrency and per-sandbox resources. |
 | **Reward / host processing** | Verification, tokenization and serialization. Check blocking calls and worker-pool saturation; batch or parallelize independent work. |
 | **Data / weight transfer** | Transferred bytes, duplicate copies and weight-publication pauses. Reduce redundant transfers; overlap work where dependencies allow. |
 
 Test higher concurrency when work is ready but capacity is underused; lower it if contention, cache pressure or retries grow. Measure throughput and tail latency together. [Inference tuning](https://github.com/sgl-project/sglang/blob/main/docs/docs/advanced_features/hyperparameter_tuning.mdx)
 
-**If a smaller smoke test hangs or fails:** lower concurrency can exercise different engine paths, including combinations of idle, prefilling and decoding ranks. Compare with a known-working configuration and inspect engine errors before interpreting the change as ordinary scaling behavior. [Example engine failure](https://github.com/sgl-project/sglang/pull/34535)
+**If a smaller smoke test hangs or fails:** lower concurrency can exercise different engine paths, including combinations of idle, prefilling and decoding ranks. Compare with a known-working configuration and inspect engine errors before interpreting the change as ordinary scaling behavior.
 
 Low-precision support depends on the model, format, hardware and weight-export path; trainer changes may be required. Recheck scoring agreement and learning. [Precision compatibility](https://github.com/radixark/miles/blob/8760515851ec4f76815171d812c836bf8caa0aca/docs/advanced/low-precision.md)
 
@@ -60,7 +62,7 @@ Low-precision support depends on the model, format, hardware and weight-export p
 - **Persistently low despite shared history:** check exact prefixes, cache eviction and routing/session affinity. Restore reuse where expected, then remeasure prefill and full-loop time.
 - **Repeated drops:** align them with weight updates, cache resets, routing and input-length changes. Measure expected refill costs; investigate unexplained drops.
 
-High expected cache reuse assumes a warm workload with shared history. New prefixes or large tool outputs can lower reuse. Cached states must be valid for the active weights. Reuse saves prefill work, not decoding or tool execution. [Prefix caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/) · [Routing and load balance](https://github.com/sgl-project/sglang/blob/main/sgl-model-gateway/src/policies/cache_aware.rs)
+High expected cache reuse assumes a warm workload with shared history. New prefixes or large tool outputs can lower reuse. Cached states must be valid for the active weights. Reuse saves prefill work, not decoding or tool execution. [Prefix caching](https://docs.vllm.ai/en/latest/features/automatic_prefix_caching/)
 
 **Verify:** hold task mix, effective batch size and generation/tool budgets fixed. Compare usable trajectories or updates per second, GPU-hours per update and trajectory tail latency; report extra CPU/sandbox resources. Preserve timeout and failure handling. Higher utilization or cache hits alone do not establish a speedup.
 

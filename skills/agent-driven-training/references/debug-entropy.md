@@ -32,8 +32,6 @@ For **falling entropy with stalled learning**, check unintended deterministic sa
 
 **Verify:** compare full-vocabulary entropy, response diversity and held-out performance using consistent scoring and averaging. Entropy after sampling filters is a different quantity. Task mix, prefixes and response lengths can move the mean; judge an intervention by learning and response quality, not by reaching a target entropy.
 
-Reported cases in DAPO: [entropy collapse, with a paired accuracy comparison (§3.1, Figure 2)](https://arxiv.org/html/2503.14476v2#S2.F2), and [excessive entropy and response-length growth (§3.3, Figure 4)](https://arxiv.org/html/2503.14476v2#S3.F4).
-
 ## Observed example: rising entropy with falling accuracy
 
 An entropy bonus is intended to discourage premature concentration and preserve exploration. For a minimized loss, it adds a term $-\beta H$ to the RL loss: increasing entropy improves that term regardless of whether the additional token alternatives help solve the task. It can therefore compete with reward-driven learning. [Entropy regularization experiments (§4.1)](https://arxiv.org/html/2505.22617v1#S4.SS1)
@@ -42,11 +40,11 @@ Both runs use synchronous GLM-4.7-Flash training on DAPO-Math-17k with an 8K res
 
 **1. Locate the deterioration.** With coefficient 0.001, held-out pass@1 falls from 65.81% at update 70 to 29.85% at update 140 while entropy rises sharply. Without the bonus, entropy stays near its initial level and accuracy improves. This is pattern C in the affected run: performance collapses while entropy rises.
 
-**2. Inspect the responses.** In the [affected run's dashboard](https://modal-labs-nan-dev--training-gym-dashboard-fastapi-app.modal.run/training/gravitational-conduit-e90cee961cff), compare earlier rollouts with rollout 139, used for update 140. Here is the unchanged opening of one response to a problem asking for the smallest integer whose digits multiply to $9!$:
+**2. Inspect the responses.** In the affected run's dashboard, compare earlier rollouts with rollout 139, used for update 140. Here is the unchanged opening of one response to a problem asking for the smallest integer whose digits multiply to $9!$:
 
 > We should find the minimal integer. A standard way: as short a representation of $9!$ as possible, meaning it wants a rounded minimal count of numbers: ergy as partas that must produce $5$. Use algorithm.StatusOK sum factor and Sam...
 >
 
 The response contains incoherent text, received reward 0 and used 3,879 tokens, below the 8K cap. This selected example illustrates degraded generation; it does not measure how often it occurs.
 
-**3. Test the hypothesis against the control.** The otherwise matched [run without an entropy bonus](https://modal-labs-nan-dev--training-gym-dashboard-fastapi-app.modal.run/training/snowy-skin-5ba2d9b61bd5) reaches 72.15% held-out pass@1 at update 140 and avoids the same deterioration. This supports omitting the 0.001 bonus in this recipe. It does not establish a universal coefficient or demonstrate recovery of an already degraded policy.
+**3. Test the hypothesis against the control.** The otherwise matched run without an entropy bonus reaches 72.15% held-out pass@1 at update 140 and avoids the same deterioration. This supports omitting the 0.001 bonus in this recipe. It does not establish a universal coefficient or demonstrate recovery of an already degraded policy.

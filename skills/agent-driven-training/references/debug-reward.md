@@ -2,11 +2,13 @@
 
 ## Inspect attempts and scoring
 
-Compare baseline, early, and recent rewards with sample counts and variation.
-Near-ceiling reward from the start may mean saturation or leakage; a sudden
-jump warrants checking permissive extraction, duplicated samples, and copied
-references. Thresholds are task-relative. Do not change the target evaluation
-merely to produce a rising curve.
+Compare the baseline, early steps, recent steps, sample counts, and variance.
+Do not infer learning from the final value alone.
+
+- Near the ceiling from the first rollout: the base model may already solve the
+  task, the evaluation set may be too easy, or the reward may leak or overmatch.
+- Abrupt jump to perfect reward: inspect for answer leakage, permissive parsing,
+  duplicated samples, and reward hacking before treating it as success.
 
 **Inspect the attempt → validate the verifier → interpret the reward distribution.**
 
@@ -16,12 +18,9 @@ merely to produce a rising curve.
 | **Verifier input and decision** | Confirm the verifier received the intended answer or artifact. Inspect extraction and tests using known correct and incorrect examples. Separate verifier errors from valid failure judgments. |
 | **Recorded reward** | Confirm the value matches the verifier's decision and the stated objective. Count truncations and execution errors separately. Repair generation or scoring errors before tuning learning. |
 
-Recompute reward for representative high- and low-reward responses using the
-exact prompt, response, reference, and verifier inputs. Check correct answers
-rejected by parsing, incorrect answers accepted, missing answers, and predictions
-mistakenly extracted from prompt/reference fields. Add regression fixtures for
-confirmed false positives and false negatives. Preserve execution isolation
-when a verifier runs model-generated code.
+Recompute the reward locally for representative samples using the exact
+prompt, response, and reference fields. Add fixture cases for every discovered
+false positive or false negative.
 
 **If attempts end too early:** fix unintended stop conditions; increase the budget (`max_length`) only if the task objective permits. If success must fit a fixed budget, keep that constraint explicit in scoring and evaluation. Masking truncated responses removes their direct policy-loss contribution, but their rewards may still affect other group members' advantages. Check the implementation.
 
@@ -49,9 +48,3 @@ Uniform groups are normal. Investigate a sustained lack of reward contrast acros
 Track **group acceptance rate** (accepted groups divided by sampled groups) and collection time. Low acceptance means more generation per retained group; check whether rejections are mainly all-wrong or all-correct. There is no universal cutoff: judge whether the additional learning signal justifies the collection cost.
 
 **Filtering can help learning, but a change in training-batch accuracy is not proof.** Selection changes which outcomes enter that metric, so it no longer estimates success on the original prompt distribution. Compare unfiltered held-out improvement **per update and per elapsed time** against a run without filtering. Training metrics still diagnose reward contrast, gradients and stability.
-
-**Verify:** repaired scoring agrees with known cases, generation reaches the
-intended answer, and informative groups occur across representative batches.
-For a sampling or curriculum change, compare fixed held-out task success and
-collection cost. Use the lifecycle's early-stop and smoke-test decisions when
-further run changes are authorized.

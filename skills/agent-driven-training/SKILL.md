@@ -27,10 +27,7 @@ when_to_use: >-
 
 ## Diagnose by the observed symptom
 
-Start with the symptom you see and read its reference. These are eight peer
-entry points, not a sequence to work through. Follow links to another symptom
-only when the evidence calls for it. Each reference covers evidence, possible
-interventions, and verification for that symptom.
+Read only the reference matching the current decision.
 
 | No. | What you see | Debugging reference |
 | --- | --- | --- |
@@ -43,16 +40,11 @@ interventions, and verification for that symptom.
 | 07 | Steps are slow or timing totals look wrong | [Timing](references/debug-systems.md) |
 | 08 | Async or more GPUs do not help | [Async and scaling](references/debug-async.md) |
 
-The references include repository-specific operational checks.
-Published sources and recorded examples provide background, not
-evidence about the current run. Data, infrastructure, and algorithms interact;
-metric patterns suggest hypotheses rather than establishing causes.
+Missing or disabled metrics are unknown, not zero.
 
-### Gather evidence for the selected investigation
+## Collect evidence
 
-Identify the run, framework/code revision, resolved recipe, dataset revision,
-reward implementation, and relevant checkpoint versions. Compare the first
-anomalous interval with a healthy interval or comparable run if available.
+Start with the supported CLI:
 
 ```bash
 uv run modal-dojo run get <run-id> --verbose
@@ -60,35 +52,13 @@ uv run modal-dojo run params <run-id>
 uv run modal-dojo run logs <run-id> --tail 200
 ```
 
-Use traces as described below when the question concerns generated behavior or
-scoring; use worker logs, timings, or memory evidence for systems failures.
-Establish metric definitions, masks, denominators, and weight versions before
-interpreting trends. Distinguish sampled, completed, accepted, and trained
-populations. Missing or disabled metrics are unknown, not zero. Use supplied
-local artifacts when sufficient; identify the smallest additional evidence
-needed when they cannot distinguish the leading explanations.
-
-### Test and report the explanation
-
-Connect each leading hypothesis to evidence and a check that could disprove
-it. Prefer replaying saved responses, inspecting an affected batch, or comparing
-fixed prefixes when these can resolve the question. Verify framework support
-and actual implementation before turning a proposed method into a recipe flag.
-
-For an authorized experiment, change one causal factor and hold the relevant
-workload, budgets, resources, and measurement protocol fixed. Judge success by
-task quality as well as the repaired metric. Report run/checkpoint and interval,
-artifact paths and sample IDs where relevant, confirmed findings, alternatives,
-and the next test with expected distinguishing outcomes. Quantify prevalence
-with counts and denominators; label missing evidence and unvalidated fixes.
-
 ## 1. Configure and preflight
 
 If the user has not already chosen the model, dataset, reward function,
 topology, and final training horizon, propose the missing pieces and ask the
-user to confirm them before implementation. Present the staged plan 
-explicitly: the one-step proof, the smoke test, and the proposed full run 
-with its model, GPU topology, important recipe settings, and maximum step 
+user to confirm them before implementation. Present the staged plan
+explicitly: the one-step proof, the smoke test, and the proposed full run
+with its model, GPU topology, important recipe settings, and maximum step
 count. Proof or smoke-test approval does not authorize the full run.
 
 Create or adapt the config only after that decision. Before spending GPU
@@ -105,22 +75,15 @@ prompt or reference fields.
 ## Trace monitoring
 
 At every proof, smoke, and full-run monitoring stage, use `run trace` to pull
-traces for completed steps. For diagnosis, select baseline, transition,
-anomalous, and recent steps, including successful and failed samples. Preview
-the download size when choosing the interval:
+traces for completed steps:
 
 ```bash
-uv run modal-dojo run trace <run-id> --out ./traces --step <steps> --dry-run
 uv run modal-dojo run trace <run-id> --out ./traces --step <steps> --yes
 ```
 
 Read both the prompts and responses in the downloaded traces. Confirm that the
 prompts and responses make sense in the context of the requested task before
-advancing to the next stage. Inspect tool observations, termination reasons,
-and verifier inputs/outputs as needed. `--step` accepts a comma-separated list
-or an end-exclusive range; omitting it selects all available rollout steps.
-These exports are training rollouts; locate evaluation artifacts separately,
-and do not assume every attempted or rejected trajectory was retained.
+advancing to the next stage.
 
 ## 2. Prove one step
 
@@ -188,17 +151,16 @@ function.
 
 ## Stop or relaunch
 
-When stopping or fixing the run is within the authorized scope, obtain the
-Modal app ID from `run get`, preserve the evidence, then use:
+If the authorized task includes stopping or fixing the run, obtain the Modal
+app ID from `modal-dojo run get`, then use:
 
 ```bash
 uv run modal app stop <app-id>
 uv run modal app list --json
 ```
 
-Confirm the old app stopped before relaunching against shared volumes. Change
-one setting at a time, use a fresh run ID, and repeat the appropriate proof or
-smoke test before promoting. For diagnosis-only or status-only requests, report
-the findings without stopping or relaunching. Use
-[modal-infrastructure](../modal-infrastructure/SKILL.md) for raw infrastructure
-investigation when the supported CLI cannot explain the failure.
+Confirm the old app stopped before relaunching against shared volumes. Preserve
+the evidence, change one setting at a time, and use a fresh run ID.
+
+For a diagnosis-only or status-only request, report the cause and stop; do not
+kill or relaunch without authorization.
