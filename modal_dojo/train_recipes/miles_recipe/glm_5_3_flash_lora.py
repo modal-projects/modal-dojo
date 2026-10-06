@@ -55,6 +55,8 @@ def _image_commands() -> list[str]:
                 "patch_glm_5_3_flash_kda",
                 "patch_glm_5_3_flash_lora_kda_backward",
                 "patch_glm_5_3_flash_lora_timing",
+                "patch_glm_5_3_flash_tito",
+                "patch_glm_5_3_flash_session_startup",
             )
         ],
     ]
@@ -74,6 +76,9 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     image_run_commands: list[str] = field(default_factory=_image_commands)
     miles_model_name: str = "glm5.3-flash"
     model_name: str = "glm5_next"
+
+    use_session_server: bool | str = True
+    tito_model: str = "glm53"
 
     gpu_type: str = "H200"
     memory: tuple[int, int] = (1024, 2 * 1024 * 1024)
