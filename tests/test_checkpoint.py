@@ -219,9 +219,14 @@ class _ListingVolume:
         self.files = files or {}
 
     def iterdir(self, path: str, *, recursive: bool = False):
-        del recursive
+        assert recursive
         key = path.rstrip("/") or "."
-        return list(self.tree.get(key, []))
+        return [
+            entry
+            for tree_key, entries in self.tree.items()
+            if tree_key == key or tree_key.startswith(f"{key}/")
+            for entry in entries
+        ]
 
     def read_file(self, path: str):
         if path not in self.files:
@@ -262,10 +267,10 @@ def test_run_lists_complete_megatron_iter_at_or_before_tracker(
     volume = _ListingVolume(
         {
             "run-1": [
-                _DirEntry("iter_0000001", is_directory=True),
-                _DirEntry("iter_0000002", is_directory=True),
-                _DirEntry("iter_0000003", is_directory=True),
-                _DirEntry("iter_0000004_hf", is_directory=True),
+                _DirEntry("run-1/iter_0000001", is_directory=True),
+                _DirEntry("run-1/iter_0000002", is_directory=True),
+                _DirEntry("run-1/iter_0000003", is_directory=True),
+                _DirEntry("run-1/iter_0000004_hf", is_directory=True),
             ],
             "run-1/iter_0000001": _complete_iter_files("iter_0000001"),
             "run-1/iter_0000002": [
@@ -297,7 +302,7 @@ def test_run_hides_checkpoints_without_tracker(monkeypatch, fake_volume) -> None
     run = _run_with_checkpoint_location()
     volume = _ListingVolume(
         {
-            "run-1": [_DirEntry("iter_0000001", is_directory=True)],
+            "run-1": [_DirEntry("run-1/iter_0000001", is_directory=True)],
             "run-1/iter_0000001": _complete_iter_files("iter_0000001"),
         }
     )
@@ -329,7 +334,7 @@ def test_latest_checkpoint_sees_location_written_after_launch(
     _run_with_checkpoint_location().save()
     volume = _ListingVolume(
         {
-            "run-1": [_DirEntry("iter_0000001", is_directory=True)],
+            "run-1": [_DirEntry("run-1/iter_0000001", is_directory=True)],
             "run-1/iter_0000001": _complete_iter_files("iter_0000001"),
         },
         files={"run-1/latest_checkpointed_iteration.txt": b"1\n"},

@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import pytest
+from modal.exception import ServiceError
 
 from modal_dojo.common.framework import Framework
-from modal_dojo.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.run import (
+    TrainingRun,
+    TrainingRunStatus,
+    set_checkpoint_location,
+)
 
 
 def _run(status: TrainingRunStatus) -> TrainingRun:
@@ -143,6 +148,42 @@ def test_done_is_false_while_function_call_is_pending(fake_volume):
 
     assert run.done() is False
     assert run.status is TrainingRunStatus.RUNNING
+
+
+def test_done_is_false_when_function_call_hits_transient_modal_error(fake_volume):
+    class _FlakyCall:
+        def get(self, timeout=None):
+            del timeout
+            raise ServiceError("unavailable")
+
+    run = _run(TrainingRunStatus.RUNNING)
+    run._function_call = _FlakyCall()
+
+    assert run.done() is False
+    assert run.status is TrainingRunStatus.RUNNING
+
+
+def test_latest_checkpoint_retries_transient_modal_errors(monkeypatch, fake_volume):
+    errors = [ServiceError("unavailable"), ServiceError("unavailable")]
+
+    def _list_checkpoints(*args, **kwargs):
+        if errors:
+            raise errors.pop()
+        return ["iter_0000001", "iter_0000002"]
+
+    monkeypatch.setattr(
+        "modal_dojo.common.checkpoint._list_checkpoints", _list_checkpoints
+    )
+    monkeypatch.setattr("modal_dojo.common.run.time.sleep", lambda seconds: None)
+    run = _run(TrainingRunStatus.RUNNING)
+    set_checkpoint_location(
+        run,
+        checkpoint_dir="/checkpoints/run-1",
+        checkpoints_volume_name="ckpts",
+        checkpoints_mount_path="/checkpoints",
+    )
+
+    assert run.latest_checkpoint() == "iter_0000002"
 
 
 def test_wait_timeout_does_not_mark_failed(fake_volume):
