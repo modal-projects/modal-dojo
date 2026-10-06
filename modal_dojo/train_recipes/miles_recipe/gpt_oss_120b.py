@@ -1,15 +1,32 @@
 """GPT-OSS-120B LoRA GRPO recipe, derived from upstream's ``run_gpt_oss_20b.py``."""
 
+from dataclasses import field
+from pathlib import Path
 from typing import ClassVar
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models import GPT_OSS_120B, ModelConfig
+from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 # Includes GPT-OSS attention sinks and sliding windows in Megatron and SGLang.
 _DOCKER_IMAGE = "radixark/miles:dev-202609251434"
+
+_PATCH_DIR = (
+    Path(__file__).resolve().parents[2] / "frameworks/miles/modal_helpers/patches"
+)
+# Megatron-Bridge keeps every layer's dequantized experts in host RAM for the
+# whole HF load (~234 GB per rank); evict each one after its last consumer.
+_PATCHES = ("patch_bridge_import_cache_evict",)
+
+
+def _image_patches() -> list[str]:
+    return [
+        f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
+        for name in _PATCHES
+    ]
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
@@ -23,12 +40,13 @@ class GPT_OSS_120B_LoRA_Recipe(MilesRecipe):
     model_config_class: ClassVar[type[ModelConfig]] = GPT_OSS_120B
 
     docker_image: str = _DOCKER_IMAGE
-    # Each of the eight bridge ranks mmaps the whole 65 GB MXFP4 checkpoint and
-    # the sandbox charges those file pages to the container, on top of the BF16
-    # host backups of the frozen base; a 512 GiB request was killed mid-load.
-    # 1.5 TiB is the largest request that still schedules on 1.8-2 TiB H100
-    # hosts (90% of host RAM is allocatable); 1792 GiB only fits 2 TiB hosts.
-    memory: tuple[int, int] = (1536 * 1024, 2048 * 1024)
+    image_run_commands: list[str] = field(default_factory=_image_patches)
+    # Host RAM holds the mmapped 65 GB MXFP4 checkpoint, the BF16 host backups
+    # of the frozen base across eight ranks, and one layer of dequantized
+    # experts per rank in flight. The 2 TiB limit leaves room for the sandbox
+    # charging file pages to the container; 90% of host RAM is allocatable, so
+    # the request must stay under ~860 GiB to schedule on 960 GiB H100 hosts.
+    memory: tuple[int, int] = (768 * 1024, 2048 * 1024)
 
     # ── Cluster: TP8 x EP8 on one node (DP1), as in upstream's 20B run ──────
     actor_num_gpus_per_node: int = 8
@@ -75,3 +93,16 @@ class GPT_OSS_120B_LoRA_Recipe(MilesRecipe):
     no_sglang_lora_use_virtual_experts: bool = True
     # The engine holds MXFP4 experts; the trainer holds their BF16 dequant.
     check_weight_update_allow_quant_error: bool = True
+
+    @model_validator(mode="after")
+    def _keep_image_patches(self) -> "GPT_OSS_120B_LoRA_Recipe":
+        """Keep the Bridge memory patch when a caller supplies their own commands."""
+        patches = _image_patches()
+        current = list(self.image_run_commands or [])
+        if current[: len(patches)] != patches:
+            object.__setattr__(
+                self,
+                "image_run_commands",
+                [*patches, *(c for c in current if c not in patches)],
+            )
+        return self

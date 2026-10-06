@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from modal_dojo.frameworks.miles.modal_helpers.utils import (
     get_checkpoint_conversion_policy,
 )
@@ -27,7 +29,7 @@ def test_base_recipe_is_the_lora_recipe() -> None:
     assert recipe.megatron_to_hf_mode == "bridge"
     assert recipe.lora_rank == recipe.sglang_max_lora_rank == 32
     request_mib, limit_mib = recipe.memory
-    assert request_mib >= 1536 * 1024
+    assert request_mib >= 512 * 1024
     assert limit_mib >= request_mib
 
 
@@ -98,3 +100,64 @@ def test_parse_truncated_mid_channel() -> None:
     parsed = parse_gpt_oss_response("<|channel|>analysis<|message|>Still thinking")
     assert parsed.content == ""
     assert parsed.thinking == "Still thinking"
+
+
+_BRIDGE_LOOP_FIXTURE = """class Bridge:
+    def load_weights_hf_to_megatron(self, hf_pretrained, megatron_model):
+        hf_state_dict = hf_pretrained.state
+        _hf_import_cache: Dict[str, torch.Tensor] = {}
+        for task in self._with_progress_tracking(hf_to_megatron_tasks, description):
+            if task.megatron_module is None:
+                continue
+            hf_param_key = str(task.mapping.hf_param)
+            is_grouped = getattr(task.mapping, "is_grouped_export", False)
+            if is_grouped and hf_param_key in _hf_import_cache:
+                hf_weights = _hf_import_cache[hf_param_key]
+            else:
+                hf_weights = self.maybe_modify_loaded_hf_weight(task.mapping.hf_param, hf_state_dict)
+                if is_grouped:
+                    _hf_import_cache[hf_param_key] = hf_weights
+
+            # 2) Delegate conversion & distribution to the bridge
+            converted_weights = self._convert_loaded_hf_weight(task, hf_weights)
+            if converted_weights is not None:
+                pass
+"""
+
+
+def test_bridge_import_cache_patch_applies_once(tmp_path):
+    from modal_dojo.frameworks.miles.modal_helpers.patches import (
+        patch_bridge_import_cache_evict as patch,
+    )
+
+    target = tmp_path / "model_bridge.py"
+    target.write_text(_BRIDGE_LOOP_FIXTURE)
+    patch.apply(target)
+    patched = target.read_text()
+    assert patched.count(patch.MARKER) == 2
+    assert "_hf_import_cache.pop(hf_param_key, None)" in patched
+    assert patched.index("_hf_import_remaining") < patched.index("for task in self.")
+    compile(patched, str(target), "exec")
+
+    patch.apply(target)
+    assert target.read_text() == patched
+
+
+def test_bridge_import_cache_patch_rejects_unknown_source(tmp_path):
+    from modal_dojo.frameworks.miles.modal_helpers.patches import (
+        patch_bridge_import_cache_evict as patch,
+    )
+
+    target = tmp_path / "model_bridge.py"
+    target.write_text("def load_weights_hf_to_megatron(): pass\n")
+    with pytest.raises(RuntimeError):
+        patch.apply(target)
+
+
+def test_recipe_keeps_bridge_patch_ahead_of_caller_commands():
+    recipe = GPT_OSS_120B_LoRA_Recipe(image_run_commands=["echo extra"])
+    assert len(recipe.image_run_commands) == 2
+    assert recipe.image_run_commands[0].endswith("| base64 -d | python3")
+    assert recipe.image_run_commands[1] == "echo extra"
+    default = GPT_OSS_120B_LoRA_Recipe()
+    assert default.image_run_commands == recipe.image_run_commands[:1]
