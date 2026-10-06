@@ -159,12 +159,15 @@ def fake_modal_cli(monkeypatch: pytest.MonkeyPatch, clock: _FakeClock):
     return _install
 
 
-def _endpoint(*, requires_proxy_auth: bool = False) -> Endpoint:
+def _endpoint(
+    *, requires_proxy_auth: bool = False, environment: str | None = None
+) -> Endpoint:
     return Endpoint(
         "https://ws--ep.modal.run",
         endpoint_name="my-ft",
         model_name="model",
         requires_proxy_auth=requires_proxy_auth,
+        environment=environment,
     )
 
 
@@ -728,6 +731,29 @@ def test_stop_forwards_environment_arg(fake_modal_cli) -> None:
         "--env",
         "dev",
     ]
+
+
+def test_stop_forwards_endpoint_environment(fake_modal_cli) -> None:
+    cli = fake_modal_cli()
+
+    _endpoint(environment="dev").stop()
+
+    assert cli.commands[0][1:] == [
+        "-m",
+        "modal",
+        "endpoint",
+        "stop",
+        "my-ft",
+        "--yes",
+        "--env",
+        "dev",
+    ]
+    assert cli.run_kwargs[0] == {
+        "check": False,
+        "capture_output": True,
+        "text": True,
+        "timeout": 120,
+    }
 
 
 def test_stop_tolerates_missing_endpoint(fake_modal_cli) -> None:

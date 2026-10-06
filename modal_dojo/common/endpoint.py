@@ -30,12 +30,14 @@ class Endpoint:
         endpoint_name: Modal Endpoint name.
         model_name: Base model ID sent in request bodies.
         requires_proxy_auth: Whether a proxy token is required to use the endpoint.
+        environment: Modal environment the endpoint was created in.
     """
 
     url: str
     endpoint_name: str
     model_name: str
     requires_proxy_auth: bool
+    environment: str | None
 
     def __init__(
         self,
@@ -44,11 +46,13 @@ class Endpoint:
         endpoint_name: str,
         model_name: str,
         requires_proxy_auth: bool,
+        environment: str | None = None,
     ):
         self.endpoint_name = endpoint_name
         self.model_name = model_name
         self.url = url.rstrip("/")
         self.requires_proxy_auth = requires_proxy_auth
+        self.environment = environment
 
     @classmethod
     def launch(
@@ -130,9 +134,10 @@ class Endpoint:
             endpoint_name=endpoint_name,
             model_name=model_name,
             requires_proxy_auth=not unauthenticated,
+            environment=environment,
         )
         if recreate_if_existing:
-            endpoint.stop(environment)
+            endpoint.stop()
 
         command = [
             sys.executable,
@@ -198,8 +203,10 @@ class Endpoint:
         Args:
             environment:
                 Modal environment the endpoint lives in. Defaults to the
-                environment the Modal CLI resolves at call time.
+                environment it was launched in, then the Modal CLI's
+                configured environment.
         """
+        environment = environment if environment is not None else self.environment
         stop = [
             sys.executable,
             "-m",
