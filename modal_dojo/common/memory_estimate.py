@@ -132,17 +132,22 @@ def _peak_gib(
             (dense_p + expert_p) * 6 + dense_p * opt / d_div + expert_p * opt / e_div
         ) / GIB
 
-    ctx = get("rollout_max_context_len")
-    prompt = get("rollout_max_prompt_len")
-    response = get("rollout_max_response_len")
-    sample = int(ctx or 0) or (int(prompt or 0) + int(response or 0))
+    path = str(get("custom_generate_function_path") or "")
+    mt = path == "miles.rollout.generate_hub.multi_turn.generate"
+    prompt = int(get("rollout_max_prompt_len") or 0)
+    response = int(get("rollout_max_response_len") or 0)
+    ctx = int(get("rollout_max_context_len") or 0)
+    msl = int(get("max_seq_len") or 0) if path else 0
+    sample = max(prompt + response, ctx, msl)
+    if mt and ctx:
+        sample = max(sample, ctx * int(get("generate_max_turns") or 1))
 
     def raise_sample_len() -> None:
-        if ctx:
-            raise_("rollout_max_context_len", ctx)
-        else:
-            raise_("rollout_max_prompt_len", prompt, bool(prompt))
-            raise_("rollout_max_response_len", response, bool(response))
+        raise_("max_seq_len", get("max_seq_len"), bool(msl))
+        raise_("rollout_max_context_len", ctx, bool(ctx))
+        raise_("generate_max_turns", get("generate_max_turns"), mt and bool(ctx))
+        raise_("rollout_max_prompt_len", prompt, bool(prompt))
+        raise_("rollout_max_response_len", response, bool(response))
 
     if get("use_dynamic_batch_size"):
         mtp = int(get("max_tokens_per_gpu") or 0)
@@ -184,25 +189,30 @@ def _peak_gib(
 def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     if hasattr(recipe, "train_backend") and recipe.train_backend != "megatron":
         return
+    knobs = recipe._field_values() | recipe._escape_hatch_values()
+    path = str(knobs.get("custom_generate_function_path") or "")
+    single_turn = path == "miles.rollout.generate_hub.single_turn.generate"
+    multi_turn_builtin = path == "miles.rollout.generate_hub.multi_turn.generate"
+    if (
+        path
+        and not single_turn
+        and not (knobs.get("max_seq_len") and not multi_turn_builtin)
+    ):
+        warnings.warn(
+            "A custom generate function can produce samples longer than "
+            "rollout_max_prompt_len + rollout_max_response_len, so the OOM "
+            "estimate is a lower bound. Set max_seq_len where the generator "
+            "supports it to bound sample length.",
+            UserWarning,
+            stacklevel=3,
+        )
     gpu_gib = gpu_memory_gib(recipe.gpu_type)
     if gpu_gib is None:
         return
     arch = model.architecture or _arch_from_hf(model.model_name)
     if arch is None:
         return
-    knobs = recipe._field_values() | recipe._escape_hatch_values()
     peak, raised = _peak_gib(arch, knobs, gpu_gib)
-    if (
-        knobs.get("custom_generate_function")
-        or knobs.get("custom_generate_function_path")
-    ) and not knobs.get("rollout_max_context_len"):
-        warnings.warn(
-            "Multi-turn rollouts (custom_generate_function) can grow a sample past "
-            "rollout_max_prompt_len + rollout_max_response_len, so the GPU OOM "
-            "estimate is a lower bound. Set rollout_max_context_len to cap sample length.",
-            UserWarning,
-            stacklevel=3,
-        )
     if peak <= gpu_gib:
         return
     shape = ", ".join(

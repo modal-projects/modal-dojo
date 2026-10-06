@@ -137,10 +137,143 @@ def test_lora_recipe_estimated() -> None:
     assert "optimizer_cpu_offload" not in raised
 
 
-def test_multi_turn_without_context_cap_warns() -> None:
+def test_multi_turn_without_cap_warns() -> None:
     model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
-    recipe.extra_config = {"custom_generate_function_path": "pkg.generate"}
+    recipe.extra_config = {
+        "custom_generate_function_path": "miles.rollout.generate_hub.agentic_tool_call.generate"
+    }
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         maybe_warn_gpu_oom(recipe, model)
-    assert any("rollout_max_context_len" in str(w.message) for w in caught)
+    assert any("max_seq_len" in str(w.message) for w in caught)
+
+
+def test_max_seq_len_capped_multi_turn_does_not_warn() -> None:
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {
+        "custom_generate_function_path": "miles.rollout.generate_hub.agentic_tool_call.generate",
+        "max_seq_len": 16384,
+    }
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert not [w for w in caught if "lower bound" in str(w.message)]
+
+
+def test_context_len_alone_does_not_cap_agentic() -> None:
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {
+        "custom_generate_function_path": "miles.rollout.generate_hub.agentic_tool_call.generate",
+        "rollout_max_context_len": 16384,
+    }
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert any("lower bound" in str(w.message) for w in caught)
+
+
+def test_agentic_rl_path_warns() -> None:
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {
+        "custom_generate_function_path": "agentic_rl.generate.generate"
+    }
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert any("lower bound" in str(w.message) for w in caught)
+
+
+def test_max_seq_len_bounds_sample() -> None:
+    knobs = {
+        "actor_num_nodes": 1,
+        "actor_num_gpus_per_node": 1,
+        "use_dynamic_batch_size": False,
+        "micro_batch_size": 1,
+        "rollout_max_prompt_len": 512,
+        "rollout_max_response_len": 128,
+        "max_seq_len": 1024,
+        "recompute_granularity": "full",
+        "custom_generate_function_path": "agentic_rl.generate.generate",
+    }
+    bounded, raised = _peak_gib(_QWEN3_5_4B, knobs, 80.0)
+    uncapped, _ = _peak_gib(_QWEN3_5_4B, {**knobs, "max_seq_len": None}, 80.0)
+    assert bounded > uncapped
+    assert raised.get("max_seq_len") == 1024
+
+
+def test_max_seq_len_ignored_for_single_turn() -> None:
+    knobs = {
+        "actor_num_nodes": 1,
+        "actor_num_gpus_per_node": 1,
+        "use_dynamic_batch_size": False,
+        "micro_batch_size": 1,
+        "rollout_max_prompt_len": 512,
+        "rollout_max_response_len": 128,
+        "max_seq_len": 16,
+        "recompute_granularity": "full",
+    }
+    peak, raised = _peak_gib(_QWEN3_5_4B, knobs, 80.0)
+    assert "max_seq_len" not in raised
+    assert raised.get("rollout_max_prompt_len") == 512
+
+
+def test_multi_turn_path_warns_despite_max_seq_len() -> None:
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {
+        "custom_generate_function_path": "miles.rollout.generate_hub.multi_turn.generate",
+        "max_seq_len": 16384,
+    }
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert any("lower bound" in str(w.message) for w in caught)
+
+
+def test_multi_turn_cap_scales_with_turns() -> None:
+    knobs = {
+        "actor_num_nodes": 1,
+        "actor_num_gpus_per_node": 1,
+        "use_dynamic_batch_size": False,
+        "micro_batch_size": 1,
+        "rollout_max_context_len": 512,
+        "generate_max_turns": 8,
+        "recompute_granularity": "full",
+        "custom_generate_function_path": "miles.rollout.generate_hub.multi_turn.generate",
+    }
+    with_turns, _ = _peak_gib(_QWEN3_5_4B, knobs, 80.0)
+    one_turn, _ = _peak_gib(_QWEN3_5_4B, {**knobs, "generate_max_turns": 1}, 80.0)
+    assert with_turns > one_turn
+
+
+def test_single_turn_generate_path_does_not_warn() -> None:
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {
+        "custom_generate_function_path": "miles.rollout.generate_hub.single_turn.generate"
+    }
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert not [w for w in caught if "lower bound" in str(w.message)]
+
+
+def test_unknown_custom_path_warns() -> None:
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {"custom_generate_function_path": "my_pkg.my_rollout"}
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert any("lower bound" in str(w.message) for w in caught)
+
+
+def test_asr_preset_warns() -> None:
+    from modal_dojo.common.models.qwen3_asr_1_7b import Qwen3_ASR_1_7B
+    from modal_dojo.train_recipes.slime_recipe.qwen3_asr_1_7b import (
+        Qwen3_ASR_1_7B_Recipe,
+    )
+
+    recipe = Qwen3_ASR_1_7B_Recipe()
+    assert (recipe.extra_config or {}).get("custom_generate_function_path")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, Qwen3_ASR_1_7B())
+    assert any("lower bound" in str(w.message) for w in caught)
