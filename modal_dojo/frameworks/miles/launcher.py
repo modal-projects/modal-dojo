@@ -105,6 +105,9 @@ _PATCH_ROLLOUT_STATUS_B64 = encode_patch(
 )
 _PATCH_ADVANTAGE_DIST_B64 = encode_patch("patch_advantage_distribution", _MILES_PATCHES)
 _PATCH_SUBSTEP_TIMING_B64 = encode_patch("patch_substep_timing", _MILES_PATCHES)
+_PATCH_ROUTER_REGISTRATION_B64 = encode_patch(
+    "patch_router_registration", _MILES_PATCHES
+)
 _PATCH_ZERO_STD_B64 = encode_patch("patch_zero_std_metrics", _MILES_PATCHES)
 
 _REPORTING_PATCH_COMMANDS = (
@@ -375,6 +378,12 @@ def _build_miles_base_image(
     if recipe.image_overlay is not None:
         image = recipe.image_overlay(image)
         recipe.image_overlay = None
+
+    # Apply after source and image overlays so each Miles checkout gets the
+    # async registration barrier before a cell is marked ready for rollout.
+    image = image.run_commands(
+        f"echo {_PATCH_ROUTER_REGISTRATION_B64} | base64 -d | python3"
+    )
 
     if isinstance(dataset, HarborDataset) or isinstance(eval_dataset, HarborDataset):
         image = image.uv_pip_install(f"harbor=={HARBOR_PKG_VERSION}")
