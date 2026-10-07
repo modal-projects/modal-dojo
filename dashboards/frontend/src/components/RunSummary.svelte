@@ -280,7 +280,7 @@
       <section class="summary-section">
         <h3 class="summary-section-title">Batch size inference</h3>
         <div class="kv">
-          <span class="kv-key">inferred_batch_size_result</span>
+          <span class="kv-key" title="inferred_batch_size_result">Inferred result</span>
           <span class="kv-value kv-value-mono">
             {#if batchSizeInference.result !== null}
               {batchSizeInference.result}
