@@ -2,6 +2,7 @@ export const DOCS_NAV = [
   { section: 'Guides', prefix: '/guides' },
   { section: 'Tutorials', prefix: '/tutorials' },
   { section: 'Reference', prefix: '/reference' },
+  { section: 'Catalogue', prefix: '/catalogue' },
 ] as const;
 
 export const REFERENCE_SURFACES = [

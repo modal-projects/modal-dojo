@@ -8,11 +8,14 @@ from scripts import generate_catalogue
 from scripts.generate_catalogue import (
     CATALOGUE,
     REWARD_KEY,
+    STEPS,
+    build_catalogue,
     context_length,
     gpu_hour_cost,
     logged_per_step,
     native_context_length,
     recipe_defaults,
+    run_fields,
     step_rows,
     step_seconds,
 )
@@ -198,3 +201,74 @@ def test_gpu_hour_cost_matches_billing_rate_keys(gpu_type, expected) -> None:
 def test_catalogue_entries_name_registered_models_and_public_recipes(entry) -> None:
     _ValidationConfig.find(entry.name)
     assert entry.recipe in modal_dojo.__all__
+
+
+def test_example_catalogue_fills_every_recipe_from_its_defaults(monkeypatch) -> None:
+    monkeypatch.setattr(
+        generate_catalogue, "model_context_length", lambda model: 262144
+    )
+
+    catalogue = build_catalogue({}, None, example=True, dashboard="https://d.test/")
+
+    assert catalogue["example"] is True
+    assert len(catalogue["rows"]) == len(CATALOGUE)
+    for entry, row in zip(CATALOGUE, catalogue["rows"], strict=True):
+        run = row["run"]
+        defaults = recipe_defaults(entry.recipe)
+        assert run["gpu_type"] == defaults["gpu_type"]
+        assert run["gpus"] > 0 and run["nodes"] > 0
+        assert run["steps_completed"] == len(run["steps"]) == STEPS
+        assert run["cost_per_step_usd"] > 0 and run["time_per_step_s"] > 0
+        assert run["initial_reward"] == run["steps"][0]["raw_reward"]
+        assert run["dashboard_url"] == f"https://d.test/training/{run['id']}"
+    # Distinct placeholder metrics keep the sort controls meaningful.
+    assert len({row["run"]["time_per_step_s"] for row in catalogue["rows"]}) == len(
+        CATALOGUE
+    )
+
+
+def test_run_fields_falls_back_to_the_recipe_gpu_type(monkeypatch) -> None:
+    # Slime run records serialize the recipe's CLI flags, which omit gpu_type.
+    record = {
+        "training_run_id": "run-1",
+        "created_at": 1700000000,
+        "status": "completed",
+        "config": {
+            "model": {"model_name": "zai-org/GLM-5.3-Flash"},
+            "recipe": {
+                "actor_num_nodes": 3,
+                "actor_num_gpus_per_node": 8,
+                "colocate": True,
+                "rollout_max_context_len": 32768,
+            },
+            "dataset": {"hf_repo": "SWE-bench/SWE-smith"},
+        },
+    }
+    monkeypatch.setattr(generate_catalogue, "vol_get", lambda store, run_id: record)
+    monkeypatch.setattr(
+        generate_catalogue,
+        "vol_list",
+        lambda store: [
+            {
+                "steps": {
+                    "1": {REWARD_KEY: 0.1, "perf/step_time": 600.0},
+                    "2": {REWARD_KEY: 0.2, "perf/step_time": 660.0},
+                    "3": {REWARD_KEY: 0.3, "perf/step_time": 630.0},
+                }
+            }
+        ],
+    )
+    monkeypatch.setattr(generate_catalogue, "measured_run_times", lambda rid: ({}, {}))
+    entry = next(e for e in CATALOGUE if e.recipe == "GLM_5_3_Flash_LoRA_Recipe")
+
+    fields = run_fields(entry, "run-1", {"gpu_hour_cost_h200": "4.0"}, None)
+
+    run = fields["run"]
+    assert fields["context_length"] == 32768
+    assert run["gpu_type"] == "H200"
+    assert (run["gpus"], run["nodes"]) == (24, 3)
+    assert run["gpu_hour_usd"] == 4.0
+    assert run["time_per_step_s"] == 630.0
+    assert run["cost_per_step_usd"] == round(24 * 4.0 * 630 / 3600, 2)
+    assert run["initial_reward"] == 0.1
+    assert run["dashboard_url"] is None

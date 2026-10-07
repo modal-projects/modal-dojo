@@ -7,9 +7,12 @@ script reads them, prices each step at Modal's current GPU rates, and writes
 
     uv run scripts/generate_catalogue.py
     uv run scripts/generate_catalogue.py --modal-env training-gym --output /tmp/catalogue.json
+    uv run scripts/generate_catalogue.py --example  # placeholder runs, no Modal access
 
 Add a finished run to the catalogue by appending its ``training_run_id`` to
-the entry's ``run_ids`` below and rerunning the script.
+the entry's ``run_ids`` below and rerunning the script. ``--example`` fills
+every entry with a deterministic stand-in run built from the recipe's own
+defaults, so the populated page can be previewed before the runs exist.
 """
 
 from __future__ import annotations
@@ -55,6 +58,14 @@ CONTEXT_LENGTH_KEYS = (
     "max_position_embeddings",
 )
 HF_URL = "https://huggingface.co"
+# Illustrative GPU-hour prices for ``--example``; real runs use billing rates.
+EXAMPLE_RATES: Mapping[str, float] = {
+    "gpu_hour_cost_b300": 6.25,
+    "gpu_hour_cost_b200": 6.25,
+    "gpu_hour_cost_h200": 4.54,
+    "gpu_hour_cost_h100": 3.95,
+}
+EXAMPLE_DATASET = "SWE-bench/SWE-smith"
 
 
 @dataclass(frozen=True)
@@ -201,12 +212,11 @@ def recipe_defaults(recipe: str) -> dict[str, Any]:
     }
 
 
-@functools.cache
-def dashboard_url(environment: str | None) -> str | None:
+def dashboard_url(environment: str) -> str | None:
     """Web URL of the dashboard serving ``environment``, under either app name.
 
-    The lookup reads the active ``MODAL_ENVIRONMENT``; the argument only keys
-    the cache, so each environment is looked up once.
+    The lookup reads the active ``MODAL_ENVIRONMENT``, which ``main`` sets to
+    ``environment``.
     """
     return deployed_dashboard_url() or deployed_dashboard_url(LEGACY_DASHBOARD_APP_NAME)
 
@@ -218,28 +228,27 @@ def gpu_hour_cost(rates: Mapping[str, Any], gpu_type: str) -> float | None:
     return None if value is None else float(value)
 
 
-def run_fields(run_id: str, rates: Mapping[str, Any]) -> dict[str, Any]:
-    """The catalogue row fields one finished run supplies."""
-    summary = build_run_summary(vol_get(MetadataStore.TRAINING_RUNS, run_id))
-    recipe = summary.config.get("recipe") or {}
-    allocation = resolve_gpu_allocation(SimpleNamespace(**recipe), warn=False)
-    gpu_type = str(recipe.get("gpu_type") or "")
+def run_row(
+    *,
+    run_id: str,
+    recipe: Mapping[str, Any],
+    gpu_type: str,
+    model_name: str,
+    created_at: int,
+    status: str,
+    dataset: str,
+    seconds: Mapping[int, float],
+    rewards: Mapping[int, float],
+    rates: Mapping[str, Any],
+    dashboard: str | None,
+) -> dict[str, Any]:
+    """The catalogue row fields one run supplies, from its recorded config and metrics.
 
-    metrics = RunMetrics()
-    for chunk in vol_list(metric_series_store(run_id)):
-        metrics.load_chunk(chunk)
-    measured, _ = measured_run_times(run_id)
-    # Everything below describes the benchmark window, the first STEPS steps.
-    seconds = {
-        step: value
-        for step, value in step_seconds(measured, metrics.table).items()
-        if step <= STEPS
-    }
-    rewards = {
-        step: value
-        for step, value in logged_per_step(metrics.table, REWARD_KEY).items()
-        if step <= STEPS
-    }
+    Everything describes the benchmark window, the first ``STEPS`` steps.
+    """
+    allocation = resolve_gpu_allocation(SimpleNamespace(**recipe), warn=False)
+    seconds = {step: value for step, value in seconds.items() if step <= STEPS}
+    rewards = {step: value for step, value in rewards.items() if step <= STEPS}
     hourly = gpu_hour_cost(rates, gpu_type)
     steps = step_rows(seconds, rewards, allocation.total_gpus, hourly)
     time_per_step = statistics.median(seconds.values()) if seconds else None
@@ -248,7 +257,6 @@ def run_fields(run_id: str, rates: Mapping[str, Any]) -> dict[str, Any]:
         if hourly is not None and time_per_step is not None
         else None
     )
-    dashboard = dashboard_url(os.environ.get("MODAL_ENVIRONMENT"))
     run = {
         "id": run_id,
         "dashboard_url": (
@@ -256,9 +264,9 @@ def run_fields(run_id: str, rates: Mapping[str, Any]) -> dict[str, Any]:
             if dashboard
             else None
         ),
-        "created_at": summary.created_at,
-        "status": summary.display_status,
-        "dataset": summary.dataset,
+        "created_at": created_at,
+        "status": status,
+        "dataset": dataset,
         "gpu_type": gpu_type,
         "gpus": allocation.total_gpus,
         "nodes": allocation.total_nodes,
@@ -269,12 +277,84 @@ def run_fields(run_id: str, rates: Mapping[str, Any]) -> dict[str, Any]:
         "cost_per_step_usd": None if cost_per_step is None else round(cost_per_step, 2),
         "initial_reward": steps[0]["raw_reward"] if steps else None,
     }
-    model_name = (summary.config.get("model") or {}).get("model_name") or summary.model
     context, source = context_length(recipe, model_name)
     return {"context_length": context, "context_source": source, "run": run}
 
 
-def entry_rows(entry: CatalogueEntry, rates: Mapping[str, Any]) -> list[dict[str, Any]]:
+def run_fields(
+    entry: CatalogueEntry,
+    run_id: str,
+    rates: Mapping[str, Any],
+    dashboard: str | None,
+) -> dict[str, Any]:
+    """The catalogue row fields one finished run in the metadata volume supplies."""
+    summary = build_run_summary(vol_get(MetadataStore.TRAINING_RUNS, run_id))
+    # Run records hold the recipe's effective CLI flags, which omit fields the
+    # framework never flags (slime's ``gpu_type``); the class defaults fill those.
+    recipe = recipe_defaults(entry.recipe) | (summary.config.get("recipe") or {})
+    gpu_type = str(recipe.get("gpu_type") or "")
+
+    metrics = RunMetrics()
+    for chunk in vol_list(metric_series_store(run_id)):
+        metrics.load_chunk(chunk)
+    measured, _ = measured_run_times(run_id)
+    model_name = (summary.config.get("model") or {}).get("model_name") or summary.model
+    return run_row(
+        run_id=run_id,
+        recipe=recipe,
+        gpu_type=gpu_type,
+        model_name=model_name,
+        created_at=summary.created_at,
+        status=summary.display_status,
+        dataset=summary.dataset,
+        seconds=step_seconds(measured, metrics.table),
+        rewards=logged_per_step(metrics.table, REWARD_KEY),
+        rates=rates,
+        dashboard=dashboard,
+    )
+
+
+def example_fields(
+    entry: CatalogueEntry, index: int, dashboard: str | None
+) -> dict[str, Any]:
+    """Stand-in run fields for ``--example``: real recipe defaults, made-up metrics.
+
+    Hardware, context, and prices follow the recipe class, so the row looks like
+    the run will; step times and rewards are deterministic placeholders that
+    differ per recipe so sorting and the step breakdown can be exercised.
+    """
+    recipe = recipe_defaults(entry.recipe)
+    config = _ValidationConfig.find(entry.name)
+    base_seconds = 540.0 + 130.0 * index
+    seconds = {
+        step: base_seconds * (1 + 0.06 * (step % 2)) for step in range(1, STEPS + 1)
+    }
+    base_reward = 0.08 + 0.025 * ((index * 5) % 7)
+    rewards = {step: base_reward + 0.015 * (step - 1) for step in range(1, STEPS + 1)}
+    return run_row(
+        run_id=f"example-{entry.recipe.lower()}",
+        recipe=recipe,
+        gpu_type=str(recipe.get("gpu_type") or ""),
+        model_name=config.model_name,
+        created_at=int(dt.datetime(2026, 1, 15, 12, tzinfo=dt.UTC).timestamp())
+        + 86400 * index,
+        status="Completed",
+        dataset=EXAMPLE_DATASET,
+        seconds=seconds,
+        rewards=rewards,
+        rates=EXAMPLE_RATES,
+        dashboard=dashboard,
+    )
+
+
+def entry_rows(
+    entry: CatalogueEntry,
+    rates: Mapping[str, Any],
+    *,
+    example: bool = False,
+    index: int = 0,
+    dashboard: str | None = None,
+) -> list[dict[str, Any]]:
     config = _ValidationConfig.find(entry.name)
     base = {
         "name": entry.name,
@@ -284,6 +364,8 @@ def entry_rows(entry: CatalogueEntry, rates: Mapping[str, Any]) -> list[dict[str
         "recipe": entry.recipe,
         "recipe_href": f"/reference/{entry.recipe.lower()}",
     }
+    if example:
+        return [{**base, **example_fields(entry, index, dashboard)}]
     if not entry.run_ids:
         # Until it runs, a recipe's context length follows its class defaults.
         context, source = context_length(
@@ -292,15 +374,31 @@ def entry_rows(entry: CatalogueEntry, rates: Mapping[str, Any]) -> list[dict[str
         return [
             {**base, "context_length": context, "context_source": source, "run": None}
         ]
-    return [{**base, **run_fields(run_id, rates)} for run_id in entry.run_ids]
+    return [
+        {**base, **run_fields(entry, run_id, rates, dashboard)}
+        for run_id in entry.run_ids
+    ]
 
 
-def build_catalogue(rates: Mapping[str, Any], priced_at: str | None) -> dict[str, Any]:
+def build_catalogue(
+    rates: Mapping[str, Any],
+    priced_at: str | None,
+    *,
+    example: bool = False,
+    dashboard: str | None = None,
+) -> dict[str, Any]:
     return {
         "benchmark": BENCHMARK,
         "steps": STEPS,
         "priced_at": priced_at,
-        "rows": [row for entry in CATALOGUE for row in entry_rows(entry, rates)],
+        "example": example,
+        "rows": [
+            row
+            for index, entry in enumerate(CATALOGUE)
+            for row in entry_rows(
+                entry, rates, example=example, index=index, dashboard=dashboard
+            )
+        ],
     }
 
 
@@ -312,6 +410,15 @@ def main() -> None:
         help="Modal environment whose metadata volume holds the runs.",
     )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--example",
+        action="store_true",
+        help="Fill every entry with a placeholder run instead of reading Modal.",
+    )
+    parser.add_argument(
+        "--dashboard-url",
+        help="Dashboard base URL for run links; with --example, enables the links.",
+    )
     args = parser.parse_args()
     # Modal reads MODAL_ENVIRONMENT on each lookup, so this scopes every
     # metadata-volume read below to the environment that ran the catalogue.
@@ -319,17 +426,22 @@ def main() -> None:
 
     rates: Mapping[str, Any] = {}
     priced_at = None
-    if any(entry.run_ids for entry in CATALOGUE):
+    dashboard = args.dashboard_url
+    if not args.example and any(entry.run_ids for entry in CATALOGUE):
         import modal
 
         rates = modal.Workspace.from_context().billing.rates()
         priced_at = dt.date.today().isoformat()
+        dashboard = dashboard or dashboard_url(args.modal_env)
 
-    catalogue = build_catalogue(rates, priced_at)
+    catalogue = build_catalogue(
+        rates, priced_at, example=args.example, dashboard=dashboard
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(catalogue, indent=2) + "\n")
     runs = sum(row["run"] is not None for row in catalogue["rows"])
-    print(f"Wrote {args.output} ({len(CATALOGUE)} recipes, {runs} runs)")
+    kind = "example runs" if args.example else "runs"
+    print(f"Wrote {args.output} ({len(CATALOGUE)} recipes, {runs} {kind})")
 
 
 if __name__ == "__main__":

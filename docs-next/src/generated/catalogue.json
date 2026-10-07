@@ -2,6 +2,7 @@
   "benchmark": "SWE-bench",
   "steps": 3,
   "priced_at": null,
+  "example": false,
   "rows": [
     {
       "name": "Qwen3.6-27B",

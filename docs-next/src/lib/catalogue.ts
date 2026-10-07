@@ -49,6 +49,8 @@ export interface Catalogue {
   benchmark: string;
   steps: number;
   priced_at: string | null;
+  // True when generated with `--example`: placeholder runs, not real ones.
+  example?: boolean;
   rows: CatalogueRow[];
 }
 

@@ -19,6 +19,7 @@ GENERATORS = [
     [sys.executable, "scripts/generate_quickstart.py"],
     [sys.executable, "scripts/generate_docs_pages.py"],
     [sys.executable, "scripts/generate_api_reference.py"],
+    [sys.executable, "scripts/generate_catalogue.py"],
     [sys.executable, "-m", "scripts.generate_llms_txt"],
 ]
 

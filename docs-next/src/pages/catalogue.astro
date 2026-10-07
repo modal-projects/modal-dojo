@@ -6,7 +6,7 @@ import data from '../generated/catalogue.json';
 import type { Catalogue } from '../lib/catalogue';
 
 // Regenerate with `uv run scripts/generate_catalogue.py`.
-const { benchmark, steps, priced_at: pricedAt, rows } = data as Catalogue;
+const { benchmark, steps, priced_at: pricedAt, example = false, rows } = data as Catalogue;
 const hasRuns = rows.some((row) => row.run !== null);
 ---
 
@@ -28,6 +28,15 @@ const hasRuns = rows.some((row) => row.run !== null);
     !hasRuns && (
       <Aside title="No runs yet">
         Each recipe fills in once its {steps}-step {benchmark} run finishes.
+      </Aside>
+    )
+  }
+  {
+    example && (
+      <Aside type="caution" title="Example data">
+        These rows are placeholders generated with{' '}
+        <code>uv run scripts/generate_catalogue.py --example</code>: hardware, context, and
+        prices follow each recipe's defaults, but the step times and rewards are made up.
       </Aside>
     )
   }
