@@ -715,10 +715,16 @@ def _patch_executor_driver(src: str, path: Path) -> str:
         "create_training_models": "initialize_training",
     }
     calls = {name: _phase(phase) for name, phase in startup.items()}
+    # Newer Miles wraps Ray actors in worker handles, which expose get directly.
+    rollout_get = (
+        "rollout_executor.get"
+        if "rollout_executor.get(" in src
+        else "rollout_executor.get.remote"
+    )
     calls.update(
         {
             "inference_controller.prepare_rollout": _phase("prepare_rollout"),
-            "rollout_executor.get.remote": _phase("generate_rollouts"),
+            rollout_get: _phase("generate_rollouts"),
             "inference_controller.offload_kv": _phase("offload_rollout"),
             "inference_controller.offload_weights": _phase("offload_rollout"),
             "inference_controller.offload": _phase("offload_rollout"),
@@ -762,13 +768,22 @@ def _patch_executor_driver(src: str, path: Path) -> str:
 
 
 def patch_executor_package(root: Path) -> None:
-    """Instrument the synchronous executor layout shipped with Kimi K3."""
+    """Instrument synchronous executor layouts, including worker handles."""
     paths = {
         "rollout": "miles/ray/rollout/rollout_executor.py",
         "actor": "miles/backends/megatron_utils/actor.py",
         "model": "miles/backends/megatron_utils/model.py",
         "group": "miles/ray/train/group.py",
     }
+    # Weight-update orchestration moved out of the training group. Instrument
+    # its new location so engine waits and transfer/finalization stay distinct.
+    placement = root / "miles/ray/placement_group.py"
+    if (
+        placement.exists()
+        and "await inference_controller.start_update_weights(" in placement.read_text()
+    ):
+        del paths["group"]
+        paths["sync"] = "miles/ray/placement_group.py"
     for kind, relative in paths.items():
         path = root / relative
         try:
@@ -786,9 +801,12 @@ def patch_executor_package(root: Path) -> None:
                 )
                 src = _wrap_function(src, "get", "_tg_role('rollout', rollout_id)")
             elif kind == "actor":
-                src = _wrap_function(
-                    src, "compute_log_prob", _phase("compute_log_probs")
+                log_prob = (
+                    "_compute_log_prob"
+                    if "def _compute_log_prob(" in src
+                    else "compute_log_prob"
                 )
+                src = _wrap_function(src, log_prob, _phase("compute_log_probs"))
                 src = _wrap_function(
                     src,
                     "train",
@@ -801,6 +819,23 @@ def patch_executor_package(root: Path) -> None:
                     {
                         "run_forward_backward_pass": _phase("forward_backward"),
                         "optimizer.step": _phase("optimizer_step"),
+                    },
+                )
+            elif kind == "sync":
+                src = _wrap_calls(
+                    src,
+                    "update_weights",
+                    {
+                        "inference_controller.start_update_weights": _phase(
+                            "wait_for_inference_engines"
+                        ),
+                        "actor_model.update_weights": "_tg_time_phase('initial_weight_sync' if rollout_id is None else 'weight_sync')",
+                        "inference_controller.end_update_weights": _phase(
+                            "finalize_weight_sync"
+                        ),
+                        "_maybe_log_inference_engine_weight_checksums": _phase(
+                            "check_weight_sync"
+                        ),
                     },
                 )
             else:

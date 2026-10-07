@@ -11,26 +11,27 @@ from modal_dojo.common.models import DeepSeek_V4_1_Flash, ModelConfig
 from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
-# radixark/miles#3179 (DeepSeek-V4.1 RL support) is unmerged, and the only image
-# built from it, `radixark/miles:deepseek-v41`, is arm64/GB300-only — Modal's
-# builder resolves amd64 and rejects it. That image is the last amd64+arm64
-# nightly built on `lmsysorg/sglang:v0.5.18` with two source trees copied over
-# it: miles at the PR head, and an sglang tree that merges sgl-project/sglang#38798
-# (V4.1 engine support) into `sglang-miles` (the weight-update session API miles
-# needs) and exists nowhere public but inside that image. So this recipe starts
-# from the same v0.5.18 nightly for amd64, checks out the miles PR, and unpacks
-# the sglang tree from the published image's layer
-# (patch_deepseek_v41_sglang_tree). Replace all of it with a single published tag
-# once the PR lands in a nightly.
-# Pinned to a commit, not pull/3179/head: the PR head moved under us (the image
-# patches below anchor exact upstream sources, e.g. the chat-template family
-# table, and the moving ref broke them). Bump deliberately and re-check the
-# patch anchors when the PR advances.
-_MILES_PR = "6a54b4629c4259f4733990a7fcd6c77c3c56296e"  # pull/3179 head
+# The dedicated amd64/H200 image includes the DeepSeek sources together:
+# miles ea751aac8, sglang 7e74b31b2, and Megatron-LM b0b23e198.
+# Keep those bundled revisions instead of overlaying the older PR head and
+# the arm64 deepseek-v41 image's SGLang tree. The named tag is outside miles'
+# automatic dev/PR tag cleanup; the digest also prevents tag updates drifting.
 
-# Local write buffer for the params-only save (~1.1 TB bf16 over 8 nodes, so
-# ~140 GB a node) on top of the CPU-offloaded optimizer's own host usage.
-_TRAIN_EPHEMERAL_DISK_MIB = 768 * 1024
+# Node-local disk: 768 GiB stages the params-only save (~1.1 TB bf16 over 8
+# nodes, so ~140 GB a node); 1.5 TiB holds the NVMe-streamed optimizer
+# state (~100 GiB per rank) and the actor backup written during rollout.
+_TRAIN_EPHEMERAL_DISK_MIB = (768 + 1536) * 1024
+_TRAIN_OFFLOAD_DISK_DIR = "/root/miles_train_offload"
+
+# Host-RAM limit per GPU type, in MiB, kept below what the GPU type's hosts
+# admit so the container hits its own limit before the host runs out and the
+# memory manager evicts it. 8x H200 hosts admit ~1.8 TiB (AWS p5en) to
+# ~2.5 TiB (GCP a3-ultragpu); B300 hosts admit ~2.95 TiB. The optimizer state
+# streams through disk, so host RAM holds the bf16 model and runtime state.
+_MEMORY_LIMIT_MIB_BY_GPU = {
+    "H200": int(1.75 * 1024 * 1024),
+    "B300": int(2.75 * 1024 * 1024),
+}
 
 _PATCH_DIR = (
     Path(__file__).resolve().parents[2]
@@ -40,14 +41,12 @@ _PATCH_DIR = (
     / "patches"
 )
 
-# Build-time source overlay and shims for gaps in it; see each script's
-# docstring. They run after ``apply_source_overlays`` so the sglang tree lands
-# over the nightly's checkout and the edits land on that tree.
+# Build-time shims for gaps in the bundled sources; see each script's docstring.
 _PATCHES = (
-    "patch_deepseek_v41_sglang_tree",
-    "patch_deepseek_v41_processor_tokenizer",
-    "patch_deepseek_v41_fp8_hopper_gemm",
-    "patch_deepseek_v41_chat_template",
+    "patch_deepseek_v41_router_registration",
+    "patch_deepseek_v41_checksum_audit",
+    "patch_deepseek_v41_checksum_cache",
+    "patch_deepseek_v41_checksum_offsets",
     "patch_deepseek_v41_fp4_dequant_block",
     "patch_deepseek_v41_vision_topk_capture",
 )
@@ -66,15 +65,14 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
 
     model_config_class: ClassVar[type[ModelConfig]] = DeepSeek_V4_1_Flash
 
-    docker_image: str = "radixark/miles:dev-202609050049"
-    miles_git_ref: str | None = _MILES_PR
+    docker_image: str = (
+        "radixark/miles:dsv41-h200-ea751aac8@sha256:"
+        "eff12eb317af7021f637ab6bf21359164e27274ca07a3b2b3754dfa4c5d1bd66"
+    )
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "H200"
-    # The fp32 optimizer state is offloaded to host RAM: ~8.5B params per GPU at
-    # 12 bytes each is ~100 GiB per rank, and ~21B params/rank at 4 nodes is
-    # ~250 GiB. 8 ranks/node vs a 2 TiB cap already OOMs; 2.75 TiB leaves
-    # ~200 GiB for worker overhead on the ~2.95 TiB B300 nodes.
-    memory: tuple[int, int] = (1024, int(2.75 * 1024 * 1024))
+    # Unset picks a per-GPU limit from _MEMORY_LIMIT_MIB_BY_GPU.
+    memory: int | tuple[int, int] | None = None
 
     # V4.1's DSA indexer, CSA compression and Engram memory are not
     # representable as a ModelArchitecture, so the launcher renders upstream's
@@ -101,6 +99,10 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
             "CONVERT_DEQUANT_HF_WEIGHTS": "1",
             "NCCL_CUMEM_ENABLE": "1",
             "SGLANG_SKIP_CHECKPOINT_LOAD_CHECK": "1",
+            # Upstream's default no-save launcher skips engine audit hashes.
+            # Keep our checkpoint/audit output without hashing the full model
+            # after each sync; the patch retains hashes for the event analyzer.
+            "MILES_SKIP_ENGINE_WEIGHT_CHECKSUM": "1",
             # Upstream serves an FP4→FP8 pre-converted checkpoint
             # (SGLANG_DSV4_FP4_EXPERTS=0). We load the public release, whose
             # routed experts are packed mxfp4, so the engine must expect FP4
@@ -115,7 +117,10 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
             "SGLANG_OPT_FP8_WO_A_GEMM": "0",
             "SGLANG_OPT_FUSE_WQA_WKV": "0",
             "SGLANG_DISABLE_MULTIMEM_AG": "1",
-            "SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE": "0",
+            # Frozen Engram tables are omitted from weight sync. Keep them in
+            # shared host memory so engine offload cannot discard their values.
+            "SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE": "1",
+            "SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT": "shared",
             "TORCHINDUCTOR_COMPILE_THREADS": "1",
             "PYTHONFAULTHANDLER": "1",
             # Paired with --deterministic-mode below.
@@ -178,6 +183,9 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     global_batch_size: int = 128
     # Dynamic packing conflicts with --qkv-format bshd upstream.
     use_dynamic_batch_size: bool = False
+    # Match upstream: distribute variable-length samples across trainer ranks
+    # to reduce time spent waiting for the rank with the longest sequences.
+    balance_data: bool = True
     rollout_temperature: float = 0.8
     max_tokens_per_gpu: int = 2048
     micro_batch_size: int = 1
@@ -188,9 +196,6 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
 
     # ── Optimizer + GRPO ─────────────────────────────────────────────────────
     use_distributed_optimizer: bool = True
-    optimizer_cpu_offload: bool = True
-    overlap_cpu_optimizer_d2h_h2d: bool = True
-    use_precision_aware_optimizer: bool = True
     # A Volume buffers writes on container-local disk before committing them, and
     # the fp32 master weights plus Adam moments for 560B params are ~7 TB on top
     # of the ~1.1 TB bf16 params — over what a training node can stage, and the
@@ -210,13 +215,17 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     sglang_dp_size: int = 1
     sglang_attention_backend: str = "dsv4"
     sglang_moe_runner_backend: str = "auto"
-    # The loaded engine weights (dequantized FP8 experts, sharded engram tables)
-    # occupy ~112 GB of each H200; upstream's 0.6 leaves no room for a KV pool
-    # here, and the KV pool a smoke step needs is small.
-    sglang_mem_fraction_static: float = 0.9
+    # Host-backed Engram removes ~23 GiB of frozen tables per H200. Keep more
+    # headroom for weight-sync and runtime scratch than the GPU-table layout.
+    sglang_mem_fraction_static: float = 0.8
     sglang_max_running_requests: int = 128
     sglang_disable_cuda_graph: bool = True
     sglang_disable_radix_cache: bool = True
+    # Upstream tolerates long weight operations and restores routing after one
+    # healthy probe. This is separate from Miles' engine health checks below.
+    router_health_success_threshold: int = 1
+    router_health_check_interval_secs: int = 15
+    router_health_failure_threshold: int = 40
 
     # miles always renders ``device`` on the engine command line, and sglang
     # builds from 0.5.19 on no longer fill in an unset one, so name it rather
@@ -233,6 +242,14 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     extra_config: dict | None = field(
         default_factory=lambda: {
             "sglang_device": "cuda",
+            # Match upstream's disk offload: the fp32 optimizer state and the
+            # actor offloaded during rollout live on node-local disk, not host
+            # RAM, where they pushed the head node past its memory limit.
+            "stream_optimizer_state_to_disk": True,
+            "offload_train_target": "disk",
+            "offload_train_disk_dir": _TRAIN_OFFLOAD_DISK_DIR,
+            # bf16 Adam moments halve the per-step optimizer disk I/O.
+            "stream_optimizer_state_moment_dtype": "bf16",
             "sglang_weight_loader_drop_cache_after_load": True,
             "sglang_model_loader_extra_config": '{"num_threads": 2}',
         }
@@ -243,6 +260,15 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     # The first engine start compiles deepgemm kernels for a 560B MoE; without a
     # long grace period the health checker kills the engines mid-warmup.
     rollout_health_check_first_wait: int = 3600
+
+    @model_validator(mode="after")
+    def _memory_for_gpu(self) -> "DeepSeek_V4_1_Flash_Recipe":
+        """Size the host-RAM limit to the GPU type's hosts when unset."""
+        if self.memory is None:
+            gpu = self.gpu_type.split(":")[0].rstrip("!").upper()
+            limit = _MEMORY_LIMIT_MIB_BY_GPU.get(gpu, _MEMORY_LIMIT_MIB_BY_GPU["H200"])
+            object.__setattr__(self, "memory", (1024, limit))
+        return self
 
     @model_validator(mode="after")
     def _keep_disk_reservation(self) -> "DeepSeek_V4_1_Flash_Recipe":
@@ -265,8 +291,7 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
         """Keep the build-time patches at the head of ``image_run_commands``.
 
         The field is replaced wholesale, so a caller adding their own command
-        would otherwise drop the chat-template shim and every prompt would fail
-        to render.
+        would otherwise drop the FP4 block-size fix and routing-replay capture.
         """
         patches = _image_patches()
         current = list(self.image_run_commands or [])
