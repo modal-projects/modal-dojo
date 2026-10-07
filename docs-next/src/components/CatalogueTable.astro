@@ -1,0 +1,1114 @@
+---
+import {
+  CONTEXT_STOPS,
+  SORTS,
+  baseModel,
+  contextRangeLabel,
+  formatDate,
+  formatDuration,
+  formatReward,
+  formatRewardChange,
+  formatTokens,
+  formatUsd,
+  rewardDigits,
+  sortLabel,
+  sortRows,
+  sortValue,
+  type CatalogueRow,
+  type CatalogueRun,
+  type SortDirection,
+  type SortKey,
+} from '../lib/catalogue';
+
+interface Props {
+  rows: CatalogueRow[];
+  steps: number;
+  sortKey?: SortKey;
+  sortDirection?: SortDirection;
+}
+
+const { rows, steps, sortKey = 'cost', sortDirection = 'asc' } = Astro.props;
+const sorted = sortRows(rows, sortKey, sortDirection);
+const catalogueIndex = new Map(rows.map((row, index) => [row, index]));
+const COLUMNS = 7;
+const models = [...new Set(rows.map(baseModel))];
+const lastStop = CONTEXT_STOPS.length - 1;
+const directionLabel = { asc: 'Ascending', desc: 'Descending' } as const;
+const ariaSort = (key: SortKey) =>
+  key !== sortKey ? 'none' : sortDirection === 'asc' ? 'ascending' : 'descending';
+
+function costTitle(run: CatalogueRun | null): string | undefined {
+  if (!run || run.gpu_hour_usd === null || run.time_per_step_s === null) return undefined;
+  return `${run.gpus} × ${run.gpu_type} at ${formatUsd(run.gpu_hour_usd)}/GPU-hour × ${formatDuration(run.time_per_step_s)}`;
+}
+
+function timeTitle(run: CatalogueRun | null): string | undefined {
+  const seconds = (run?.steps ?? []).flatMap((step) => (step.seconds === null ? [] : [step.seconds]));
+  if (!seconds.length) return undefined;
+  const fastest = formatDuration(Math.min(...seconds));
+  const slowest = formatDuration(Math.max(...seconds));
+  return `Median of ${seconds.length} steps (fastest ${fastest}, slowest ${slowest})`;
+}
+
+function changeClass(change: string | null): string | undefined {
+  if (!change || change.startsWith('±')) return undefined;
+  return change.startsWith('+') ? 'is-up' : 'is-down';
+}
+---
+
+<div
+  class="tg-catalogue not-content"
+  data-catalogue
+  data-sort-key={sortKey}
+  data-sort-direction={sortDirection}
+>
+  <div class="tg-catalogue__controls">
+    <div class="tg-catalogue__control" role="group" aria-labelledby="tg-catalogue-models">
+      <span class="tg-catalogue__control-label" id="tg-catalogue-models">Base model</span>
+      <div class="tg-catalogue__chips">
+        <button type="button" class="tg-catalogue__chip" data-model-all aria-pressed="true">
+          All
+        </button>
+        {
+          models.map((model) => (
+            <button
+              type="button"
+              class="tg-catalogue__chip"
+              data-model-option={model}
+              aria-pressed="false"
+            >
+              {model}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+    <div class="tg-catalogue__control">
+      <span class="tg-catalogue__control-label" id="tg-catalogue-context">Context length</span>
+      <div
+        class="tg-catalogue__range"
+        role="group"
+        aria-labelledby="tg-catalogue-context"
+        data-context-range
+        style="--low: 0; --high: 1"
+      >
+        <input
+          type="range"
+          min="0"
+          max={lastStop}
+          step="1"
+          value="0"
+          aria-label="Minimum context length"
+          aria-valuetext="No minimum"
+          data-context-low
+        />
+        <input
+          type="range"
+          min="0"
+          max={lastStop}
+          step="1"
+          value={lastStop}
+          aria-label="Maximum context length"
+          aria-valuetext="No maximum"
+          data-context-high
+        />
+      </div>
+      <output class="tg-catalogue__range-value" data-context-label>
+        {contextRangeLabel(0, lastStop)}
+      </output>
+      <p class="tg-catalogue__count" aria-live="polite" data-result-count>
+        Showing all {rows.length} recipes
+      </p>
+    </div>
+    <div class="tg-catalogue__control" role="group" aria-labelledby="tg-catalogue-sort">
+      <span class="tg-catalogue__control-label" id="tg-catalogue-sort">Sort by</span>
+      <div class="tg-catalogue__chips">
+        {
+          SORTS.map((sort) => (
+            <button
+              type="button"
+              class="tg-catalogue__chip"
+              data-sort-option={sort.key}
+              data-default-direction={sort.direction}
+              aria-pressed={sort.key === sortKey ? 'true' : 'false'}
+            >
+              {sortLabel(sort.key)}
+            </button>
+          ))
+        }
+        <button
+          type="button"
+          class="tg-catalogue__chip tg-catalogue__direction"
+          data-direction-toggle
+          data-direction={sortDirection}
+          title="Reverse the sort order"
+        >
+          <svg class="tg-catalogue__icon tg-catalogue__icon--asc" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m5 12 7-7 7 7" /><path d="M12 19V5" />
+          </svg>
+          <svg class="tg-catalogue__icon tg-catalogue__icon--desc" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
+          </svg>
+          <span data-direction-label>{directionLabel[sortDirection]}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tg-catalogue__scroll">
+    <table class="tg-catalogue__table">
+      <thead>
+        <tr>
+          <th scope="col">Recipe</th>
+          <th scope="col">Hardware</th>
+          <th scope="col" class="tg-catalogue__num">Context</th>
+          {
+            SORTS.map((sort) => (
+              <th
+                scope="col"
+                class="tg-catalogue__num"
+                data-sort={sort.key}
+                data-default-direction={sort.direction}
+                aria-sort={ariaSort(sort.key)}
+              >
+                <button type="button">
+                  <span>{sortLabel(sort.key)}</span>
+                  <svg class="tg-catalogue__icon tg-catalogue__icon--none" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m7 15 5 5 5-5" /><path d="m7 9 5-5 5 5" />
+                  </svg>
+                  <svg class="tg-catalogue__icon tg-catalogue__icon--asc" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m5 12 7-7 7 7" /><path d="M12 19V5" />
+                  </svg>
+                  <svg class="tg-catalogue__icon tg-catalogue__icon--desc" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 5v14" /><path d="m19 12-7 7-7-7" />
+                  </svg>
+                </button>
+              </th>
+            ))
+          }
+          <th scope="col">Run</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          sorted.map((row) => {
+            const index = catalogueIndex.get(row) ?? 0;
+            const run = row.run;
+            const runSteps = run?.steps ?? [];
+            const detailId = `tg-catalogue-steps-${index}`;
+            const digits = rewardDigits(runSteps.map((step) => step.raw_reward));
+            const incomplete = run !== null && run.steps_completed < steps;
+            const RunLink = run?.dashboard_url ? 'a' : 'div';
+            return (
+              <>
+                <tr
+                  data-index={index}
+                  data-model={baseModel(row)}
+                  data-context={row.context_length ?? ''}
+                  data-cost={sortValue(row, 'cost') ?? ''}
+                  data-time={sortValue(row, 'time') ?? ''}
+                  data-initial={sortValue(row, 'initial') ?? ''}
+                >
+                  <th scope="row">
+                    <div class="tg-catalogue__recipe">
+                      {runSteps.length ? (
+                        <button
+                          type="button"
+                          class="tg-catalogue__expand"
+                          aria-expanded="false"
+                          aria-controls={detailId}
+                          aria-label={`Steps for ${row.name}`}
+                          data-steps-toggle
+                        >
+                          <svg class="tg-catalogue__icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <path d="m9 18 6-6-6-6" />
+                          </svg>
+                        </button>
+                      ) : (
+                        <span class="tg-catalogue__expand" />
+                      )}
+                      <div class="tg-catalogue__recipe-text">
+                        <a
+                          class="tg-catalogue__model"
+                          href={row.model_href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {row.name}
+                          <span class="sr-only"> (opens in a new tab)</span>
+                        </a>
+                        <span class="tg-catalogue__sub">
+                          <a href={row.recipe_href}>
+                            <code>{row.recipe}</code>
+                          </a>
+                          {` · ${row.framework}`}
+                        </span>
+                      </div>
+                    </div>
+                  </th>
+                  <td>
+                    {run ? (
+                      <>
+                        {`${run.gpus} × ${run.gpu_type}`}
+                        <span class="tg-catalogue__sub">
+                          {run.nodes} {run.nodes === 1 ? 'node' : 'nodes'}
+                        </span>
+                      </>
+                    ) : (
+                      <span class="tg-catalogue__muted">—</span>
+                    )}
+                  </td>
+                  <td
+                    class:list={['tg-catalogue__num', { 'is-empty': row.context_length === null }]}
+                    title={
+                      row.context_source === 'model'
+                        ? "The model's own context window; the recipe doesn't cap it"
+                        : row.context_source === 'recipe'
+                          ? 'Set by the recipe'
+                          : undefined
+                    }
+                  >
+                    {row.context_length === null ? '—' : formatTokens(row.context_length)}
+                    {row.context_source === 'model' && <span class="tg-catalogue__sub">default</span>}
+                  </td>
+                  <td
+                    class:list={['tg-catalogue__num', { 'is-empty': sortValue(row, 'cost') === null }]}
+                    title={costTitle(run)}
+                  >
+                    {formatUsd(run?.cost_per_step_usd ?? null)}
+                  </td>
+                  <td
+                    class:list={['tg-catalogue__num', { 'is-empty': sortValue(row, 'time') === null }]}
+                    title={timeTitle(run)}
+                  >
+                    {formatDuration(run?.time_per_step_s ?? null)}
+                  </td>
+                  <td class:list={['tg-catalogue__num', { 'is-empty': sortValue(row, 'initial') === null }]}>
+                    {formatReward(run?.initial_reward ?? null, digits)}
+                  </td>
+                  <td>
+                    {run ? (
+                      <RunLink
+                        class="tg-catalogue__run"
+                        href={run.dashboard_url ?? undefined}
+                        target={run.dashboard_url ? '_blank' : undefined}
+                        rel={run.dashboard_url ? 'noopener noreferrer' : undefined}
+                        title={run.dashboard_url ? `Open ${run.id} in the dashboard` : run.id}
+                      >
+                        <span class="tg-catalogue__run-id">{run.id}</span>
+                        {run.dashboard_url && <span class="sr-only"> (opens in a new tab)</span>}
+                        <span class:list={['tg-catalogue__sub', { 'is-warning': incomplete }]}>
+                          {formatDate(run.created_at)}
+                          {incomplete && ` · ${run.steps_completed}/${steps} steps`}
+                        </span>
+                      </RunLink>
+                    ) : (
+                      <span class="tg-catalogue__pending">Not run yet</span>
+                    )}
+                  </td>
+                </tr>
+                {run && runSteps.length > 0 && (
+                  <tr class="tg-catalogue__detail" id={detailId} data-detail-for={index} hidden>
+                    <td colspan={COLUMNS}>
+                      <div class="tg-catalogue__detail-body">
+                        <table class="tg-catalogue__steps">
+                          <caption class="sr-only">{`${row.name}, step by step`}</caption>
+                          <thead>
+                            <tr>
+                              <th scope="col">Step</th>
+                              {runSteps.map((step) => (
+                                <th scope="col">{step.step}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <th scope="row">Time</th>
+                              {runSteps.map((step) => (
+                                <td class:list={{ 'is-empty': step.seconds === null }}>
+                                  {formatDuration(step.seconds)}
+                                </td>
+                              ))}
+                            </tr>
+                            <tr>
+                              <th scope="row">Cost</th>
+                              {runSteps.map((step) => (
+                                <td class:list={{ 'is-empty': step.cost_usd === null }}>
+                                  {formatUsd(step.cost_usd)}
+                                </td>
+                              ))}
+                            </tr>
+                            <tr>
+                              <th scope="row">Running total</th>
+                              {runSteps.map((step) => (
+                                <td class:list={{ 'is-empty': step.total_usd === null }}>
+                                  {formatUsd(step.total_usd)}
+                                </td>
+                              ))}
+                            </tr>
+                            <tr>
+                              <th scope="row">Raw reward</th>
+                              {runSteps.map((step) => (
+                                <td class:list={{ 'is-empty': step.raw_reward === null }}>
+                                  {formatReward(step.raw_reward, digits)}
+                                </td>
+                              ))}
+                            </tr>
+                            <tr>
+                              <th scope="row">Since step 1</th>
+                              {runSteps.map((step) => {
+                                const since =
+                                  step.step === 1
+                                    ? null
+                                    : formatRewardChange(runSteps[0].raw_reward, step.raw_reward, digits);
+                                return (
+                                  <td class:list={[changeClass(since), { 'is-empty': since === null }]}>
+                                    {since ?? '—'}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
+            );
+          })
+        }
+      </tbody>
+    </table>
+  </div>
+  <p class="tg-catalogue__no-match" data-no-match hidden>No recipes match these filters.</p>
+  <p class="sr-only" aria-live="polite" data-sort-status></p>
+</div>
+
+<script>
+  import {
+    CONTEXT_STOPS,
+    compareValues,
+    contextRangeLabel,
+    formatTokens,
+    inContextRange,
+    type SortDirection,
+  } from '../lib/catalogue';
+
+  const DIRECTION_LABEL: Record<SortDirection, string> = {
+    asc: 'Ascending',
+    desc: 'Descending',
+  };
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-catalogue]')) {
+    const body = root.querySelector<HTMLTableSectionElement>('.tg-catalogue__table > tbody');
+    const status = root.querySelector<HTMLElement>('[data-sort-status]');
+    const direction = root.querySelector<HTMLButtonElement>('[data-direction-toggle]');
+    const directionText = direction?.querySelector<HTMLElement>('[data-direction-label]');
+    if (!body || !status || !direction || !directionText) continue;
+    const headers = [...root.querySelectorAll<HTMLElement>('th[data-sort]')];
+    const options = [...root.querySelectorAll<HTMLButtonElement>('[data-sort-option]')];
+    const rows = [...body.querySelectorAll<HTMLTableRowElement>(':scope > tr[data-index]')];
+    // Each recipe's step breakdown is its own row and travels with its recipe.
+    const details = new Map(
+      [...body.querySelectorAll<HTMLTableRowElement>(':scope > tr[data-detail-for]')].map(
+        (detail) => [detail.dataset.detailFor, detail],
+      ),
+    );
+    let key = root.dataset.sortKey ?? 'cost';
+    let order = (root.dataset.sortDirection ?? 'asc') as SortDirection;
+
+    const value = (row: HTMLTableRowElement) => {
+      const raw = row.dataset[key];
+      return raw ? Number(raw) : null;
+    };
+
+    const apply = (nextKey: string, nextOrder: SortDirection) => {
+      key = nextKey;
+      order = nextOrder;
+      rows.sort(
+        (left, right) =>
+          compareValues(value(left), value(right), order) ||
+          Number(left.dataset.index) - Number(right.dataset.index),
+      );
+      for (const row of rows) {
+        body.append(row);
+        const detail = details.get(row.dataset.index);
+        if (detail) body.append(detail);
+      }
+      const ariaSort = order === 'asc' ? 'ascending' : 'descending';
+      for (const header of headers) {
+        header.setAttribute('aria-sort', header.dataset.sort === key ? ariaSort : 'none');
+      }
+      for (const option of options) {
+        option.setAttribute('aria-pressed', String(option.dataset.sortOption === key));
+      }
+      direction.dataset.direction = order;
+      directionText.textContent = DIRECTION_LABEL[order];
+      const label = options.find((option) => option.dataset.sortOption === key)?.textContent?.trim();
+      status.textContent = `Sorted by ${label ?? key}, ${ariaSort}.`;
+    };
+
+    const reverse = (current: SortDirection): SortDirection => (current === 'asc' ? 'desc' : 'asc');
+
+    for (const header of headers) {
+      header.querySelector('button')?.addEventListener('click', () => {
+        const sortKey = header.dataset.sort ?? key;
+        const initial = (header.dataset.defaultDirection ?? 'desc') as SortDirection;
+        apply(sortKey, sortKey === key ? reverse(order) : initial);
+      });
+    }
+    for (const option of options) {
+      option.addEventListener('click', () => {
+        const sortKey = option.dataset.sortOption ?? key;
+        if (sortKey !== key) {
+          apply(sortKey, (option.dataset.defaultDirection ?? 'desc') as SortDirection);
+        }
+      });
+    }
+    direction.addEventListener('click', () => apply(key, reverse(order)));
+
+    // A step breakdown shows only while its recipe is open and not filtered out.
+    const syncDetail = (row: HTMLTableRowElement) => {
+      const detail = details.get(row.dataset.index);
+      const toggle = row.querySelector('[data-steps-toggle]');
+      if (detail) detail.hidden = row.hidden || toggle?.getAttribute('aria-expanded') !== 'true';
+    };
+
+    for (const toggle of root.querySelectorAll<HTMLButtonElement>('[data-steps-toggle]')) {
+      toggle.addEventListener('click', () => {
+        const row = toggle.closest('tr');
+        if (!row) return;
+        const open = toggle.getAttribute('aria-expanded') !== 'true';
+        toggle.setAttribute('aria-expanded', String(open));
+        row.classList.toggle('is-expanded', open);
+        syncDetail(row);
+      });
+    }
+
+    const modelAll = root.querySelector<HTMLButtonElement>('[data-model-all]');
+    const modelOptions = [...root.querySelectorAll<HTMLButtonElement>('[data-model-option]')];
+    const range = root.querySelector<HTMLElement>('[data-context-range]');
+    const low = root.querySelector<HTMLInputElement>('[data-context-low]');
+    const high = root.querySelector<HTMLInputElement>('[data-context-high]');
+    const rangeText = root.querySelector<HTMLElement>('[data-context-label]');
+    const count = root.querySelector<HTMLElement>('[data-result-count]');
+    const noMatch = root.querySelector<HTMLElement>('[data-no-match]');
+    if (!modelAll || !range || !low || !high || !rangeText || !count || !noMatch) continue;
+    const lastStop = CONTEXT_STOPS.length - 1;
+    // No model selected means every model.
+    const models = new Set<string>();
+
+    const filter = () => {
+      const lowStop = Number(low.value);
+      const highStop = Number(high.value);
+      let shown = 0;
+      let uncapped = 0;
+      for (const row of rows) {
+        const context = row.dataset.context ? Number(row.dataset.context) : null;
+        const modelMatch = models.size === 0 || models.has(row.dataset.model ?? '');
+        const contextMatch = inContextRange(context, lowStop, highStop);
+        row.hidden = !(modelMatch && contextMatch);
+        syncDetail(row);
+        if (!row.hidden) shown += 1;
+        if (modelMatch && !contextMatch && context === null) uncapped += 1;
+      }
+      modelAll.setAttribute('aria-pressed', String(models.size === 0));
+      for (const option of modelOptions) {
+        option.setAttribute('aria-pressed', String(models.has(option.dataset.modelOption ?? '')));
+      }
+      range.style.setProperty('--low', String(lowStop / lastStop));
+      range.style.setProperty('--high', String(highStop / lastStop));
+      // Thumbs that meet in the right half let the low one move left.
+      low.classList.toggle('is-top', lowStop === highStop && lowStop > lastStop / 2);
+      low.setAttribute(
+        'aria-valuetext',
+        lowStop === 0 ? 'No minimum' : `At least ${formatTokens(CONTEXT_STOPS[lowStop])} tokens`,
+      );
+      high.setAttribute(
+        'aria-valuetext',
+        highStop === lastStop ? 'No maximum' : `At most ${formatTokens(CONTEXT_STOPS[highStop])} tokens`,
+      );
+      rangeText.textContent = contextRangeLabel(lowStop, highStop);
+      count.textContent =
+        (shown === rows.length
+          ? `Showing all ${rows.length} recipes`
+          : `Showing ${shown} of ${rows.length} recipes`) +
+        (uncapped ? ` · ${uncapped} with no context length hidden` : '');
+      noMatch.hidden = shown > 0;
+    };
+
+    modelAll.addEventListener('click', () => {
+      models.clear();
+      filter();
+    });
+    for (const option of modelOptions) {
+      option.addEventListener('click', () => {
+        const model = option.dataset.modelOption ?? '';
+        if (!models.delete(model)) models.add(model);
+        filter();
+      });
+    }
+    range.addEventListener('pointerdown', (event) => {
+      if (event.target !== range) return;
+      const bounds = range.getBoundingClientRect();
+      // The track's inset is half a thumb, where the end thumbs' centers sit.
+      const inset = parseFloat(getComputedStyle(range, '::before').left) || 0;
+      const fraction = (event.clientX - bounds.left - inset) / (bounds.width - 2 * inset);
+      const stop = Math.round(Math.min(1, Math.max(0, fraction)) * lastStop);
+      const lowStop = Number(low.value);
+      const highStop = Number(high.value);
+      if (stop < lowStop || Math.abs(stop - lowStop) < Math.abs(stop - highStop)) {
+        low.value = String(Math.min(stop, highStop));
+        low.focus();
+      } else {
+        high.value = String(Math.max(stop, lowStop));
+        high.focus();
+      }
+      filter();
+    });
+    low.addEventListener('input', () => {
+      if (Number(low.value) > Number(high.value)) low.value = high.value;
+      filter();
+    });
+    high.addEventListener('input', () => {
+      if (Number(high.value) < Number(low.value)) high.value = low.value;
+      filter();
+    });
+  }
+</script>
+
+<style>
+  .tg-catalogue {
+    --tg-catalogue-hover: color-mix(in srgb, var(--sl-color-white) 4%, transparent);
+    margin-block: 1.5rem 2.5rem;
+  }
+
+  .tg-catalogue__controls {
+    display: grid;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .tg-catalogue__control {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+  }
+
+  .tg-catalogue__control-label {
+    flex: none;
+    width: 7.5rem;
+    color: var(--sl-color-gray-3);
+    font-size: 0.875rem;
+  }
+
+  .tg-catalogue__chips {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .tg-catalogue__range {
+    --thumb: 1.125rem;
+    position: relative;
+    isolation: isolate;
+    width: 14rem;
+    height: 1.75rem;
+    cursor: pointer;
+  }
+
+  /* The track, then the stretch between the two thumbs' centers. */
+  .tg-catalogue__range::before,
+  .tg-catalogue__range::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    height: 0.25rem;
+    z-index: 0;
+    border-radius: 9999px;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  .tg-catalogue__range::before {
+    right: calc(var(--thumb) / 2);
+    left: calc(var(--thumb) / 2);
+    background: var(--sl-color-gray-6);
+  }
+
+  .tg-catalogue__range::after {
+    right: calc(var(--thumb) / 2 + (100% - var(--thumb)) * (1 - var(--high)));
+    left: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--low));
+    background: var(--sl-color-accent);
+  }
+
+  /* Two stacked range inputs make one two-thumb slider; only thumbs take input. */
+  .tg-catalogue__range input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    margin: 0;
+    background: none;
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: none;
+  }
+
+  .tg-catalogue__range input.is-top {
+    z-index: 2;
+  }
+
+  .tg-catalogue__range input:focus {
+    outline: none;
+  }
+
+  .tg-catalogue__range input::-webkit-slider-runnable-track {
+    height: 100%;
+    background: none;
+  }
+
+  .tg-catalogue__range input::-moz-range-track {
+    background: none;
+  }
+
+  .tg-catalogue__range input::-webkit-slider-thumb {
+    box-sizing: border-box;
+    width: var(--thumb);
+    height: var(--thumb);
+    margin-top: calc((1.75rem - var(--thumb)) / 2);
+    border: 2px solid var(--sl-color-accent);
+    border-radius: 50%;
+    background: var(--sl-color-bg);
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: grab;
+    pointer-events: auto;
+  }
+
+  .tg-catalogue__range input::-moz-range-thumb {
+    box-sizing: border-box;
+    width: var(--thumb);
+    height: var(--thumb);
+    border: 2px solid var(--sl-color-accent);
+    border-radius: 50%;
+    background: var(--sl-color-bg);
+    cursor: grab;
+    pointer-events: auto;
+  }
+
+  .tg-catalogue__range input:focus-visible::-webkit-slider-thumb {
+    outline: 2px solid var(--sl-color-accent-high);
+    outline-offset: 2px;
+  }
+
+  .tg-catalogue__range input:focus-visible::-moz-range-thumb {
+    outline: 2px solid var(--sl-color-accent-high);
+    outline-offset: 2px;
+  }
+
+  .tg-catalogue__range-value {
+    min-width: 6.5rem;
+    color: var(--sl-color-gray-1);
+    font-size: 0.875rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tg-catalogue__count {
+    margin: 0 0 0 auto;
+    color: var(--sl-color-gray-3);
+    font-size: 0.8125rem;
+  }
+
+  .tg-catalogue__no-match {
+    margin: 1rem 0 0;
+    color: var(--sl-color-gray-3);
+    font-size: 0.875rem;
+  }
+
+  .tg-catalogue__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 2rem;
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--sl-color-gray-6);
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--sl-color-gray-3);
+    font: inherit;
+    font-size: 0.8125rem;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      background-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .tg-catalogue__chip:hover {
+    border-color: var(--sl-color-gray-5);
+    color: var(--sl-color-gray-1);
+  }
+
+  .tg-catalogue__chip[aria-pressed='true'] {
+    border-color: color-mix(in srgb, var(--sl-color-accent) 45%, transparent);
+    background: color-mix(in srgb, var(--sl-color-accent) 10%, transparent);
+    color: var(--sl-color-accent-high);
+  }
+
+  .tg-catalogue__direction {
+    margin-left: auto;
+  }
+
+  .tg-catalogue button:focus-visible,
+  .tg-catalogue a:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 2px;
+  }
+
+  .tg-catalogue__icon {
+    width: 0.75rem;
+    height: 0.75rem;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .tg-catalogue__direction[data-direction='asc'] .tg-catalogue__icon--desc,
+  .tg-catalogue__direction[data-direction='desc'] .tg-catalogue__icon--asc {
+    display: none;
+  }
+
+  .tg-catalogue__scroll {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  /* Starlight scopes component styles with :where(), so these selectors carry
+     only their own weight, and the docs theme styles every table in page
+     content, .not-content or not. Prefixing .tg-catalogue outranks it; row
+     lines reuse its border so the two agree wherever they overlap. Child
+     combinators keep the recipe table's rules off the step tables inside it. */
+  .tg-catalogue .tg-catalogue__table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    color: var(--sl-color-gray-2);
+  }
+
+  .tg-catalogue .tg-catalogue__table tr,
+  .tg-catalogue .tg-catalogue__table tr:hover {
+    background: transparent;
+  }
+
+  .tg-catalogue .tg-catalogue__table > * > tr > :is(th, td) {
+    padding: 0.625rem 0.625rem;
+    border: 0;
+    border-bottom: 1px solid var(--tg-border);
+    background: transparent;
+    color: inherit;
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.25rem;
+    text-align: left;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+
+  /* :nth-child(n) outweighs the docs theme's per-column minimum widths. */
+  .tg-catalogue .tg-catalogue__table > * > tr > :nth-child(n) {
+    min-width: 0;
+  }
+
+  .tg-catalogue .tg-catalogue__table > thead > tr > th {
+    padding-block: 0.5rem;
+    color: var(--sl-color-gray-3);
+    vertical-align: bottom;
+  }
+
+  /* An open recipe and its steps read as one row. */
+  .tg-catalogue .tg-catalogue__table > tbody > tr.is-expanded > :is(th, td) {
+    border-bottom-color: transparent;
+  }
+
+  .tg-catalogue .tg-catalogue__table > tbody > tr:not(.tg-catalogue__detail):hover > :is(th, td) {
+    background: var(--tg-catalogue-hover);
+  }
+
+  /* The recipe column stays put while the metrics scroll past it. */
+  .tg-catalogue .tg-catalogue__table > * > tr:not(.tg-catalogue__detail) > :first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--sl-color-bg);
+  }
+
+  .tg-catalogue .tg-catalogue__table > tbody > tr:not(.tg-catalogue__detail):hover > :first-child {
+    background: color-mix(in srgb, var(--sl-color-white) 4%, var(--sl-color-bg));
+  }
+
+  .tg-catalogue .tg-catalogue__table .tg-catalogue__num {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .tg-catalogue .tg-catalogue__table > tbody > tr > .is-empty {
+    color: var(--sl-color-gray-4);
+  }
+
+  .tg-catalogue__table th[data-sort] button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .tg-catalogue__table th[data-sort] button:hover,
+  .tg-catalogue__table th[aria-sort='ascending'] button,
+  .tg-catalogue__table th[aria-sort='descending'] button {
+    color: var(--sl-color-white);
+  }
+
+  .tg-catalogue__table th[data-sort] .tg-catalogue__icon--none {
+    opacity: 0.5;
+  }
+
+  .tg-catalogue__table th[data-sort] .tg-catalogue__icon--asc,
+  .tg-catalogue__table th[data-sort] .tg-catalogue__icon--desc,
+  .tg-catalogue__table th[aria-sort='ascending'] .tg-catalogue__icon--none,
+  .tg-catalogue__table th[aria-sort='descending'] .tg-catalogue__icon--none {
+    display: none;
+  }
+
+  .tg-catalogue__table th[aria-sort='ascending'] .tg-catalogue__icon--asc,
+  .tg-catalogue__table th[aria-sort='descending'] .tg-catalogue__icon--desc {
+    display: block;
+  }
+
+  .tg-catalogue__recipe {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.375rem;
+  }
+
+  .tg-catalogue__recipe-text {
+    min-width: 0;
+  }
+
+  .tg-catalogue__expand {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0.25rem;
+    background: none;
+    color: var(--sl-color-gray-3);
+    cursor: pointer;
+  }
+
+  button.tg-catalogue__expand:hover {
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-white);
+  }
+
+  .tg-catalogue__expand .tg-catalogue__icon {
+    width: 0.875rem;
+    height: 0.875rem;
+    transition: transform 0.15s ease;
+  }
+
+  .tg-catalogue__expand[aria-expanded='true'] .tg-catalogue__icon {
+    transform: rotate(90deg);
+  }
+
+  .tg-catalogue__model {
+    color: var(--sl-color-white);
+    font-weight: 500;
+    text-decoration: none;
+  }
+
+  .tg-catalogue__model:hover {
+    text-decoration: underline;
+  }
+
+  .tg-catalogue__sub {
+    display: block;
+    margin-top: 0.125rem;
+    color: var(--sl-color-gray-3);
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .tg-catalogue__sub a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .tg-catalogue__sub a:hover code {
+    color: var(--sl-color-white);
+    text-decoration: underline;
+  }
+
+  .tg-catalogue__sub code {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--sl-color-gray-2);
+    font-family: var(--sl-font-mono);
+    font-size: 0.75rem;
+  }
+
+  .tg-catalogue__run {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  a.tg-catalogue__run:hover .tg-catalogue__run-id {
+    color: var(--sl-color-white);
+    text-decoration: underline;
+  }
+
+  .tg-catalogue__run-id {
+    display: block;
+    max-width: 9.5rem;
+    overflow: hidden;
+    color: var(--sl-color-gray-1);
+    font-family: var(--sl-font-mono);
+    font-size: 0.8125rem;
+    text-overflow: ellipsis;
+  }
+
+  .tg-catalogue .tg-catalogue__table > tbody > tr.tg-catalogue__detail > td {
+    padding: 0 0.625rem 1rem;
+  }
+
+  /* Pinned to the left edge, so the steps stay in view however far the
+     recipe table is scrolled. */
+  .tg-catalogue__detail-body {
+    position: sticky;
+    left: 0.625rem;
+    width: fit-content;
+    max-width: calc(100vw - 2.5rem);
+    overflow-x: auto;
+    padding-left: 1.625rem;
+  }
+
+  .tg-catalogue .tg-catalogue__steps {
+    width: auto;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  /* tr > :nth-child(n) matches every cell; its extra weight beats the docs
+     theme's per-column min-widths and borders for tables in page content. */
+  .tg-catalogue .tg-catalogue__steps tr > :nth-child(n) {
+    min-width: 4.5rem;
+    padding: 0.3125rem 0.75rem;
+    border: 0;
+    border-bottom: 1px solid var(--tg-border);
+    background: transparent;
+    color: var(--sl-color-gray-2);
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 400;
+    line-height: 1.25rem;
+    text-align: right;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  .tg-catalogue .tg-catalogue__steps tr > :first-child {
+    min-width: 0;
+    padding-left: 0;
+    color: var(--sl-color-gray-3);
+    text-align: left;
+  }
+
+  .tg-catalogue .tg-catalogue__steps thead tr > :nth-child(n) {
+    color: var(--sl-color-gray-3);
+  }
+
+  .tg-catalogue .tg-catalogue__steps tbody tr:last-child > :nth-child(n) {
+    border-bottom: 0;
+  }
+
+  .tg-catalogue .tg-catalogue__steps tr > td.is-empty {
+    color: var(--sl-color-gray-4);
+  }
+
+  .tg-catalogue .tg-catalogue__steps tr > td.is-up,
+  .tg-catalogue__sub.is-up {
+    color: var(--sl-color-accent);
+  }
+
+  .tg-catalogue .tg-catalogue__steps tr > td.is-down,
+  .tg-catalogue__sub.is-down {
+    color: #f87171;
+  }
+
+  .tg-catalogue__sub.is-warning {
+    color: var(--tg-caution-text);
+  }
+
+  .tg-catalogue__muted {
+    color: var(--sl-color-gray-4);
+  }
+
+  .tg-catalogue__pending {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border: 1px dashed var(--sl-color-gray-5);
+    border-radius: 9999px;
+    color: var(--sl-color-gray-3);
+    font-size: 0.75rem;
+    line-height: 1rem;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 40rem) {
+    .tg-catalogue__control-label {
+      width: 100%;
+    }
+
+    .tg-catalogue__count {
+      margin-left: 0;
+    }
+
+    /* Leave most of a phone's width for the metrics scrolling beside it. */
+    .tg-catalogue__recipe {
+      max-width: 11rem;
+      white-space: normal;
+    }
+
+    .tg-catalogue__recipe .tg-catalogue__sub {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tg-catalogue__chip,
+    .tg-catalogue__expand .tg-catalogue__icon {
+      transition: none;
+    }
+  }
+</style>
