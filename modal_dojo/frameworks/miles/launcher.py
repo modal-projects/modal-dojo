@@ -951,29 +951,28 @@ def build_miles_app(
 
             os.makedirs(save_root, exist_ok=True)
 
-            resume_checkpoint = torch_dist_resume_checkpoint(
-                save_root, is_complete=_is_resumable_checkpoint
-            )
-            record_resume_checkpoint(run_record, resume_checkpoint)
-            await run_record.save(is_async=True)
-
-            with shared.resumed_recipe(miles, save_root, resume_checkpoint):
-                if resume_checkpoint is None and (
-                    unresumable := _unresumable_save_dirs(save_root)
-                ):
-                    print(
-                        f"WARNING: {save_root} holds saves of interrupted writes that cannot be resumed "
-                        f"({', '.join(unresumable)}). Resuming into one of these would load a partial save."
-                    )
-                cmd = build_train_cmd(
-                    miles,
-                    MILES_ROOT,
-                    model=model,
-                    dataset=dataset,
-                    eval_dataset=eval_dataset,
-                    dataset_path=dataset_path,
-                    eval_dataset_path=eval_dataset_path,
+            def build_cmd() -> str:
+                resume_checkpoint = torch_dist_resume_checkpoint(
+                    save_root, is_complete=_is_resumable_checkpoint
                 )
+                record_resume_checkpoint(run_record, resume_checkpoint)
+                with shared.resumed_recipe(miles, save_root, resume_checkpoint):
+                    if resume_checkpoint is None and (
+                        unresumable := _unresumable_save_dirs(save_root)
+                    ):
+                        print(
+                            f"WARNING: {save_root} holds saves of interrupted writes that cannot be resumed "
+                            f"({', '.join(unresumable)}). Resuming into one of these would load a partial save."
+                        )
+                    return build_train_cmd(
+                        miles,
+                        MILES_ROOT,
+                        model=model,
+                        dataset=dataset,
+                        eval_dataset=eval_dataset,
+                        dataset_path=dataset_path,
+                        eval_dataset_path=eval_dataset_path,
+                    )
 
             runtime_env = build_ray_runtime_env(
                 head_addr=cluster.head_addr,
@@ -999,12 +998,15 @@ def build_miles_app(
                 f"Training {app_name} - {miles.total_nodes} node(s) x {gpu_spec} ({mode})"
             )
             print(miles.gpu_allocation.summary())
-            print(f"Command: {cmd}")
-            print(f"Runtime environment variables: {sorted(runtime_env['env_vars'])}")
 
             await set_status(MilesStatus.TRAINING)
-            result = await cluster.submit_and_tail(cmd, runtime_env=runtime_env)
-            shared.check_training_result(result, run_record)
+            result = await shared.run_training_attempts(
+                cluster=cluster,
+                recipe=miles,
+                run_record=run_record,
+                runtime_env=runtime_env,
+                build_cmd=build_cmd,
+            )
             print(f"Ray job message: {result.message}")
 
             return await shared.complete_training_run(

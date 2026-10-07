@@ -266,6 +266,14 @@ class TrainingRun(BaseModel):
         return self.error_message
 
     @property
+    def inferred_batch_size_result(self) -> int | None:
+        """The micro-batch value ``infer_batch_size`` settled on, once training fit."""
+        from modal_dojo.common.batch_size_inference import inferred_batch_size_result
+
+        self._reload()
+        return inferred_batch_size_result(self.metadata)
+
+    @property
     def model(self) -> "ModelConfig":
         """Build a ``ModelConfig`` whose path targets the latest megatron checkpoint."""
         self._reload()

@@ -539,6 +539,40 @@ def prepare_launch_config(
             object.__setattr__(cfg, field, path)
 
 
+def set_escape_hatch_value(cfg: Any, key: str, value: Any) -> None:
+    """Set ``key`` in the recipe's escape hatch, before or after materialization.
+
+    Before ``prepare_launch_config`` runs the hatch is still a dict and is
+    updated in place. Afterwards it is a YAML path: the file is rewritten and
+    the recorded keys/values updated so ``_emit_fields`` keeps suppressing the
+    same-named flag and later reads see the new value.
+    """
+    import yaml
+
+    escape_hatch = getattr(cfg, "_ESCAPE_HATCH_FIELD", None)
+    if not escape_hatch:
+        raise TypeError(f"{type(cfg).__name__} has no escape-hatch config field")
+    current = getattr(cfg, escape_hatch, None)
+    if current is None or isinstance(current, dict):
+        updated = dict(current or {})
+        updated[key] = value
+        object.__setattr__(cfg, escape_hatch, updated)
+        return
+    if isinstance(current, str) and os.path.isfile(current):
+        with open(current) as f:
+            data = yaml.safe_load(f) or {}
+        data[key] = value
+        with open(current, "w") as f:
+            yaml.dump(data, f)
+    stored = getattr(cfg, "_materialized_config", None)
+    stored = dict(stored) if isinstance(stored, dict) else {}
+    stored[key] = value
+    object.__setattr__(cfg, "_materialized_config", stored)
+    keys = tuple(getattr(cfg, "_materialized_config_keys", ()) or ())
+    if key not in keys:
+        object.__setattr__(cfg, "_materialized_config_keys", keys + (key,))
+
+
 def drop_materialized_config_key(cfg: Any, key: str) -> None:
     """Remove ``key`` from the recipe's already-materialized escape-hatch YAML.
 

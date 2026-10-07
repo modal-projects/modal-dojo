@@ -50,6 +50,8 @@ Some highlights:
 3. Score distribution and advantage charts; useful for spotting reward collapse (all-equal rewards) long before the mean flatlines.
 4. Link to the underlying Modal app for container-level debugging.
 
+Runs launched with `infer_batch_size=True` also get a **Batch size inference** section showing `inferred_batch_size_result`: the `max_tokens_per_gpu` (or `micro_batch_size`) value the gym settled on after halving on each OOM, along with how many attempts it took.
+
 The step and substep timeline is the dashboard's built-in profiler. Each step is segmented by:
 
 - Generate rollouts: sampling from the inference engine.

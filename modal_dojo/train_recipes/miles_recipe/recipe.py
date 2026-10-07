@@ -38,6 +38,7 @@ from modal_dojo.train_recipes.gpu_allocation import (
 
 _MILES_SKIP = {
     "environment",
+    "infer_batch_size",
     "async_mode",
     "miles_model_script",
     "miles_model_name",
@@ -346,6 +347,13 @@ class MilesRecipe(BaseTrainRecipe):
             Miles' own default.
         max_tokens_per_gpu:
             Token budget per GPU per micro-batch when dynamic batching is on.
+        infer_batch_size:
+            Composer-style automatic micro-batching. Set the per-GPU micro-batch
+            knob (``max_tokens_per_gpu`` with dynamic batching, else
+            ``micro_batch_size``) deliberately high; whenever training dies with a
+            CUDA OOM the launcher halves it and relaunches (resuming from the last
+            checkpoint) until it fits. ``global_batch_size`` is never changed. The
+            value it settled on is ``inferred_batch_size_result`` on the run.
 
         rm_type:
             Built-in reward function name. Leave unset for a custom reward.
@@ -620,6 +628,7 @@ class MilesRecipe(BaseTrainRecipe):
     use_dynamic_batch_size: bool = True
     micro_batch_size: int | None = None
     max_tokens_per_gpu: int = 9216
+    infer_batch_size: bool = False
 
     # ── Reward model ────────────────────────────────────────────────────────
     rm_type: str | None = None

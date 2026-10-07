@@ -20,6 +20,7 @@ from modal_dojo.common.errors import (
 from modal_dojo.common.framework import Framework
 from modal_dojo.common.ids import create_hash
 from modal_dojo.common.launcher_helpers import mark_run_failed, mark_run_stopped
+from modal_dojo.common.batch_size_inference import validate_batch_size_inference
 from modal_dojo.common.memory_estimate import maybe_warn_gpu_oom
 from modal_dojo.common.modal_urls import modal_app_dashboard_url
 from modal_dojo.common.models import ModelConfig
@@ -602,7 +603,9 @@ class TrainConfig:
         from modal_dojo.common.config import require_migrated_config
 
         require_migrated_config()
-        maybe_warn_gpu_oom(self.recipe, self.model)
+        validate_batch_size_inference(self.recipe)
+        if not getattr(self.recipe, "infer_batch_size", False):
+            maybe_warn_gpu_oom(self.recipe, self.model)
         training_run_id = self._generate_training_run_id()
         ensure_dashboard_deployed()
         framework_status_url = get_framework_status_url() or ""

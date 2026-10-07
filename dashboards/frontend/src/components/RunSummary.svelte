@@ -94,6 +94,25 @@
     };
   });
 
+  let batchSizeInference = $derived.by(() => {
+    const state = run?.batch_size_inference;
+    if (!state || typeof state !== "object") return null;
+    const attempts = Array.isArray(state.attempts) ? state.attempts : [];
+    return {
+      knob: String(state.knob || ""),
+      initial: Number(state.initial) || 0,
+      floor: Number(state.floor) || 0,
+      current: Number(state.current) || 0,
+      settled: state.settled === true,
+      result:
+        state.inferred_batch_size_result == null
+          ? null
+          : Number(state.inferred_batch_size_result),
+      attempts: attempts.length,
+      oomCount: attempts.filter((a) => a?.outcome === "oom").length,
+    };
+  });
+
   function frameworkProgress() {
     const p = run?.framework_progress;
     if (!p || typeof p !== "object") return null;
@@ -254,6 +273,45 @@
             <span class="kv-value">{attemptMetadata.resumeFromIteration}</span>
           </div>
         {/if}
+      </section>
+    {/if}
+
+    {#if batchSizeInference}
+      <section class="summary-section">
+        <h3 class="summary-section-title">Batch size inference</h3>
+        <div class="kv">
+          <span class="kv-key">inferred_batch_size_result</span>
+          <span class="kv-value kv-value-mono">
+            {#if batchSizeInference.result !== null}
+              {batchSizeInference.result}
+            {:else}
+              searching ({batchSizeInference.knob}={batchSizeInference.current})
+            {/if}
+          </span>
+        </div>
+        <div class="kv">
+          <span class="kv-key">Knob</span>
+          <span class="kv-value kv-value-mono">{batchSizeInference.knob}</span>
+        </div>
+        <div class="kv">
+          <span class="kv-key">Started at</span>
+          <span class="kv-value">{batchSizeInference.initial}</span>
+        </div>
+        {#if batchSizeInference.floor}
+          <div class="kv">
+            <span class="kv-key">Floor</span>
+            <span class="kv-value">{batchSizeInference.floor}</span>
+          </div>
+        {/if}
+        <div class="kv">
+          <span class="kv-key">Attempts</span>
+          <span class="kv-value">
+            {batchSizeInference.attempts}
+            {#if batchSizeInference.oomCount}
+              ({batchSizeInference.oomCount} OOM)
+            {/if}
+          </span>
+        </div>
       </section>
     {/if}
 
