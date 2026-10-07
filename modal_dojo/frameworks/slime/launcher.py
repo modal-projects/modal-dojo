@@ -115,6 +115,9 @@ _PATCH_VLM_CRITIC_VALUE_HEAD_B64 = encode_patch(
     "patch_vlm_critic_value_head", _SLIME_PATCHES
 )
 _PATCH_STOP_TOKEN_DIAG_B64 = encode_patch("patch_stop_token_diagnostic", _SLIME_PATCHES)
+_PATCH_MULTIMODAL_PROMPT_FILTER_B64 = encode_patch(
+    "patch_multimodal_prompt_filter", _SLIME_PATCHES
+)
 # The Qwen3-ASR Megatron->HF converter (registers the qwen3_asr mapping incl. the
 # audio tower). It lives in the base image — not the ASR recipe — because torch_dist
 # -> HF conversion runs in the shared convert_megatron_checkpoint_to_hf path (deploy/eval),
@@ -178,6 +181,7 @@ _SLIME_ROOT_PATCHES_B64 = (
     _PATCH_SGLANG_PARALLEL_ALIASES_B64,
     _PATCH_QWEN3_5_HF_DISPATCH_B64,
     _PATCH_SUBSTEP_TIMING_B64,
+    _PATCH_MULTIMODAL_PROMPT_FILTER_B64,
 )
 
 # Patches targeting Megatron-LM or site-packages — survive a git overlay.
