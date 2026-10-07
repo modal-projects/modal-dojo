@@ -21,6 +21,18 @@ from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 # ~140 GB a node) on top of the CPU-offloaded optimizer's own host usage.
 _TRAIN_EPHEMERAL_DISK_MIB = 768 * 1024
 
+# Host-RAM limit per GPU type, in MiB. The fp32 optimizer state is offloaded to
+# host RAM: ~8.5B params per GPU at 12 bytes each is ~100 GiB per rank, and ~21B
+# params/rank at 4 nodes is ~250 GiB. On the ~2.95 TiB B300 nodes 8 ranks/node
+# OOM under 2 TiB, and 2.75 TiB leaves ~200 GiB for worker overhead. H200 workers
+# admit only ~2.54 TiB, so a 2.75 TiB limit there lets the head container outgrow
+# the host: it stalls on memory and the memory manager evicts it. The 8x8 H200
+# layout runs within 2 TiB.
+_MEMORY_LIMIT_MIB_BY_GPU = {
+    "H200": 2 * 1024 * 1024,
+    "B300": int(2.75 * 1024 * 1024),
+}
+
 _PATCH_DIR = (
     Path(__file__).resolve().parents[2]
     / "frameworks"
@@ -59,11 +71,8 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     )
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "H200"
-    # The fp32 optimizer state is offloaded to host RAM: ~8.5B params per GPU at
-    # 12 bytes each is ~100 GiB per rank, and ~21B params/rank at 4 nodes is
-    # ~250 GiB. 8 ranks/node vs a 2 TiB cap already OOMs; 2.75 TiB leaves
-    # ~200 GiB for worker overhead on the ~2.95 TiB B300 nodes.
-    memory: tuple[int, int] = (1024, int(2.75 * 1024 * 1024))
+    # Unset picks a per-GPU limit from _MEMORY_LIMIT_MIB_BY_GPU.
+    memory: int | tuple[int, int] | None = None
 
     # V4.1's DSA indexer, CSA compression and Engram memory are not
     # representable as a ModelArchitecture, so the launcher renders upstream's
@@ -246,6 +255,15 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     # The first engine start compiles deepgemm kernels for a 560B MoE; without a
     # long grace period the health checker kills the engines mid-warmup.
     rollout_health_check_first_wait: int = 3600
+
+    @model_validator(mode="after")
+    def _memory_for_gpu(self) -> "DeepSeek_V4_1_Flash_Recipe":
+        """Size the host-RAM limit to the GPU type's worker when unset."""
+        if self.memory is None:
+            gpu = self.gpu_type.split(":")[0].rstrip("!").upper()
+            limit = _MEMORY_LIMIT_MIB_BY_GPU.get(gpu, _MEMORY_LIMIT_MIB_BY_GPU["H200"])
+            object.__setattr__(self, "memory", (1024, limit))
+        return self
 
     @model_validator(mode="after")
     def _keep_disk_reservation(self) -> "DeepSeek_V4_1_Flash_Recipe":
