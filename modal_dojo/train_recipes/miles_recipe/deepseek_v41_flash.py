@@ -190,12 +190,6 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
 
     # ── Optimizer + GRPO ─────────────────────────────────────────────────────
     use_distributed_optimizer: bool = True
-    # Match upstream's disk offload: the fp32 optimizer state and the offloaded
-    # actor live on node-local disk (see ``extra_config``), not host RAM, where
-    # they pushed the head node past its memory limit.
-    optimizer_cpu_offload: bool = False
-    overlap_cpu_optimizer_d2h_h2d: bool = False
-    use_precision_aware_optimizer: bool = False
     # A Volume buffers writes on container-local disk before committing them, and
     # the fp32 master weights plus Adam moments for 560B params are ~7 TB on top
     # of the ~1.1 TB bf16 params — over what a training node can stage, and the
@@ -242,6 +236,9 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     extra_config: dict | None = field(
         default_factory=lambda: {
             "sglang_device": "cuda",
+            # Match upstream's disk offload: the fp32 optimizer state and the
+            # actor offloaded during rollout live on node-local disk, not host
+            # RAM, where they pushed the head node past its memory limit.
             "stream_optimizer_state_to_disk": True,
             "offload_train_target": "disk",
             "offload_train_disk_dir": _TRAIN_OFFLOAD_DISK_DIR,
