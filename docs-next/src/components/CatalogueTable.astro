@@ -260,16 +260,9 @@ function changeClass(change: string | null): string | undefined {
                   </td>
                   <td
                     class:list={['tg-catalogue__num', { 'is-empty': row.context_length === null }]}
-                    title={
-                      row.context_source === 'model'
-                        ? "The model's own context window; the recipe doesn't cap it"
-                        : row.context_source === 'recipe'
-                          ? 'Set by the recipe'
-                          : undefined
-                    }
+                    title="Responses longer than this are cut off"
                   >
                     {row.context_length === null ? '—' : formatTokens(row.context_length)}
-                    {row.context_source === 'model' && <span class="tg-catalogue__sub">default</span>}
                   </td>
                   <td
                     class:list={['tg-catalogue__num', { 'is-empty': sortValue(row, 'cost') === null }]}

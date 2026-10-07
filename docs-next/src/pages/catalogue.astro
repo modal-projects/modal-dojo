@@ -35,9 +35,9 @@ const hasRuns = rows.some((row) => row.run !== null);
   <h2 id="methodology">How the numbers are computed</h2>
   <ul>
     <li>
-      <strong>Context</strong> is the longest sequence, prompt plus response, the recipe rolls out:
-      its <code>rollout_max_context_len</code> or SGLang context length when the recipe sets one,
-      otherwise the model's own context window from its Hugging Face config, marked default.
+      <strong>Context</strong> is the most tokens one response can use before it is cut off, not
+      counting the prompt: the recipe's <code>rollout_max_response_len</code>, or its
+      <code>rollout_max_context_len</code> if that is smaller. A response that hits it scores 0.
     </li>
     <li>
       <strong>Cost / step</strong> is the run's GPU count, times Modal's list price per GPU-hour{

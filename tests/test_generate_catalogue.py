@@ -4,14 +4,12 @@ import pytest
 
 import modal_dojo
 from modal_dojo.common.models.validation import _ValidationConfig
-from scripts import generate_catalogue
 from scripts.generate_catalogue import (
     CATALOGUE,
     REWARD_KEY,
     context_length,
     gpu_hour_cost,
     logged_per_step,
-    native_context_length,
     recipe_defaults,
     step_rows,
     step_seconds,
@@ -108,76 +106,28 @@ def test_step_rows_without_a_price_still_report_time_and_reward() -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    ("config", "expected"),
-    [
-        # Multimodal models keep the language model's window in a sub-config.
-        ({"text_config": {"max_position_embeddings": 262144}}, 262144),
-        (
-            {"thinker_config": {"text_config": {"max_position_embeddings": 32768}}},
-            32768,
-        ),
-        # YaRN that records its original window already states the long one.
-        (
-            {
-                "max_position_embeddings": 1048576,
-                "rope_scaling": {
-                    "rope_type": "yarn",
-                    "factor": 16,
-                    "original_max_position_embeddings": 65536,
-                },
-            },
-            1048576,
-        ),
-        # Plain scaling stretches the configured window.
-        (
-            {
-                "max_position_embeddings": 32768,
-                "rope_scaling": {"rope_type": "linear", "factor": 4},
-            },
-            131072,
-        ),
-        # sglang's key order: seq_length comes before max_position_embeddings.
-        ({"seq_length": 8192, "max_position_embeddings": 32768}, 8192),
-        ({"hidden_size": 4096}, None),
-    ],
-)
-def test_native_context_length_follows_sglang(config, expected) -> None:
-    assert native_context_length(config) == expected
-
-
-def test_recipe_context_settings_win_over_the_model_window(monkeypatch) -> None:
-    monkeypatch.setattr(
-        generate_catalogue, "model_context_length", lambda model: 262144
+def test_context_length_is_the_cap_that_binds_first() -> None:
+    assert context_length({"rollout_max_response_len": 16384}) == 16384
+    # A context cap bounds prompt plus response, so the smaller cap binds.
+    assert (
+        context_length(
+            {"rollout_max_response_len": 32768, "rollout_max_context_len": 8192}
+        )
+        == 8192
     )
-
-    assert context_length({"rollout_max_context_len": 32768}, "org/m") == (
-        32768,
-        "recipe",
+    assert (
+        context_length(
+            {"rollout_max_response_len": 16384, "rollout_max_context_len": 32768}
+        )
+        == 16384
     )
-    assert context_length(
-        {"extra_config": {"rollout_max_context_len": 65536}}, "org/m"
-    ) == (65536, "recipe")
-    assert context_length({"sglang_context_length": 16384}, "org/m") == (
-        16384,
-        "recipe",
-    )
-    # A response cap alone leaves the server at the model's own window.
-    assert context_length({"rollout_max_response_len": 4096}, "org/m") == (
-        262144,
-        "model",
-    )
+    assert context_length({"extra_config": {"rollout_max_response_len": 2048}}) == 2048
+    assert context_length({}) is None
 
 
-def test_planned_context_length_follows_the_recipe_defaults(monkeypatch) -> None:
-    monkeypatch.setattr(
-        generate_catalogue, "model_context_length", lambda model: 262144
-    )
-
-    glm = recipe_defaults("GLM_5_3_Flash_LoRA_Recipe")
-    qwen = recipe_defaults("Qwen3_6_27B_Recipe")
-    assert context_length(glm, "zai-org/GLM-5.3-Flash") == (32768, "recipe")
-    assert context_length(qwen, "Qwen/Qwen3.6-27B") == (262144, "model")
+def test_planned_context_length_follows_the_recipe_defaults() -> None:
+    assert context_length(recipe_defaults("GLM_5_3_Flash_LoRA_Recipe")) == 32768
+    assert context_length(recipe_defaults("Qwen3_6_27B_Recipe")) == 4096
 
 
 @pytest.mark.parametrize(

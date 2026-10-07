@@ -38,10 +38,8 @@ export interface CatalogueRow {
   framework: string;
   recipe: string;
   recipe_href: string;
-  // Longest sequence, prompt plus response, the recipe rolls out.
+  // Most tokens one response can use before it is cut off, prompt excluded.
   context_length: number | null;
-  // "recipe" when the recipe sets it, "model" for the model's own window.
-  context_source: 'recipe' | 'model' | null;
   run: CatalogueRun | null;
 }
 

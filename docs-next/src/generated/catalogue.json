@@ -10,8 +10,7 @@
       "framework": "slime",
       "recipe": "Qwen3_6_27B_Recipe",
       "recipe_href": "/reference/qwen3_6_27b_recipe",
-      "context_length": 262144,
-      "context_source": "model",
+      "context_length": 4096,
       "run": null
     },
     {
@@ -21,8 +20,7 @@
       "framework": "slime",
       "recipe": "Qwen3_8_27B_Recipe",
       "recipe_href": "/reference/qwen3_8_27b_recipe",
-      "context_length": 262144,
-      "context_source": "model",
+      "context_length": 4096,
       "run": null
     },
     {
@@ -32,8 +30,7 @@
       "framework": "slime",
       "recipe": "Qwen3_6_35B_Recipe",
       "recipe_href": "/reference/qwen3_6_35b_recipe",
-      "context_length": 262144,
-      "context_source": "model",
+      "context_length": 4096,
       "run": null
     },
     {
@@ -44,7 +41,6 @@
       "recipe": "GLM_5_3_Flash_LoRA_Recipe",
       "recipe_href": "/reference/glm_5_3_flash_lora_recipe",
       "context_length": 32768,
-      "context_source": "recipe",
       "run": null
     },
     {
@@ -54,8 +50,7 @@
       "framework": "miles",
       "recipe": "DeepSeek_V4_1_Flash_Recipe",
       "recipe_href": "/reference/deepseek_v4_1_flash_recipe",
-      "context_length": 1048576,
-      "context_source": "model",
+      "context_length": 4096,
       "run": null
     },
     {
@@ -65,8 +60,7 @@
       "framework": "miles",
       "recipe": "Kimi_K3_LoRA_Recipe",
       "recipe_href": "/reference/kimi_k3_lora_recipe",
-      "context_length": 1048576,
-      "context_source": "model",
+      "context_length": 4096,
       "run": null
     }
   ]

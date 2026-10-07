@@ -46,14 +46,6 @@ DEFAULT_MODAL_ENV = "autotrain"
 BENCHMARK = "SWE-bench"
 STEPS = 3
 REWARD_KEY = "rollout/raw_reward"
-# The length keys sglang reads from a Hugging Face config, in its order.
-CONTEXT_LENGTH_KEYS = (
-    "max_sequence_length",
-    "seq_length",
-    "max_seq_len",
-    "model_max_length",
-    "max_position_embeddings",
-)
 HF_URL = "https://huggingface.co"
 
 
@@ -132,64 +124,19 @@ def step_rows(
     return rows
 
 
-def native_context_length(config: Mapping[str, Any]) -> int | None:
-    """The context window SGLang derives from a model's Hugging Face config.
+def context_length(recipe: Mapping[str, Any]) -> int | None:
+    """Most tokens one response can use before it is cut off, prompt excluded.
 
-    Mirrors sglang's ``get_context_length`` on the language-model sub-config:
-    the first length key the config sets, stretched by a plain rope-scaling
-    factor. YaRN-style scaling that records its original window, and llama3
-    scaling, already state the stretched length.
-    """
-    text = next(
-        (
-            config[attr]
-            for attr in ("text_config", "llm_config", "language_config")
-            if isinstance(config.get(attr), dict)
-        ),
-        None,
-    )
-    if text is None:
-        thinker = config.get("thinker_config")
-        text = (
-            thinker.get("text_config", config) if isinstance(thinker, dict) else config
-        )
-    rope = text.get("rope_scaling") or {}
-    stretches = (
-        rope
-        and "original_max_position_embeddings" not in rope
-        and rope.get("rope_type") != "llama3"
-    )
-    factor = rope.get("factor", 1) if stretches else 1
-    for key in CONTEXT_LENGTH_KEYS:
-        if text.get(key) is not None:
-            return int(factor * text[key])
-    return None
-
-
-@functools.cache
-def model_context_length(model_name: str) -> int | None:
-    """Default context window of a Hugging Face model, from its config.json."""
-    from huggingface_hub import hf_hub_download
-
-    with open(hf_hub_download(model_name, "config.json")) as config:
-        return native_context_length(json.load(config))
-
-
-def context_length(
-    recipe: Mapping[str, Any], model_name: str
-) -> tuple[int | None, str | None]:
-    """Longest sequence, prompt plus response, a recipe rolls out, and its source.
-
-    A rollout cap or SGLang context length set by the recipe wins ("recipe");
-    otherwise SGLang serves the model's own context window ("model").
+    The response cap bounds every sample; a context cap, when the recipe sets
+    one, bounds prompt plus response and can bind first.
     """
     extra = recipe.get("extra_config") or {}
-    for key in ("rollout_max_context_len", "sglang_context_length"):
-        value = recipe.get(key) or extra.get(key)
-        if value:
-            return int(value), "recipe"
-    native = model_context_length(model_name)
-    return native, None if native is None else "model"
+    caps = [
+        int(value)
+        for key in ("rollout_max_response_len", "rollout_max_context_len")
+        if (value := recipe.get(key) or extra.get(key))
+    ]
+    return min(caps) if caps else None
 
 
 def recipe_defaults(recipe: str) -> dict[str, Any]:
@@ -269,9 +216,7 @@ def run_fields(run_id: str, rates: Mapping[str, Any]) -> dict[str, Any]:
         "cost_per_step_usd": None if cost_per_step is None else round(cost_per_step, 2),
         "initial_reward": steps[0]["raw_reward"] if steps else None,
     }
-    model_name = (summary.config.get("model") or {}).get("model_name") or summary.model
-    context, source = context_length(recipe, model_name)
-    return {"context_length": context, "context_source": source, "run": run}
+    return {"context_length": context_length(recipe), "run": run}
 
 
 def entry_rows(entry: CatalogueEntry, rates: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -286,12 +231,8 @@ def entry_rows(entry: CatalogueEntry, rates: Mapping[str, Any]) -> list[dict[str
     }
     if not entry.run_ids:
         # Until it runs, a recipe's context length follows its class defaults.
-        context, source = context_length(
-            recipe_defaults(entry.recipe), config.model_name
-        )
-        return [
-            {**base, "context_length": context, "context_source": source, "run": None}
-        ]
+        planned = context_length(recipe_defaults(entry.recipe))
+        return [{**base, "context_length": planned, "run": None}]
     return [{**base, **run_fields(run_id, rates)} for run_id in entry.run_ids]
 
 
