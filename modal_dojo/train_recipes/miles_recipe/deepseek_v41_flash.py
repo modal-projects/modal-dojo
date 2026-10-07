@@ -31,6 +31,7 @@ _PATCH_DIR = (
 
 # Build-time shims for gaps in the bundled sources; see each script's docstring.
 _PATCHES = (
+    "patch_deepseek_v41_router_registration",
     "patch_deepseek_v41_checksum_audit",
     "patch_deepseek_v41_checksum_cache",
     "patch_deepseek_v41_checksum_offsets",

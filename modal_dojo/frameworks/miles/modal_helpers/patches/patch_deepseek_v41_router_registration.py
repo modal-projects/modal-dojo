@@ -1,10 +1,12 @@
-"""Wait for asynchronous SGLang router registration before serving a cell.
+"""Wait for asynchronous router registration in the DeepSeek V4.1 image.
 
 Miles' SGLangRouterApiClient treats HTTP 202 as completed registration. The
 router is still discovering engine metadata at that point; a following weight
 checksum can block discovery until the job fails, leaving no usable workers.
 Only asynchronous registrations need this barrier. Legacy/synchronous router
 responses retain their existing behavior.
+
+Applied only by the DeepSeek V4.1 recipe; other Miles images are unchanged.
 """
 
 import ast
