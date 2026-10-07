@@ -222,14 +222,19 @@ class Endpoint:
 
         deadline = time.monotonic() + wait_timeout_sec
         while time.monotonic() < deadline:
-            described = _endpoint_info(endpoint_name, environment)
-            if described["service_url"]:
-                return cls(
-                    described["service_url"],
-                    endpoint_id=described["endpoint_id"],
-                    model_name=model_name,
-                    requires_proxy_auth=not unauthenticated,
-                )
+            try:
+                described = _endpoint_info(endpoint_name, environment)
+            except RuntimeError as exc:
+                if "not found" not in str(exc).lower():
+                    raise
+            else:
+                if described["service_url"]:
+                    return cls(
+                        described["service_url"],
+                        endpoint_id=described["endpoint_id"],
+                        model_name=model_name,
+                        requires_proxy_auth=not unauthenticated,
+                    )
             time.sleep(1)
         else:
             raise TimeoutError(
@@ -241,7 +246,10 @@ class Endpoint:
         _stop_endpoint(self.endpoint_id)
 
     def _describe(self) -> str:
-        info = _endpoint_info(self.endpoint_id)
+        try:
+            info = _endpoint_info(self.endpoint_id)
+        except RuntimeError:
+            return self.endpoint_id
         return f"'{info['name']}' in environment '{info['environment_name']}'"
 
     def _headers(self) -> dict[str, str]:
