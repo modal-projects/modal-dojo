@@ -32,7 +32,7 @@ when_to_use: >-
 Read only the reference matching the current decision.
 
 | No. | What you see                                           | Debugging reference                               |
-| --- | ---                                                    | ---                                               |
+| --- | ------------------------------------------------------ | ------------------------------------------------- |
 | 01  | Reward is flat or unexpectedly low                     | [Reward](references/debug-reward.md)              |
 | 02  | Entropy behaves unexpectedly, or performance collapses | [Entropy](references/debug-entropy.md)            |
 | 03  | Trainer–rollout log-probability differences grow       | [Log-probabilities](references/debug-logprobs.md) |
@@ -85,16 +85,24 @@ prompt or reference fields.
 
 ## Trace monitoring
 
-At every proof, smoke, and full-run monitoring stage, use `run trace` to pull
-traces for completed steps:
+Start with metrics and logs. Inspect a few prompts and responses when needed to
+explain reward, response quality, or unexplained generation/tool delays. Reuse
+existing exports and expand the sample only if the cause remains unclear.
+
+Select a baseline and affected step (`--step` accepts a list such as `1,4,9`):
 
 ```bash
+uv run modal-dojo run trace <run-id> --out ./traces --step <steps> --dry-run
 uv run modal-dojo run trace <run-id> --out ./traces --step <steps> --yes
+jq '.samples[0]' ./traces/<run-id>/step_0004.json
 ```
 
-Read both the prompts and responses in the downloaded traces. Confirm that the
-prompts and responses make sense in the context of the requested task before
-advancing to the next stage.
+Use `manifest.json` in that directory to find the downloaded step files; replace
+the example filename and sample position as needed. Compare a few successful and
+failed samples' `prompt`, `response`, `score`, and relevant tool metadata. Use
+`raw_prompt`/`raw_response` when present for formatting checks, and cite the
+step and sample with findings. Re-downloading replaces step files for that run;
+use another `--out` directory to retain earlier exports.
 
 ## 2. Prove one step
 
@@ -135,7 +143,8 @@ step count. Launch a fresh full run from that exact config and monitor it
 until completion or an early-stop decision.
 
 A full run is not a commitment to spend its entire configured horizon.
-Reassess efficacy early using task metrics and sampled traces. Investigate any
+Reassess efficacy early using task metrics; inspect sampled traces when needed.
+Investigate any
 observed symptom through the [debugging paths](#diagnose-by-the-observed-symptom)
 and make an early-stop decision when enough comparable evidence shows no useful
 progress or sustained deterioration. Do not stop on a single noisy point or an

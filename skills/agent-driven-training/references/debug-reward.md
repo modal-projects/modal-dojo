@@ -14,7 +14,7 @@ Do not infer learning from the final value alone.
 
 | Inspect first | What should hold |
 | --- | --- |
-| **Generation trace** | Confirm the intended prompt and tool observations reached the policy. Distinguish wrong answers, budget exhaustion, repetitive loops and tool failures. Check the termination reason and end-of-sequence (EOS)/stop settings. |
+| [**Generation trace**](../SKILL.md#trace-monitoring) | Confirm the intended prompt and tool observations reached the policy. Distinguish wrong answers, budget exhaustion, repetitive loops and tool failures. Check the termination reason and end-of-sequence (EOS)/stop settings. |
 | **Verifier input and decision** | Confirm the verifier received the intended answer or artifact. Inspect extraction and tests using known correct and incorrect examples. Separate verifier errors from valid failure judgments. |
 | **Recorded reward** | Confirm the value matches the verifier's decision and the stated objective. Count truncations and execution errors separately. Repair generation or scoring errors before tuning learning. |
 

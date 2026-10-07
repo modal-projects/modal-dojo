@@ -14,7 +14,7 @@ Average entropy over the token positions included in the policy-gradient loss, u
 - **B — Entropy falls sharply and progress stalls.** This can indicate **entropy collapse**: the policy becomes increasingly deterministic, restricting exploration. Inspect repeated attempts at the same prompts and check sampling settings.
 - **C — Entropy rises while quality falls.** Inspect repetition, incoherence and degraded reasoning, then compare against a control for the suspected setting. The example below follows this investigation.
 
-**Before choosing a fix:** confirm consistent entropy measurement, inspect responses and held-out performance, then investigate changes in the objective, updates or data. The same entropy pattern can have different causes.
+**Before choosing a fix:** confirm consistent entropy measurement, [inspect responses](../SKILL.md#trace-monitoring) and held-out performance, then investigate changes in the objective, updates or data. The same entropy pattern can have different causes.
 
 ## Choose an intervention, then verify learning
 

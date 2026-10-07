@@ -29,6 +29,10 @@ and overlap before attributing a slowdown to any one phase.
 2. **Check the workload.** Compare prompt/response tokens, tool calls and generation attempts per update. Longer responses or lower filtering acceptance can increase step time without a system regression.
 3. **Compare workers and ranks.** Break down generation, tools, reward computation, training and transfers. Inspect slow workers and what idle workers are waiting for; averages can hide a straggler.
 
+If timings point to unexplained generation or tool delays, inspect a few
+[rollouts](../SKILL.md#trace-monitoring) for repeated calls, loops, or a changed
+workload.
+
 Speeding up already-fast workers cannot finish a batch earlier if it still
 waits for a straggler. For the slow worker, compare tool-request, execution-start
 and completion timestamps: long tool latency can come from waiting, a slow

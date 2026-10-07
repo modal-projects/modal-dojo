@@ -8,6 +8,10 @@ Training reward rises while held-out performance stalls or falls. First establis
 2. **What do the metrics measure?** Check prompt populations, verifier, sampling settings, token/turn/tool budgets and metric definitions. Pass@1 and pass@k answer different questions. Filtering or async arrival order can change the training task mix, raising batch reward without better performance on a fixed distribution.
 3. **If the gap persists, where does learning fail to transfer?** Read high-reward training responses and failed evaluation responses. Check for verifier shortcuts, missing task coverage and regressions within particular task types. Inspect split overlap and distribution differences between train vs. eval datasets.
 
+If the gap persists, use [trace monitoring](../SKILL.md#trace-monitoring) for a
+few training examples and obtain evaluation responses from the evaluator's
+saved artifacts separately. Compare similar task types at matching checkpoints.
+
 Training and evaluation settings may differ intentionally. State those differences; use matched conditions when investigating their effect on the gap.
 
 ## Match the finding to a remedy
