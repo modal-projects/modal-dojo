@@ -11,24 +11,11 @@ from modal_dojo.common.models import DeepSeek_V4_1_Flash, ModelConfig
 from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
-# radixark/miles#3179 (DeepSeek-V4.1 RL support) is unmerged, and the only image
-# built from it, `radixark/miles:deepseek-v41`, is arm64/GB300-only — Modal's
-# builder resolves amd64 and rejects it. That image is the last amd64+arm64
-# nightly built on `lmsysorg/sglang:v0.5.18` with two source trees copied over
-# it: miles at the PR head, and an sglang tree that merges sgl-project/sglang#38798
-# (V4.1 engine support) into `sglang-miles` (the weight-update session API miles
-# needs) and exists nowhere public but inside that image. This recipe uses the
-# named `glm53next` image, which retains the same v0.5.18 compiled dependencies
-# and supports amd64. Unlike dev-* nightlies and pr-* tags, it is outside miles'
-# automated tag cleanup. Pin its digest to prevent tag updates changing the
-# base, then check out the miles PR and unpack the DeepSeek sglang tree
-# (patch_deepseek_v41_sglang_tree). Replace these overlays once a compatible
-# release includes the DeepSeek support.
-# Pinned to a commit, not pull/3179/head: the PR head moved under us (the image
-# patches below anchor exact upstream sources, e.g. the chat-template family
-# table, and the moving ref broke them). Bump deliberately and re-check the
-# patch anchors when the PR advances.
-_MILES_PR = "6a54b4629c4259f4733990a7fcd6c77c3c56296e"  # pull/3179 head
+# The dedicated amd64/H200 image includes the DeepSeek sources together:
+# miles ea751aac8, sglang 7e74b31b2, and Megatron-LM b0b23e198.
+# Keep those bundled revisions instead of overlaying the older PR head and
+# the arm64 deepseek-v41 image's SGLang tree. The named tag is outside miles'
+# automatic dev/PR tag cleanup; the digest also prevents tag updates drifting.
 
 # Local write buffer for the params-only save (~1.1 TB bf16 over 8 nodes, so
 # ~140 GB a node) on top of the CPU-offloaded optimizer's own host usage.
@@ -42,14 +29,8 @@ _PATCH_DIR = (
     / "patches"
 )
 
-# Build-time source overlay and shims for gaps in it; see each script's
-# docstring. They run after ``apply_source_overlays`` so the sglang tree lands
-# over the nightly's checkout and the edits land on that tree.
+# Build-time shims for gaps in the bundled sources; see each script's docstring.
 _PATCHES = (
-    "patch_deepseek_v41_sglang_tree",
-    "patch_deepseek_v41_processor_tokenizer",
-    "patch_deepseek_v41_fp8_hopper_gemm",
-    "patch_deepseek_v41_chat_template",
     "patch_deepseek_v41_fp4_dequant_block",
     "patch_deepseek_v41_vision_topk_capture",
 )
@@ -69,10 +50,9 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     model_config_class: ClassVar[type[ModelConfig]] = DeepSeek_V4_1_Flash
 
     docker_image: str = (
-        "radixark/miles:glm53next@sha256:"
-        "66725f740a6013b00d27e21fdfd480a24b0d3b5c61840342e9405bf1e09e5162"
+        "radixark/miles:dsv41-h200-ea751aac8@sha256:"
+        "eff12eb317af7021f637ab6bf21359164e27274ca07a3b2b3754dfa4c5d1bd66"
     )
-    miles_git_ref: str | None = _MILES_PR
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "H200"
     # The fp32 optimizer state is offloaded to host RAM: ~8.5B params per GPU at
@@ -270,8 +250,7 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
         """Keep the build-time patches at the head of ``image_run_commands``.
 
         The field is replaced wholesale, so a caller adding their own command
-        would otherwise drop the chat-template shim and every prompt would fail
-        to render.
+        would otherwise drop the FP4 block-size fix and routing-replay capture.
         """
         patches = _image_patches()
         current = list(self.image_run_commands or [])

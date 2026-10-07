@@ -13,6 +13,9 @@ target block size and pass the config's, so the dequantized experts, the runner,
 and the trainer-side quantizer all agree.
 
 Executed at image-build time via ``python3 <this file>``.
+
+Image: radixark/miles:dsv41-h200-ea751aac8
+SGLang: 7e74b31b2668934cf89dbe15188a010fda381aba
 """
 
 import pathlib
@@ -62,29 +65,46 @@ NEW_CALL = """                    num_experts = weight_param.shape[0]
                         )
 """
 
-if not TARGET.exists():
-    print(f"{TARGET} not found; skipping DeepSeek-V4.1 FP4 dequant block patch")
-    raise SystemExit(0)
+# The H200 image also has a shared dequant helper used by other MoE backends.
+# Keep both call sites consistent if the caller selects one of those backends.
+OLD_HELPER_CALL = """            num_experts = weight_param.shape[0]
+            new_weights = []
+            new_scales = []
+            for e in range(num_experts):
+                w, s = cast_e2m1fn_to_e4m3fn(weight_param.data[e], scale_param.data[e])
+"""
+NEW_HELPER_CALL = """            num_experts = weight_param.shape[0]
+            new_weights = []
+            new_scales = []
+            block_n, block_k = self.quant_config.weight_block_size or [128, 128]
+            assert block_n == block_k, self.quant_config.weight_block_size
+            for e in range(num_experts):
+                w, s = cast_e2m1fn_to_e4m3fn(
+                    weight_param.data[e], scale_param.data[e], fp8_block_size=block_n
+                )
+"""
 
-src = TARGET.read_text()
-if MARKER in src:
-    print("DeepSeek-V4.1 FP4 dequant block patch already applied")
-    raise SystemExit(0)
 
-for old in (OLD_SIGNATURE, OLD_BLOCK, OLD_CALL):
-    if src.count(old) != 1:
-        raise SystemExit(
-            "DeepSeek-V4.1 FP4 dequant block patch did not match; sglang's "
-            "layers/quantization/fp8.py has changed. Re-check cast_e2m1fn_to_e4m3fn "
-            "and the Fp8MoEMethod dequant branch before shipping."
-        )
+def patch_source(src: str) -> str:
+    if MARKER in src:
+        return src
+    replacements = (
+        (OLD_SIGNATURE, NEW_SIGNATURE),
+        (OLD_BLOCK, NEW_BLOCK),
+        (OLD_CALL, NEW_CALL),
+        (OLD_HELPER_CALL, NEW_HELPER_CALL),
+    )
+    for old, _ in replacements:
+        if src.count(old) != 1:
+            raise ValueError(
+                "DeepSeek-V4.1 FP4 dequant block patch did not match; re-check "
+                "cast_e2m1fn_to_e4m3fn and both Fp8MoEMethod dequant paths."
+            )
+    for old, new in replacements:
+        src = src.replace(old, new, 1)
+    return src
 
-src = (
-    src.replace(OLD_SIGNATURE, NEW_SIGNATURE, 1)
-    .replace(OLD_BLOCK, NEW_BLOCK, 1)
-    .replace(OLD_CALL, NEW_CALL, 1)
-)
-TARGET.write_text(src)
-print(
-    "Patched sglang fp8.py: FP4 expert dequant follows quant_config.weight_block_size"
-)
+
+if __name__ == "__main__":
+    TARGET.write_text(patch_source(TARGET.read_text()))
+    print("Patched FP4 expert dequant block size in both Fp8MoEMethod paths")
