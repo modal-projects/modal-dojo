@@ -3,10 +3,14 @@ name: agent-driven-training
 description: >-
   Owns the complete Modal Dojo lifecycle or one requested stage: configure,
   prove, smoke test, monitor, diagnose, continue, and promote.
+  Diagnoses reward, entropy, log-probability, gradient, evaluation, runtime,
+  timing, and async scaling symptoms.
 when_to_use: >-
-  User asks to train, post-train, fine-tune, or improve a model; launch a
-  config; inspect run status or logs; debug failure, reward, or performance;
-  continue a checkpoint; or promote a Modal Dojo run.
+  User asks to train or improve a model, configure or launch a run, monitor
+  progress, continue a checkpoint, or promote a Modal Dojo run. Also use when
+  diagnosing unexpected learning behavior, runtime failures, or performance
+  problems during training or validation of new model support, even if the
+  user did not explicitly ask to debug.
 ---
 
 # Agent-driven training
@@ -23,13 +27,49 @@ when_to_use: >-
   raw Modal commands only when CLI evidence cannot explain an infrastructure
   problem.
 
+## Diagnose by the observed symptom
+
+Read only the reference matching the current decision.
+
+| No. | What you see                                           | Debugging reference                               |
+| --- | ------------------------------------------------------ | ------------------------------------------------- |
+| 01  | Reward is flat or unexpectedly low                     | [Reward](references/debug-reward.md)              |
+| 02  | Entropy behaves unexpectedly, or performance collapses | [Entropy](references/debug-entropy.md)            |
+| 03  | Trainer–rollout log-probability differences grow       | [Log-probabilities](references/debug-logprobs.md) |
+| 04  | Gradients are tiny, spike or become nonfinite          | [Updates](references/debug-updates.md)            |
+| 05  | Training reward improves but evaluation does not       | [Evaluation](references/debug-evaluation.md)      |
+| 06  | The run hangs, crashes or runs out of memory           | [Failures](references/failure-signatures.md)      |
+| 07  | Steps are slow or timing totals look wrong             | [Timing](references/debug-systems.md)             |
+| 08  | Async or more GPUs do not help                         | [Async and scaling](references/debug-async.md)    |
+
+Missing or disabled metrics are unknown, not zero.
+
+Before applying an intervention, inspect the active recipe and pinned framework
+implementation to confirm support and the correct configuration settings.
+
+## Collect evidence
+
+Start with the supported CLI:
+
+```bash
+uv run modal-dojo run get <run-id> --verbose
+uv run modal-dojo run params <run-id>
+uv run modal-dojo run logs <run-id> --tail 200
+```
+
+`run trace` exports training rollouts. For evaluation responses, per-token
+scores, loss masks, or gradients, inspect the active evaluator or trainer's
+logging and saved artifacts. If the required evidence was not retained, state
+that limitation and identify the instrumentation needed; do not infer it from
+aggregate metrics.
+
 ## 1. Configure and preflight
 
 If the user has not already chosen the model, dataset, reward function,
 topology, and final training horizon, propose the missing pieces and ask the
-user to confirm them before implementation. Present the staged plan 
-explicitly: the one-step proof, the smoke test, and the proposed full run 
-with its model, GPU topology, important recipe settings, and maximum step 
+user to confirm them before implementation. Present the staged plan
+explicitly: the one-step proof, the smoke test, and the proposed full run
+with its model, GPU topology, important recipe settings, and maximum step
 count. Proof or smoke-test approval does not authorize the full run.
 
 Create or adapt the config only after that decision. Before spending GPU
@@ -45,23 +85,31 @@ prompt or reference fields.
 
 ## Trace monitoring
 
-At every proof, smoke, and full-run monitoring stage, use `run trace` to pull
-traces for completed steps:
+Start with metrics and logs. Inspect a few prompts and responses when needed to
+explain reward, response quality, or unexplained generation/tool delays. Reuse
+existing exports and expand the sample only if the cause remains unclear.
+
+Select a baseline and affected step (`--step` accepts a list such as `1,4,9`):
 
 ```bash
-modal-dojo run trace <run-id> --out ./traces --step <steps> --yes
+uv run modal-dojo run trace <run-id> --out ./traces --step <steps> --dry-run
+uv run modal-dojo run trace <run-id> --out ./traces --step <steps> --yes
+jq '.samples[0]' ./traces/<run-id>/step_0004.json
 ```
 
-Read both the prompts and responses in the downloaded traces. Confirm that the
-prompts and responses make sense in the context of the requested task before
-advancing to the next stage.
+Use `manifest.json` in that directory to find the downloaded step files; replace
+the example filename and sample position as needed. Compare a few successful and
+failed samples' `prompt`, `response`, `score`, and relevant tool metadata. Use
+`raw_prompt`/`raw_response` when present for formatting checks, and cite the
+step and sample with findings. Re-downloading replaces step files for that run;
+use another `--out` directory to retain earlier exports.
 
 ## 2. Prove one step
 
 Launch a fresh one-step run and monitor its new run ID:
 
 ```bash
-modal-dojo run get <run-id> --verbose
+uv run modal-dojo run get <run-id> --verbose
 ```
 
 Monitor `run get` periodically rather than merely waiting on the launch
@@ -80,12 +128,9 @@ Launch a new run from the same config and topology with about 10 steps.
 Continue active monitoring until it completes and reward data spans the smoke
 test.
 
-- Failed or apparently hung: read
-  [failure-signatures.md](references/failure-signatures.md).
-- Flat, declining, saturated, or suspicious reward: read
-  [debug-reward.md](references/debug-reward.md).
-- Slow or unstable steps: read
-  [debug-systems.md](references/debug-systems.md).
+If a symptom appears, use the
+[eight debugging paths](#diagnose-by-the-observed-symptom) to investigate it
+before deciding on a change.
 
 Change one setting at a time and repeat the smoke test with a fresh run ID.
 
@@ -94,13 +139,17 @@ Change one setting at a time and repeat the smoke test with a fresh run ID.
 Promote only when the proof and smoke runs are healthy, the reward remains
 informative, trace inspection confirms that prompts and responses make sense
 for the task, and the user has confirmed the final configuration and maximum
-step count. Launch a fresh full run from that exact config and monitor it until completion or an early-stop decision.
+step count. Launch a fresh full run from that exact config and monitor it
+until completion or an early-stop decision.
 
 A full run is not a commitment to spend its entire configured horizon.
-Reassess efficacy early using both reward trajectories and sampled traces. If
-reward remains flat, declines, or is otherwise uninformative, read
-[debug-reward.md](references/debug-reward.md) and make an early-stop decision
-from task metrics and traces rather than letting a healthy but ineffective job finish by default.
+Reassess efficacy early using task metrics; inspect sampled traces when needed.
+Investigate any
+observed symptom through the [debugging paths](#diagnose-by-the-observed-symptom)
+and make an early-stop decision when enough comparable evidence shows no useful
+progress or sustained deterioration. Do not stop on a single noisy point or an
+algorithm-expected plateau, and do not let an ineffective run finish simply
+because it has not crashed. Keep the target task metric fixed.
 
 Keep checking every active run until it reaches a terminal state or a deliberate
 stop decision. Record the launch time, last progress time, current phase, and
@@ -122,13 +171,18 @@ ID and prove one step before proceeding. Prefer a new run when changing the
 objective or when reward is saturated, corrupted, or based on a broken reward
 function.
 
-## References
+## Stop or relaunch
 
-Read only the reference matching the current decision:
+If the authorized task includes stopping or fixing the run, obtain the Modal
+app ID from `modal-dojo run get`, then use:
 
-- [failure-signatures.md](references/failure-signatures.md) — failed or
-  apparently hung runs, cleanup, and relaunch.
-- [debug-reward.md](references/debug-reward.md) — trajectory analysis, trace
-  inspection, reward bugs, hacking, and saturation.
-- [debug-systems.md](references/debug-systems.md) — phase timing, bottlenecks,
-  tuning experiments, and final-step evaluation.
+```bash
+uv run modal app stop <app-id>
+uv run modal app list --json
+```
+
+Confirm the old app stopped before relaunching against shared volumes. Preserve
+the evidence, change one setting at a time, and use a fresh run ID.
+
+For a diagnosis-only or status-only request, report the cause and stop; do not
+kill or relaunch without authorization.
