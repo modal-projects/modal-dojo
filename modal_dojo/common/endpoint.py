@@ -9,7 +9,6 @@ import time
 from typing import Any
 
 import httpx
-import modal
 
 from modal_dojo.common.checkpoint import (
     Checkpoint,
@@ -21,38 +20,87 @@ from modal_dojo.common.openai_messages import _messages_to_openai
 from modal_dojo.model import ModelConfig
 
 
+def _stop_endpoint(identifier: str, environment: str | None = None) -> None:
+    stop = [
+        sys.executable,
+        "-m",
+        "modal",
+        "endpoint",
+        "stop",
+        identifier,
+        "--yes",
+    ]
+    if environment:
+        stop.extend(["--env", environment])
+    stopped = subprocess.run(
+        stop, check=False, capture_output=True, text=True, timeout=120
+    )
+    if stopped.returncode != 0:
+        text = f"{stopped.stdout or ''}{stopped.stderr or ''}"
+        if not re.search(
+            r"endpoint '[^']+' not found|endpoint .+ is already stopped",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            sys.stdout.write(stopped.stdout or "")
+            sys.stderr.write(stopped.stderr or "")
+            raise subprocess.CalledProcessError(
+                stopped.returncode,
+                stop,
+                output=stopped.stdout,
+                stderr=stopped.stderr,
+            )
+
+
+def _endpoint_info(identifier: str, environment: str | None = None) -> dict[str, Any]:
+    info = [
+        sys.executable,
+        "-m",
+        "modal",
+        "endpoint",
+        "info",
+        identifier,
+        "--json",
+    ]
+    if environment:
+        info.extend(["--env", environment])
+    try:
+        described = subprocess.run(
+            info, check=True, capture_output=True, text=True, timeout=120
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(exc.stderr.strip()) from exc
+    return json.loads(described.stdout)
+
+
 class Endpoint:
     """Controls a [Modal Endpoint](https://modal.com/docs/guide/endpoints) that
     persists until stopped.
 
     Attributes:
         url: Base URL of the endpoint.
-        endpoint_name: Modal Endpoint name.
+        endpoint_id: Modal Endpoint ID, such as ``ep-EiL9qLU2NnQ8Vim3jOmoAf``.
         model_name: Base model ID sent in request bodies.
         requires_proxy_auth: Whether a proxy token is required to use the endpoint.
-        environment: Modal environment the endpoint was created in.
     """
 
     url: str
-    endpoint_name: str
+    endpoint_id: str
     model_name: str
     requires_proxy_auth: bool
-    environment: str | None
 
     def __init__(
         self,
         url: str,
         *,
-        endpoint_name: str,
+        endpoint_id: str,
         model_name: str,
         requires_proxy_auth: bool,
-        environment: str | None = None,
     ):
-        self.endpoint_name = endpoint_name
+        self.endpoint_id = endpoint_id
         self.model_name = model_name
         self.url = url.rstrip("/")
         self.requires_proxy_auth = requires_proxy_auth
-        self.environment = environment
 
     @classmethod
     def launch(
@@ -129,15 +177,8 @@ class Endpoint:
             ).hexdigest()[:12]
             endpoint_name = f"training-gym-{digest}"
 
-        endpoint = cls(
-            "",
-            endpoint_name=endpoint_name,
-            model_name=model_name,
-            requires_proxy_auth=not unauthenticated,
-            environment=environment,
-        )
         if recreate_if_existing:
-            endpoint.stop()
+            _stop_endpoint(endpoint_name, environment)
 
         command = [
             sys.executable,
@@ -179,18 +220,16 @@ class Endpoint:
                     stderr=created.stderr,
                 )
 
-        server = modal.Server.from_name(
-            f"ep-{endpoint_name}", "Server", environment_name=environment
-        )
         deadline = time.monotonic() + wait_timeout_sec
         while time.monotonic() < deadline:
-            try:
-                raw = server.get_url()
-            except modal.exception.NotFoundError:
-                raw = None
-            if raw:
-                endpoint.url = raw.rstrip("/")
-                return endpoint
+            described = _endpoint_info(endpoint_name, environment)
+            if described["service_url"]:
+                return cls(
+                    described["service_url"],
+                    endpoint_id=described["endpoint_id"],
+                    model_name=model_name,
+                    requires_proxy_auth=not unauthenticated,
+                )
             time.sleep(1)
         else:
             raise TimeoutError(
@@ -199,35 +238,11 @@ class Endpoint:
 
     def stop(self) -> None:
         """Stop this endpoint and terminate its containers."""
-        stop = [
-            sys.executable,
-            "-m",
-            "modal",
-            "endpoint",
-            "stop",
-            self.endpoint_name,
-            "--yes",
-        ]
-        if self.environment:
-            stop.extend(["--env", self.environment])
-        stopped = subprocess.run(
-            stop, check=False, capture_output=True, text=True, timeout=120
-        )
-        if stopped.returncode != 0:
-            text = f"{stopped.stdout or ''}{stopped.stderr or ''}"
-            if not re.search(
-                r"endpoint '[^']+' not found|endpoint .+ is already stopped",
-                text,
-                flags=re.IGNORECASE,
-            ):
-                sys.stdout.write(stopped.stdout or "")
-                sys.stderr.write(stopped.stderr or "")
-                raise subprocess.CalledProcessError(
-                    stopped.returncode,
-                    stop,
-                    output=stopped.stdout,
-                    stderr=stopped.stderr,
-                )
+        _stop_endpoint(self.endpoint_id)
+
+    def _describe(self) -> str:
+        info = _endpoint_info(self.endpoint_id)
+        return f"'{info['name']}' in environment '{info['environment_name']}'"
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -269,19 +284,19 @@ class Endpoint:
                     return
                 if response.status_code in {401, 403}:
                     raise RuntimeError(
-                        f"Endpoint {self.endpoint_name} rejected proxy authentication. "
+                        f"Endpoint {self._describe()} rejected proxy authentication. "
                         "Run `modal-dojo set-proxy-auth` and retry."
                     )
                 if response.status_code not in {404, 429, 500, 502, 503, 504}:
                     response.raise_for_status()
                 last_error = RuntimeError(
-                    f"Endpoint {self.endpoint_name} readiness returned HTTP {response.status_code}"
+                    f"Readiness returned HTTP {response.status_code}"
                 )
             except httpx.RequestError as exc:
                 last_error = exc
             time.sleep(2)
         raise TimeoutError(
-            f"Timed out waiting for endpoint {self.endpoint_name} at {self.url} to become ready"
+            f"Timed out waiting for endpoint {self._describe()} at {self.url} to become ready"
         ) from last_error
 
     def chat(
