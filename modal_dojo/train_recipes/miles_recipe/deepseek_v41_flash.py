@@ -31,6 +31,7 @@ _PATCH_DIR = (
 
 # Build-time shims for gaps in the bundled sources; see each script's docstring.
 _PATCHES = (
+    "patch_deepseek_v41_checksum_cache",
     "patch_deepseek_v41_checksum_offsets",
     "patch_deepseek_v41_fp4_dequant_block",
     "patch_deepseek_v41_vision_topk_capture",
@@ -101,7 +102,10 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
             "SGLANG_OPT_FP8_WO_A_GEMM": "0",
             "SGLANG_OPT_FUSE_WQA_WKV": "0",
             "SGLANG_DISABLE_MULTIMEM_AG": "1",
-            "SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE": "0",
+            # Frozen Engram tables are omitted from weight sync. Keep them in
+            # shared host memory so engine offload cannot discard their values.
+            "SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE": "1",
+            "SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT": "shared",
             "TORCHINDUCTOR_COMPILE_THREADS": "1",
             "PYTHONFAULTHANDLER": "1",
             # Paired with --deterministic-mode below.
@@ -196,10 +200,9 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     sglang_dp_size: int = 1
     sglang_attention_backend: str = "dsv4"
     sglang_moe_runner_backend: str = "auto"
-    # The loaded engine weights (dequantized FP8 experts, sharded engram tables)
-    # occupy ~112 GB of each H200; upstream's 0.6 leaves no room for a KV pool
-    # here, and the KV pool a smoke step needs is small.
-    sglang_mem_fraction_static: float = 0.9
+    # Host-backed Engram removes ~23 GiB of frozen tables per H200. Keep more
+    # headroom for weight-sync and runtime scratch than the GPU-table layout.
+    sglang_mem_fraction_static: float = 0.8
     sglang_max_running_requests: int = 128
     sglang_disable_cuda_graph: bool = True
     sglang_disable_radix_cache: bool = True
