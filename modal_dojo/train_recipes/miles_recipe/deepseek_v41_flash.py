@@ -31,6 +31,7 @@ _PATCH_DIR = (
 
 # Build-time shims for gaps in the bundled sources; see each script's docstring.
 _PATCHES = (
+    "patch_deepseek_v41_checksum_audit",
     "patch_deepseek_v41_checksum_cache",
     "patch_deepseek_v41_checksum_offsets",
     "patch_deepseek_v41_fp4_dequant_block",
@@ -88,6 +89,10 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
             "CONVERT_DEQUANT_HF_WEIGHTS": "1",
             "NCCL_CUMEM_ENABLE": "1",
             "SGLANG_SKIP_CHECKPOINT_LOAD_CHECK": "1",
+            # Upstream's default no-save launcher skips engine audit hashes.
+            # Keep our checkpoint/audit output without hashing the full model
+            # after each sync; the patch retains hashes for the event analyzer.
+            "MILES_SKIP_ENGINE_WEIGHT_CHECKSUM": "1",
             # Upstream serves an FP4→FP8 pre-converted checkpoint
             # (SGLANG_DSV4_FP4_EXPERTS=0). We load the public release, whose
             # routed experts are packed mxfp4, so the engine must expect FP4
@@ -168,6 +173,9 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     global_batch_size: int = 128
     # Dynamic packing conflicts with --qkv-format bshd upstream.
     use_dynamic_batch_size: bool = False
+    # Match upstream: distribute variable-length samples across trainer ranks
+    # to reduce time spent waiting for the rank with the longest sequences.
+    balance_data: bool = True
     rollout_temperature: float = 0.8
     max_tokens_per_gpu: int = 2048
     micro_batch_size: int = 1
@@ -206,6 +214,11 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     sglang_max_running_requests: int = 128
     sglang_disable_cuda_graph: bool = True
     sglang_disable_radix_cache: bool = True
+    # Upstream tolerates long weight operations and restores routing after one
+    # healthy probe. This is separate from Miles' engine health checks below.
+    router_health_success_threshold: int = 1
+    router_health_check_interval_secs: int = 15
+    router_health_failure_threshold: int = 40
 
     # miles always renders ``device`` on the engine command line, and sglang
     # builds from 0.5.19 on no longer fill in an unset one, so name it rather
