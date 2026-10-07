@@ -17,11 +17,13 @@ from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 # nightly built on `lmsysorg/sglang:v0.5.18` with two source trees copied over
 # it: miles at the PR head, and an sglang tree that merges sgl-project/sglang#38798
 # (V4.1 engine support) into `sglang-miles` (the weight-update session API miles
-# needs) and exists nowhere public but inside that image. So this recipe starts
-# from the same v0.5.18 nightly for amd64, checks out the miles PR, and unpacks
-# the sglang tree from the published image's layer
-# (patch_deepseek_v41_sglang_tree). Replace all of it with a single published tag
-# once the PR lands in a nightly.
+# needs) and exists nowhere public but inside that image. This recipe uses the
+# named `glm53next` image, which retains the same v0.5.18 compiled dependencies
+# and supports amd64. Unlike dev-* nightlies and pr-* tags, it is outside miles'
+# automated tag cleanup. Pin its digest to prevent tag updates changing the
+# base, then check out the miles PR and unpack the DeepSeek sglang tree
+# (patch_deepseek_v41_sglang_tree). Replace these overlays once a compatible
+# release includes the DeepSeek support.
 # Pinned to a commit, not pull/3179/head: the PR head moved under us (the image
 # patches below anchor exact upstream sources, e.g. the chat-template family
 # table, and the moving ref broke them). Bump deliberately and re-check the
@@ -66,7 +68,10 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
 
     model_config_class: ClassVar[type[ModelConfig]] = DeepSeek_V4_1_Flash
 
-    docker_image: str = "radixark/miles:dev-202609050049"
+    docker_image: str = (
+        "radixark/miles:glm53next@sha256:"
+        "66725f740a6013b00d27e21fdfd480a24b0d3b5c61840342e9405bf1e09e5162"
+    )
     miles_git_ref: str | None = _MILES_PR
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "H200"
