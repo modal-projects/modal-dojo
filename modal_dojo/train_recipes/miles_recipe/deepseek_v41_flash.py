@@ -19,7 +19,10 @@ from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 # Local write buffer for the params-only save (~1.1 TB bf16 over 8 nodes, so
 # ~140 GB a node) on top of the CPU-offloaded optimizer's own host usage.
-_TRAIN_EPHEMERAL_DISK_MIB = 768 * 1024
+# 768 GiB stages checkpoint saves; 1.5 TiB holds the NVMe-streamed optimizer
+# state (~100 GiB per rank) and the actor backup written during rollout.
+_TRAIN_EPHEMERAL_DISK_MIB = (768 + 1536) * 1024
+_TRAIN_OFFLOAD_DISK_DIR = "/root/miles_train_offload"
 
 # Host-RAM limit per GPU type, in MiB. The fp32 optimizer state is offloaded to
 # host RAM: ~8.5B params per GPU at 12 bytes each is ~100 GiB per rank, and ~21B
@@ -196,9 +199,12 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
 
     # ── Optimizer + GRPO ─────────────────────────────────────────────────────
     use_distributed_optimizer: bool = True
-    optimizer_cpu_offload: bool = True
-    overlap_cpu_optimizer_d2h_h2d: bool = True
-    use_precision_aware_optimizer: bool = True
+    # Match upstream's disk offload: the fp32 optimizer state and the offloaded
+    # actor live on node-local disk (see ``extra_config``), not host RAM, where
+    # they pushed the head node past its memory limit.
+    optimizer_cpu_offload: bool = False
+    overlap_cpu_optimizer_d2h_h2d: bool = False
+    use_precision_aware_optimizer: bool = False
     # A Volume buffers writes on container-local disk before committing them, and
     # the fp32 master weights plus Adam moments for 560B params are ~7 TB on top
     # of the ~1.1 TB bf16 params — over what a training node can stage, and the
@@ -245,6 +251,9 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     extra_config: dict | None = field(
         default_factory=lambda: {
             "sglang_device": "cuda",
+            "stream_optimizer_state_to_disk": True,
+            "offload_train_target": "disk",
+            "offload_train_disk_dir": _TRAIN_OFFLOAD_DISK_DIR,
             "sglang_weight_loader_drop_cache_after_load": True,
             "sglang_model_loader_extra_config": '{"num_threads": 2}',
         }
