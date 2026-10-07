@@ -22,7 +22,7 @@ Recompute the reward locally for representative samples using the exact
 prompt, response, and reference fields. Add fixture cases for every discovered
 false positive or false negative.
 
-**If attempts end too early:** fix unintended stop conditions; increase the budget (`max_length`) only if the task objective permits. If success must fit a fixed budget, keep that constraint explicit in scoring and evaluation. Masking truncated responses removes their direct policy-loss contribution, but their rewards may still affect other group members' advantages. Check the implementation.
+**If attempts end too early:** fix unintended stop conditions; increase the budget (`rollout_max_response_len` for training rollouts, `eval_max_response_len` for evaluation) only if the task objective permits. If success must fit a fixed budget, keep that constraint explicit in scoring and evaluation. Masking truncated responses removes their direct policy-loss contribution, but their rewards may still affect other group members' advantages. Check the implementation.
 
 ## Inspect group contrast and choose an intervention
 
