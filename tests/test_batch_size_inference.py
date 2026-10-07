@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import os
 import tempfile
 from dataclasses import dataclass, field
@@ -141,9 +142,11 @@ class _FakeRun:
     metadata: dict = field(default_factory=dict)
     error_message: str = ""
     saves: int = 0
+    persisted: list[dict] = field(default_factory=list)
 
     async def save(self, *, is_async: bool = False) -> None:
         self.saves += 1
+        self.persisted.append(copy.deepcopy(self.metadata))
 
 
 @dataclass
@@ -237,6 +240,9 @@ def test_run_training_attempts_halves_on_oom_until_it_fits():
     assert [a["outcome"] for a in stored["attempts"]] == ["oom", "oom", "succeeded"]
     assert "CUDA out of memory" in stored["attempts"][0]["evidence"]
     assert inferred_batch_size_result(run.metadata) == 10000
+    # The settled state must reach the volume, not just the in-memory record.
+    assert run.persisted[-1][METADATA_KEY]["settled"] is True
+    assert run.persisted[-1][METADATA_KEY]["inferred_batch_size_result"] == 10000
 
 
 def test_run_training_attempts_does_not_retry_non_oom_failures():
@@ -254,6 +260,7 @@ def test_run_training_attempts_does_not_retry_non_oom_failures():
     )
     with pytest.raises(RuntimeError, match="KeyError"):
         _run(cluster, recipe, run)
+    assert run.persisted[-1][METADATA_KEY]["attempts"][-1]["outcome"] == "failed"
     assert len(cluster.commands) == 1
     assert run.metadata[METADATA_KEY]["attempts"][-1]["outcome"] == "failed"
     assert run.metadata[METADATA_KEY]["inferred_batch_size_result"] is None

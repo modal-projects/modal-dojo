@@ -808,6 +808,7 @@ async def run_training_attempts(
         if result.is_success:
             inference.finish_attempt("succeeded")
             inference.record(run_record)
+            await run_record.save(is_async=True)
             print(
                 f"infer_batch_size: settled on {inference.knob}={inference.current}",
                 flush=True,
@@ -821,6 +822,7 @@ async def run_training_attempts(
         if evidence is None:
             inference.finish_attempt("failed")
             inference.record(run_record)
+            await run_record.save(is_async=True)
             check_training_result(result, run_record)
             raise AssertionError("unreachable")  # pragma: no cover
 
