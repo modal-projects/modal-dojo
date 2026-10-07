@@ -46,4 +46,4 @@ The R3 paper compares MoE math training with and without **rollout routing repla
 
 **Verify:** for an input, routing or numerical fix, rescore fixed prefixes at matching weights and check whether disagreement decreases. For importance correction, inspect correction weights and how much signal is clipped or rejected; the raw gap need not shrink. In both cases, verify stable updates and held-out learning. Async training still needs lag control: fixing engine disagreement does not remove policy staleness.
 
-**Dashboard example:** compare `train/train_rollout_logprob_abs_diff` in the matched R3-off and R3-on GLM runs, then inspect their held-out curves over the same updates. R3 lowers the measured gap; both runs remain stable. This illustrates the measurement check, not a reproduced collapse-and-rescue.
+**Observed example:** in matched R3-off and R3-on GLM runs, `train/train_rollout_logprob_abs_diff` was lower with R3 enabled; both runs remained stable. This illustrates the measurement check, not a reproduced collapse-and-rescue.

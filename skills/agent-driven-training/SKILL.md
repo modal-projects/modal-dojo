@@ -6,12 +6,11 @@ description: >-
   Diagnoses reward, entropy, log-probability, gradient, evaluation, runtime,
   timing, and async scaling symptoms.
 when_to_use: >-
-  Diagnose or fix a Modal Dojo training run showing flat or low reward,
-  unexpected entropy or performance collapse, trainer–rollout log-probability
-  mismatch, unstable gradients, training/evaluation divergence, hangs, crashes,
-  OOM, slow steps, or poor async/GPU scaling. Applies when these issues arise
-  while training a model, validating new model support, or continuing an
-  existing run, even if the user did not explicitly ask to debug.
+  User asks to train or improve a model, configure or launch a run, monitor
+  progress, continue a checkpoint, or promote a Modal Dojo run. Also use when
+  diagnosing unexpected learning behavior, runtime failures, or performance
+  problems during training or validation of new model support, even if the
+  user did not explicitly ask to debug.
 ---
 
 # Agent-driven training
@@ -32,18 +31,21 @@ when_to_use: >-
 
 Read only the reference matching the current decision.
 
-| No. | What you see | Debugging reference |
-| --- | --- | --- |
-| 01 | Reward is flat or unexpectedly low | [Reward](references/debug-reward.md) |
-| 02 | Entropy behaves unexpectedly, or performance collapses | [Entropy](references/debug-entropy.md) |
-| 03 | Trainer–rollout log-probability differences grow | [Log-probabilities](references/debug-logprobs.md) |
-| 04 | Gradients are tiny, spike or become nonfinite | [Updates](references/debug-updates.md) |
-| 05 | Training reward improves but evaluation does not | [Evaluation](references/debug-evaluation.md) |
-| 06 | The run hangs, crashes or runs out of memory | [Failures](references/failure-signatures.md) |
-| 07 | Steps are slow or timing totals look wrong | [Timing](references/debug-systems.md) |
-| 08 | Async or more GPUs do not help | [Async and scaling](references/debug-async.md) |
+| No. | What you see                                           | Debugging reference                               |
+| --- | ---                                                    | ---                                               |
+| 01  | Reward is flat or unexpectedly low                     | [Reward](references/debug-reward.md)              |
+| 02  | Entropy behaves unexpectedly, or performance collapses | [Entropy](references/debug-entropy.md)            |
+| 03  | Trainer–rollout log-probability differences grow       | [Log-probabilities](references/debug-logprobs.md) |
+| 04  | Gradients are tiny, spike or become nonfinite          | [Updates](references/debug-updates.md)            |
+| 05  | Training reward improves but evaluation does not       | [Evaluation](references/debug-evaluation.md)      |
+| 06  | The run hangs, crashes or runs out of memory           | [Failures](references/failure-signatures.md)      |
+| 07  | Steps are slow or timing totals look wrong             | [Timing](references/debug-systems.md)             |
+| 08  | Async or more GPUs do not help                         | [Async and scaling](references/debug-async.md)    |
 
 Missing or disabled metrics are unknown, not zero.
+
+Before applying an intervention, inspect the active recipe and pinned framework
+implementation to confirm support and the correct configuration settings.
 
 ## Collect evidence
 
@@ -54,6 +56,12 @@ uv run modal-dojo run get <run-id> --verbose
 uv run modal-dojo run params <run-id>
 uv run modal-dojo run logs <run-id> --tail 200
 ```
+
+`run trace` exports training rollouts. For evaluation responses, per-token
+scores, loss masks, or gradients, inspect the active evaluator or trainer's
+logging and saved artifacts. If the required evidence was not retained, state
+that limitation and identify the instrumentation needed; do not infer it from
+aggregate metrics.
 
 ## 1. Configure and preflight
 
@@ -112,8 +120,9 @@ Launch a new run from the same config and topology with about 10 steps.
 Continue active monitoring until it completes and reward data spans the smoke
 test.
 
-If a symptom appears, use the [eight debugging paths](#diagnose-by-the-observed-symptom)
-to investigate it before deciding on a change.
+If a symptom appears, use the
+[eight debugging paths](#diagnose-by-the-observed-symptom) to investigate it
+before deciding on a change.
 
 Change one setting at a time and repeat the smoke test with a fresh run ID.
 
@@ -122,7 +131,8 @@ Change one setting at a time and repeat the smoke test with a fresh run ID.
 Promote only when the proof and smoke runs are healthy, the reward remains
 informative, trace inspection confirms that prompts and responses make sense
 for the task, and the user has confirmed the final configuration and maximum
-step count. Launch a fresh full run from that exact config and monitor it until completion or an early-stop decision.
+step count. Launch a fresh full run from that exact config and monitor it
+until completion or an early-stop decision.
 
 A full run is not a commitment to spend its entire configured horizon.
 Reassess efficacy early using task metrics and sampled traces. Investigate any

@@ -40,7 +40,7 @@ Both runs use synchronous GLM-4.7-Flash training on DAPO-Math-17k with an 8K res
 
 **1. Locate the deterioration.** With coefficient 0.001, held-out pass@1 falls from 65.81% at update 70 to 29.85% at update 140 while entropy rises sharply. Without the bonus, entropy stays near its initial level and accuracy improves. This is pattern C in the affected run: performance collapses while entropy rises.
 
-**2. Inspect the responses.** In the affected run's dashboard, compare earlier rollouts with rollout 139, used for update 140. Here is the unchanged opening of one response to a problem asking for the smallest integer whose digits multiply to $9!$:
+**2. Inspect the responses.** Here is the unchanged opening of one response from an example rollout to a problem asking for the smallest integer whose digits multiply to $9!$:
 
 > We should find the minimal integer. A standard way: as short a representation of $9!$ as possible, meaning it wants a rounded minimal count of numbers: ergy as partas that must produce $5$. Use algorithm.StatusOK sum factor and Sam...
 >
