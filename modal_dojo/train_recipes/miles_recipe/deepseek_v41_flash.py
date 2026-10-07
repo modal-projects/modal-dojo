@@ -31,6 +31,7 @@ _PATCH_DIR = (
 
 # Build-time shims for gaps in the bundled sources; see each script's docstring.
 _PATCHES = (
+    "patch_deepseek_v41_checksum_audit",
     "patch_deepseek_v41_checksum_cache",
     "patch_deepseek_v41_checksum_offsets",
     "patch_deepseek_v41_fp4_dequant_block",
@@ -88,6 +89,10 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
             "CONVERT_DEQUANT_HF_WEIGHTS": "1",
             "NCCL_CUMEM_ENABLE": "1",
             "SGLANG_SKIP_CHECKPOINT_LOAD_CHECK": "1",
+            # Automatic audit hashes block engine metadata discovery while the
+            # router is still registering workers. Explicit weight checks stay
+            # available; set this to "0" to opt back into the audit for debugging.
+            "MILES_SKIP_ENGINE_WEIGHT_CHECKSUM": "1",
             # Upstream serves an FP4→FP8 pre-converted checkpoint
             # (SGLANG_DSV4_FP4_EXPERTS=0). We load the public release, whose
             # routed experts are packed mxfp4, so the engine must expect FP4
