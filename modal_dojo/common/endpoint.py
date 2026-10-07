@@ -20,7 +20,13 @@ from modal_dojo.common.openai_messages import _messages_to_openai
 from modal_dojo.model import ModelConfig
 
 
-def _stop_endpoint(identifier: str, environment: str | None = None) -> None:
+def _endpoint_stop(
+    endpoint_id: str | None = None,
+    endpoint_name: str | None = None,
+    environment: str | None = None,
+) -> None:
+    identifier = endpoint_id or endpoint_name
+    assert identifier is not None
     stop = [
         sys.executable,
         "-m",
@@ -52,7 +58,13 @@ def _stop_endpoint(identifier: str, environment: str | None = None) -> None:
             )
 
 
-def _endpoint_info(identifier: str, environment: str | None = None) -> dict[str, Any]:
+def _endpoint_info(
+    endpoint_id: str | None = None,
+    endpoint_name: str | None = None,
+    environment: str | None = None,
+) -> dict[str, Any]:
+    identifier = endpoint_id or endpoint_name
+    assert identifier is not None
     info = [
         sys.executable,
         "-m",
@@ -178,7 +190,7 @@ class Endpoint:
             endpoint_name = f"training-gym-{digest}"
 
         if recreate_if_existing:
-            _stop_endpoint(endpoint_name, environment)
+            _endpoint_stop(endpoint_name=endpoint_name, environment=environment)
 
         command = [
             sys.executable,
@@ -223,7 +235,9 @@ class Endpoint:
         deadline = time.monotonic() + wait_timeout_sec
         while time.monotonic() < deadline:
             try:
-                described = _endpoint_info(endpoint_name, environment)
+                described = _endpoint_info(
+                    endpoint_name=endpoint_name, environment=environment
+                )
             except RuntimeError as exc:
                 if "not found" not in str(exc).lower():
                     raise
@@ -243,11 +257,11 @@ class Endpoint:
 
     def stop(self) -> None:
         """Stop this endpoint and terminate its containers."""
-        _stop_endpoint(self.endpoint_id)
+        _endpoint_stop(endpoint_id=self.endpoint_id)
 
     def _describe(self) -> str:
         try:
-            info = _endpoint_info(self.endpoint_id)
+            info = _endpoint_info(endpoint_id=self.endpoint_id)
         except RuntimeError:
             return self.endpoint_id
         return f"'{info['name']}' in environment '{info['environment_name']}'"
