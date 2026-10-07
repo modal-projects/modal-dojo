@@ -6,9 +6,12 @@ description: >-
   Diagnoses reward, entropy, log-probability, gradient, evaluation, runtime,
   timing, and async scaling symptoms.
 when_to_use: >-
-  User asks to train, post-train, fine-tune, or improve a model; launch a
-  config; inspect run status or logs; debug failure, reward, or performance;
-  continue a checkpoint; or promote a Modal Dojo run.
+  Diagnose or fix a Modal Dojo training run showing flat or low reward,
+  unexpected entropy or performance collapse, trainer–rollout log-probability
+  mismatch, unstable gradients, training/evaluation divergence, hangs, crashes,
+  OOM, slow steps, or poor async/GPU scaling. Applies when these issues arise
+  while training a model, validating new model support, or continuing an
+  existing run, even if the user did not explicitly ask to debug.
 ---
 
 # Agent-driven training
