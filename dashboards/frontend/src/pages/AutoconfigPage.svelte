@@ -459,7 +459,6 @@
               <td class="whitespace-nowrap">
                 {#if row.context_length !== null}
                   {formatTokens(row.context_length)}
-                  <span class="text-xs text-(--muted)">({row.context_source})</span>
                 {:else}
                   <span class="text-(--muted)">—</span>
                 {/if}

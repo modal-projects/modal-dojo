@@ -25,7 +25,6 @@ function row(name, run) {
     recipe: `${name}_Recipe`,
     recipe_href: `/reference/${name.toLowerCase()}_recipe`,
     context_length: null,
-    context_source: null,
     run:
       run === null
         ? null
