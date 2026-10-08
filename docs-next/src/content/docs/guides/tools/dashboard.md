@@ -30,7 +30,7 @@ modal-dojo set-password
 
 The landing page lists every training run in your workspace:
 
-![Training runs list with annotated components](https://modal-cdn.com/cdnbot/dashboard-runskimjjce8_c68fd1d6.webp)
+![Training runs list with annotated components](https://modal-cdn.com/cdnbot/runs-3onexvqmz_feeb3ce4.webp)
 
 You can easily see:
 
@@ -41,14 +41,13 @@ You can easily see:
 
 Click any run to see a detailed view:
 
-![Run summary tab with annotated components](https://modal-cdn.com/cdnbot/dashboard-run-summaryag16g12w_0308d564.webp)
+![Run summary tab with annotated components](https://modal-cdn.com/cdnbot/summary-44uxi8bka_4a4272e3.webp)
 
 Some highlights:
 
 1. Per-step breakdown of wall-clock time for the run; see more below.
 2. Mean reward of all rollouts per step; [past returns do not guarantee future results](https://russellinvestments.com/us/blog/past-performance-no-guarantee-future-results).
 3. Score distribution and advantage charts; useful for spotting reward collapse (all-equal rewards) long before the mean flatlines.
-4. Link to the underlying Modal app for container-level debugging.
 
 The step and substep timeline is the dashboard's built-in profiler. Each step is segmented by:
 
@@ -70,7 +69,7 @@ Custom phases emitted by your code (e.g., a custom reward function) appear as th
 
 The Metrics tab charts every scalar the run reports, grouped by namespace:
 
-![Metrics tab with annotated components](https://modal-cdn.com/cdnbot/dashboard-run-metricsv55f7plh_043c67b0.webp)
+![Metrics tab with annotated components](https://modal-cdn.com/cdnbot/metrics-1v3oilypa_3c5f1063.webp)
 
 1. Metric namespaces: `perf`, `rollout`, and `train`.
 2. One chart per reported metric.
@@ -79,7 +78,7 @@ The Metrics tab charts every scalar the run reports, grouped by namespace:
 
 You can even inspect each rollout to quickly debug poor performance:
 
-![Rollouts tab with annotated components](https://modal-cdn.com/cdnbot/dashboard-run-rolloutsrnarx6dv_7b167674.webp)
+![Rollouts tab with annotated components](https://modal-cdn.com/cdnbot/rollouts-2pi4madw6_3c02e1bd.webp)
 
 You'll see:
 
@@ -91,7 +90,7 @@ You'll see:
 
 The Logs tab streams every worker's logs live while the run is going, and stores them once the run finishes:
 
-![Logs tab with annotated components](https://modal-cdn.com/cdnbot/dashboard-run-logse6vmv22__f0e67d65.webp)
+![Logs tab with annotated components](https://modal-cdn.com/cdnbot/logsjxshrphy_2c01837f.webp)
 
 1. Substring filter and time-range picker.
 2. Interleaved log lines from all workers in the run.
