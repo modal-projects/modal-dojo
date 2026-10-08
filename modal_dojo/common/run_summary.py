@@ -208,7 +208,7 @@ class BatchSizeAttempt(BaseModel):
 
 
 class BatchSizeInferenceSummary(BaseModel):
-    """State of the ``infer_batch_size`` search (see ``batch_size_inference``)."""
+    """State of the ``"auto"`` micro-batch search (see ``batch_size_inference``)."""
 
     knob: str
     initial: int

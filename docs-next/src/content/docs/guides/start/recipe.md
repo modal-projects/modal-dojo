@@ -74,17 +74,16 @@ Qwen3_5_4B_Miles_Recipe(
 
 ### Inferring the batch size
 
-Rather than hand-tuning how much fits on each GPU, you can let the gym find out. With `infer_batch_size=True`, set the per-GPU micro-batch knob **deliberately high** — `max_tokens_per_gpu` when `use_dynamic_batch_size=True` (the default), otherwise `micro_batch_size` — and the launcher halves it every time training dies with a CUDA out-of-memory error, resuming from the last checkpoint, until a value fits:
+Rather than hand-tuning how much fits on each GPU, you can let the gym find out. Set the per-GPU micro-batch knob to `"auto"` — `max_tokens_per_gpu` when `use_dynamic_batch_size=True` (the default), otherwise `micro_batch_size` — and the launcher starts from the largest value that can matter and halves it every time training dies with a CUDA out-of-memory error, resuming from the last checkpoint, until a value fits:
 
 ```python
 Qwen3_5_4B_Miles_Recipe(
     # ...
-    infer_batch_size=True,
-    max_tokens_per_gpu=131072,  # start far too large; the gym shrinks it on OOM
+    max_tokens_per_gpu="auto",
 )
 ```
 
-This mirrors [Composer's automatic microbatching](https://docs.mosaicml.com/projects/composer/en/stable/notes/auto_microbatching.html): only the per-GPU micro-batch moves, so `global_batch_size` and the optimization are unchanged whatever value it settles on. Dynamic batching stops shrinking at the longest possible sample (`rollout_max_prompt_len + rollout_max_response_len`, or `rollout_max_context_len`), since below that a single sample already occupies a micro-batch; a fixed `micro_batch_size` stops at 1. Failures that are not OOMs are not retried.
+This mirrors [Composer's automatic microbatching](https://docs.mosaicml.com/projects/composer/en/stable/notes/auto_microbatching.html): the search starts with the whole per-rank share of `global_batch_size` in a single micro-batch (`global_batch_size / data_parallel_size` samples, times the longest possible sample for `max_tokens_per_gpu`), and only the per-GPU micro-batch moves, so `global_batch_size` and the optimization are unchanged whatever value it settles on. Dynamic batching stops shrinking at the longest possible sample (`rollout_max_prompt_len + rollout_max_response_len`, or `rollout_max_context_len`), since below that a single sample already occupies a micro-batch; a fixed `micro_batch_size` stops at 1. Each halving costs one failed attempt (rollout generation plus start-up), and failures that are not OOMs are not retried.
 
 The value the gym settled on is shown as `inferred_batch_size_result` in the [dashboard](/guides/tools/dashboard) run summary, on the Python handle as `run.inferred_batch_size_result`, and in `modal-dojo run get`. Copy it back into the recipe once you have it so later runs skip the search.
 

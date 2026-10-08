@@ -1,10 +1,11 @@
 """Composer-style automatic micro-batch inference.
 
-Mirrors Composer's ``device_train_microbatch_size="auto"``: start from the
-(deliberately high) per-GPU micro-batch knob the user configured and, every
-time training dies with a CUDA OOM, halve it and relaunch. Only the per-GPU
-knob moves; ``global_batch_size`` is untouched, so the optimizer sees the same
-batches whatever value the search settles on.
+Mirrors Composer's ``device_train_microbatch_size="auto"``: set the per-GPU
+micro-batch knob to ``"auto"`` and the launcher starts from the largest value
+that can matter — the whole per-rank share of ``global_batch_size`` in one
+micro-batch — then halves it and relaunches every time training dies with a
+CUDA OOM. Only the per-GPU knob moves; ``global_batch_size`` is untouched, so
+the optimizer sees the same batches whatever value the search settles on.
 
 The knob is ``max_tokens_per_gpu`` when the recipe uses dynamic batching
 (the default) and ``micro_batch_size`` otherwise.
@@ -19,7 +20,9 @@ from typing import Any
 
 from modal_dojo.common.errors import DojoConfigError
 
+AUTO = "auto"
 METADATA_KEY = "batch_size_inference"
+_KNOBS = ("max_tokens_per_gpu", "micro_batch_size")
 
 # Matched case-insensitively against each streamed log line and against Ray's
 # recorded driver failure message.
@@ -63,6 +66,10 @@ def _effective(recipe: Any, name: str, default: Any = None) -> Any:
     return getattr(recipe, name, default)
 
 
+def is_auto(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().lower() == AUTO
+
+
 def _as_int(value: Any) -> int | None:
     if isinstance(value, bool):
         return None
@@ -73,51 +80,97 @@ def _as_int(value: Any) -> int | None:
     return None
 
 
-def resolve_batch_size_knob(recipe: Any) -> tuple[str, int, int]:
-    """Return ``(knob, initial_value, floor)`` for ``infer_batch_size``.
+def _positive(recipe: Any, name: str, default: int = 1) -> int:
+    value = _as_int(_effective(recipe, name))
+    return value if value is not None and value > 0 else default
 
-    Raises ``DojoConfigError`` when the recipe gives the search nothing to
-    shrink: the knob is unset, or already at the smallest value that can
-    change peak memory.
-    """
+
+def active_knob(recipe: Any) -> str:
+    """The per-GPU micro-batch knob this recipe's batching mode reads."""
     dynamic = bool(_effective(recipe, "use_dynamic_batch_size", True))
-    knob = "max_tokens_per_gpu" if dynamic else "micro_batch_size"
-    value = _as_int(_effective(recipe, knob))
-    if value is None or value < 1:
-        where = (
-            f"set {knob} on the recipe"
-            if knob == "max_tokens_per_gpu" or hasattr(recipe, knob)
-            else f"set {knob!r} in extra_config"
-        )
-        raise DojoConfigError(
-            f"infer_batch_size=True needs a starting {knob} to shrink from; "
-            f"{where} (deliberately high — the launcher halves it on OOM)."
-        )
+    return "max_tokens_per_gpu" if dynamic else "micro_batch_size"
 
-    if dynamic:
-        ctx = _as_int(_effective(recipe, "rollout_max_context_len")) or 0
-        prompt = _as_int(_effective(recipe, "rollout_max_prompt_len")) or 0
-        response = _as_int(_effective(recipe, "rollout_max_response_len")) or 0
-        sample = ctx or (prompt + response)
-        cp = _as_int(_effective(recipe, "context_parallel_size")) or 1
+
+def auto_batch_size_enabled(recipe: Any) -> bool:
+    """True when the active micro-batch knob is set to ``"auto"``."""
+    return is_auto(_effective(recipe, active_knob(recipe)))
+
+
+def _sample_len(recipe: Any) -> int:
+    """Longest sample the recipe declares, in tokens (0 when unknown)."""
+    ctx = _as_int(_effective(recipe, "rollout_max_context_len")) or 0
+    prompt = _as_int(_effective(recipe, "rollout_max_prompt_len")) or 0
+    response = _as_int(_effective(recipe, "rollout_max_response_len")) or 0
+    return ctx or (prompt + response)
+
+
+def _data_parallel_size(recipe: Any) -> int:
+    actor_gpus = _positive(recipe, "actor_num_nodes") * _positive(
+        recipe, "actor_num_gpus_per_node"
+    )
+    model_parallel = (
+        _positive(recipe, "tensor_model_parallel_size")
+        * _positive(recipe, "pipeline_model_parallel_size")
+        * _positive(recipe, "context_parallel_size")
+    )
+    return max(1, actor_gpus // model_parallel)
+
+
+def resolve_batch_size_knob(recipe: Any) -> tuple[str, int, int]:
+    """Return ``(knob, initial_value, floor)`` for a recipe whose knob is ``"auto"``.
+
+    Like Composer, the search starts from the whole per-rank share of
+    ``global_batch_size`` packed into a single micro-batch — anything larger
+    cannot change what fits — and stops at the smallest value that can still
+    free memory: the longest single sample for ``max_tokens_per_gpu`` (one
+    sample per micro-batch), ``1`` for ``micro_batch_size``.
+    """
+    knob = active_knob(recipe)
+    if not is_auto(_effective(recipe, knob)):
+        raise DojoConfigError(
+            f'automatic batch-size inference needs {knob}="auto"; got '
+            f"{_effective(recipe, knob)!r}"
+        )
+    global_batch_size = _as_int(_effective(recipe, "global_batch_size"))
+    if global_batch_size is None or global_batch_size < 1:
+        raise DojoConfigError(
+            f'{knob}="auto" needs global_batch_size to derive its starting point'
+        )
+    samples_per_rank = math.ceil(global_batch_size / _data_parallel_size(recipe))
+
+    if knob == "max_tokens_per_gpu":
+        sample = _sample_len(recipe)
+        if sample < 1:
+            raise DojoConfigError(
+                'max_tokens_per_gpu="auto" needs rollout_max_response_len (or '
+                "rollout_max_context_len) to size the search"
+            )
+        cp = _positive(recipe, "context_parallel_size")
         # Below the longest single sample, dynamic batching already puts one
         # sample per micro-batch, so shrinking further cannot free memory.
-        floor = max(1, math.ceil(sample / cp)) if sample else 1
+        floor = max(1, math.ceil(sample / cp))
+        initial = max(floor, math.ceil(samples_per_rank * sample / cp))
     else:
         floor = 1
-
-    if value <= floor:
-        raise DojoConfigError(
-            f"infer_batch_size=True has nothing to search: {knob}={value} is already "
-            f"at its floor ({floor}). Start much higher — the launcher halves it "
-            "on OOM until training fits."
-        )
-    return knob, value, floor
+        initial = max(floor, samples_per_rank)
+    return knob, initial, floor
 
 
 def validate_batch_size_inference(recipe: Any) -> None:
-    """Fail fast at launch time when ``infer_batch_size`` cannot do anything."""
-    if getattr(recipe, "infer_batch_size", False):
+    """Fail fast at launch time when ``"auto"`` is set where it cannot take effect."""
+    knob = active_knob(recipe)
+    for name in _KNOBS:
+        if name != knob and is_auto(_effective(recipe, name)):
+            mode = (
+                "use_dynamic_batch_size=True reads max_tokens_per_gpu"
+                if knob == "max_tokens_per_gpu"
+                else "use_dynamic_batch_size=False reads micro_batch_size"
+            )
+            raise DojoConfigError(
+                f'{name}="auto" has no effect here: {mode}, not {name}. '
+                f'Set {knob}="auto" instead.'
+            )
+    if is_auto(_effective(recipe, knob)):
         resolve_batch_size_knob(recipe)
 
 
@@ -161,9 +214,9 @@ class BatchSizeInference:
     def start(cls, recipe: Any, run_record: Any) -> BatchSizeInference | None:
         """Build the search for ``recipe``, resuming a previous container's state.
 
-        Returns ``None`` when ``infer_batch_size`` is off.
+        Returns ``None`` unless the active micro-batch knob is ``"auto"``.
         """
-        if not getattr(recipe, "infer_batch_size", False):
+        if not auto_batch_size_enabled(recipe):
             return None
         knob, initial, floor = resolve_batch_size_knob(recipe)
         state = cls(knob=knob, initial=initial, floor=floor, current=initial)
@@ -233,7 +286,7 @@ class BatchSizeInference:
 
 
 def inferred_batch_size_result(metadata: dict[str, Any] | None) -> int | None:
-    """The value ``infer_batch_size`` settled on, or ``None`` until it has."""
+    """The value the ``"auto"`` micro-batch search settled on, or ``None`` until it has."""
     stored = (metadata or {}).get(METADATA_KEY)
     if not isinstance(stored, dict):
         return None

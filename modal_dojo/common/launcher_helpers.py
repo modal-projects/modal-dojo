@@ -769,8 +769,8 @@ async def run_training_attempts(
 ) -> Any:
     """Submit the training job, re-submitting with a smaller micro-batch on OOM.
 
-    Without ``recipe.infer_batch_size`` this is a single submit followed by
-    ``check_training_result``. With it, each attempt applies the current
+    Unless the recipe's micro-batch knob is ``"auto"`` this is a single submit
+    followed by ``check_training_result``. With it, each attempt applies the current
     ``BatchSizeInference`` value to the recipe before ``build_cmd`` runs, so
     ``build_cmd`` must re-detect the resume checkpoint and rebuild the command
     every time (an OOMed attempt may have saved a checkpoint first). Failures
@@ -789,7 +789,7 @@ async def run_training_attempts(
             inference.begin_attempt()
             inference.record(run_record)
             print(
-                f"infer_batch_size: attempt {len(inference.attempts)} with "
+                f"auto batch size: attempt {len(inference.attempts)} with "
                 f"{inference.knob}={inference.current} (floor {inference.floor})",
                 flush=True,
             )
@@ -810,7 +810,7 @@ async def run_training_attempts(
             inference.record(run_record)
             await run_record.save(is_async=True)
             print(
-                f"infer_batch_size: settled on {inference.knob}={inference.current}",
+                f"auto batch size: settled on {inference.knob}={inference.current}",
                 flush=True,
             )
             check_training_result(result, run_record)
@@ -835,7 +835,7 @@ async def run_training_attempts(
             raise _training_error(
                 run_record,
                 f"GPU OOM with {inference.knob}={failed_value}, which is already the "
-                f"floor ({inference.floor}) infer_batch_size can shrink to; the "
+                f"floor ({inference.floor}) the auto batch-size search can shrink to; the "
                 "model or sequence length does not fit this cluster shape",
             )
         print(

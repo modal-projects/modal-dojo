@@ -267,7 +267,7 @@ class TrainingRun(BaseModel):
 
     @property
     def inferred_batch_size_result(self) -> int | None:
-        """The micro-batch value ``infer_batch_size`` settled on, once training fit."""
+        """The micro-batch value ``max_tokens_per_gpu="auto"`` settled on, once training fit."""
         from modal_dojo.common.batch_size_inference import inferred_batch_size_result
 
         self._reload()

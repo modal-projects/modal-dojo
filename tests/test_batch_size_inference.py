@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import math
 import os
 import tempfile
+import warnings
 from dataclasses import dataclass, field
 
+from pydantic import ValidationError
 import pytest
 import yaml
 
@@ -14,6 +17,7 @@ from modal_dojo.common.batch_size_inference import (
     METADATA_KEY,
     BatchSizeInference,
     OOMDetector,
+    auto_batch_size_enabled,
     inferred_batch_size_result,
     looks_like_oom,
     resolve_batch_size_knob,
@@ -22,6 +26,7 @@ from modal_dojo.common.batch_size_inference import (
 )
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.launcher_utils import prepare_launch_config
+from modal_dojo.common.memory_estimate import maybe_warn_gpu_oom
 from modal_dojo.common.models.qwen3_4b import Qwen3_4B
 from modal_dojo.common.ray_cluster import ModalRayJobResult
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
@@ -57,49 +62,111 @@ def test_oom_detector_keeps_first_evidence():
     assert detector.evidence == "torch.OutOfMemoryError: CUDA out of memory"
 
 
-def test_resolve_knob_dynamic_batching_floors_at_longest_sample():
+@dataclass
+class _FakeRun:
+    training_run_id: str = "run-1"
+    metadata: dict = field(default_factory=dict)
+    error_message: str = ""
+    saves: int = 0
+    persisted: list[dict] = field(default_factory=list)
+
+    async def save(self, *, is_async: bool = False) -> None:
+        self.saves += 1
+        self.persisted.append(copy.deepcopy(self.metadata))
+
+
+def _per_rank(recipe) -> int:
+    gpus = recipe.actor_num_nodes * recipe.actor_num_gpus_per_node
+    tp = recipe.tensor_model_parallel_size
+    pp = getattr(recipe, "pipeline_model_parallel_size", None) or 1
+    cp = getattr(recipe, "context_parallel_size", None) or 1
+    return math.ceil(recipe.global_batch_size / max(1, gpus // (tp * pp * cp)))
+
+
+def test_resolve_knob_dynamic_auto_starts_at_full_per_rank_batch():
     recipe = SlimeRecipe.get_base_recipe(Qwen3_4B())
-    recipe.infer_batch_size = True
-    recipe.max_tokens_per_gpu = 262144
-    knob, value, floor = resolve_batch_size_knob(recipe)
+    recipe.max_tokens_per_gpu = "auto"
+    assert auto_batch_size_enabled(recipe)
+    knob, initial, floor = resolve_batch_size_knob(recipe)
     assert knob == "max_tokens_per_gpu"
-    assert value == 262144
     assert floor == recipe.rollout_max_response_len
+    assert initial == _per_rank(recipe) * recipe.rollout_max_response_len
     recipe.extra_config = {"rollout_max_prompt_len": 2048}
-    assert resolve_batch_size_knob(recipe)[2] == 2048 + recipe.rollout_max_response_len
+    sample = 2048 + recipe.rollout_max_response_len
+    assert resolve_batch_size_knob(recipe)[1:] == (_per_rank(recipe) * sample, sample)
+
+    state = BatchSizeInference.start(recipe, _FakeRun())
+    state.apply(recipe)
+    assert recipe.max_tokens_per_gpu == _per_rank(recipe) * sample
+    args = recipe.cli_args(None)
+    assert args[args.index("--max-tokens-per-gpu") + 1] == str(
+        _per_rank(recipe) * sample
+    )
 
 
 def test_resolve_knob_respects_context_len_and_cp():
     recipe = MilesRecipe(
-        infer_batch_size=True,
-        max_tokens_per_gpu=65536,
+        max_tokens_per_gpu="auto",
+        global_batch_size=6,
         context_parallel_size=2,
         extra_config={"rollout_max_context_len": 9000},
     )
-    assert resolve_batch_size_knob(recipe) == ("max_tokens_per_gpu", 65536, 4500)
+    # One actor GPU, cp=2: dp=1, so all 6 samples land on the rank, split by cp.
+    assert resolve_batch_size_knob(recipe) == ("max_tokens_per_gpu", 27000, 4500)
 
 
 def test_resolve_knob_fixed_micro_batch_uses_field_or_hatch():
-    recipe = MilesRecipe(infer_batch_size=True, use_dynamic_batch_size=False)
-    with pytest.raises(DojoConfigError, match="micro_batch_size"):
-        resolve_batch_size_knob(recipe)
-    recipe.micro_batch_size = 64
-    assert resolve_batch_size_knob(recipe) == ("micro_batch_size", 64, 1)
+    recipe = MilesRecipe(
+        use_dynamic_batch_size=False,
+        micro_batch_size="auto",
+        global_batch_size=64,
+        actor_num_gpus_per_node=8,
+        tensor_model_parallel_size=2,
+    )
+    assert resolve_batch_size_knob(recipe) == ("micro_batch_size", 16, 1)
 
     slime = SlimeRecipe.get_base_recipe(Qwen3_4B())
-    slime.infer_batch_size = True
-    slime.extra_config = {"use_dynamic_batch_size": False, "micro_batch_size": 32}
-    assert resolve_batch_size_knob(slime) == ("micro_batch_size", 32, 1)
+    slime.extra_config = {"use_dynamic_batch_size": False, "micro_batch_size": "auto"}
+    assert resolve_batch_size_knob(slime) == ("micro_batch_size", _per_rank(slime), 1)
+    assert auto_batch_size_enabled(slime)
+    slime.extra_config = {"use_dynamic_batch_size": False, "micro_batch_size": 4}
+    assert not auto_batch_size_enabled(slime)
+    with pytest.raises(DojoConfigError, match='needs micro_batch_size="auto"'):
+        resolve_batch_size_knob(slime)
 
 
-def test_validate_rejects_value_already_at_floor():
-    recipe = SlimeRecipe.get_base_recipe(Qwen3_4B())
-    recipe.infer_batch_size = True
-    recipe.max_tokens_per_gpu = recipe.rollout_max_response_len
-    with pytest.raises(DojoConfigError, match="Start much higher"):
-        validate_batch_size_inference(recipe)
-    recipe.infer_batch_size = False
-    validate_batch_size_inference(recipe)
+def test_recipes_accept_auto_literal_only_for_known_knobs():
+    assert MilesRecipe(max_tokens_per_gpu="auto").max_tokens_per_gpu == "auto"
+    assert MilesRecipe(micro_batch_size="auto").micro_batch_size == "auto"
+    with pytest.raises(ValidationError):
+        MilesRecipe(max_tokens_per_gpu="automatic")
+    with pytest.raises(ValidationError):
+        SlimeRecipe.get_base_recipe(Qwen3_4B()).__class__(
+            **{
+                **SlimeRecipe.get_base_recipe(Qwen3_4B()).__dict__,
+                "max_tokens_per_gpu": "big",
+            }
+        )
+
+
+def test_validate_rejects_auto_on_the_knob_the_batching_mode_ignores():
+    with pytest.raises(DojoConfigError, match="reads max_tokens_per_gpu"):
+        validate_batch_size_inference(MilesRecipe(micro_batch_size="auto"))
+    slime = SlimeRecipe.get_base_recipe(Qwen3_4B())
+    slime.extra_config = {"use_dynamic_batch_size": False, "max_tokens_per_gpu": "auto"}
+    with pytest.raises(DojoConfigError, match="reads micro_batch_size"):
+        validate_batch_size_inference(slime)
+    validate_batch_size_inference(SlimeRecipe.get_base_recipe(Qwen3_4B()))
+    validate_batch_size_inference(MilesRecipe(max_tokens_per_gpu="auto"))
+
+
+def test_gpu_oom_warning_is_skipped_while_inferring():
+    model = Qwen3_4B()
+    recipe = SlimeRecipe.get_base_recipe(model)
+    recipe.max_tokens_per_gpu = "auto"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        maybe_warn_gpu_oom(recipe, model)
 
 
 def test_set_recipe_value_updates_field_then_materialized_hatch():
@@ -137,23 +204,12 @@ def test_shrink_halves_clamps_and_stops_at_floor():
 
 
 @dataclass
-class _FakeRun:
-    training_run_id: str = "run-1"
-    metadata: dict = field(default_factory=dict)
-    error_message: str = ""
-    saves: int = 0
-    persisted: list[dict] = field(default_factory=list)
-
-    async def save(self, *, is_async: bool = False) -> None:
-        self.saves += 1
-        self.persisted.append(copy.deepcopy(self.metadata))
-
-
-@dataclass
 class _Recipe:
-    infer_batch_size: bool = True
+    """One actor GPU, 8 samples of <=5000 tokens: "auto" starts at 40000, floors at 5000."""
+
     use_dynamic_batch_size: bool = True
-    max_tokens_per_gpu: int = 40000
+    max_tokens_per_gpu: int | str = "auto"
+    global_batch_size: int = 8
     rollout_max_prompt_len: int = 1000
     rollout_max_response_len: int = 4000
 
@@ -206,7 +262,7 @@ def test_start_restores_previous_container_state():
     assert state is not None
     assert (state.initial, state.current, state.floor) == (40000, 10000, 5000)
     assert [a["outcome"] for a in state.attempts] == ["oom", "interrupted"]
-    assert BatchSizeInference.start(_Recipe(infer_batch_size=False), run) is None
+    assert BatchSizeInference.start(_Recipe(max_tokens_per_gpu=40000), run) is None
 
 
 def test_run_training_attempts_halves_on_oom_until_it_fits():
@@ -268,7 +324,7 @@ def test_run_training_attempts_does_not_retry_non_oom_failures():
 
 
 def test_run_training_attempts_gives_up_at_floor():
-    recipe = _Recipe(max_tokens_per_gpu=8000)
+    recipe = _Recipe(global_batch_size=2, rollout_max_prompt_len=0)
     run = _FakeRun()
     oom = (["CUDA out of memory\n"], _OOM)
     cluster = _FakeCluster([oom, oom, oom])
@@ -276,13 +332,13 @@ def test_run_training_attempts_gives_up_at_floor():
         _run(cluster, recipe, run)
     assert cluster.commands == [
         "train --max-tokens-per-gpu 8000",
-        "train --max-tokens-per-gpu 5000",
+        "train --max-tokens-per-gpu 4000",
     ]
     assert "already the floor" in run.error_message
 
 
-def test_run_training_attempts_without_flag_is_single_submit():
-    recipe = _Recipe(infer_batch_size=False)
+def test_run_training_attempts_with_a_number_is_single_submit():
+    recipe = _Recipe(max_tokens_per_gpu=40000)
     run = _FakeRun()
     cluster = _FakeCluster([(["CUDA out of memory\n"], _OOM)])
     with pytest.raises(RuntimeError, match="Job failed"):

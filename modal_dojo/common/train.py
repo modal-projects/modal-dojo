@@ -20,7 +20,10 @@ from modal_dojo.common.errors import (
 from modal_dojo.common.framework import Framework
 from modal_dojo.common.ids import create_hash
 from modal_dojo.common.launcher_helpers import mark_run_failed, mark_run_stopped
-from modal_dojo.common.batch_size_inference import validate_batch_size_inference
+from modal_dojo.common.batch_size_inference import (
+    is_auto,
+    validate_batch_size_inference,
+)
 from modal_dojo.common.memory_estimate import maybe_warn_gpu_oom
 from modal_dojo.common.modal_urls import modal_app_dashboard_url
 from modal_dojo.common.models import ModelConfig
@@ -552,6 +555,11 @@ class TrainConfig:
         max_tokens_per_gpu = getattr(recipe, "max_tokens_per_gpu", None)
         if max_tokens_per_gpu is None:
             return None
+        if is_auto(max_tokens_per_gpu):
+            return (
+                "max_tokens_per_gpu=auto (starts at the full per-rank global batch "
+                "and halves on OOM)"
+            )
 
         context_parallel_size = getattr(recipe, "context_parallel_size", 1) or 1
         effective_context = max_tokens_per_gpu * context_parallel_size
@@ -604,8 +612,7 @@ class TrainConfig:
 
         require_migrated_config()
         validate_batch_size_inference(self.recipe)
-        if not getattr(self.recipe, "infer_batch_size", False):
-            maybe_warn_gpu_oom(self.recipe, self.model)
+        maybe_warn_gpu_oom(self.recipe, self.model)
         training_run_id = self._generate_training_run_id()
         ensure_dashboard_deployed()
         framework_status_url = get_framework_status_url() or ""

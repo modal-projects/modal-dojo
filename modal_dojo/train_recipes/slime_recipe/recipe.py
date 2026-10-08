@@ -47,7 +47,6 @@ SlimeLossMaskType = Literal["qwen", "qwen3", "qwen3_5", "distill_qwen"]
 
 _SLIME_SKIP = {
     "environment",
-    "infer_batch_size",
     "async_mode",
     "metrics",
     "name",
@@ -284,13 +283,14 @@ class SlimeRecipe(BaseTrainRecipe):
             ``max_tokens_per_gpu`` instead of a fixed micro batch size.
         max_tokens_per_gpu:
             Token budget per GPU per micro-batch when dynamic batching is on.
-        infer_batch_size:
-            Composer-style automatic micro-batching. Set the per-GPU micro-batch
-            knob (``max_tokens_per_gpu`` with dynamic batching, else
-            ``micro_batch_size``) deliberately high; whenever training dies with a
-            CUDA OOM the launcher halves it and relaunches (resuming from the last
-            checkpoint) until it fits. ``global_batch_size`` is never changed. The
-            value it settled on is ``inferred_batch_size_result`` on the run.
+            ``"auto"`` infers it Composer-style: the launcher starts from the
+            whole per-rank share of ``global_batch_size`` in one micro-batch
+            and, whenever training dies with a CUDA OOM, halves it and
+            relaunches (resuming from the last checkpoint) until it fits.
+            ``global_batch_size`` is never changed. The value it settled on is
+            ``inferred_batch_size_result`` on the run. With dynamic batching
+            off, ``extra_config={"micro_batch_size": "auto"}`` does the same
+            for the fixed micro batch.
 
         rm_type:
             Built-in reward function name. Leave unset for a custom reward.
@@ -531,8 +531,7 @@ class SlimeRecipe(BaseTrainRecipe):
 
     # ── Dynamic batching ────────────────────────────────────────────────────
     use_dynamic_batch_size: bool = True
-    max_tokens_per_gpu: int = 9216
-    infer_batch_size: bool = False
+    max_tokens_per_gpu: int | Literal["auto"] = 9216
 
     # ── Reward model ─────────────────────────────────────────────────────────
     rm_type: str | None = None
