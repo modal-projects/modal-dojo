@@ -44,9 +44,11 @@ with urllib.request.urlopen(
     token = json.load(resp)["token"]
 
 req = urllib.request.Request(
-    f"https://registry-1.docker.io/v2/{REPOSITORY}/blobs/{LAYER_DIGEST}",
-    headers={"Authorization": f"Bearer {token}"},
+    f"https://registry-1.docker.io/v2/{REPOSITORY}/blobs/{LAYER_DIGEST}"
 )
+# The registry redirects blob reads to pre-signed storage, which can reject a
+# second credential with HTTP 400; keep the token off the redirected request.
+req.add_unredirected_header("Authorization", f"Bearer {token}")
 with urllib.request.urlopen(req) as resp:
     blob = resp.read()
 

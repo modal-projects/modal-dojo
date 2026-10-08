@@ -343,6 +343,7 @@ def run_base_training(
     save_interval: int | None = None,
     non_colocated: bool = False,
     timeout: float | None = None,
+    max_response_len: int | None = None,
 ) -> ValidationResult:
     config = _ValidationConfig.find(model_name)
     model_config = config.model_config()
@@ -358,6 +359,8 @@ def run_base_training(
         train_recipe.eval_interval = eval_interval
     if save_interval is not None:
         train_recipe.save_interval = save_interval
+    if max_response_len is not None and config.loss_type != "sft_loss":
+        train_recipe.rollout_max_response_len = max_response_len
     if non_colocated and config.loss_type != "sft_loss":
         train_recipe.colocate = False
         if train_recipe.rollout_num_gpus is None:
@@ -769,6 +772,12 @@ def __main__():
         help="Allocate rollout GPUs separately from trainer GPUs.",
     )
     check_parser.add_argument(
+        "--max-response-len",
+        type=int,
+        default=None,
+        help="Override the recipe rollout_max_response_len (tokens per response).",
+    )
+    check_parser.add_argument(
         "-o",
         "--output",
         help="Write the result as JSON to this file path.",
@@ -863,6 +872,7 @@ def __main__():
         eval_interval=args.eval_interval,
         save_interval=args.save_interval,
         non_colocated=args.non_colocated,
+        max_response_len=args.max_response_len,
     )
     result.print_summary()
 

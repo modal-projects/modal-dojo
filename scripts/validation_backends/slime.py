@@ -12,6 +12,9 @@ from modal_dojo.common.models.qwen3_asr_1_7b import Qwen3_ASR_1_7B
 from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 VALIDATION_EPHEMERAL_DISK_MIB = 2_097_152
+BOXED_ANSWER_INSTRUCTION = (
+    "Please reason step by step, and put your final answer within \\boxed{}."
+)
 
 
 class Gsm8kDataset(DatasetConfig):
@@ -30,8 +33,10 @@ class Gsm8kDataset(DatasetConfig):
         dataset = load_dataset("openai/gsm8k", "main", split="train")
         dataset = dataset.select(range(min(self.n_rows, len(dataset))))
         for row in dataset:
+            # deepscaler only credits an answer in \boxed{} after the reasoning.
+            prompt = f"{row['question']}\n\n{BOXED_ANSWER_INSTRUCTION}"
             yield {
-                "messages": [{"role": "user", "content": row["question"]}],
+                "messages": [{"role": "user", "content": prompt}],
                 "label": row["answer"].split("####")[-1].strip(),
             }
 
