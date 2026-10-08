@@ -269,3 +269,52 @@ def test_group_variants_record_tag_metadata():
             ],
         },
     }
+
+
+def test_skip_invalid_drops_failing_points_and_records_reason(capsys):
+    base = _base()
+    base.recipe.actor_num_gpus_per_node = 8
+    base.recipe.rollout_num_gpus = 8
+    group = TrainingGroup(
+        base=base,
+        grid={"recipe.expert_model_parallel_size": [1, 3, 8]},
+        skip_invalid=True,
+    )
+    assert [o for o, _ in group.iter_variants()] == [
+        {"recipe.expert_model_parallel_size": 1},
+        {"recipe.expert_model_parallel_size": 8},
+    ]
+    [(overrides, reason)] = group.skipped
+    assert overrides == {"recipe.expert_model_parallel_size": 3}
+    assert "not divisible" in reason
+    assert "validation error" not in reason
+    assert (
+        "skipping {'recipe.expert_model_parallel_size': 3}" in capsys.readouterr().out
+    )
+
+
+def test_invalid_points_still_raise_by_default():
+    base = _base()
+    base.recipe.actor_num_gpus_per_node = 8
+    base.recipe.rollout_num_gpus = 8
+    group = TrainingGroup(base=base, grid={"recipe.expert_model_parallel_size": [3]})
+    with pytest.raises(TrainingGroupError, match="not divisible"):
+        group.iter_variants()
+    assert group.skipped == []
+
+
+def test_skip_invalid_applies_model_parallelism_preflight():
+    base = _base()
+    base.recipe.actor_num_gpus_per_node = 8
+    base.recipe.rollout_num_gpus = 8
+    base.model.architecture.num_experts = 12
+    group = TrainingGroup(
+        base=base,
+        grid={"recipe.expert_model_parallel_size": [4, 8]},
+        skip_invalid=True,
+    )
+    assert [o for o, _ in group.iter_variants()] == [
+        {"recipe.expert_model_parallel_size": 4}
+    ]
+    [(_, reason)] = group.skipped
+    assert "12" in reason and "8" in reason
