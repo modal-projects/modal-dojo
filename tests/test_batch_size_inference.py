@@ -149,12 +149,11 @@ def _all_recipe_classes():
 
 @pytest.mark.parametrize("cls", _all_recipe_classes(), ids=lambda c: c.__name__)
 def test_every_recipe_accepts_auto_on_its_micro_batch_knobs(cls):
-    import typing
-
-    hints = typing.get_type_hints(cls)
+    fields = cls.__pydantic_fields__
     for name in ("max_tokens_per_gpu", "micro_batch_size"):
-        if name in hints:
-            assert TypeAdapter(hints[name]).validate_python("auto") == "auto", name
+        if name in fields:
+            annotation = fields[name].annotation
+            assert TypeAdapter(annotation).validate_python("auto") == "auto", name
 
 
 def test_recipes_accept_auto_literal_only_for_known_knobs():
