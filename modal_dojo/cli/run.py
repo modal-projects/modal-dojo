@@ -137,6 +137,7 @@ def _run_payload(summary: RunSummary) -> dict[str, object]:
             if summary.resume_state is not None
             else None
         ),
+        "inferred_batch_size_result": summary.inferred_batch_size_result,
         "model": summary.model or None,
         "dataset": summary.dataset or None,
         "recipe": summary.recipe or None,

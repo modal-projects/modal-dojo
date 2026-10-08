@@ -1,6 +1,7 @@
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.slime_recipe.recipe import (
     SlimeLossMaskType,
     SlimeRecipe,
@@ -17,5 +18,5 @@ class Qwen3_5_4B_Recipe(SlimeRecipe):
     use_precision_aware_optimizer: bool = True
     sglang_mem_fraction_static: float = 0.7
     attention_backend: str = "flash"
-    max_tokens_per_gpu: int = 8192
+    max_tokens_per_gpu: MicroBatchSize = 8192
     lr: float = 5e-7

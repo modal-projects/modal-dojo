@@ -182,8 +182,12 @@ def _peak_gib(
 
 
 def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
+    from modal_dojo.common.batch_size_inference import auto_batch_size_enabled
+
     if hasattr(recipe, "train_backend") and recipe.train_backend != "megatron":
         return
+    if auto_batch_size_enabled(recipe):
+        return  # the launcher will find what fits by itself
     gpu_gib = gpu_memory_gib(recipe.gpu_type)
     if gpu_gib is None:
         return

@@ -848,29 +848,28 @@ def build_slime_app(
                     else _snap0(model.model_name, local_files_only=True)
                 )
 
-            resume_checkpoint = torch_dist_resume_checkpoint(
-                save_root, is_complete=is_complete_torch_dist_checkpoint_dir
-            )
-            record_resume_checkpoint(run_record, resume_checkpoint)
-            await run_record.save(is_async=True)
-
-            with shared.resumed_recipe(slime, save_root, resume_checkpoint):
-                if (
-                    resume_checkpoint is None
-                    and slime.megatron_to_hf_mode == "bridge"
-                    and not slime.ref_load
-                    and _hf_ref
-                ):
-                    object.__setattr__(slime, "ref_load", _hf_ref)
-                cmd = build_train_cmd(
-                    slime,
-                    SLIME_ROOT,
-                    model=model,
-                    dataset=dataset,
-                    eval_dataset=eval_dataset,
-                    dataset_path=dataset_path,
-                    eval_dataset_path=eval_dataset_path,
+            def build_cmd() -> str:
+                resume_checkpoint = torch_dist_resume_checkpoint(
+                    save_root, is_complete=is_complete_torch_dist_checkpoint_dir
                 )
+                record_resume_checkpoint(run_record, resume_checkpoint)
+                with shared.resumed_recipe(slime, save_root, resume_checkpoint):
+                    if (
+                        resume_checkpoint is None
+                        and slime.megatron_to_hf_mode == "bridge"
+                        and not slime.ref_load
+                        and _hf_ref
+                    ):
+                        object.__setattr__(slime, "ref_load", _hf_ref)
+                    return build_train_cmd(
+                        slime,
+                        SLIME_ROOT,
+                        model=model,
+                        dataset=dataset,
+                        eval_dataset=eval_dataset,
+                        dataset_path=dataset_path,
+                        eval_dataset_path=eval_dataset_path,
+                    )
 
             runtime_env = {
                 "env_vars": {
@@ -906,14 +905,17 @@ def build_slime_app(
                 f"Training {app_name} — {slime.total_nodes} node(s) × {gpu_spec}  ({mode})"
             )
             print(slime.gpu_allocation.summary())
-            print(f"Command: {cmd}")
-            print(f"Runtime environment variables: {sorted(runtime_env['env_vars'])}")
 
             await set_status(SlimeStatus.ROLLOUT_INITIALIZING)
             async with cluster.forward_dashboard() as tunnel:
                 print(f"Ray dashboard: {tunnel.url}")
-                result = await cluster.submit_and_tail(cmd, runtime_env=runtime_env)
-                shared.check_training_result(result, run_record)
+                await shared.run_training_attempts(
+                    cluster=cluster,
+                    recipe=slime,
+                    run_record=run_record,
+                    runtime_env=runtime_env,
+                    build_cmd=build_cmd,
+                )
 
             return await shared.complete_training_run(
                 run_record,

@@ -13,6 +13,7 @@ from modal_dojo.common.metric_mirror import DashboardMetricConfig
 from modal_dojo.common.metrics import MetricConfig
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.train_recipes.base import (
+    MicroBatchSize,
     # Re-exported for backwards compatibility (e.g. frameworks/miles/launcher.py
     # imports the volume paths from this module).
     CHECKPOINTS_PATH as CHECKPOINTS_PATH,
@@ -343,9 +344,15 @@ class MilesRecipe(BaseTrainRecipe):
             Pack samples up to ``max_tokens_per_gpu`` instead of a fixed micro batch.
         micro_batch_size:
             Fixed micro-batch size when dynamic batching is off; ``None`` leaves
-            Miles' own default.
+            Miles' own default. ``"auto"`` infers it (see ``max_tokens_per_gpu``).
         max_tokens_per_gpu:
             Token budget per GPU per micro-batch when dynamic batching is on.
+            ``"auto"`` infers it Composer-style: the launcher starts from the
+            whole per-rank share of ``global_batch_size`` in one micro-batch
+            and, whenever training dies with a CUDA OOM, halves it and
+            relaunches (resuming from the last checkpoint) until it fits.
+            ``global_batch_size`` is never changed. The value it settled on is
+            ``inferred_batch_size_result`` on the run.
 
         rm_type:
             Built-in reward function name. Leave unset for a custom reward.
@@ -618,8 +625,8 @@ class MilesRecipe(BaseTrainRecipe):
 
     # ── Dynamic batching ────────────────────────────────────────────────────
     use_dynamic_batch_size: bool = True
-    micro_batch_size: int | None = None
-    max_tokens_per_gpu: int = 9216
+    micro_batch_size: MicroBatchSize | None = None
+    max_tokens_per_gpu: MicroBatchSize = 9216
 
     # ── Reward model ────────────────────────────────────────────────────────
     rm_type: str | None = None

@@ -3,6 +3,7 @@ from dataclasses import field
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.slime_recipe.recipe import (
     SlimeLossMaskType,
     SlimeRecipe,
@@ -39,7 +40,7 @@ class Qwen3_6_35B_Recipe(SlimeRecipe):
     sglang_speculative_num_draft_tokens: int | None = None
     sglang_mamba_scheduler_strategy: str = "extra_buffer"
 
-    max_tokens_per_gpu: int = 8192
+    max_tokens_per_gpu: MicroBatchSize = 8192
     balance_data: bool = True
     moe_token_dispatcher_type: str = "alltoall"
     moe_enable_deepep: bool = False

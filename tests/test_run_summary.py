@@ -525,3 +525,62 @@ def test_malformed_records_do_not_hide_valid_runs():
     )
 
     assert [summary.training_run_id for summary in summaries] == ["valid-run"]
+
+
+def test_batch_size_inference_surfaces_settled_result():
+    summary = build_run_summary(
+        _run(
+            metadata={
+                "batch_size_inference": {
+                    "knob": "max_tokens_per_gpu",
+                    "initial": 65536,
+                    "floor": 8192,
+                    "current": 16384,
+                    "settled": True,
+                    "inferred_batch_size_result": 16384,
+                    "attempts": [
+                        {
+                            "value": 65536,
+                            "outcome": "oom",
+                            "evidence": "CUDA out of memory",
+                        },
+                        {"value": 32768, "outcome": "oom"},
+                        {"value": 16384, "outcome": "succeeded"},
+                        {"value": "bogus"},
+                    ],
+                }
+            }
+        )
+    )
+    assert summary.inferred_batch_size_result == 16384
+    assert summary.batch_size_inference is not None
+    assert summary.batch_size_inference.knob == "max_tokens_per_gpu"
+    assert [a.outcome for a in summary.batch_size_inference.attempts] == [
+        "oom",
+        "oom",
+        "succeeded",
+    ]
+    assert summary.batch_size_inference.attempts[0].evidence == "CUDA out of memory"
+
+
+def test_batch_size_inference_hides_result_until_settled():
+    summary = build_run_summary(
+        _run(
+            metadata={
+                "batch_size_inference": {
+                    "knob": "micro_batch_size",
+                    "initial": 64,
+                    "current": 32,
+                    "settled": False,
+                    "inferred_batch_size_result": None,
+                    "attempts": [{"value": 64, "outcome": "oom"}],
+                }
+            }
+        )
+    )
+    assert summary.inferred_batch_size_result is None
+    assert summary.batch_size_inference is not None
+    assert summary.batch_size_inference.current == 32
+    assert summary.batch_size_inference.floor == 1
+
+    assert build_run_summary(_run(metadata={})).batch_size_inference is None

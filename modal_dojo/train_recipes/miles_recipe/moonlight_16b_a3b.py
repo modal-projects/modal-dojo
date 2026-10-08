@@ -5,6 +5,7 @@ from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models import ModelConfig, Moonlight_16B_A3B_Instruct
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 
@@ -35,7 +36,7 @@ class Moonlight_16B_A3B_Recipe(MilesRecipe):
     recompute_granularity: str | None = "full"
     recompute_method: str | None = "uniform"
     recompute_num_layers: int | None = 1
-    max_tokens_per_gpu: int = 8192
+    max_tokens_per_gpu: MicroBatchSize = 8192
 
     use_kl_loss: bool = True
 

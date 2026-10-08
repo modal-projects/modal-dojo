@@ -199,6 +199,26 @@ class ResumeState(BaseModel):
     attempt_starts: list[int] = Field(default_factory=list)
 
 
+class BatchSizeAttempt(BaseModel):
+    value: int
+    outcome: str = ""
+    started_at: int = 0
+    ended_at: int = 0
+    evidence: str = ""
+
+
+class BatchSizeInferenceSummary(BaseModel):
+    """State of the ``"auto"`` micro-batch search (see ``batch_size_inference``)."""
+
+    knob: str
+    initial: int
+    floor: int
+    current: int
+    settled: bool = False
+    attempts: list[BatchSizeAttempt] = Field(default_factory=list)
+    inferred_batch_size_result: int | None = None
+
+
 class GroupTag(BaseModel):
     key: str
     label: str = ""
@@ -262,6 +282,8 @@ class RunSummary(BaseModel):
     train_result: TrainResultSummary | None = None
     metric_links: list[MetricLink] = Field(default_factory=list)
     resume_state: ResumeState | None = None
+    batch_size_inference: BatchSizeInferenceSummary | None = None
+    inferred_batch_size_result: int | None = None
 
     config: JsonDict = Field(default_factory=dict)
     metadata: JsonDict | None = None
@@ -515,6 +537,43 @@ def _resume_state(metadata: JsonDict) -> ResumeState | None:
     )
 
 
+def _batch_size_inference(metadata: JsonDict) -> BatchSizeInferenceSummary | None:
+    raw = _mapping(metadata.get("batch_size_inference"))
+    knob = _text(raw.get("knob"))
+    initial = _optional_int(raw.get("initial"))
+    current = _optional_int(raw.get("current"))
+    if not knob or initial is None or current is None:
+        return None
+    attempts = (
+        [
+            BatchSizeAttempt(
+                value=value,
+                outcome=_text(item.get("outcome")),
+                started_at=_timestamp(item.get("started_at")),
+                ended_at=_timestamp(item.get("ended_at")),
+                evidence=_text(item.get("evidence")),
+            )
+            for item in (raw.get("attempts") or [])
+            if isinstance(item, dict)
+            and (value := _optional_int(item.get("value"))) is not None
+        ]
+        if isinstance(raw.get("attempts"), list)
+        else []
+    )
+    settled = raw.get("settled") is True
+    return BatchSizeInferenceSummary(
+        knob=knob,
+        initial=initial,
+        floor=_integer(raw.get("floor"), 1),
+        current=current,
+        settled=settled,
+        attempts=attempts,
+        inferred_batch_size_result=_optional_int(raw.get("inferred_batch_size_result"))
+        if settled
+        else None,
+    )
+
+
 def _group_tags(metadata: JsonDict, group_id: str) -> GroupTags | None:
     raw = _mapping(metadata.get("group_tags"))
     if not raw and not group_id:
@@ -700,6 +759,12 @@ def build_run_summary(
         train_result=result_summary,
         metric_links=links,
         resume_state=_resume_state(metadata),
+        batch_size_inference=(batch_size_inference := _batch_size_inference(metadata)),
+        inferred_batch_size_result=(
+            batch_size_inference.inferred_batch_size_result
+            if batch_size_inference is not None
+            else None
+        ),
         config=config,
         metadata=metadata or None,
         error_message=_text(run.get("error_message")),

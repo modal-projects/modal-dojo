@@ -9,6 +9,7 @@ from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models import DeepSeek_V4_1_Flash, ModelConfig
 from modal_dojo.common.patches import encode_patch
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 # The dedicated amd64/H200 image includes the DeepSeek sources together:
@@ -187,8 +188,8 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     # to reduce time spent waiting for the rank with the longest sequences.
     balance_data: bool = True
     rollout_temperature: float = 0.8
-    max_tokens_per_gpu: int = 2048
-    micro_batch_size: int = 1
+    max_tokens_per_gpu: MicroBatchSize = 2048
+    micro_batch_size: MicroBatchSize = 1
     skip_eval_before_train: bool = True
     # R3: replay the rollout's routed expert ids during training so train and
     # inference routing agree.

@@ -17,6 +17,7 @@ from modal_dojo.common.models import (
     ModelConfig,
 )
 from modal_dojo.train_recipes.base import (
+    MicroBatchSize,
     # Re-exported for backwards compatibility (e.g. frameworks/slime/launcher.py
     # imports the volume paths from this module).
     CHECKPOINTS_PATH as CHECKPOINTS_PATH,
@@ -283,6 +284,14 @@ class SlimeRecipe(BaseTrainRecipe):
             ``max_tokens_per_gpu`` instead of a fixed micro batch size.
         max_tokens_per_gpu:
             Token budget per GPU per micro-batch when dynamic batching is on.
+            ``"auto"`` infers it Composer-style: the launcher starts from the
+            whole per-rank share of ``global_batch_size`` in one micro-batch
+            and, whenever training dies with a CUDA OOM, halves it and
+            relaunches (resuming from the last checkpoint) until it fits.
+            ``global_batch_size`` is never changed. The value it settled on is
+            ``inferred_batch_size_result`` on the run. With dynamic batching
+            off, ``extra_config={"micro_batch_size": "auto"}`` does the same
+            for the fixed micro batch.
 
         rm_type:
             Built-in reward function name. Leave unset for a custom reward.
@@ -523,7 +532,7 @@ class SlimeRecipe(BaseTrainRecipe):
 
     # ── Dynamic batching ────────────────────────────────────────────────────
     use_dynamic_batch_size: bool = True
-    max_tokens_per_gpu: int = 9216
+    max_tokens_per_gpu: MicroBatchSize = 9216
 
     # ── Reward model ─────────────────────────────────────────────────────────
     rm_type: str | None = None
