@@ -151,6 +151,10 @@
       "link": "/reference/cli/run"
     },
     {
+      "label": "modal-dojo autoconfig",
+      "link": "/reference/cli/autoconfig"
+    },
+    {
       "label": "modal-dojo skills",
       "link": "/reference/cli/skills"
     },

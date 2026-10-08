@@ -19,7 +19,10 @@ from modal_dojo._autoconfig import (
     plan_sweep,
     sweep_group_id,
 )
-from modal_dojo.common.catalogue import AUTOCONFIG_ENTRY_TAG, CATALOGUE
+from modal_dojo.common.catalogue import (
+    AUTOCONFIG_ENTRY_TAG,
+    CATALOGUE,
+)
 from modal_dojo.common.run_summary import RunSummary
 
 
@@ -100,11 +103,72 @@ def test_sweep_requests_are_validated(api) -> None:
         client.post("/api/autoconfig/sweeps", json={"entries": []}).status_code == 422
     )
     unknown = client.post("/api/autoconfig/sweeps", json={"entries": ["Nope-1B"]})
-    assert unknown.status_code == 422 and "unknown catalogue entry" in unknown.text
+    assert unknown.status_code == 422 and "unknown model" in unknown.text
     extra = client.post(
         "/api/autoconfig/sweeps", json={"entries": ["Kimi-K3"], "bogus": 1}
     )
     assert extra.status_code == 422
+    sft = client.post("/api/autoconfig/sweeps", json={"entries": ["Qwen3.5-4B-SFT"]})
+    assert sft.status_code == 422 and "SFT" in sft.text
+    bad_path = client.post(
+        "/api/autoconfig/sweeps",
+        json={"entries": ["Qwen3.8-27B"], "grid": {"recipe.learning_rate": [1e-6]}},
+    )
+    assert bad_path.status_code == 422 and "recipe.learning_rate" in bad_path.text
+    assert ops.submitted == []
+
+
+def test_sweeps_that_exceed_gpu_memory_are_rejected_unless_allowed(api) -> None:
+    client, ops = api
+    body = {
+        "entries": ["Qwen3.8-27B"],
+        "context_length": 65536,
+        "overrides": {"recipe.gpu_type": "H200"},
+    }
+    oom = client.post("/api/autoconfig/sweeps", json=body)
+    assert oom.status_code == 422 and "exceed GPU memory" in oom.text
+    assert ops.submitted == []
+    allowed = client.post("/api/autoconfig/sweeps", json={**body, "allow_oom": True})
+    assert allowed.status_code == 202
+    assert ops.submitted[0][0].context_length == 65536
+
+
+def test_models_knobs_and_plans_are_served(api) -> None:
+    client, ops = api
+    models = client.get("/api/autoconfig/models").json()
+    names = [m["name"] for m in models]
+    assert "Qwen3.8-27B" in names and "Qwen3.6-27B" in names
+    assert "Qwen3.5-4B-SFT" not in names
+    assert [m["name"] for m in models if m["in_catalogue"]] == names[: len(CATALOGUE)]
+
+    knobs = client.get("/api/autoconfig/models/qwen3.8-27b/knobs").json()
+    by_path = {k["path"]: k for k in knobs["knobs"]}
+    assert by_path["recipe.lr"] == {
+        "path": "recipe.lr",
+        "type": "float",
+        "default": 1e-6,
+        "doc": "Learning rate.",
+        "highlight": True,
+    }
+    assert "recipe.rollout_function" not in by_path
+    assert client.get("/api/autoconfig/models/Nope-1B/knobs").status_code == 404
+
+    plan = client.post(
+        "/api/autoconfig/plans",
+        json={
+            "entries": ["Qwen3.8-27B"],
+            "context_length": 32768,
+            "grid": {"recipe.lr": [1e-6, 5e-6]},
+        },
+    )
+    assert plan.status_code == 200
+    variants = plan.json()["variants"]
+    assert [v["overrides"] for v in variants] == [
+        {"recipe.lr": 1e-6},
+        {"recipe.lr": 5e-6},
+    ]
+    assert all(v["context_length"] == 32768 for v in variants)
+    assert all(v["memory"]["fits"] for v in variants) and plan.json()["fits"]
     assert ops.submitted == []
 
 

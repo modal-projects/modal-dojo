@@ -13,6 +13,7 @@ import {
   rewardDigits,
   sortRows,
   gridFromFlags,
+  overridesFromFlags,
   sweepRunCount,
 } from './catalogue.js';
 
@@ -157,4 +158,15 @@ test('sweep flags become grid axes with JSON values where they parse', () => {
 test('a sweep launches one run per entry per grid point', () => {
   assert.equal(sweepRunCount(['a', 'b'], {}), 2);
   assert.equal(sweepRunCount(['a'], { x: [1, 2], y: [3, 4, 5] }), 6);
+});
+
+test('overridesFromFlags takes exactly one value per path', () => {
+  assert.deepEqual(
+    overridesFromFlags([
+      { path: 'recipe.gpu_type', values: 'H200' },
+      { path: 'recipe.context_parallel_size', values: '2' },
+    ]),
+    { 'recipe.gpu_type': 'H200', 'recipe.context_parallel_size': 2 },
+  );
+  assert.throws(() => overridesFromFlags([{ path: 'recipe.lr', values: '1e-6, 5e-6' }]), /one value/);
 });

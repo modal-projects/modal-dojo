@@ -6,6 +6,7 @@ import sys
 
 import click
 
+from .autoconfig import autoconfig_group
 from .builtin import (
     cleanup_command,
     migrate_command,
@@ -31,6 +32,7 @@ def entrypoint_cli() -> None:
 
 def _register_commands() -> None:
     entrypoint_cli.add_command(run_group, panel="Training runs")
+    entrypoint_cli.add_command(autoconfig_group, panel="Training runs")
     entrypoint_cli.add_command(skills_group, panel="Skills")
     entrypoint_cli.add_command(setup_command, panel="Configuration")
     entrypoint_cli.add_command(migrate_command, panel="Configuration")

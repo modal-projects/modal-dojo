@@ -141,6 +141,50 @@ class DashboardClient:
                 exit_code=ExitCode.BACKEND,
             ) from exc
 
+    def post_json(
+        self,
+        path: str,
+        body: Any,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> Any:
+        """POST a JSON body to a dashboard-relative path and decode the response."""
+        parsed_path = urlsplit(path)
+        if parsed_path.scheme or parsed_path.netloc:
+            raise CLIError(
+                "Dashboard request path must be relative.",
+                error="invalid_dashboard_path",
+            )
+        try:
+            response = self._client.post(
+                path.lstrip("/"),
+                json=body,
+                timeout=DEFAULT_TIMEOUT_SECONDS if timeout is None else timeout,
+            )
+        except httpx.TimeoutException as exc:
+            raise CLIError(
+                "Dashboard request timed out.",
+                error="dashboard_timeout",
+                exit_code=ExitCode.BACKEND,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise CLIError(
+                "Could not connect to the dashboard.",
+                error="dashboard_unreachable",
+                exit_code=ExitCode.BACKEND,
+                hint="modal-dojo setup",
+            ) from exc
+
+        self._raise_for_status(response)
+        try:
+            return response.json()
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise CLIError(
+                "Dashboard returned malformed JSON.",
+                error="invalid_dashboard_response",
+                exit_code=ExitCode.BACKEND,
+            ) from exc
+
     def iter_event_stream(
         self,
         path: str,

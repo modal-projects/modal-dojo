@@ -31,6 +31,9 @@ REWARD_KEY = "rollout/raw_reward"
 AUTOCONFIG_GROUP_PREFIX = "autoconfig"
 # Group-tag override naming the catalogue entry a sweep variant benchmarks.
 AUTOCONFIG_ENTRY_TAG = "autoconfig.entry"
+# Group-tag override naming the recipe class a sweep variant trains with.
+AUTOCONFIG_RECIPE_TAG = "autoconfig.recipe"
+AUTOCONFIG_TAGS = frozenset({AUTOCONFIG_ENTRY_TAG, AUTOCONFIG_RECIPE_TAG})
 HF_URL = "https://huggingface.co"
 DOCS_URL = "https://dojo.modal.dev"
 
@@ -242,6 +245,34 @@ def sweep_entry_name(summary: RunSummary) -> str | None:
     return str(name) if name else None
 
 
+def sweep_entries(summaries: Iterable[RunSummary]) -> list[CatalogueEntry]:
+    """Entries for registry models Autoconfig swept outside ``CATALOGUE``.
+
+    A sweep records the recipe class it trained with; a row needs it to fill
+    defaults the run config omits. Unknown models and recipes are skipped.
+    """
+    known = {entry.name for entry in CATALOGUE}
+    found: dict[str, CatalogueEntry] = {}
+    for summary in summaries:
+        name = sweep_entry_name(summary)
+        if name is None or name in known or name in found:
+            continue
+        recipe = str(
+            (summary.group_tags.overrides if summary.group_tags else {}).get(
+                AUTOCONFIG_RECIPE_TAG
+            )
+            or ""
+        )
+        if not recipe or not hasattr(modal_dojo, recipe):
+            continue
+        try:
+            _ValidationConfig.find(name)
+        except ValueError:
+            continue
+        found[name] = CatalogueEntry(name, recipe)
+    return sorted(found.values(), key=lambda entry: entry.name)
+
+
 def entry_run_ids(entry: CatalogueEntry, summaries: Iterable[RunSummary]) -> list[str]:
     """Pinned runs first, then the entry's sweep runs, newest first."""
     sweep_runs = sorted(
@@ -288,15 +319,14 @@ def build_catalogue(
 ) -> dict[str, Any]:
     """The Autoconfig page's payload: every entry, with the runs it has so far."""
     summaries = list(summaries)
+    entries = [*CATALOGUE, *sweep_entries(summaries)]
     return {
         "steps": STEPS,
         "priced_at": priced_at,
-        "entries": [
-            {"name": entry.name, "recipe": entry.recipe} for entry in CATALOGUE
-        ],
+        "entries": [{"name": entry.name, "recipe": entry.recipe} for entry in entries],
         "rows": [
             row
-            for entry in CATALOGUE
+            for entry in entries
             for row in entry_rows(
                 entry, entry_run_ids(entry, summaries), rates, dashboard
             )

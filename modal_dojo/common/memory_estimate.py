@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import warnings
+from dataclasses import dataclass
 
 from huggingface_hub import hf_hub_download
 from huggingface_hub.errors import EntryNotFoundError, HFValidationError, HfHubHTTPError
@@ -181,17 +182,57 @@ def _peak_gib(
     return states + acts + logits + sglang, raised
 
 
-def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
+@dataclass(frozen=True)
+class MemoryEstimate:
+    """Estimated peak training memory per GPU against the GPU's capacity."""
+
+    peak_gib: float
+    gpu_gib: float
+    # Settings that drive the estimate up, with their current values.
+    drivers: dict[str, object]
+
+    @property
+    def fits(self) -> bool:
+        return self.peak_gib <= self.gpu_gib
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "peak_gib": round(self.peak_gib, 1),
+            "gpu_gib": self.gpu_gib,
+            "fits": self.fits,
+            "drivers": dict(self.drivers),
+        }
+
+
+def estimate_gpu_memory(
+    recipe: BaseTrainRecipe, model: ModelConfig, *, fetch_architecture: bool = True
+) -> MemoryEstimate | None:
+    """Peak per-GPU memory the recipe needs for ``model``, when it can be modelled.
+
+    ``None`` for non-Megatron backends, unknown GPU types, and models whose
+    architecture is unknown (``fetch_architecture`` allows a Hugging Face lookup).
+    """
     if hasattr(recipe, "train_backend") and recipe.train_backend != "megatron":
-        return
+        return None
     gpu_gib = gpu_memory_gib(recipe.gpu_type)
     if gpu_gib is None:
-        return
-    arch = model.architecture or _arch_from_hf(model.model_name)
+        return None
+    arch = model.architecture
+    if arch is None and fetch_architecture:
+        arch = _arch_from_hf(model.model_name)
     if arch is None:
-        return
+        return None
     knobs = recipe._field_values() | recipe._escape_hatch_values()
     peak, raised = _peak_gib(arch, knobs, gpu_gib)
+    return MemoryEstimate(peak_gib=peak, gpu_gib=gpu_gib, drivers=raised)
+
+
+def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
+    estimate = estimate_gpu_memory(recipe, model)
+    if estimate is None:
+        return
+    gpu_gib, peak, raised = estimate.gpu_gib, estimate.peak_gib, estimate.drivers
+    knobs = recipe._field_values() | recipe._escape_hatch_values()
     multi_turn_hooks = ["custom_generate_function", "custom_generate_function_path"]
     if knobs.get("loss_type") != "sft_loss":
         multi_turn_hooks += ["rollout_function", "rollout_function_path"]
