@@ -13,6 +13,7 @@ from modal_dojo.common.metric_mirror import DashboardMetricConfig
 from modal_dojo.common.metrics import MetricConfig
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.train_recipes.base import (
+    MicroBatchSize,
     # Re-exported for backwards compatibility (e.g. frameworks/miles/launcher.py
     # imports the volume paths from this module).
     CHECKPOINTS_PATH as CHECKPOINTS_PATH,
@@ -624,8 +625,8 @@ class MilesRecipe(BaseTrainRecipe):
 
     # ── Dynamic batching ────────────────────────────────────────────────────
     use_dynamic_batch_size: bool = True
-    micro_batch_size: int | Literal["auto"] | None = None
-    max_tokens_per_gpu: int | Literal["auto"] = 9216
+    micro_batch_size: MicroBatchSize | None = None
+    max_tokens_per_gpu: MicroBatchSize = 9216
 
     # ── Reward model ────────────────────────────────────────────────────────
     rm_type: str | None = None

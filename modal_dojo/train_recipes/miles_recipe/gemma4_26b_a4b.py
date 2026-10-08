@@ -10,6 +10,7 @@ from pydantic_core import ArgsKwargs
 
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.patches import encode_patch
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 if TYPE_CHECKING:
@@ -71,8 +72,8 @@ class Gemma4_26B_A4B_Recipe(MilesRecipe):
     moe_token_dispatcher_type: str = "alltoall"
 
     use_dynamic_batch_size: bool = False
-    micro_batch_size: int = 1
-    max_tokens_per_gpu: int = 1024
+    micro_batch_size: MicroBatchSize = 1
+    max_tokens_per_gpu: MicroBatchSize = 1024
 
     balance_data: bool = True
     rollout_top_p: float | None = None

@@ -8,7 +8,7 @@ import tempfile
 import warnings
 from dataclasses import dataclass, field
 
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 import pytest
 import yaml
 
@@ -133,6 +133,28 @@ def test_resolve_knob_fixed_micro_batch_uses_field_or_hatch():
     assert not auto_batch_size_enabled(slime)
     with pytest.raises(DojoConfigError, match='needs micro_batch_size="auto"'):
         resolve_batch_size_knob(slime)
+
+
+def _all_recipe_classes():
+    import modal_dojo.train_recipes.miles_recipe  # noqa: F401  (registers subclasses)
+    import modal_dojo.train_recipes.slime_recipe  # noqa: F401
+
+    seen, stack = [], [SlimeRecipe, MilesRecipe]
+    while stack:
+        cls = stack.pop()
+        seen.append(cls)
+        stack.extend(cls.__subclasses__())
+    return seen
+
+
+@pytest.mark.parametrize("cls", _all_recipe_classes(), ids=lambda c: c.__name__)
+def test_every_recipe_accepts_auto_on_its_micro_batch_knobs(cls):
+    import typing
+
+    hints = typing.get_type_hints(cls)
+    for name in ("max_tokens_per_gpu", "micro_batch_size"):
+        if name in hints:
+            assert TypeAdapter(hints[name]).validate_python("auto") == "auto", name
 
 
 def test_recipes_accept_auto_literal_only_for_known_knobs():

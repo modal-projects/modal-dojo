@@ -9,6 +9,7 @@ from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models import Kimi_K3, ModelConfig
 from modal_dojo.common.patches import encode_patch
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 _PATCH_DIR = (
@@ -145,7 +146,7 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
     recompute_granularity: str | None = "full"
     recompute_method: str | None = "uniform"
     recompute_num_layers: int | None = 1
-    max_tokens_per_gpu: int = 8192
+    max_tokens_per_gpu: MicroBatchSize = 8192
     log_probs_chunk_size: int = 512
     distributed_timeout_minutes: int = 60
 

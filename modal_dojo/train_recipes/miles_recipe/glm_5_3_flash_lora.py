@@ -10,6 +10,7 @@ from pydantic.dataclasses import dataclass
 from modal_dojo.common.models.base import ModelConfig
 from modal_dojo.common.models.glm_5_3_flash import GLM_5_3_Flash_LoRA
 from modal_dojo.common.patches import encode_patch
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 _PATCH_DIR = (
@@ -113,9 +114,9 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     use_rollout_routing_replay: bool = True
     lr: float = 1e-5
     calculate_per_token_loss: bool = True
-    micro_batch_size: int = 1
+    micro_batch_size: MicroBatchSize = 1
     seq_length: int = 32768
-    max_tokens_per_gpu: int = 32768
+    max_tokens_per_gpu: MicroBatchSize = 32768
     recompute_granularity: str = "full"
     recompute_method: str = "uniform"
     recompute_num_layers: int = 1

@@ -3,6 +3,7 @@ from dataclasses import field
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.slime_recipe.recipe import SlimeRecipe
 
 
@@ -37,7 +38,7 @@ class GLM_4_7_Recipe(SlimeRecipe):
 
     no_save_optim: bool = True
 
-    max_tokens_per_gpu: int = 8192
+    max_tokens_per_gpu: MicroBatchSize = 8192
 
     pipeline_model_parallel_size: int = 2
     context_parallel_size: int = 1

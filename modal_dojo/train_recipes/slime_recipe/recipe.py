@@ -17,6 +17,7 @@ from modal_dojo.common.models import (
     ModelConfig,
 )
 from modal_dojo.train_recipes.base import (
+    MicroBatchSize,
     # Re-exported for backwards compatibility (e.g. frameworks/slime/launcher.py
     # imports the volume paths from this module).
     CHECKPOINTS_PATH as CHECKPOINTS_PATH,
@@ -531,7 +532,7 @@ class SlimeRecipe(BaseTrainRecipe):
 
     # ── Dynamic batching ────────────────────────────────────────────────────
     use_dynamic_batch_size: bool = True
-    max_tokens_per_gpu: int | Literal["auto"] = 9216
+    max_tokens_per_gpu: MicroBatchSize = 9216
 
     # ── Reward model ─────────────────────────────────────────────────────────
     rm_type: str | None = None
