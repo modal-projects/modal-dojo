@@ -18,24 +18,33 @@
 # [Modal Sandbox](https://modal.com/docs/guide/sandboxes) and
 # [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B) compares each against the
 # reference image pool.
+#
+# ![Reward curve](https://modal-cdn.com/cdnbot/flower-reward1maaxmni_1df0871b.webp)
+#
+# <video controls autoplay muted loop style="display: block; margin: 0 auto;">
+# <source src="https://modal-cdn.com/example-paint_flowers.mp4" type="video/mp4">
+# </video>
 
 import asyncio
+import base64
 import itertools
 import random
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import helpers
-from modal_training_gym import (
+from modal_dojo import (
     DatasetConfig,
     Endpoint,
     Qwen3_5_4B,
     Qwen3_5_4B_Recipe,
     Qwen3_6_27B,
+    Sandbox,
     TrainConfig,
 )
-from modal_training_gym.common.sample_extraction import IMAGE_SAMPLE_LIMIT_ENV
+from modal_dojo.common.sample_extraction import IMAGE_SAMPLE_LIMIT_ENV
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import helpers
 
 base_model = Qwen3_5_4B()
 
@@ -148,6 +157,7 @@ class FlowerPromptDataset(DatasetConfig):
 
 N_TRAIN = 224
 N_EVAL = 8
+
 combos = list(itertools.product(SPECIES, PALETTES))
 random.Random(7).shuffle(combos)
 train_dataset = FlowerPromptDataset(build_prompts(combos, N_TRAIN))
@@ -161,31 +171,67 @@ eval_dataset = FlowerPromptDataset(build_prompts(combos, N_EVAL))
 # to do pairwise comparisons. We serve the judge as an
 # [Endpoint](https://modal.com/docs/guide/endpoints).
 
-judge = Endpoint.launch(
-    Qwen3_6_27B(),
-    unauthenticated=True,
-    recreate_if_existing=True,
-)
-judge.wait_until_ready(timeout=30 * 60)
-helpers.launch_hpsv3()
+def deploy_judge():
+    print("deploying judges...")
+    judge = Endpoint.launch(
+        Qwen3_6_27B(),
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="paint-flowers",
+    )
+    helpers.launch_hpsv3()
+    judge.wait_until_ready(timeout=30 * 60)
+    return judge
 
 
-async def flower_rm(args, sample, **kwargs) -> float | None:
-    code = helpers.extract_sketch(sample.response, base_model.parse_response)
-    if code is None:
-        reward, meta, png = 0.0, {"gate": "no valid sketch"}, None
-    else:
-        png, render_meta = await asyncio.to_thread(helpers.render_in_sandbox, code)
-        reward, meta, png = await asyncio.to_thread(
-            helpers.score_png, png, code, judge, render_meta
-        )
-    metadata = {**(getattr(sample, "metadata", None) or {}), **meta}
-    if png is not None:
-        metadata["image"] = png
-    sample.metadata = metadata
-    if reward is None:
-        sample.remove_sample = True
-    return reward
+def render_in_sandbox(code: str) -> tuple[bytes | None, dict]:
+    try:
+        with Sandbox(
+            image=helpers.renderer_image(),
+            workdir="/render",
+            timeout=300,
+            cpu=1.0,
+            memory=2048,
+            block_network=True,
+            app_name="training-gym-flower-render",
+        ) as sandbox:
+            sandbox.write("/render/render.js", helpers.RENDER_JS)
+            sandbox.write("/render/sketch.js", code)
+            result = sandbox.run(
+                "node", "/render/render.js", "/render/sketch.js", timeout=180
+            )
+        out, err = result.stdout, result.stderr
+        if "PNGB64:" in out:
+            png = base64.b64decode(out.split("PNGB64:", 1)[1].strip())
+            return png, {"render": "ok"}
+        kind = "fail" if "SKETCH_ERROR:" in err else "unavailable"
+        return None, {"render": kind, "stderr": err[-400:]}
+    except Exception as e:
+        return None, {
+            "render": "unavailable",
+            "stderr": f"{type(e).__name__}: {e}"[-400:],
+        }
+
+
+def make_flower_rm(judge):
+    async def flower_rm(args, sample, **kwargs) -> float | None:
+        code = helpers.extract_sketch(sample.response, base_model.parse_response)
+        if code is None:
+            reward, meta, png = 0.0, {"gate": "no valid sketch"}, None
+        else:
+            png, render_meta = await asyncio.to_thread(render_in_sandbox, code)
+            reward, meta, png = await asyncio.to_thread(
+                helpers.score_png, png, code, judge, render_meta
+            )
+        metadata = {**(getattr(sample, "metadata", None) or {}), **meta}
+        if png is not None:
+            metadata["image"] = png
+        sample.metadata = metadata
+        if reward is None:
+            sample.remove_sample = True
+        return reward
+
+    return flower_rm
 
 
 # ## Training
@@ -195,28 +241,34 @@ async def flower_rm(args, sample, **kwargs) -> float | None:
 ROLLOUT_BATCH_SIZE = 8
 N_SAMPLES_PER_PROMPT = 8
 
-config = TrainConfig(
-    model=base_model,
-    dataset=train_dataset,
-    eval_dataset=eval_dataset,
-    recipe=Qwen3_5_4B_Recipe(
-        custom_rm_function=flower_rm,
-        custom_reward_post_process_function=helpers.skip_infra_rewards,
-        num_rollout=100,
-        rollout_batch_size=ROLLOUT_BATCH_SIZE,
-        global_batch_size=ROLLOUT_BATCH_SIZE,
-        n_samples_per_prompt=N_SAMPLES_PER_PROMPT,
-        save_interval=50,
-        apply_chat_template_kwargs='{"enable_thinking": false}',
-        image_overlay=lambda image: helpers.overlay_flower_image(image).env(
-            {
-                IMAGE_SAMPLE_LIMIT_ENV: str(
-                    ROLLOUT_BATCH_SIZE * N_SAMPLES_PER_PROMPT
-                )
-            }
-        ),
-    ),
-)
 
-run = config.launch()
-print(f"run id: {run.training_run_id}")
+def build_config(judge):
+    return TrainConfig(
+        model=base_model,
+        dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        recipe=Qwen3_5_4B_Recipe(
+            custom_rm_function=make_flower_rm(judge),
+            custom_reward_post_process_function=helpers.skip_infra_rewards,
+            num_rollout=100,
+            rollout_batch_size=ROLLOUT_BATCH_SIZE,
+            global_batch_size=ROLLOUT_BATCH_SIZE,
+            n_samples_per_prompt=N_SAMPLES_PER_PROMPT,
+            save_interval=50,
+            apply_chat_template_kwargs='{"enable_thinking": false}',
+            image_overlay=lambda image: helpers.overlay_flower_image(image).env(
+                {
+                    IMAGE_SAMPLE_LIMIT_ENV: str(
+                        ROLLOUT_BATCH_SIZE * N_SAMPLES_PER_PROMPT
+                    )
+                }
+            ),
+        ),
+    )
+
+
+if __name__ == "__main__":
+    judge = deploy_judge()
+    config = build_config(judge)
+    run = config.launch()
+    print(f"run id: {run.training_run_id}")

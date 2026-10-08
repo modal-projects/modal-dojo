@@ -15,6 +15,10 @@
     groupCounts,
     activeGroups,
     allGroupsActive,
+    trainingTypes,
+    trainingTypeCounts,
+    activeTrainingTypes,
+    allTrainingTypesActive,
     search = $bindable(),
     groupBy = $bindable(),
     onToggleRecipe,
@@ -26,6 +30,9 @@
     onToggleGroup,
     onSelectAllGroups,
     onClearGroups,
+    onToggleTrainingType,
+    onSelectAllTrainingTypes,
+    onClearTrainingTypes,
   } = $props();
 
   let openMenu = $state(null);
@@ -48,8 +55,13 @@
 
 <svelte:window onclick={() => (openMenu = null)} />
 
-<nav class="p-0 flex items-center gap-[0.5rem] relative flex-wrap max-[900px]:[align-items:stretch]">
-  <label class="inline-flex items-center gap-[8px] [border:1px_solid_var(--color-c-gray-10,#2f2f2f)] rounded-[6px] [background:transparent] w-[260px] p-[6px_8px] max-[900px]:w-full" aria-label="Search training runs by name">
+<nav
+  class="p-0 flex items-center gap-[0.5rem] relative flex-wrap max-[900px]:[align-items:stretch]"
+>
+  <label
+    class="inline-flex items-center gap-[8px] [border:1px_solid_var(--color-c-gray-10,#2f2f2f)] rounded-[6px] [background:transparent] w-[260px] p-[6px_8px] max-[900px]:w-full"
+    aria-label="Search training runs by name"
+  >
     <span class="search-icon">
       <Search size={13} />
     </span>
@@ -195,6 +207,55 @@
             </span>
             <span class="item-label">{group}</span>
             <span class="item-count">{groupCounts[group] || 0}</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </div>
+
+  <div class="filterbar-menu-wrap">
+    <button
+      class="filter-button ghost-hover"
+      class:filterbar-open={openMenu === "training_type"}
+      onclick={(event) => {
+        event.stopPropagation();
+        toggleMenu("training_type");
+      }}
+    >
+      <span class="button-icon">
+        <Filter size={12} />
+      </span>
+      <span>Type</span>
+      <span class="chevron" class:rotated={openMenu === "training_type"}>
+        <ChevronDown size={12} />
+      </span>
+    </button>
+    {#if openMenu === "training_type"}
+      <div class="menu">
+        <FilterBulkActions
+          allSelected={allTrainingTypesActive}
+          noneSelected={activeTrainingTypes.size === 0}
+          onSelectAll={onSelectAllTrainingTypes}
+          onDeselectAll={onClearTrainingTypes}
+        />
+        {#each trainingTypes as value (value)}
+          <button
+            class="menu-item"
+            onclick={(event) => {
+              event.stopPropagation();
+              onToggleTrainingType(value);
+            }}
+          >
+            <span
+              class="checkmark"
+              class:checked={activeTrainingTypes.has(value)}
+            >
+              {#if activeTrainingTypes.has(value)}
+                <Check size={11} />
+              {/if}
+            </span>
+            <span class="item-label uppercase">{value}</span>
+            <span class="item-count">{trainingTypeCounts[value] || 0}</span>
           </button>
         {/each}
       </div>

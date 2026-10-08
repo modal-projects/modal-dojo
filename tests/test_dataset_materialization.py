@@ -1,14 +1,15 @@
 import json
+import pickle
 
 import pytest
 
-from modal_training_gym.common.dataset import DatasetConfig, HarborDataset
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.launcher_helpers import (
-    run_prepare_dataset,
+from modal_dojo.common.dataset import DatasetConfig, HarborDataset, _SftDataset
+from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.common.launcher_helpers import (
     write_dataset_if_needed,
+    write_datasets,
 )
-from modal_training_gym.train_recipes.base import BaseTrainRecipe
+from modal_dojo.train_recipes.base import BaseTrainRecipe
 
 
 class RowsDataset(DatasetConfig):
@@ -32,18 +33,6 @@ class RowsDataset(DatasetConfig):
     def write(self, path: str) -> None:
         self.write_count += 1
         super().write(path)
-
-
-class FakeVolume:
-    def __init__(self) -> None:
-        self.reload_count = 0
-        self.commit_count = 0
-
-    def reload(self) -> None:
-        self.reload_count += 1
-
-    def commit(self) -> None:
-        self.commit_count += 1
 
 
 def test_resolve_data_paths_uses_cache_key():
@@ -98,23 +87,18 @@ def test_write_caller_creates_parent_directory(tmp_path):
     assert write_dataset_if_needed(dataset, path)
 
 
-def test_run_prepare_dataset_writes_train_and_eval(tmp_path):
+def test_write_datasets_writes_train_and_eval(tmp_path):
     train_dataset = RowsDataset("train", "training")
     eval_dataset = RowsDataset("eval", "evaluation")
-    volume = FakeVolume()
 
-    run_prepare_dataset(
+    assert write_datasets(
         train_dataset,
         eval_dataset,
-        volume,
         str(tmp_path / "train.jsonl"),
         str(tmp_path / "eval.jsonl"),
     )
-
     assert train_dataset.write_count == 1
     assert eval_dataset.write_count == 1
-    assert volume.reload_count == 1
-    assert volume.commit_count == 1
 
 
 def test_eval_dataset_fields_must_match_training_dataset():
@@ -130,15 +114,15 @@ def test_eval_dataset_fields_must_match_training_dataset():
         def apply_chat_template(self) -> bool:
             return False
 
-    with pytest.raises(TrainingGymConfigError, match="same input_key"):
+    with pytest.raises(DojoConfigError, match="same input_key"):
         BaseTrainRecipe._validate_datasets(
             RowsDataset("train"), OtherInputDataset("eval")
         )
-    with pytest.raises(TrainingGymConfigError, match="same label_key"):
+    with pytest.raises(DojoConfigError, match="same label_key"):
         BaseTrainRecipe._validate_datasets(
             RowsDataset("train"), OtherLabelDataset("eval")
         )
-    with pytest.raises(TrainingGymConfigError, match="same apply_chat_template"):
+    with pytest.raises(DojoConfigError, match="same apply_chat_template"):
         BaseTrainRecipe._validate_datasets(
             RowsDataset("train"), OtherChatTemplateDataset("eval")
         )
@@ -183,3 +167,67 @@ def test_harbor_always_download_disables_materialization_reuse():
     assert BaseTrainRecipe._resolve_data_paths(
         dataset
     ) != BaseTrainRecipe._resolve_data_paths(dataset)
+
+
+class PairDataset(DatasetConfig):
+    def __init__(self, row: dict) -> None:
+        self.row = row
+
+    def input_key(self) -> str:
+        return "messages"
+
+    def label_key(self) -> str:
+        return "label"
+
+    def rows(self):
+        yield self.row
+
+
+USER = {"role": "user", "content": "hi"}
+ASSISTANT = {"role": "assistant", "content": "hello"}
+
+
+@pytest.mark.parametrize(
+    ("messages", "expected"),
+    [
+        ("hi", [USER, ASSISTANT]),
+        ([USER], [USER, ASSISTANT]),
+        ([ASSISTANT], [ASSISTANT]),
+    ],
+)
+def test_sft_dataset_formats_rows(messages, expected):
+    dataset = pickle.loads(
+        pickle.dumps(_SftDataset(PairDataset({"messages": messages, "label": "hello"})))
+    )
+    assert [row["messages"] for row in dataset.rows()] == [expected]
+
+
+@pytest.mark.parametrize("row", [{"messages": "hi", "label": ""}, {"label": "hello"}])
+def test_sft_dataset_rejects_incomplete_rows(row):
+    with pytest.raises(DojoConfigError, match="SFT row"):
+        list(_SftDataset(PairDataset(row)).rows())
+
+
+def test_sft_rejects_eval_dataset():
+    with pytest.raises(DojoConfigError, match="eval_dataset"):
+        BaseTrainRecipe._validate_datasets(
+            RowsDataset("a"), RowsDataset("b"), loss_type="sft_loss"
+        )
+
+
+def test_failed_write_cleanup_preserves_committed_destination(tmp_path):
+    path = str(tmp_path / "train.jsonl")
+
+    class RaceDataset(RowsDataset):
+        def write(self, dest: str) -> None:
+            self.write_count += 1
+            RowsDataset("peer", "peer").write(path)
+            raise DojoConfigError("boom")
+
+    with pytest.raises(DojoConfigError, match="boom"):
+        write_dataset_if_needed(RaceDataset("train"), path)
+    assert json.loads((tmp_path / "train.jsonl").read_text()) == {
+        "prompt": "peer",
+        "label": "peer",
+    }
+    assert not any(p.name.endswith(".tmp.jsonl") for p in tmp_path.iterdir())

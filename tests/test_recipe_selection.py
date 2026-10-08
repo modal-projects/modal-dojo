@@ -3,32 +3,44 @@ import dataclasses
 import importlib
 import inspect
 import pkgutil
+from contextlib import nullcontext
 from typing import Any
 
 import pytest
 
-from modal_training_gym.common.dataset import HuggingFaceDataset
-from modal_training_gym.common.launcher_utils import (
+from modal_dojo.common.dataset import HuggingFaceDataset
+from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.common.launcher_utils import (
     get_checkpoint_conversion_policy,
     prepare_launch_config,
 )
-from modal_training_gym.common.models import Qwen3_4B
-from modal_training_gym.common.models.validation import Framework, _ValidationConfig
-from modal_training_gym.common.train import TrainConfig
-from modal_training_gym.train_recipes.gpu_allocation import (
+from modal_dojo.common.models import Qwen3_4B
+from modal_dojo.common.models.validation import Framework, _ValidationConfig
+from modal_dojo.common.train import TrainConfig
+from modal_dojo.train_recipes.base import SAVE_AT_EPOCH_ENDS_ONLY
+from modal_dojo.train_recipes.gpu_allocation import (
     validate_megatron_actor_parallelism,
 )
-from modal_training_gym.train_recipes.miles_recipe import MilesRecipe
-from modal_training_gym.train_recipes.miles_recipe.gemma4_26b_a4b import (
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+from modal_dojo.train_recipes.miles_recipe.gemma4_26b_a4b import (
     Gemma4_26B_A4B_Recipe,
 )
-from modal_training_gym.train_recipes.miles_recipe.inkling import Inkling_Small_Recipe
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
-from modal_training_gym.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
+from modal_dojo.train_recipes.miles_recipe.inkling import Inkling_Small_Recipe
+from modal_dojo.train_recipes.miles_recipe.moonlight_16b_a3b import (
+    Moonlight_16B_A3B_Recipe,
+)
+from modal_dojo.train_recipes.miles_recipe.qwen3_5_4b import (
+    Qwen3_5_4B_Miles_Recipe,
+)
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
+from modal_dojo.train_recipes.slime_recipe.qwen3_5_0_8b import (
+    Qwen3_5_0_8B_Recipe,
+)
 
 _RECIPE_PACKAGES = (
-    "modal_training_gym.train_recipes.slime_recipe",
-    "modal_training_gym.train_recipes.miles_recipe",
+    "modal_dojo.train_recipes.slime_recipe",
+    "modal_dojo.train_recipes.miles_recipe",
 )
 
 _BASE_RECIPE = {
@@ -221,3 +233,124 @@ def test_prepare_recipe_does_not_mutate_stored_launch_callables() -> None:
     assert recipe.custom_rm_function is custom_rm_function
     assert second.image_overlay is image_overlay
     assert second.custom_rm_function is custom_rm_function
+
+
+@pytest.mark.parametrize(
+    ("recipe_cls", "framework"), [(SlimeRecipe, "slime"), (MilesRecipe, "miles")]
+)
+def test_sft_loss_emits_native_sft_flags(recipe_cls, framework) -> None:
+    recipe = recipe_cls(global_batch_size=8, n_samples_per_prompt=4, num_epoch=3)
+    assert "--loss-type" not in recipe.cli_args(dataset=_dataset())
+    recipe.loss_type = "sft_loss"
+    args = recipe.cli_args(dataset=_dataset())
+    values = dict(zip(args, args[1:]))
+    assert values["--loss-type"] == "sft_loss"
+    assert values["--rollout-function-path"] == (
+        f"{framework}.rollout.sft_rollout.generate_rollout"
+    )
+    assert values["--n-samples-per-prompt"] == "1"
+    assert values["--rollout-batch-size"] == "8"
+    assert "--loss-mask-type" not in args
+    assert {"--debug-train-only", "--disable-compute-advantages-and-returns"} <= set(
+        args
+    )
+    assert not {"--apply-chat-template", "--num-rollout", "--colocate"} & set(args)
+    assert values["--save-interval"] == str(SAVE_AT_EPOCH_ENDS_ONLY)
+    assert recipe.gpu_allocation.rollout_gpus == 0
+    assert recipe.train_async is (recipe_cls is MilesRecipe)
+
+
+@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+def test_extra_config_num_epoch_skips_rollout_save_interval(recipe_cls) -> None:
+    recipe = recipe_cls(
+        loss_type="sft_loss",
+        num_rollout=1,
+        extra_config={"num_epoch": 3},
+    )
+    args = recipe.cli_args(dataset=_dataset())
+    assert args[args.index("--save-interval") + 1] == str(SAVE_AT_EPOCH_ENDS_ONLY)
+    assert "--num-rollout" not in args
+
+
+def test_sft_qwen35_emits_loss_mask_type_qwen3_5() -> None:
+    assert "--loss-mask-type" not in Qwen3_5_0_8B_Recipe().cli_args(dataset=_dataset())
+    sft_args = Qwen3_5_0_8B_Recipe(loss_type="sft_loss").cli_args(dataset=_dataset())
+    assert dict(zip(sft_args, sft_args[1:]))["--loss-mask-type"] == "qwen3_5"
+
+
+def test_sft_none_global_batch_size_uses_rollout_batch_size() -> None:
+    recipe = Moonlight_16B_A3B_Recipe(loss_type="sft_loss")
+    assert recipe.global_batch_size is None
+    args = recipe.cli_args(dataset=_dataset())
+    values = dict(zip(args, args[1:]))
+    assert values["--global-batch-size"] == str(recipe.rollout_batch_size)
+    assert values["--rollout-batch-size"] == str(recipe.rollout_batch_size)
+
+
+def test_miles_qwen35_sft_raises() -> None:
+    recipe = Qwen3_5_4B_Miles_Recipe(loss_type="sft_loss")
+    with pytest.raises(DojoConfigError, match="qwen3_5"):
+        recipe.cli_args(dataset=_dataset())
+
+
+def test_sft_extra_config_batch_keeps_rollout_in_sync() -> None:
+    recipe = SlimeRecipe(
+        loss_type="sft_loss",
+        global_batch_size=4,
+        extra_config={"global_batch_size": 8},
+    )
+    args = recipe.cli_args(dataset=_dataset())
+    assert dict(zip(args, args[1:]))["--rollout-batch-size"] == "8"
+
+
+def test_sft_extra_config_conflicting_batches_raise() -> None:
+    recipe = SlimeRecipe(
+        loss_type="sft_loss",
+        extra_config={"global_batch_size": 8, "rollout_batch_size": 4},
+    )
+    with pytest.raises(DojoConfigError, match="must match"):
+        recipe.cli_args(dataset=_dataset())
+
+
+@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize(
+    ("field_loss", "hatch_loss", "expectation"),
+    [
+        (
+            "sft_loss",
+            "sft_loss",
+            pytest.raises(DojoConfigError, match="loss_type on the recipe field"),
+        ),
+        (
+            "policy_loss",
+            "sft_loss",
+            pytest.raises(DojoConfigError, match="loss_type on the recipe field"),
+        ),
+        (
+            "sft_loss",
+            "custom_loss",
+            pytest.raises(DojoConfigError, match="loss_type on the recipe field"),
+        ),
+        ("policy_loss", "custom_loss", nullcontext()),
+    ],
+)
+def test_extra_config_loss_type_raises(
+    recipe_cls, field_loss, hatch_loss, expectation
+) -> None:
+    recipe = recipe_cls(loss_type=field_loss, extra_config={"loss_type": hatch_loss})
+    with expectation:
+        recipe.cli_args(dataset=_dataset())
+
+
+@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize(
+    ("colocate", "expectation"),
+    [
+        (True, pytest.raises(DojoConfigError, match="colocate")),
+        (False, nullcontext()),
+    ],
+)
+def test_sft_extra_config_forced_override(recipe_cls, colocate, expectation) -> None:
+    recipe = recipe_cls(loss_type="sft_loss", extra_config={"colocate": colocate})
+    with expectation:
+        recipe.cli_args(dataset=_dataset())

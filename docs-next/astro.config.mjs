@@ -145,7 +145,8 @@ export default defineConfig({
     '/tutorials/rl/005_dapo': '/tutorials/dapo',
     '/tutorials/rl/006_audio_asr': '/tutorials/audio_asr',
     '/tutorials/rl/007_param_sweep': '/tutorials/param_sweep',
-    '/tutorials/rl/008_computer_use': '/tutorials/computer_use',
+    '/tutorials/rl/008_computer_use': '/tutorials/street_fighter',
+    '/tutorials/computer_use': '/tutorials/street_fighter',
     '/tutorials/rl/009_cross_tokenizer_distillation':
       '/tutorials/cross_tok_distill',
     '/tutorials/cross_tokenizer_distillation': '/tutorials/cross_tok_distill',
@@ -165,10 +166,10 @@ export default defineConfig({
     remarkPlugins: [remarkMath, remarkStripPageTitle],
     rehypePlugins: [rehypeKatex, rehypeTableWrapper],
   },
-  site: 'https://gym.modal.dev',
+  site: 'https://dojo.modal.dev',
   integrations: [
     starlight({
-      title: 'Training Gym',
+      title: 'Modal Dojo',
       favicon: '/modal-logo.svg',
       description:
         'Open-source Python SDK for GRPO and RL post-training of LLMs on Modal GPU clusters — tutorials, API reference, and runnable examples.',
@@ -177,7 +178,7 @@ export default defineConfig({
       head: [
         {
           tag: 'meta',
-          attrs: { property: 'og:image', content: 'https://gym.modal.dev/og-image.png' },
+          attrs: { property: 'og:image', content: 'https://dojo.modal.dev/og-image.png' },
         },
         {
           tag: 'meta',
@@ -193,7 +194,7 @@ export default defineConfig({
         },
         {
           tag: 'meta',
-          attrs: { name: 'twitter:image', content: 'https://gym.modal.dev/og-image.png' },
+          attrs: { name: 'twitter:image', content: 'https://dojo.modal.dev/og-image.png' },
         },
         {
           tag: 'meta',
@@ -205,8 +206,8 @@ export default defineConfig({
           content: JSON.stringify({
             '@context': 'https://schema.org',
             '@type': 'WebSite',
-            name: 'Training Gym',
-            url: 'https://gym.modal.dev',
+            name: 'Modal Dojo',
+            url: 'https://dojo.modal.dev',
             description:
               'Open-source Python SDK for GRPO and RL post-training of LLMs on Modal GPU clusters.',
             publisher: {
@@ -221,7 +222,7 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/modal-projects/training-gym',
+          href: 'https://github.com/modal-projects/modal-dojo',
         },
       ],
       // Code blocks mirror the main Modal docs site (modal.com/docs): shiki's

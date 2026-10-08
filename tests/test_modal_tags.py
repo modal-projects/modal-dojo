@@ -1,4 +1,4 @@
-from modal_training_gym.common import modal_tag_value
+from modal_dojo.common import modal_tag_value
 
 
 def test_modal_tag_value_uses_raw_model_name() -> None:

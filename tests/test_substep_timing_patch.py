@@ -11,14 +11,13 @@ expected output with ``uv run pytest tests/test_substep_timing_patch.py
 from __future__ import annotations
 
 import importlib.util
-import ast
 import sys
 from pathlib import Path
 
 import pytest
 
 TESTDATA = Path(__file__).parent / "testdata"
-FRAMEWORKS = Path(__file__).parents[1] / "modal_training_gym" / "frameworks"
+FRAMEWORKS = Path(__file__).parents[1] / "modal_dojo" / "frameworks"
 
 
 def test_miles_component_async_waits_and_snapshot_eval(patchers, tmp_path):
@@ -54,6 +53,13 @@ async def train(args):
     assert patched.count("if not args.eval_uses_snapshots else _tg_nullcontext()") == 2
     before_loop = patched.split("for rollout_id in range")[0]
     assert before_loop.count("with _tg_rec.phase('evaluate_rollouts'):") == 1
+    # Weight sync is timed inside the executor package; the driver only opens
+    # a lane around the pre-loop call.
+    assert "weight_sync" not in patched
+    assert (
+        "    with _tg_role('driver', None) as _tg_rec:\n"
+        "        await update_weights(actor_model, rollout_executor)\n"
+    ) in before_loop
 
 
 def test_component_driver_does_not_write_partial_instrumentation(patchers, tmp_path):
@@ -62,126 +68,12 @@ async def train(args):
     for rollout_id in range(args.start_rollout_id, args.num_rollout):
         await actor_model.train(rollout_id, data)
 """
-    path = tmp_path / "train.py"
+    path = tmp_path / "train_async.py"
     path.write_text(source)
     patcher = patchers["miles"]
     with pytest.raises(RuntimeError, match="phases not instrumented"):
         patcher._patch_file(path, patcher.ENTRYPOINTS[path.name])
     assert path.read_text() == source
-
-
-def test_miles_controller_driver_preserves_calls_and_branches(patchers, tmp_path):
-    source = """import asyncio
-from miles.ray.placement_group import create_rollout_components
-async def train(args):
-    await update_weights(actor_model, rollout_executor)
-    if args.num_rollout == 0 and args.eval_interval is not None:
-        await inference_controller.prepare_eval()
-        await rollout_executor.eval.remote(rollout_id=0)
-    for rollout_id in range(args.start_rollout_id, args.num_rollout):
-        await inference_controller.prepare_eval()
-        await rollout_executor.eval.remote(rollout_id)
-        await inference_controller.prepare_rollout(rollout_id)
-        rollout_data_pack = await rollout_executor.get.remote(rollout_id)
-        await actor_model.train(rollout_id, rollout_data_pack)
-        if args.colocate_memory_peak_device == "gpu":
-            await inference_controller.onload_weights()
-            await offload_train()
-        else:
-            await offload_train()
-            await inference_controller.onload_weights()
-        await update_weights(actor_model, rollout_executor, rollout_id=rollout_id)
-        await inference_controller.prepare_eval()
-        await rollout_executor.eval.remote(rollout_id)
-"""
-    path = tmp_path / "train.py"
-    path.write_text(source)
-    patcher = patchers["miles"]
-    patcher._patch_file(path, patcher.ENTRYPOINTS[path.name])
-    patched = path.read_text()
-    compile(patched, str(path), "exec")
-    for phase in (
-        "initial_weight_sync",
-        "evaluate_rollouts",
-        "generate_rollouts",
-        "train_models",
-        "offload_train",
-        "weight_sync",
-        "evaluate_rollouts_end",
-    ):
-        assert patcher.phase_marker(phase) in patched
-
-    before_loop = patched.split("for rollout_id in range")[0]
-    assert before_loop.count("with _tg_rec.phase('evaluate_rollouts'):") == 2
-
-    class StripTiming(ast.NodeTransformer):
-        def visit_With(self, node):
-            node = self.generic_visit(node)
-            return (
-                node.body
-                if any("_tg_" in ast.unparse(i.context_expr) for i in node.items)
-                else node
-            )
-
-    before = ast.parse(source)
-    after = StripTiming().visit(ast.parse(patched))
-    after.body = after.body[-len(before.body) :]  # Remove injected bootstrap imports.
-    assert ast.dump(before) == ast.dump(after)
-    patcher._patch_file(path, patcher.ENTRYPOINTS[path.name])
-    assert path.read_text() == patched
-
-
-def test_miles_rollout_executor_layout(patchers, tmp_path):
-    patcher = patchers["miles"]
-    target = patcher.PACKAGE_TARGETS[0]
-    path = tmp_path / "miles/ray/rollout/rollout_executor.py"
-    path.parent.mkdir(parents=True)
-    source = (TESTDATA / "miles/rollout_manager.py.input").read_text()
-    path.write_text(
-        source.replace(
-            "async def generate(self, rollout_id):", "async def get(self, rollout_id):"
-        )
-    )
-    patcher._patch_package_file(tmp_path, target)
-    assert "with _tg_role('rollout', rollout_id):" in path.read_text()
-    compile(path.read_text(), str(path), "exec")
-
-
-def test_miles_stale_rollout_manager_beside_executor(patchers, tmp_path):
-    """A local_miles overlay onto a legacy image leaves the retired
-    rollout_manager.py next to rollout_executor.py; the driver decides."""
-    patcher = patchers["miles"]
-    target = patcher.PACKAGE_TARGETS[0]
-    rollout_dir = tmp_path / "miles/ray/rollout"
-    rollout_dir.mkdir(parents=True)
-    legacy_source = (TESTDATA / "miles/rollout_manager.py.input").read_text()
-    legacy = rollout_dir / "rollout_manager.py"
-    legacy.write_text(legacy_source)
-    executor = rollout_dir / "rollout_executor.py"
-    executor.write_text(
-        legacy_source.replace(
-            "async def generate(self, rollout_id):", "async def get(self, rollout_id):"
-        )
-    )
-    (tmp_path / "train.py").write_text(
-        "from miles.ray.placement_group import create_rollout_components\n"
-    )
-    patcher._patch_package_file(tmp_path, target)
-    assert legacy.read_text() == legacy_source
-    assert "with _tg_role('rollout', rollout_id):" in executor.read_text()
-    compile(executor.read_text(), str(executor), "exec")
-
-
-def test_miles_legacy_layout_keeps_rollout_manager(patchers, tmp_path):
-    patcher = patchers["miles"]
-    target = patcher.PACKAGE_TARGETS[0]
-    rollout_dir = tmp_path / "miles/ray/rollout"
-    rollout_dir.mkdir(parents=True)
-    legacy = rollout_dir / "rollout_manager.py"
-    legacy.write_text((TESTDATA / "miles/rollout_manager.py.input").read_text())
-    (tmp_path / "train.py").write_text("from miles.ray import create_rollout_manager\n")
-    patcher._patch_package_file(tmp_path, target)
-    assert "with _tg_role('rollout', rollout_id):" in legacy.read_text()
 
 
 def patcher_path(framework: str) -> Path:
@@ -498,7 +390,7 @@ def test_package_patch_failure_is_best_effort(
         scope=None,
         blocks=(("missing", "missing\n"),),
     )
-    monkeypatch.setenv("TRAINING_GYM_SUBSTEP_TIMING", mode)
+    monkeypatch.setenv("MODAL_DOJO_SUBSTEP_TIMING", mode)
     miles.patch_package_file(tmp_path, target)
     assert "substep timing patch skipped" in capsys.readouterr().out
 
@@ -522,7 +414,7 @@ def test_async_training_offloads_are_separate_from_train(miles, tmp_path):
         assert f"with _tg_rec.phase('{phase}'):" in patched
     assert (
         "if not args.eval_uses_snapshots:\n"
-        "                    # PATCHED_TRAINING_GYM_TIMING_EVALUATE_ROLLOUTS_END"
+        "                    # PATCHED_MODAL_DOJO_TIMING_EVALUATE_ROLLOUTS_END"
     ) in patched
     assert (
         "with _tg_rec.phase('evaluate_rollouts_end'):\n"
@@ -565,3 +457,94 @@ def test_per_sample_generation_target_wraps_only_generation_branch(
 def test_missing_package_file_warns_and_continues(miles, tmp_path, capsys):
     miles.patch_package_file(tmp_path, miles.PACKAGE_TARGETS[0])
     assert "substep timing patch skipped" in capsys.readouterr().out
+
+
+_EXECUTOR_TRAIN = """
+def train(args):
+    create_rollout_components()
+    create_training_models()
+    for rollout_id in range(args.start_rollout_id, args.num_rollout):
+        inference_controller.prepare_rollout()
+        rollout_executor.get.remote()
+        inference_controller.offload_kv()
+        inference_controller.offload_weights()
+        inference_controller.offload()
+        actor_model.onload()
+        actor_model.train()
+        critic_model.train()
+        actor_model.offload()
+        critic_model.offload()
+        offload_train()
+        actor_model.clear_memory()
+        actor_model.offload_grad_buffer()
+        inference_controller.onload_weights()
+        save()
+        inference_controller.onload_kv()
+        inference_controller.prepare_eval()
+        eval_dispatcher.dispatch()
+"""
+
+
+def test_executor_driver_tolerates_missing_grad_buffer_offload(miles, tmp_path, capsys):
+    """The K3-only gradient offload is optional on other executor layouts."""
+    src = _EXECUTOR_TRAIN.replace(
+        "        actor_model.offload_grad_buffer()\n",
+        "        # offload_grad_buffer handled elsewhere\n",
+    )
+    patched = miles._patch_executor_driver(src, tmp_path / "train.py")
+    assert "_tg_time_phase('generate_rollouts')" in patched
+    assert "offload_train_gradients" not in patched
+    assert "offload_train_gradients skipped" in capsys.readouterr().out
+    compile(patched, "train.py", "exec")
+
+
+def test_executor_driver_still_requires_required_calls(miles, tmp_path):
+    src = _EXECUTOR_TRAIN.replace("        save()\n", "")
+    with pytest.raises(RuntimeError, match="timing calls missing"):
+        miles._patch_executor_driver(src, tmp_path / "train.py")
+
+
+def test_executor_package_skips_unpatchable_files(miles, tmp_path, capsys):
+    """One executor file that drifts must not lose the others, or the build."""
+    files = {
+        "miles/ray/rollout/rollout_executor.py": (
+            "class R:\n"
+            "    def get(self, rollout_id):\n"
+            "        self._get_rollout_data()\n"
+            "        convert_samples_to_train_data()\n"
+        ),
+        "miles/backends/megatron_utils/actor.py": (
+            "class A:\n"
+            "    def compute_log_prob(self, rollout_id):\n"
+            "        pass\n"
+            "    def train(self, rollout_id):\n"
+            "        pass\n"
+        ),
+        "miles/backends/megatron_utils/model.py": (
+            "class M:\n    def train_one_step(self):\n        optimizer.step()\n"
+        ),
+        "miles/ray/train/group.py": (
+            "class G:\n"
+            "    def update_weights(self, rollout_id):\n"
+            "        self._inference_controller.start_update_weights()\n"
+            "        retry()\n"
+            "        self._inference_controller.end_update_weights()\n"
+            "        self._maybe_log_inference_engine_weight_checksums()\n"
+        ),
+    }
+    for rel, src in files.items():
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(src)
+
+    miles.patch_executor_package(tmp_path)
+
+    out = capsys.readouterr().out
+    assert "model.py" in out and "skipped" in out
+    assert (
+        miles.PREAMBLE_MARKER
+        not in (tmp_path / "miles/backends/megatron_utils/model.py").read_text()
+    )
+    for rel in files:
+        if "model.py" not in rel:
+            assert miles.PREAMBLE_MARKER in (tmp_path / rel).read_text()

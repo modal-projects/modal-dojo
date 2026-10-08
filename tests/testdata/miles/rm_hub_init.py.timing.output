@@ -1,16 +1,16 @@
-# PATCHED_TRAINING_GYM_TIMING_PREAMBLE: bootstrap substep-timing recorder
+# PATCHED_MODAL_DOJO_TIMING_PREAMBLE: bootstrap substep-timing recorder
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
 try:
-    from modal_training_gym.common.timing_recorder import (
+    from modal_dojo.common.timing_recorder import (
         RoleRecorder as _TgRecorder,
         recording_lane as _tg_role,
         recording_lane_on_reporting_rank as _tg_mrec,
         time_phase as _tg_time_phase,
     )
 except ImportError:
-    print('WARNING: modal_training_gym not importable; substep timing off')
+    print('WARNING: modal_dojo not importable; substep timing off')
     from contextlib import contextmanager as _tg_cm
 
     class _TgRecorder:
@@ -139,7 +139,7 @@ async def batched_async_rm(
             sample.reward = reward
         return None
 
-    # PATCHED_TRAINING_GYM_TIMING_REWARD_BATCH
+    # PATCHED_MODAL_DOJO_TIMING_REWARD_BATCH
     with _tg_time_phase('reward_batch'):
         if args.custom_rm_path is not None and not is_multi_lora_enabled(args):
             rm_function = load_function(args.custom_rm_path)

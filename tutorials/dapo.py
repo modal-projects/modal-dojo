@@ -17,7 +17,7 @@
 import re
 import time
 
-from modal_training_gym import (
+from modal_dojo import (
     Endpoint,
     HuggingFaceDataset,
     Qwen3_5_4B,
@@ -33,11 +33,19 @@ from modal_training_gym import (
 
 model = Qwen3_5_4B()
 
-base_deployment = Endpoint.launch(
-    model, unauthenticated=True, recreate_if_existing=True
-)
-base_deployment.wait_until_ready(timeout=15 * 60)
-print(f"base model deployed to {base_deployment.url}")
+
+def deploy_base_model():
+    print("deploying base model endpoint...")
+    base_deployment = Endpoint.launch(
+        model,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="dapo-baseline",
+    )
+    base_deployment.wait_until_ready()
+    print(f"base model deployed to {base_deployment.url}")
+    return base_deployment
+
 
 # ## Define a scoring function
 #
@@ -97,12 +105,13 @@ eval_dataset = HuggingFaceDataset(
 def run_eval(deployment, max_concurrency: int = 2) -> float:
     from concurrent.futures import ThreadPoolExecutor
 
-    deployment.wait_until_ready(timeout=15 * 60)
+    deployment.wait_until_ready()
 
     def _score_one(example):
         msg = deployment.chat(
             example[eval_dataset.input_key()],
             chat_template_kwargs={"enable_thinking": True},
+            max_tokens=8192,
         )
         response = msg.get("content") or msg.get("reasoning_content") or ""
         return score_answer(response, example[eval_dataset.label_key()])
@@ -114,9 +123,11 @@ def run_eval(deployment, max_concurrency: int = 2) -> float:
     )
     return percent_correct
 
-print("running base model evaluation...")
-base_mean = run_eval(base_deployment)
-print(f"percent correct: {base_mean:.1%}")
+
+def run_baseline_evals(deployment):
+    print("running base model evaluation...")
+    base_mean = run_eval(deployment)
+    print(f"percent correct: {base_mean:.1%}")
 
 # ## Creating a reward function
 #
@@ -171,17 +182,18 @@ config = TrainConfig(
     model=model,
     dataset=train_dataset,
     recipe=Qwen3_5_4B_Recipe(
+        actor_num_gpus_per_node=8,
         tensor_model_parallel_size=2,
         sequence_parallel=True,
-        rollout_num_gpus=8,
         num_rollout=15,
+        save_interval=5,
         n_samples_per_prompt=8,
+        rollout_batch_size=16,
         global_batch_size=32,
         rollout_max_response_len=8192,
         use_kl_loss=False,
         eps_clip=0.2,
         eps_clip_high=0.28,
-        save_interval=5,
         custom_rm_function=dapo_overlong_rm,
         apply_chat_template_kwargs='{"enable_thinking": true}',
         environment={
@@ -199,30 +211,53 @@ config = TrainConfig(
     ),
 )
 
+
+def train(config):
+    with config.launch() as run:
+        print(f"run id: {run.training_run_id}")
+        checkpoint = None
+        while True:
+            done = run.done()
+            latest = run.latest_checkpoint()
+            if latest is not None and latest != checkpoint:
+                checkpoint = latest
+                print(f"new checkpoint: {checkpoint.path}")
+            if done:
+                break
+            time.sleep(30)
+        if checkpoint is None:
+            raise RuntimeError("run produced no checkpoint")
+        print(f"checkpoint: {checkpoint.path}")
+    return checkpoint
+
 # ## Evaluate the trained model
 #
 # Let's run the same eval on the trained checkpoint.
 
-with config.launch() as run:
-    print(f"run id: {run.training_run_id}")
-    checkpoint = None
-    while True:
-        done = run.done()
-        latest = run.latest_checkpoint()
-        if latest is not None and latest != checkpoint:
-            checkpoint = latest
-            print(f"new checkpoint: {checkpoint.path}")
-        if done:
-            break
-        time.sleep(30)
-    print(f"checkpoint: {checkpoint.path}")
 
-trained_deployment = Endpoint.launch(
-    model, checkpoint, unauthenticated=True, recreate_if_existing=True
-)
-trained_deployment.wait_until_ready(timeout=15 * 60)
-print(f"checkpoint deployed to {trained_deployment.url}")
+def deploy_trained_model(checkpoint):
+    print("deploying trained model endpoint...")
+    trained_deployment = Endpoint.launch(
+        model,
+        checkpoint,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="dapo-trained",
+    )
+    trained_deployment.wait_until_ready()
+    print(f"checkpoint deployed to {trained_deployment.url}")
+    return trained_deployment
 
-print("running checkpoint evaluation...")
-trained_correct = run_eval(trained_deployment)
-print(f"percent correct: {trained_correct:.1%}")
+
+def run_trained_evals(trained_deployment):
+    print("running checkpoint evaluation...")
+    trained_correct = run_eval(trained_deployment)
+    print(f"percent correct: {trained_correct:.1%}")
+
+
+if __name__ == "__main__":
+    base_deployment = deploy_base_model()
+    run_baseline_evals(base_deployment)
+    checkpoint = train(config)
+    trained_deployment = deploy_trained_model(checkpoint)
+    run_trained_evals(trained_deployment)

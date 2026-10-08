@@ -5,12 +5,12 @@ import base64
 import httpx
 import pytest
 
-from modal_training_gym.cli import client as client_module
-from modal_training_gym.cli.client import (
+from modal_dojo.cli import client as client_module
+from modal_dojo.cli.client import (
     DEFAULT_TIMEOUT_SECONDS,
     DashboardClient,
 )
-from modal_training_gym.cli.errors import CLIError, ExitCode
+from modal_dojo.cli.errors import CLIError, ExitCode
 
 
 @pytest.fixture(autouse=True)
@@ -82,7 +82,7 @@ def test_get_json_supports_per_request_timeout(mock_transport):
 
 
 def test_sends_basic_auth_when_password_exists(monkeypatch, mock_transport):
-    monkeypatch.setenv("TRAINING_GYM_DASHBOARD_PASSWORD", "secret")
+    monkeypatch.setenv("MODAL_DOJO_DASHBOARD_PASSWORD", "secret")
     requests = []
 
     def respond(request: httpx.Request) -> httpx.Response:
@@ -93,7 +93,7 @@ def test_sends_basic_auth_when_password_exists(monkeypatch, mock_transport):
     with DashboardClient() as client:
         client.get_json("/api/items")
 
-    expected = base64.b64encode(b"training-gym:secret").decode()
+    expected = base64.b64encode(b"modal-dojo:secret").decode()
     assert requests[0].headers["authorization"] == f"Basic {expected}"
 
 
@@ -145,7 +145,7 @@ def test_does_not_forward_proxy_auth_to_redirected_host(monkeypatch, mock_transp
 
 
 def test_omits_auth_when_password_is_absent(monkeypatch, mock_transport):
-    monkeypatch.delenv("TRAINING_GYM_DASHBOARD_PASSWORD", raising=False)
+    monkeypatch.delenv("MODAL_DOJO_DASHBOARD_PASSWORD", raising=False)
     requests = []
 
     def respond(request: httpx.Request) -> httpx.Response:

@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from modal_training_gym import _dashboard
-from modal_training_gym.common.framework import Framework
-from modal_training_gym.common.run import TrainingRun
-from modal_training_gym.utils import metadata
-from modal_training_gym.utils.metadata import MetadataStore
+from modal_dojo import _dashboard
+from modal_dojo.common.framework import Framework
+from modal_dojo.common.run import TrainingRun
+from modal_dojo.utils import metadata
+from modal_dojo.utils.metadata import MetadataStore
 
 RUN_ID = "run-auth-1"
 TOKEN = "test-status-token-run-auth-1"

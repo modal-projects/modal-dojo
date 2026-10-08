@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`modal-training-gym` is a pip-installable Python package that provides framework-aware launchers for distributed training on Modal's multi-node GPU clusters. The current entrypoint is `TrainConfig` + a recipe (`SlimeRecipe` / `MilesConfig`), then `.train()` / `.launch()` — the package handles image construction, cluster topology, Ray/NCCL bring-up, volume mounts, and checkpointing.
+`modal-dojo` is a pip-installable Python package that provides framework-aware launchers for distributed training on Modal's multi-node GPU clusters. The current entrypoint is `TrainConfig` + a recipe (`SlimeRecipe` / `MilesConfig`), then `.train()` / `.launch()` — the package handles image construction, cluster topology, Ray/NCCL bring-up, volume mounts, and checkpointing.
 
 ## Commands
 
@@ -14,14 +14,14 @@ uv sync                              # install deps (Python 3.12 required)
 uv run pre-commit install            # register local hooks
 
 # Lint (ruff — tutorials/ is excluded via pyproject.toml)
-uv run ruff check modal_training_gym/
-uv run ruff format --check modal_training_gym/
+uv run ruff check modal_dojo/
+uv run ruff format --check modal_dojo/
 
 # Type check
-uv run pyright modal_training_gym/    # if pyright is available
+uv run pyright modal_dojo/    # if pyright is available
 
 # Compile check (no GPU needed)
-uv run -m compileall modal_training_gym/ tutorials/
+uv run -m compileall modal_dojo/ tutorials/
 
 # Docs (Astro/Starlight site at docs-next/)
 uv run scripts/generate_all.py --skip-build   # regen models table and docs pages
@@ -33,11 +33,11 @@ uv run scripts/generate_models_table.py         # regenerate
 uv run scripts/generate_models_table.py --check # CI freshness check
 
 # Deploy
-# IMPORTANT: These commands are only for development of the gym itself.
-# Consumers of the gym should use `training-gym setup` instead.
+# IMPORTANT: These commands are only for development of the Modal Dojo itself.
+# Consumers of the Modal Dojo should use `modal-dojo setup` instead.
 # Features such as requiring proxy authentication only work with the CLI
 # and will stop working if the dashboard is deployed with `modal deploy`.
-uv run modal deploy docs-next/docs_next_app.py        # docs site → gym.modal.dev
+uv run modal deploy docs-next/docs_next_app.py        # docs site → dojo.modal.dev
 uv run modal deploy dashboards/app.py                  # observability dashboard
 
 # Validate model configs / map a diff to affected tutorials
@@ -88,7 +88,7 @@ One registry, one script, one workflow, across every framework.
 
 ### Cloudpickle caller resolution
 
-Launchers use `resolve_caller_module()` (in `common/framework.py`) to find the user's tutorial module by walking the stack past `modal_training_gym.*` frames. This enables cloudpickle to serialize inline `DatasetConfig`/`ModelConfig` subclasses by value to remote containers.
+Launchers use `resolve_caller_module()` (in `common/framework.py`) to find the user's tutorial module by walking the stack past `modal_dojo.*` frames. This enables cloudpickle to serialize inline `DatasetConfig`/`ModelConfig` subclasses by value to remote containers.
 
 ### TrainingRun persistence
 
@@ -96,7 +96,7 @@ Launchers use `resolve_caller_module()` (in `common/framework.py`) to find the u
 
 ### Tutorial system
 
-Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helpers. Each entry starts with comment frontmatter containing `order` and optional comma-separated `deps`. `docs-next/src/lib/tutorial-docs-loader.ts` discovers the corpus, validates contiguous order values, and renders Markdown comments plus Python code into docs pages.
+Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helpers, or docs-only `tutorials/*.md`. Each entry starts with `# `-prefixed frontmatter containing `order` and optional comma-separated `deps`; Markdown entries use `key: value` lines between `---` fences and cannot set `deps`. `docs-next/src/lib/tutorial-docs-loader.ts` discovers the corpus, validates contiguous order values, and renders Markdown comments plus Python code into docs pages.
 
 ### API reference generation
 
@@ -104,18 +104,18 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
 
 ### Dashboard
 
-`dashboards/app.py` is a Modal app with a Svelte frontend (built at image-build time). Training runs and evals write metadata to a shared Modal Volume (`training-gym-metadata`) via `modal_training_gym.utils.metadata`. The ASGI endpoint serves the pre-built SPA + JSON APIs (`/api/runs`, `/api/train-results`, `/api/evals`) that read summary JSON from the volume on demand.
+`dashboards/app.py` is a Modal app with a Svelte frontend (built at image-build time). Training runs and evals write metadata to a shared Modal Volume (`modal-dojo-metadata`) via `modal_dojo.utils.metadata`. The ASGI endpoint serves the pre-built SPA + JSON APIs (`/api/runs`, `/api/train-results`, `/api/evals`) that read summary JSON from the volume on demand.
 
 ## Working rules
 
 - Use `uv` for all Python operations. Never install packages at the system level.
-- Tutorial sources are `tutorials/*.py` or `tutorials/<name>/main.py`. Keep `order` values contiguous from zero.
+- Tutorial sources are `tutorials/*.py`, `tutorials/*.md`, or `tutorials/<name>/main.py`. Keep `order` values contiguous from zero.
 - Never hand-edit the models table in README.md. It is generated from `__all__` of each `train_recipes/*_recipe/__init__.py`; add the recipe and matching `ModelConfig` export, then rerun `scripts/generate_models_table.py`.
 - Ruff excludes `tutorials/**`.
 - Python 3.12 is pinned. Modal's `serialized=True` requires local ↔ remote Python version match.
 - Modal Secrets `huggingface-secret` (HF_TOKEN) and `wandb-secret` (WANDB_API_KEY) are optional: HF auth is only needed for gated/rate-limited Hub access, and `wandb-secret` only when a `WandbConfig` is passed.
 - Custom SGLang and vLLM deployments (`CustomDeployment.launch()`) are public by default (`unauthenticated=True`). Pass `unauthenticated=False` to require Modal proxy auth (export `MODAL_KEY` (`wk-…`) / `MODAL_SECRET` (`ws-…`) in the launching shell, or eval/`generate`/teacher calls return HTTP 401). For calls from remote workers (custom rm/reward fns) to authenticated endpoints, also forward the pair into the worker via a `modal.Secret` — the driver shell env doesn't reach them.
-- Every framework's Modal app is tagged with `_modal_framework`, `_modal_job_type=training`, and metric provider/project/group for dashboard auto-discovery (see `common/__init__.py: COMMON_TRAINING_GYM_TAGS`).
+- Every framework's Modal app is tagged with `_modal_framework`, `_modal_job_type=training`, and metric provider/project/group for dashboard auto-discovery (see `common/__init__.py: COMMON_DOJO_TAGS`).
 
 ## Agent skills
 
@@ -124,7 +124,7 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
   below are the only available skills.
 - For training lifecycle work, read `skills/agent-driven-training/SKILL.md`
   before acting. This includes launching, monitoring, inspecting, diagnosing,
-  continuing, or promoting a Training Gym run.
+  continuing, or promoting a Modal Dojo run.
 - For raw Modal infrastructure work, read
   `skills/modal-infrastructure/SKILL.md` before acting. Use it for apps,
   containers, volumes, scheduling, image builds, caches, and endpoint

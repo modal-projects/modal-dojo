@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from modal_training_gym.common.run_list import (
+from modal_dojo.common.run_list import (
     count_run_facets,
     filter_run_summaries,
     run_list_field_metadata,
 )
-from modal_training_gym.common.run_summary import RunSummary
+from modal_dojo.common.run_summary import RunSummary
 
 
 def _summary(**overrides) -> RunSummary:
@@ -36,6 +36,7 @@ def test_schema_metadata_drives_columns_and_filters():
         "run_id",
         "display_status",
         "display_stage",
+        "training_type",
         "model",
         "dataset",
         "recipe",
@@ -48,6 +49,7 @@ def test_schema_metadata_drives_columns_and_filters():
         "model",
         "dataset",
         "recipe",
+        "training_type",
         "group_id",
     }
 
@@ -247,4 +249,16 @@ def test_facet_counts_cover_every_run():
         "status": {"pending": 2, "failed": 1},
         "recipe": {"slime": 2, "miles": 1},
         "group": {"nightly": 2, "(no group)": 1},
+        "training_type": {"rl": 3},
     }
+
+
+def test_training_type_facet_filters_and_counts():
+    rl = _summary(run_id="rl", training_run_id="rl")
+    sft = _summary(run_id="sft", training_run_id="sft", training_type="sft")
+
+    assert filter_run_summaries(
+        [rl, sft],
+        facets={"training_type": {"sft"}},
+    ) == [sft]
+    assert count_run_facets([rl, sft])["training_type"] == {"rl": 1, "sft": 1}

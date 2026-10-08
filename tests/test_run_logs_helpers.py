@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from modal_training_gym._dashboard import (
+from modal_dojo._dashboard import (
     _compute_next_page,
     _parse_log_batches,
     _resolve_log_window,

@@ -406,24 +406,6 @@
     isPanning = false;
   }
 
-  function onWheel(e) {
-    e.preventDefault();
-    const rect = canvasEl?.getBoundingClientRect();
-    if (!rect) return;
-    const mx = e.clientX - rect.left;
-    const focalTime = xToTime(mx);
-    const zoomFactor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
-    const range = effectiveViewEnd - viewStart;
-    const newRange = Math.min(
-      domainMax * 1.1,
-      Math.max(range * zoomFactor, 0.001),
-    );
-    const ratio = (focalTime - viewStart) / range;
-    const newStart = Math.max(0, focalTime - ratio * newRange);
-    viewStart = newStart;
-    viewEnd = newStart + newRange;
-  }
-
   function resetZoom() {
     viewStart = 0;
     viewEnd = null;
@@ -492,7 +474,6 @@
         onmousedown={onMouseDown}
         onmouseup={onMouseUp}
         onmouseleave={onMouseLeave}
-        onwheel={onWheel}
       ></canvas>
     </div>
 
@@ -510,7 +491,7 @@
 
     <!-- Footer hint -->
     <div class="p-[4px_10px_6px] text-[10px] [color:var(--muted-strong,#747474)]">
-      drag to pan · scroll or +/− to zoom · click to set cursor
+      drag to pan · +/− to zoom · click to set cursor
     </div>
   </div>
 {:else}

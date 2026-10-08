@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from modal_training_gym.common.launcher_utils import get_checkpoint_conversion_policy
+from modal_dojo.common.launcher_utils import get_checkpoint_conversion_policy
 
 
 def test_implicit_single_rank_layout_keeps_automatic_conversion():

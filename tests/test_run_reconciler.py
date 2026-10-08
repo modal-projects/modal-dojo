@@ -6,16 +6,16 @@ import time
 
 import pytest
 
-from modal_training_gym.common.framework import Framework
-from modal_training_gym.common.run import TrainingRun, TrainingRunStatus
-from modal_training_gym.common.run_reconciler import (
+from modal_dojo.common.framework import Framework
+from modal_dojo.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.run_reconciler import (
     PRE_APP_TIMEOUT_SECONDS,
     QUEUED_STAGE_TIMEOUT_SECONDS,
     _load_running_runs,
     reconcile_decision,
     reconcile_orphan_runs,
 )
-from modal_training_gym.utils.metadata import MetadataStore, vol_put
+from modal_dojo.utils.metadata import MetadataStore, vol_put
 
 
 def _run(
@@ -228,7 +228,7 @@ def test_reconcile_orphan_runs_persists_cancelled_status(fake_volume, monkeypatc
         started_at=now - PRE_APP_TIMEOUT_SECONDS - 60,
     )
     monkeypatch.setattr(
-        "modal_training_gym.common.run_reconciler._load_running_runs",
+        "modal_dojo.common.run_reconciler._load_running_runs",
         lambda: [stale_run],
     )
 
@@ -300,7 +300,7 @@ def test_load_running_runs_reads_canonical_store_not_only_summary(fake_volume):
 
 
 def test_resolve_app_liveness_fetches_lifecycle_once():
-    from modal_training_gym.common.modal_lifecycle import resolve_app_liveness
+    from modal_dojo.common.modal_lifecycle import resolve_app_liveness
 
     calls: list[str] = []
 

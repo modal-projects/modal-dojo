@@ -2,12 +2,12 @@
 
 import pytest
 
-from modal_training_gym import TrainConfig, TrainingGroup
-from modal_training_gym.common.dataset import HuggingFaceDataset
-from modal_training_gym.common.models import Qwen3_6_35B
-from modal_training_gym.common.run import TrainingRun
-from modal_training_gym.common.training_group import TrainingGroupError
-from modal_training_gym.train_recipes.slime_recipe.qwen3_6_35b import Qwen3_6_35B_Recipe
+from modal_dojo import TrainConfig, TrainingGroup
+from modal_dojo.common.dataset import HuggingFaceDataset
+from modal_dojo.common.models import Qwen3_6_35B
+from modal_dojo.common.run import TrainingRun
+from modal_dojo.common.training_group import TrainingGroupError
+from modal_dojo.train_recipes.slime_recipe.qwen3_6_35b import Qwen3_6_35B_Recipe
 
 
 def _base() -> TrainConfig:
@@ -161,7 +161,7 @@ def test_bad_value_type_caught_before_training():
 
 
 def test_training_run_persists_group_id(fake_volume):
-    from modal_training_gym.common.framework import Framework
+    from modal_dojo.common.framework import Framework
 
     run = TrainingRun(
         training_run_id="run-x",
@@ -175,7 +175,7 @@ def test_training_run_persists_group_id(fake_volume):
 
 
 def test_training_run_result_returns_self(fake_volume):
-    from modal_training_gym.common.framework import Framework
+    from modal_dojo.common.framework import Framework
 
     class FakeFunctionCall:
         def get(self, timeout=None):

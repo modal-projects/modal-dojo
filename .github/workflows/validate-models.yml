@@ -1,7 +1,7 @@
 name: Validate Models
 
 # One workflow for every framework. Which framework a model trains on lives in
-# the registry (modal_training_gym/common/models/validation.py), not here.
+# the registry (modal_dojo/common/models/validation.py), not here.
 #
 # Pull requests validate the models the diff touches. workflow_dispatch can
 # name any registered model, including when validating a Miles image bump.

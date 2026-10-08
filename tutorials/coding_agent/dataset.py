@@ -1,7 +1,7 @@
 """Prepare SWE-rebench tasks and train/eval subsets for the coding tutorial.
 
 Run with:
-uv run -m tutorials.coding_agent.dataset prepare
+uv run -m tutorials.coding_agent.dataset
 """
 
 from __future__ import annotations
@@ -11,22 +11,25 @@ import hashlib
 import json
 import os
 import re
+import runpy
 import shutil
 import sys
 from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
 import modal
 
-from modal_training_gym.common import hf_secrets
-from modal_training_gym.common.dataset_partitioning import sample_rows, split_rows
-from modal_training_gym.frameworks.slime.launcher import (
+from modal_dojo.common import hf_secrets
+from modal_dojo.common.dataset_partitioning import sample_rows, split_rows
+from modal_dojo.common.run import checkpoint_location
+from modal_dojo.frameworks.slime.launcher import (
     SLIME_IMAGE,
     _slime_git_overlay_command,
 )
-from modal_training_gym.train_recipes.base import DATA_PATH
+from modal_dojo.train_recipes.base import DATA_PATH
 
 SPLIT_SEED = 0
 TRAIN_SPLIT_SIZES = (4, 100, 300, 1000)
@@ -42,7 +45,7 @@ HF_DATASET = "nebius/SWE-rebench-V2"
 DATASET_ROOT = "swe_rebench_v2"
 
 SLIME_GIT_REPOSITORY = "https://github.com/modal-projects/slime.git"
-SLIME_GIT_REVISION = "a9f2e5631634affa2032d5f3f9df8d3f2bcbca62"
+SLIME_GIT_REVISION = "3585d4a7eb1a5c108810238b47c37d3107d0a2ba"
 DATA_VOLUME_NAME = "slime-data"
 
 
@@ -131,7 +134,6 @@ def write_partitions(
 def aggregate_probe_samples(
     samples: list[Any], *, n_samples: int
 ) -> dict[str, dict[str, int]]:
-
     def value(sample: Any, key: str, default: Any = None) -> Any:
         return (
             sample.get(key, default)
@@ -243,6 +245,8 @@ def write_mixed_subset(
             instance_id,
         ),
     )
+    if not selected_ids:
+        raise ValueError("probe produced no fully gradeable mixed-reward tasks")
     write_jsonl(output_path, [indexed[instance_id] for instance_id in selected_ids])
     provenance = {
         "subset": name,
@@ -265,7 +269,6 @@ def convert_tasks(
     *,
     hf_revision: str | None = None,
     min_grade: str | None = "A",
-    limit: int | None = None,
 ) -> list[dict[str, Any]]:
     from datasets import load_dataset
 
@@ -279,8 +282,6 @@ def convert_tasks(
     rows = []
     skipped: Counter[str] = Counter()
     for row in source:
-        if limit is not None and len(rows) >= limit:
-            break
         if not swerebench._passes_quality(row, min_grade):
             skipped["quality grade"] += 1
             continue
@@ -314,12 +315,9 @@ def prepare_dataset(
     converter_revision: str,
     hf_revision: str | None = None,
     min_grade: str | None = "A",
-    limit: int | None = None,
 ) -> dict[str, int]:
     from huggingface_hub import HfApi
 
-    if limit is not None and limit < 1:
-        raise ValueError("limit must be positive")
     revision = HfApi().dataset_info(HF_DATASET, revision=hf_revision).sha
     if not revision:
         raise RuntimeError("could not resolve the dataset revision")
@@ -328,7 +326,7 @@ def prepare_dataset(
         staging = Path(temporary) / root.name
         staging.mkdir()
         rows = convert_tasks(
-            staging, hf_revision=revision, min_grade=min_grade, limit=limit
+            staging, hf_revision=revision, min_grade=min_grade
         )
         counts = write_partitions(staging, rows)
         write_text(
@@ -340,7 +338,6 @@ def prepare_dataset(
                     "revision": revision,
                     "translator_revision": converter_revision,
                     "min_grade": min_grade,
-                    "limit": limit,
                     "seed": SPLIT_SEED,
                     "eval_fraction": EVAL_SPLIT_FRACTION,
                 },
@@ -370,10 +367,10 @@ def _image() -> modal.Image:
                 SLIME_GIT_REPOSITORY,
                 SLIME_GIT_REVISION,
             ),
-            "uv pip install --system modal datasets huggingface_hub",
+            "uv pip install --system modal==1.6.1 datasets huggingface_hub",
         )
         .add_local_python_source(
-            "modal_training_gym", "tutorials.coding_agent", copy=True
+            "modal_dojo", "tutorials.coding_agent", copy=True
         )
     )
 
@@ -384,7 +381,6 @@ def _prepare_remote(
     converter_revision: str,
     hf_revision: str | None,
     min_grade: str | None,
-    limit: int | None,
     volume_name: str,
 ):
     counts = prepare_dataset(
@@ -392,7 +388,6 @@ def _prepare_remote(
         converter_revision=converter_revision,
         hf_revision=hf_revision,
         min_grade=min_grade,
-        limit=limit,
     )
     modal.Volume.from_name(volume_name).commit()
     return counts
@@ -429,6 +424,29 @@ def _mixed_remote(
     return str(path), provenance
 
 
+def probe(root: Path):
+    config = runpy.run_path(str(Path(__file__).with_name("main.py")))["config"]
+    dataset = type(config.dataset)(root / "train-300.jsonl")
+    recipe = replace(
+        config.recipe,
+        num_rollout=0,
+        save=None,
+        save_interval=None,
+        n_samples_per_eval_prompt=8,
+        extra_config={**config.recipe.extra_config, "lr_decay_iters": 1},
+        eval_config={
+            "defaults": {
+                "n_samples_per_eval_prompt": 8,
+                "temperature": 1.0,
+                "top_p": 1.0,
+            },
+            "datasets": [{"name": "train-300", "path": str(dataset.path)}],
+        },
+    )
+    run = replace(config, dataset=dataset, recipe=recipe).train()
+    return run, recipe.save_debug_rollout_data.format(rollout_id="eval_0")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -436,28 +454,13 @@ def main() -> None:
         default=DATASET_ROOT,
         help="Directory under /data holding the prepared tasks and subsets.",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    prepare = subparsers.add_parser("prepare")
-    prepare.add_argument("--hf-revision")
-    prepare.add_argument(
+    parser.add_argument("--hf-revision")
+    parser.add_argument(
         "--min-grade",
         default="A",
         help="Keep rows whose meta.llm_metadata.code grade is this or better "
         "(A is best); 'none' keeps every row.",
     )
-    prepare.add_argument(
-        "--limit", type=int, help="Stop after converting this many tasks."
-    )
-
-    mixed = subparsers.add_parser("mixed")
-    mixed.add_argument("--source", required=True)
-    mixed.add_argument("--recipe", default=DEFAULT_MIXED_RECIPE_SLUG)
-    mixed.add_argument("--probe-dump", required=True)
-    mixed.add_argument("--n-samples", type=int, default=4)
-    mixed.add_argument("--checkpoint", default="base")
-    mixed.add_argument("--checkpoints-volume", required=True)
-    mixed.add_argument("--replace", action="store_true")
     args = parser.parse_args()
 
     dataset_root = args.dataset_root
@@ -477,40 +480,46 @@ def main() -> None:
     volumes = {
         str(DATA_PATH): modal.Volume.from_name(volume_name, create_if_missing=True)
     }
-    if args.command == "mixed":
-        volumes["/checkpoints"] = modal.Volume.from_name(
-            args.checkpoints_volume, create_if_missing=False
-        )
     remote_options: dict[str, Any] = {
         "image": _image(),
         "volumes": volumes,
         "timeout": 24 * 60 * 60,
     }
-    if args.command == "prepare":
-        remote_options["secrets"] = hf_secrets()
-        remote = app.function(**remote_options)(_prepare_remote)
-        with app.run():
-            counts = remote.remote(
-                root,
-                converter_revision=SLIME_GIT_REVISION,
-                hf_revision=args.hf_revision,
-                min_grade=None if args.min_grade.lower() == "none" else args.min_grade,
-                limit=args.limit,
-                volume_name=volume_name,
-            )
-        print("\n".join(f"{name}: {count}" for name, count in counts.items()))
-        return
+    remote = app.function(**remote_options, secrets=hf_secrets())(_prepare_remote)
+    with app.run():
+        counts = remote.remote(
+            root,
+            converter_revision=SLIME_GIT_REVISION,
+            hf_revision=args.hf_revision,
+            min_grade=None if args.min_grade.lower() == "none" else args.min_grade,
+            volume_name=volume_name,
+        )
+    print("\n".join(f"{name}: {count}" for name, count in counts.items()))
+    if counts.get("train-300") != 300:
+        raise RuntimeError(
+            "Preparation did not produce train-300; at least 300 training tasks "
+            "must remain after splitting."
+        )
 
+    run, probe_dump = probe(Path(root))
+    location = checkpoint_location(run)
+    if location is None:
+        raise RuntimeError(f"probe run {run.training_run_id} has no volume metadata")
+    volumes["/checkpoints"] = modal.Volume.from_name(
+        location[1], create_if_missing=False
+    )
+
+    app = modal.App("partition-swe-dataset")
     remote = app.function(**remote_options)(_mixed_remote)
     with app.run():
         path, provenance = remote.remote(
             root,
-            source=args.source,
-            recipe=args.recipe,
-            probe_dump=args.probe_dump,
-            n_samples=args.n_samples,
-            checkpoint=args.checkpoint,
-            replace=args.replace,
+            source="train-300",
+            recipe=DEFAULT_MIXED_RECIPE_SLUG,
+            probe_dump=probe_dump,
+            n_samples=8,
+            checkpoint="base",
+            replace=True,
             volume_name=volume_name,
         )
     print(f"{path}: {len(provenance['selected_instance_ids'])} rows")

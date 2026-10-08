@@ -4,18 +4,18 @@ description: >-
   Operates raw Modal infrastructure: runs, apps, containers, volumes,
   scheduling, image builds, caches, and endpoint authentication.
 when_to_use: >-
-  Use for explicit raw Modal operations or when the Training Gym CLI cannot
+  Use for explicit raw Modal operations or when the Modal Dojo CLI cannot
   explain an infrastructure failure. Use agent-driven-training for normal
-  Training Gym lifecycle work.
+  Modal Dojo lifecycle work.
 ---
 
 # Modal infrastructure operations
 
 This document captures durable repo-specific workflow for agents launching and debugging training jobs on Modal in this repository.
 
-For routine Training Gym lifecycle work, use
+For routine Modal Dojo lifecycle work, use
 [agent-driven-training](../agent-driven-training/SKILL.md). Use this runbook
-when the request explicitly concerns Modal infrastructure or the Training Gym
+when the request explicitly concerns Modal infrastructure or the Modal Dojo
 CLI cannot explain the underlying failure.
 
 ## Scope
@@ -179,7 +179,7 @@ Do **not** use `--tool-call-parser qwen` or `qwen25` for Qwen3.5. Those parsers 
 
 With `qwen`/`qwen25`, SGLang logs `Failed to parse JSON part: ...` and the OpenAI response contains an empty `tool_calls` list, causing agent loops to hit `Reached max iterations without a final response.`. The `qwen3_coder` parser (and the `qwen3` reasoning parser for any inline thinking) handles the XML format correctly on the default `lmsysorg/sglang:v0.5.12` image.
 
-(Qwen3.6-35B is a separate case: its shipped `SglangRecipe` uses `--tool-call-parser qwen`, so don't apply this Qwen3.5 guidance to it.)
+(Qwen3.6-35B is a separate case: pass `--tool-call-parser qwen` on `SglangRecipe`, not `qwen3_coder`.)
 
 ## Updating This Runbook
 

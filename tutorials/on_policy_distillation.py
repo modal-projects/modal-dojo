@@ -36,7 +36,7 @@
 # </details>
 #
 # To do cross-family OPD (i.e., use a teacher from a different model family such as Deepseek), see
-# [this tutorial](https://gym.modal.dev/tutorials/cross_tok_distill).
+# [this tutorial](https://dojo.modal.dev/tutorials/cross_tok_distill).
 
 import ast
 import json
@@ -44,7 +44,7 @@ import time
 
 from datasets import load_dataset
 
-from modal_training_gym import (
+from modal_dojo import (
     CustomDeployment,
     DatasetConfig,
     Endpoint,
@@ -61,28 +61,37 @@ from modal_training_gym import (
 # to serve the student. However, for the teacher model, we need per-token logprobs,
 # which are not currently supported by Endpoints when speculative decoding is
 # enabled. So we instead use a
-# [CustomDeployment](https://gym.modal.dev/reference/customdeployment)
+# [CustomDeployment](https://dojo.modal.dev/reference/customdeployment)
 # to serve the teacher.
 
 student_model = Qwen3_5_4B()
-base_student_deployment = Endpoint.launch(
-    student_model, unauthenticated=True, recreate_if_existing=True
-)
-
 teacher_model = Qwen3_5_9B()
-teacher_deployment = CustomDeployment.launch(
-    teacher_model,
-    app_name="qwen3.5-9b-teacher",
-    unauthenticated=True,
-)
 
-base_student_deployment.wait_until_ready(timeout=15 * 60)
-print(f"student base model deployed to {base_student_deployment.url}")
 
-teacher_deployment.wait_until_ready(timeout=15 * 60)
-print(f"teacher model deployed to {teacher_deployment.url}")
+def deploy_models():
+    print("deploying base student endpoint...")
+    base_student_deployment = Endpoint.launch(
+        student_model,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="on-policy-distillation-baseline",
+    )
 
-TEACHER_GENERATE_URL = f"{teacher_deployment.url}/generate"
+    print("deploying teacher deployment...")
+    teacher_deployment = CustomDeployment.launch(
+        teacher_model,
+        app_name="on-policy-distillation-teacher",
+        unauthenticated=True,
+    )
+
+    base_student_deployment.wait_until_ready()
+    print(f"student base model deployed to {base_student_deployment.url}")
+
+    teacher_deployment.wait_until_ready()
+    print(f"teacher model deployed to {teacher_deployment.url}")
+
+    return base_student_deployment, teacher_deployment
+
 
 # ## Define a scoring function
 
@@ -185,7 +194,7 @@ eval_dataset = IFBenchTestDataset()
 def run_eval(deployment, *, max_concurrency: int = 2) -> float:
     from concurrent.futures import ThreadPoolExecutor
 
-    deployment.wait_until_ready(timeout=15 * 60)
+    deployment.wait_until_ready()
 
     def _score_one(example):
         msg = deployment.chat(
@@ -203,13 +212,15 @@ def run_eval(deployment, *, max_concurrency: int = 2) -> float:
     return percent_correct
 
 
-print("running teacher base model evaluation...")
-teacher_correct = run_eval(teacher_deployment)
-print(f"percent correct: {teacher_correct:.1%}")
+def run_baseline_evals(base_student_deployment, teacher_deployment):
+    print("running teacher base model evaluation...")
+    teacher_correct = run_eval(teacher_deployment)
+    print(f"percent correct: {teacher_correct:.1%}")
 
-print("running student base model evaluation...")
-base_student_correct = run_eval(base_student_deployment)
-print(f"percent correct: {base_student_correct:.1%}")
+    print("running student base model evaluation...")
+    base_student_correct = run_eval(base_student_deployment)
+    print(f"percent correct: {base_student_correct:.1%}")
+
 
 # ## Creating a reward function
 #
@@ -286,61 +297,87 @@ def ifbench_opd_post_process(args, samples, **kwargs):
 # we set parameters such as `environment` and `extra_config` to supply
 # framework-necessary environment variables and flags.
 
-config = TrainConfig(
-    model=student_model,
-    dataset=train_dataset,
-    recipe=Qwen3_5_4B_Recipe(
-        num_rollout=10,
-        save_interval=10,
-        rollout_batch_size=16,
-        n_samples_per_prompt=4,
-        global_batch_size=16,
-        rollout_max_response_len=2048,
-        custom_rm_function=ifbench_opd_rm,
-        custom_reward_post_process_function=ifbench_opd_post_process,
-        apply_chat_template_kwargs={"enable_thinking": True},
-        image_overlay=lambda img: img.pip_install(
-            "ifbench @ git+https://github.com/allenai/IFBench.git@fcd289db21d43aaa96c6d9291d32561cd6e19305"
+def build_config(teacher_deployment):
+    return TrainConfig(
+        model=student_model,
+        dataset=train_dataset,
+        recipe=Qwen3_5_4B_Recipe(
+            num_rollout=10,
+            save_interval=10,
+            rollout_batch_size=16,
+            n_samples_per_prompt=4,
+            global_batch_size=16,
+            rollout_max_response_len=2048,
+            custom_rm_function=ifbench_opd_rm,
+            custom_reward_post_process_function=ifbench_opd_post_process,
+            apply_chat_template_kwargs={"enable_thinking": True},
+            image_overlay=lambda img: img.pip_install(
+                "ifbench @ git+https://github.com/allenai/IFBench.git@fcd289db21d43aaa96c6d9291d32561cd6e19305"
+            ),
+            environment={
+                "PYTHONPATH": "/root/Megatron-LM/:/root",
+                "CUDA_DEVICE_MAX_CONNECTIONS": "1",
+                "NCCL_NVLS_ENABLE": "1",
+            },
+            extra_config={
+                "use_opd": True,
+                "opd_type": "sglang",
+                "opd_kl_coef": 1.0,
+                "rm_url": f"{teacher_deployment.url}/generate",
+            },
         ),
-        environment={
-            "PYTHONPATH": "/root/Megatron-LM/:/root",
-            "CUDA_DEVICE_MAX_CONNECTIONS": "1",
-            "NCCL_NVLS_ENABLE": "1",
-        },
-        extra_config={
-            "use_opd": True,
-            "opd_type": "sglang",
-            "opd_kl_coef": 1.0,
-            "rm_url": TEACHER_GENERATE_URL,
-        },
-    ),
-)
+    )
+
+
+def train(config):
+    with config.launch() as run:
+        print(f"run id: {run.training_run_id}")
+        checkpoint = None
+        while True:
+            done = run.done()
+            latest = run.latest_checkpoint()
+            if latest is not None and latest != checkpoint:
+                checkpoint = latest
+                print(f"new checkpoint: {checkpoint.path}")
+            if done:
+                break
+            time.sleep(30)
+        if checkpoint is None:
+            raise RuntimeError("run produced no checkpoint")
+        print(f"checkpoint: {checkpoint.path}")
+    return checkpoint
+
 
 # ## Evaluate the trained student
 #
 # We'll deploy our trained student and compare it
 # to our baseline evaluation from earlier.
 
-with config.launch() as run:
-    print(f"run id: {run.training_run_id}")
-    checkpoint = None
-    while True:
-        done = run.done()
-        latest = run.latest_checkpoint()
-        if latest is not None and latest != checkpoint:
-            checkpoint = latest
-            print(f"new checkpoint: {checkpoint.path}")
-        if done:
-            break
-        time.sleep(30)
-    print(f"checkpoint: {checkpoint.path}")
 
-trained_student_deployment = Endpoint.launch(
-    student_model, checkpoint, unauthenticated=True, recreate_if_existing=True
-)
-trained_student_deployment.wait_until_ready(timeout=15 * 60)
-print(f"checkpoint deployed to {trained_student_deployment.url}")
+def deploy_trained_model(checkpoint):
+    print("deploying trained student endpoint...")
+    trained_student_deployment = Endpoint.launch(
+        student_model,
+        checkpoint,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="on-policy-distillation-trained",
+    )
+    trained_student_deployment.wait_until_ready()
+    print(f"checkpoint deployed to {trained_student_deployment.url}")
+    return trained_student_deployment
 
-print("running student checkpoint evaluation...")
-trained_student_correct = run_eval(trained_student_deployment)
-print(f"percent correct: {trained_student_correct:.1%}")
+
+def run_trained_evals(trained_student_deployment):
+    print("running student checkpoint evaluation...")
+    trained_student_correct = run_eval(trained_student_deployment)
+    print(f"percent correct: {trained_student_correct:.1%}")
+
+
+if __name__ == "__main__":
+    base_student_deployment, teacher_deployment = deploy_models()
+    run_baseline_evals(base_student_deployment, teacher_deployment)
+    config = build_config(teacher_deployment)
+    checkpoint = train(config)
+    trained_student_deployment = deploy_trained_model(checkpoint)
+    run_trained_evals(trained_student_deployment)

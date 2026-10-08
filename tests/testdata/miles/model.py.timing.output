@@ -1,17 +1,17 @@
 from __future__ import annotations
-# PATCHED_TRAINING_GYM_TIMING_PREAMBLE: bootstrap substep-timing recorder
+# PATCHED_MODAL_DOJO_TIMING_PREAMBLE: bootstrap substep-timing recorder
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
 try:
-    from modal_training_gym.common.timing_recorder import (
+    from modal_dojo.common.timing_recorder import (
         RoleRecorder as _TgRecorder,
         recording_lane as _tg_role,
         recording_lane_on_reporting_rank as _tg_mrec,
         time_phase as _tg_time_phase,
     )
 except ImportError:
-    print('WARNING: modal_training_gym not importable; substep timing off')
+    print('WARNING: modal_dojo not importable; substep timing off')
     from contextlib import contextmanager as _tg_cm
 
     class _TgRecorder:
@@ -596,7 +596,7 @@ def train_one_step(
 
     # Forward pass.
     forward_backward_func = get_forward_backward_func()
-    # PATCHED_TRAINING_GYM_TIMING_FORWARD_BACKWARD
+    # PATCHED_MODAL_DOJO_TIMING_FORWARD_BACKWARD
     with _tg_time_phase('forward_backward'):
         losses_reduced = forward_backward_func(
         forward_step_func=forward_step,
@@ -661,7 +661,7 @@ def train_one_step(
             )
         else:
             # Update parameters.
-            # PATCHED_TRAINING_GYM_TIMING_OPTIMIZER_STEP
+            # PATCHED_MODAL_DOJO_TIMING_OPTIMIZER_STEP
             with _tg_time_phase('optimizer_step'):
                 update_successful, grad_norm, num_zeros_in_grad = optimizer.step()
 
@@ -669,7 +669,7 @@ def train_one_step(
             assert update_successful
             opt_param_scheduler.step(increment=num_rollouts)
 
-    # PATCHED_TRAINING_GYM_TIMING_TRAIN_STEP_FINALIZE
+    # PATCHED_MODAL_DOJO_TIMING_TRAIN_STEP_FINALIZE
     with _tg_time_phase('train_step_finalize'):
         # release grad (multi-LoRA retains accumulated grads; stepped slots were
         # zeroed selectively inside step_adapter_slots)

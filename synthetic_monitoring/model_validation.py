@@ -1,4 +1,4 @@
-"""Weekly synthetic monitoring for training-gym model validation.
+"""Weekly synthetic monitoring for modal-dojo model validation.
 
 Test it out with:
 
@@ -19,13 +19,13 @@ from pathlib import Path
 
 import modal
 
-from modal_training_gym.common.models.validation import _ValidationConfig
-from modal_training_gym.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.models.validation import _ValidationConfig
+from modal_dojo.common.run import TrainingRun, TrainingRunStatus
 from scripts.validate_model_configs import ValidationResult, run_base_training
 from synthetic_monitoring.chart import RunPoint, render_timing_history_chart
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PROBE_TIMEOUT_S = 60 * 60
+PROBE_TIMEOUT_S = 2 * 60 * 60
 CLEANUP_GRACE_S = 5 * 60
 LAUNCH_TIMEOUT_S = PROBE_TIMEOUT_S + CLEANUP_GRACE_S + 30 * 60
 MODAL_ENV = "training-gym"
@@ -37,7 +37,7 @@ probe_image = (
     .uv_sync(uv_project_dir=str(REPO_ROOT), extra_options="--no-dev")
     .uv_pip_install("slack-sdk==3.27.1", "matplotlib==3.10.1")
     .env({"MODAL_ENVIRONMENT": MODAL_ENV})
-    .add_local_python_source("modal_training_gym", "synthetic_monitoring", "scripts")
+    .add_local_python_source("modal_dojo", "synthetic_monitoring", "scripts")
     .add_local_dir(
         str(REPO_ROOT / "dashboards" / "frontend"),
         remote_path="/root/dashboards/frontend",
@@ -45,7 +45,8 @@ probe_image = (
     )
 )
 
-slack_secret = modal.Secret.from_name("gym-bot-slack", environment_name=MODAL_ENV)
+slack_secret = modal.Secret.from_name("dojo-bot-slack", environment_name=MODAL_ENV)
+hf_secret = modal.Secret.from_name("huggingface-secret", environment_name="main")
 
 app = modal.App("gym-synmon-launcher")
 
@@ -152,6 +153,13 @@ def _record(model: str, point: RunPoint) -> list[RunPoint]:
         return [point]
 
 
+def _format_error(exc: BaseException, subject: str) -> str:
+    message = str(exc)
+    if not message and isinstance(exc, TimeoutError):
+        message = f"{subject} did not finish within {PROBE_TIMEOUT_S}s"
+    return f"{type(exc).__name__}: {message}"
+
+
 def _row(
     model: str, point: RunPoint, history: list[RunPoint], error: str | None = None
 ) -> dict:
@@ -247,13 +255,14 @@ def _post_report(rows: list[dict]) -> None:
 @app.function(
     image=probe_image,
     timeout=PROBE_TIMEOUT_S + CLEANUP_GRACE_S,
+    secrets=[hf_secret],
 )
 def monitor(model: str = "", num_steps: int = 1) -> dict:
     if model == QUICKSTART_NAME:
         print(f"synmon: {QUICKSTART_NAME!r}")
         run: TrainingRun | None = None
         try:
-            run = runpy.run_module("scripts.quickstart")["run"]
+            run = runpy.run_module("scripts.quickstart", run_name="__main__")["run"]
             completed = run.result(timeout=PROBE_TIMEOUT_S)
             training_run = TrainingRun.from_id(completed.training_run_id)
             url = training_run.modal_app_url or _lookup_app_url(
@@ -271,7 +280,7 @@ def monitor(model: str = "", num_steps: int = 1) -> dict:
             error = None if ok else f"quickstart failed: {training_run.status.value}"
             return _row(QUICKSTART_NAME, point, _record(QUICKSTART_NAME, point), error)
         except Exception as exc:
-            error = f"{type(exc).__name__}: {exc}"
+            error = _format_error(exc, QUICKSTART_NAME)
             print(f"error: probe failed for {QUICKSTART_NAME}: {error}")
             if run is not None:
                 run.close()
@@ -279,8 +288,8 @@ def monitor(model: str = "", num_steps: int = 1) -> dict:
             point = RunPoint(
                 ts=time.time(),
                 timings={},
-                training_run_id=getattr(run, "training_run_id", "") or "",
-                total_duration_s=float(getattr(run, "duration_seconds", 0) or 0),
+                training_run_id=run.training_run_id,
+                total_duration_s=run.duration_seconds,
                 status="failed",
                 modal_app_url=url,
             )
@@ -305,13 +314,18 @@ def monitor(model: str = "", num_steps: int = 1) -> dict:
         )
         return _row(selected, point, _record(selected, point), error)
     except Exception as exc:
-        error = f"{type(exc).__name__}: {exc}"
+        error = _format_error(exc, selected)
         print(f"error: probe failed for {selected}: {error}")
-        url = _lookup_app_url(result.training_run_id) if result else None
+        training_run_id = (
+            result.training_run_id
+            if result
+            else str(getattr(exc, "training_run_id", "") or "")
+        )
+        url = _lookup_app_url(training_run_id)
         point = RunPoint(
             ts=time.time(),
             timings={},
-            training_run_id=getattr(result, "training_run_id", "") or "",
+            training_run_id=training_run_id,
             total_duration_s=float(getattr(result, "total_duration_s", 0) or 0),
             status="failed",
             modal_app_url=url,

@@ -33,6 +33,9 @@
     groups,
     groupCounts,
     activeGroups,
+    trainingTypes,
+    trainingTypeCounts,
+    activeTrainingTypes,
     filteredRuns,
     runGroups,
     groupBy = $bindable(),
@@ -55,6 +58,9 @@
     onToggleGroup,
     onSelectAllGroups,
     onClearGroups,
+    onToggleTrainingType,
+    onSelectAllTrainingTypes,
+    onClearTrainingTypes,
   } = $props();
 
   // The drawer is now driven by the parent: it holds the run-summary while the
@@ -97,6 +103,7 @@
     { key: "name", label: "Name", width: 240, minWidth: 140 },
     { key: "status", label: "Status", width: 116, minWidth: 96 },
     { key: "stage", label: "Stage", width: 190, minWidth: 130 },
+    { key: "training_type", label: "Type", width: 116, minWidth: 88 },
     { key: "model", label: "Model", width: 210, minWidth: 120 },
     { key: "dataset", label: "Dataset", width: 180, minWidth: 120 },
     { key: "recipe", label: "Recipe", width: 116, minWidth: 88 },
@@ -268,6 +275,10 @@
       {groupCounts}
       {activeGroups}
       allGroupsActive={activeGroups.size === groups.length}
+      {trainingTypes}
+      {trainingTypeCounts}
+      {activeTrainingTypes}
+      allTrainingTypesActive={activeTrainingTypes.size === trainingTypes.length}
       bind:search
       bind:groupBy
       onToggleRecipe={onToggleRecipe}
@@ -279,6 +290,9 @@
       onToggleGroup={onToggleGroup}
       onSelectAllGroups={onSelectAllGroups}
       onClearGroups={onClearGroups}
+      onToggleTrainingType={onToggleTrainingType}
+      onSelectAllTrainingTypes={onSelectAllTrainingTypes}
+      onClearTrainingTypes={onClearTrainingTypes}
     />
   </div>
 
@@ -287,7 +301,7 @@
       <div class="table-wrap freeze-header">
         <MinimalTableSkeleton
           class="training-runs-table"
-          columns={["Name", "Status", "Stage", "Model", "Dataset", "Recipe", "Group", "Tags", "Created", "Last updated", ""]}
+          columns={["Name", "Status", "Stage", "Type", "Model", "Dataset", "Recipe", "Group", "Tags", "Created", "Last updated", ""]}
           rows={8}
         />
       </div>
@@ -351,6 +365,11 @@
                       {:else}
                         <span class="text-(--muted)">—</span>
                       {/if}
+                    </a>
+                  </td>
+                  <td class="row-open-cell">
+                    <a href={trainingRunDetailPath(run.run_id)} class="cell-open-button" onclick={(event) => selectRun(run.run_id, event)}>
+                      {(run.training_type ?? "rl").toUpperCase()}
                     </a>
                   </td>
                   <td class="min-w-0 row-open-cell" title={modelName(run)}>

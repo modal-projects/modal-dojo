@@ -19,12 +19,14 @@
   //   showValueLabels   boolean                        — direct labels above bars
   //   yMax              number | null                  — fix the positive top of the scale
   //   emptyText         string
-  //   zoomable          boolean                        — drag / wheel over the plot narrows
-  //                                                      the visible span of categories
+  //   zoomable          boolean                        — drag over the plot (or the +/−
+  //                                                      buttons) narrows the visible span
+  //                                                      of categories
 
   import ZoomOutIcon from "lucide-svelte/icons/zoom-out";
 
   import { brushZoom } from "../lib/brushZoom.js";
+  import ChartZoomButtons from "./ChartZoomButtons.svelte";
 
   let {
     categories = [],
@@ -78,16 +80,13 @@
     // than half of it is covered.
     let newLo = Math.round(lo + f0 * count);
     let newHi = Math.round(lo + f1 * count) - 1;
-    if (newLo === lo && newHi === hi) {
-      // A wheel step too small to move a whole column still has to do
-      // something, or fine-grained scrolling would feel dead.
-      if (f1 - f0 > 1) {
-        newLo = lo - 1;
-        newHi = hi + 1;
-      } else if (f1 - f0 < 1 && count > 1) {
-        if (f0 > 1 - f1) newLo = lo + 1;
-        else newHi = hi - 1;
-      }
+    if (f1 - f0 > 1) {
+      // Expand on both sides so clamping at an edge cannot undo the step.
+      newLo = Math.min(newLo, lo - 1);
+      newHi = Math.max(newHi, hi + 1);
+    } else if (newLo === lo && newHi === hi && f1 - f0 < 1 && count > 1) {
+      if (f0 > 1 - f1) newLo = lo + 1;
+      else newHi = hi - 1;
     }
     setZoom(newLo, newHi);
   }
@@ -95,6 +94,8 @@
   function resetZoom() {
     zoomRange = null;
   }
+
+  let canZoom = $derived(zoomable && categoryCount > 1);
 
   // Validated dark-surface categorical ramp (skill reference palette), in fixed
   // order — never cycled cosmetically; the order itself is the CVD-safety choice.
@@ -208,7 +209,7 @@
 </script>
 
 {#if model}
-  {#if (showLegend && model.multi) || isZoomed}
+  {#if (showLegend && model.multi) || isZoomed || canZoom}
     <div class="flex flex-wrap items-center gap-[16px] mb-[8px] text-[11px] text-(--muted)">
       {#if showLegend && model.multi}
         {#each model.series as s (s.name)}
@@ -229,6 +230,15 @@
           {model.clusters[0]?.label} – {model.clusters[model.clusters.length - 1]?.label}
           <span class="text-(--text)">· reset</span>
         </button>
+      {/if}
+      {#if canZoom}
+        <span class="ml-auto">
+          <ChartZoomButtons
+            onChangeDomainX={handleBrush}
+            canZoomIn={visibleRange[1] > visibleRange[0]}
+            canZoomOut={isZoomed}
+          />
+        </span>
       {/if}
     </div>
   {/if}

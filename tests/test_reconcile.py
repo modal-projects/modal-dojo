@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from modal_training_gym.common.reconcile import reconcile
-from modal_training_gym.common.run_reconciler import ReconcileResult
+from modal_dojo.common.reconcile import reconcile
+from modal_dojo.common.run_reconciler import ReconcileResult
 
 
 def test_reconcile_runs_cleanup(monkeypatch):
@@ -19,7 +19,7 @@ def test_reconcile_runs_cleanup(monkeypatch):
         return [run_result]
 
     monkeypatch.setattr(
-        "modal_training_gym.common.reconcile.reconcile_orphan_runs",
+        "modal_dojo.common.reconcile.reconcile_orphan_runs",
         fake_runs,
     )
 
@@ -35,7 +35,7 @@ def test_reconcile_isolates_run_failures(monkeypatch):
         raise RuntimeError("runs boom")
 
     monkeypatch.setattr(
-        "modal_training_gym.common.reconcile.reconcile_orphan_runs",
+        "modal_dojo.common.reconcile.reconcile_orphan_runs",
         fake_runs,
     )
 

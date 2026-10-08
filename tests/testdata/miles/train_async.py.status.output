@@ -1,9 +1,9 @@
-# PATCHED_TRAINING_GYM_PREAMBLE: bootstrap phase reporter (runs once per process)
+# PATCHED_MODAL_DOJO_PREAMBLE: bootstrap phase reporter (runs once per process)
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
 try:
-    from modal_training_gym.frameworks.miles.phase_reporting import (
+    from modal_dojo.frameworks.miles.phase_reporting import (
         report_step_event as _tg_report,
     )
 except ImportError:
@@ -42,7 +42,7 @@ async def train(args):
 
     # create the rollout manager, with sglang engines inside.
     # need to initialize rollout manager first to calculate num_rollout
-    # PATCHED_TRAINING_GYM_ROLLOUT_STATUS: initialize_rollouts state
+    # PATCHED_MODAL_DOJO_ROLLOUT_STATUS: initialize_rollouts state
     _tg_report('initialize_rollouts', args, None)
     rollout_manager, num_rollout_per_epoch = create_rollout_manager(args, pgs["rollout"])
 
@@ -98,13 +98,13 @@ async def train(args):
             if args.offload_train:
                 await critic_model.offload()
             if rollout_id >= args.num_critic_only_steps:
-                # PATCHED_TRAINING_GYM_COMPUTE_LOG_PROBS_STATUS: compute_log_probs state
+                # PATCHED_MODAL_DOJO_COMPUTE_LOG_PROBS_STATUS: compute_log_probs state
                 _tg_report('compute_log_probs', args, rollout_id)
                 await actor_model.train(rollout_id, rollout_data_curr_ref, external_data=values)
                 if args.offload_train:
                     await actor_model.offload()
         else:
-            # PATCHED_TRAINING_GYM_COMPUTE_LOG_PROBS_STATUS: compute_log_probs state
+            # PATCHED_MODAL_DOJO_COMPUTE_LOG_PROBS_STATUS: compute_log_probs state
             _tg_report('compute_log_probs', args, rollout_id)
             await actor_model.train(rollout_id, rollout_data_curr_ref)
         remove_rollout_data_refs(args, rollout_data_curr_ref)
@@ -113,7 +113,7 @@ async def train(args):
         if external_save or should_run_periodic_action(
             rollout_id, args.save_interval, num_rollout_per_epoch, args.num_rollout
         ):
-            # PATCHED_TRAINING_GYM_CHECKPOINT_SAVE_STATUS: checkpoint save state
+            # PATCHED_MODAL_DOJO_CHECKPOINT_SAVE_STATUS: checkpoint save state
             _tg_report('checkpoint_save', args, rollout_id)
             force_sync = external_save or rollout_id == args.num_rollout - 1
             await save_training_model(actor_model, rollout_id, force_sync)
@@ -127,7 +127,7 @@ async def train(args):
             # sync generate before update weights to prevent update weight in the middle of generation
             rollout_data_curr_ref = (await x) if (x := rollout_data_next_future) is not None else None
             rollout_data_next_future = None
-            # PATCHED_TRAINING_GYM_WEIGHT_SYNC_STATUS: weight_sync state
+            # PATCHED_MODAL_DOJO_WEIGHT_SYNC_STATUS: weight_sync state
             _tg_report('weight_sync', args, rollout_id)
             await actor_model.update_weights(rollout_id=rollout_id)
 

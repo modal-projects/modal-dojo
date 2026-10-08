@@ -8,18 +8,18 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from modal_training_gym import _dashboard
-from modal_training_gym.common import reporting
-from modal_training_gym.common.framework import Framework
-from modal_training_gym.common.run import TrainingRun
-from modal_training_gym.common.step_timing import RoleTimingRecord
-from modal_training_gym.common.train_result import (
+from modal_dojo import _dashboard
+from modal_dojo.common import reporting
+from modal_dojo.common.framework import Framework
+from modal_dojo.common.run import TrainingRun
+from modal_dojo.common.step_timing import RoleTimingRecord
+from modal_dojo.common.train_result import (
     save_train_result_blob,
     train_result_payload,
 )
-from modal_training_gym.common.training_rollout import TrainingRolloutResult
-from modal_training_gym.utils import metadata
-from modal_training_gym.utils.metadata import MetadataStore
+from modal_dojo.common.training_rollout import TrainingRolloutResult
+from modal_dojo.utils import metadata
+from modal_dojo.utils.metadata import MetadataStore
 
 
 def _client(monkeypatch, tmp_path) -> TestClient:
@@ -58,6 +58,35 @@ def _save_records() -> None:
             checkpoint_dir="/checkpoints/run-route-1",
         )
     )
+
+
+@pytest.mark.parametrize(
+    "contract",
+    ["training-gym-dashboard-component/v1", "modal-dojo-dashboard-component/v1"],
+)
+def test_component_manifest_survives_dojo_cutover(
+    contract, fake_volume, monkeypatch, tmp_path
+):
+    _save_records()
+    run = TrainingRun.from_id("run-route-1")
+    manifest = {
+        "name": "viewer",
+        "type": "trajectory_viewer",
+        "sha256": "a" * 64,
+        "path": "components/trajectory_viewer/viewer.svelte",
+        "contract": contract,
+    }
+    run.metadata["dashboard_components"] = {"viewer": manifest}
+    run.save()
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.get(
+            "/api/runs/run-route-1/dashboard-components/trajectory_viewer"
+        )
+    assert response.status_code == 200
+    assert response.json() == manifest
+    assert TrainingRun.from_id("run-route-1").metadata["dashboard_components"] == {
+        "viewer": manifest
+    }
 
 
 def test_runs_route_returns_typed_joined_summaries(fake_volume, monkeypatch, tmp_path):

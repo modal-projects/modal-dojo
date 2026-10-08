@@ -7,15 +7,14 @@
 # This tutorial trains [Qwen3.6-27B](https://huggingface.co/Qwen/Qwen3.6-27B) on
 # [SWE-rebench V2](https://huggingface.co/datasets/nebius/SWE-rebench-V2).
 # During rollouts, the agent inspects repositories, edits code, and runs commands
-# in a [Modal Sandbox](https://modal.com/docs/guide/sandboxes) via 
+# in a [Modal Sandbox](https://modal.com/docs/guide/sandboxes) using
 # [Harbor](https://docs.harborframework.com/).
 
 import json
-
 from pathlib import Path
 from uuid import uuid4
 
-from modal_training_gym import (
+from modal_dojo import (
     DatasetConfig,
     Qwen3_6_27B,
     Qwen3_6_27B_Recipe,
@@ -31,21 +30,23 @@ from tutorials.coding_agent.dataset import (
 # ## Get the dataset
 #
 # We must first convert SWE-rebench into Harbor tasks, and split/sample
-# the data to create balanced, repository-disjoint train/eval sets.
+# the data to create balanced, repository-disjoint train/eval sets. We also run
+# 8 episodes per task on 300 training tasks, without updating the model. We keep
+# tasks with a mix of successes and failures, so that we only train on tasks
+# with useful GRPO learning signal.
 # Since this is verbose, we have a
-# [separate preprocessing script](https://github.com/modal-projects/training-gym/blob/main/tutorials/coding_agent/dataset.py).
-# 
+# [separate preprocessing script](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/coding_agent/dataset.py).
+#
 # Run with:
 #
 # ```bash
-# uv run -m tutorials.coding_agent.dataset prepare --limit 100
-# uv run -m tutorials.coding_agent.dataset prepare
+# uv run -m tutorials.coding_agent.dataset
 # ```
 
 DATASET_ROOT = "swe_rebench_v2"
 DATA_ROOT = Path("/data") / DATASET_ROOT
 
-TRAIN_SUBSET = "train-300"
+TRAIN_SUBSET = "train-300-mixed-reward-qwen3-6-27b-agentic-n8"
 EVAL_SUBSETS = ("eval",)
 
 class AgentTaskDataset(DatasetConfig):
@@ -68,8 +69,8 @@ class AgentTaskDataset(DatasetConfig):
                     yield json.loads(line)
 
 # ## Start training
-# 
-# With the [Qwen3_6_27B_Recipe](https://gym.modal.dev/reference/qwen3_6_27b_recipe),
+#
+# With the [Qwen3_6_27B_Recipe](https://dojo.modal.dev/reference/qwen3_6_27b_recipe)
 # recipe class, it's just that simple.
 
 RUN_NAME = f"coding-agent-{uuid4().hex}"
@@ -97,7 +98,7 @@ config = TrainConfig(
         image_run_commands=[
             "apt-get update && apt-get install -y --no-install-recommends "
             "rdma-core libibverbs1 ibverbs-providers",
-            "uv pip install --system modal mini-swe-agent datasets",
+            "uv pip install --system modal==1.6.1 mini-swe-agent datasets",
         ],
         image_env={"MSWEA_SILENT_STARTUP": "1"},
         app_tags={"agentic_rollout": "harbor"},
@@ -175,5 +176,6 @@ config = TrainConfig(
     ),
 )
 
-run = config.launch()
-print(f"run id: {run.training_run_id}")
+if __name__ == "__main__":
+    run = config.launch()
+    print(f"run id: {run.training_run_id}")
