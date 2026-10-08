@@ -30,7 +30,7 @@ modal-dojo set-password
 
 The landing page lists every training run in your workspace:
 
-![Training runs list with annotated components](https://modal-cdn.com/cdnbot/runs-3onexvqmz_feeb3ce4.webp)
+![Training runs list with annotated components](https://modal-cdn.com/cdnbot/runs-3ncqocknt_51d0b014.webp)
 
 You can easily see:
 
@@ -41,7 +41,7 @@ You can easily see:
 
 Click any run to see a detailed view:
 
-![Run summary tab with annotated components](https://modal-cdn.com/cdnbot/summary-44uxi8bka_4a4272e3.webp)
+![Run summary tab with annotated components](https://modal-cdn.com/cdnbot/summary-4frve6mu8_328deaa6.webp)
 
 Some highlights:
 
@@ -69,7 +69,7 @@ Custom phases emitted by your code (e.g., a custom reward function) appear as th
 
 The Metrics tab charts every scalar the run reports, grouped by namespace:
 
-![Metrics tab with annotated components](https://modal-cdn.com/cdnbot/metrics-1v3oilypa_3c5f1063.webp)
+![Metrics tab with annotated components](https://modal-cdn.com/cdnbot/metrics-1jomskpp4_746f3dbe.webp)
 
 1. Metric namespaces: `perf`, `rollout`, and `train`.
 2. One chart per reported metric.
@@ -78,7 +78,7 @@ The Metrics tab charts every scalar the run reports, grouped by namespace:
 
 You can even inspect each rollout to quickly debug poor performance:
 
-![Rollouts tab with annotated components](https://modal-cdn.com/cdnbot/rollouts-2pi4madw6_3c02e1bd.webp)
+![Rollouts tab with annotated components](https://modal-cdn.com/cdnbot/rollouts-2k11urb7a_8fe92fcf.webp)
 
 You'll see:
 
@@ -90,7 +90,7 @@ You'll see:
 
 The Logs tab streams every worker's logs live while the run is going, and stores them once the run finishes:
 
-![Logs tab with annotated components](https://modal-cdn.com/cdnbot/logsjxshrphy_2c01837f.webp)
+![Logs tab with annotated components](https://modal-cdn.com/cdnbot/logsnl1wp83k_d171ed1e.webp)
 
 1. Substring filter and time-range picker.
 2. Interleaved log lines from all workers in the run.
