@@ -22,8 +22,9 @@ offline and never spend GPU time.
    objective (fastest step, cheapest step, best reward), and budget if given.
 2. **Pick the model**: `modal-dojo autoconfig models --json`. Match on `name`
    (e.g. "qwen 27b" → `Qwen3.8-27B` and `Qwen3.6-27B`). When several match,
-   prefer the newest generation unless the user named one, and say which you
-   chose. Catalogue entries (`in_catalogue: true`) have tuned recipes and
+   the choice is yours: weigh the user's hints, catalogue history, and recipe
+   defaults, pick one (or sweep both when the user is comparing), and state
+   which you chose and why. Catalogue entries (`in_catalogue: true`) have tuned recipes and
    history (`history.cost_per_step_usd`, `time_per_step_s`, `initial_reward`);
    other registry models use their framework's base recipe.
 3. **Read the knobs**: `modal-dojo autoconfig knobs <model> --json`. Use the
