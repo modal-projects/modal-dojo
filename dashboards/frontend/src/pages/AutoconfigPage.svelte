@@ -17,6 +17,7 @@
     SWEEP_DATASETS,
     SWEEP_FLAGS,
     gridFromFlags,
+    overridesFromFlags,
     rewardDigits,
     sortLabel,
     sortRows,
@@ -103,6 +104,8 @@
   let steps = $state(3);
   let sweepName = $state("");
   let flags = $state([]);
+  let fixedFlags = $state([]);
+  let contextLength = $state("");
   let datasetLabel = $state(SWEEP_DATASETS[0].label);
   let submitting = $state(false);
   let submitError = $state(null);
@@ -117,12 +120,22 @@
       return { grid: {}, error: err instanceof Error ? err.message : String(err) };
     }
   });
+  let fixedParse = $derived.by(() => {
+    try {
+      return { overrides: overridesFromFlags(fixedFlags), error: null };
+    } catch (err) {
+      return { overrides: {}, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
   let plannedRuns = $derived(sweepRunCount([...selectedEntries], gridParse.grid));
   let canSubmit = $derived(
-    selectedEntries.size > 0 && !gridParse.error && !submitting,
+    selectedEntries.size > 0 && !gridParse.error && !fixedParse.error && !submitting,
   );
 
   let unusedFlags = $derived(SWEEP_FLAGS.filter((f) => !flags.some((row) => row.path === f.path)));
+  let unusedFixedFlags = $derived(
+    SWEEP_FLAGS.filter((f) => !fixedFlags.some((row) => row.path === f.path)),
+  );
 
   function addFlag() {
     const next = unusedFlags[0];
@@ -131,6 +144,15 @@
 
   function removeFlag(index) {
     flags = flags.filter((_, i) => i !== index);
+  }
+
+  function addFixedFlag() {
+    const next = unusedFixedFlags[0];
+    if (next) fixedFlags = [...fixedFlags, { path: next.path, values: "" }];
+  }
+
+  function removeFixedFlag(index) {
+    fixedFlags = fixedFlags.filter((_, i) => i !== index);
   }
 
   function flagPlaceholder(path) {
@@ -159,6 +181,8 @@
         steps: Number(steps),
         name: sweepName.trim() || null,
         grid: gridParse.grid,
+        overrides: fixedParse.overrides,
+        context_length: contextLength === "" ? null : Number(contextLength),
         dataset: SWEEP_DATASETS.find((d) => d.label === datasetLabel).spec,
       });
       operations = [{ ...op, entries: [...selectedEntries] }, ...operations];
@@ -242,15 +266,57 @@
         </div>
       </div>
 
-      <div class="grid gap-4 md:grid-cols-[120px_1fr]">
+      <div class="grid gap-4 md:grid-cols-[120px_180px_1fr]">
         <label class="flex flex-col gap-1 text-xs text-(--muted)">
           Steps
           <input class="field" type="number" min="1" max="100" bind:value={steps} />
         </label>
         <label class="flex flex-col gap-1 text-xs text-(--muted)">
+          Context length (tokens)
+          <input
+            class="field"
+            type="number"
+            min="256"
+            step="1024"
+            placeholder="recipe default"
+            bind:value={contextLength}
+          />
+        </label>
+        <label class="flex flex-col gap-1 text-xs text-(--muted)">
           Name (optional)
           <input class="field" type="text" placeholder="lr sweep" bind:value={sweepName} />
         </label>
+      </div>
+
+      <div class="flex flex-col gap-2 text-xs text-(--muted)">
+        <span>Set on every run</span>
+        {#each fixedFlags as flag, i (flag.path)}
+          <div class="flex flex-wrap items-center gap-2">
+            <select class="field font-mono" bind:value={flag.path}>
+              {#each SWEEP_FLAGS.filter((f) => f.path === flag.path || !fixedFlags.some((row) => row.path === f.path)) as option (option.path)}
+                <option value={option.path}>{option.path}</option>
+              {/each}
+            </select>
+            <input
+              class="field min-w-[200px] flex-1 font-mono"
+              type="text"
+              placeholder={flagPlaceholder(flag.path).split(",")[0]}
+              aria-label="Value for {flag.path}"
+              bind:value={flag.values}
+            />
+            <button class="link" type="button" aria-label="Remove fixed {flag.path}" onclick={() => removeFixedFlag(i)}>
+              ✕
+            </button>
+          </div>
+        {/each}
+        <div>
+          <button class="chip" type="button" disabled={!unusedFixedFlags.length} onclick={addFixedFlag}>
+            + Set flag
+          </button>
+        </div>
+        {#if fixedParse.error}
+          <span class="text-[#f87171]">{fixedParse.error}</span>
+        {/if}
       </div>
 
       <div class="flex flex-col gap-2 text-xs text-(--muted)">

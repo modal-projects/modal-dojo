@@ -159,6 +159,12 @@ export function formatRewardChange(from, to, digits) {
 // Recipe fields every catalogue recipe accepts that are worth sweeping.
 export const SWEEP_FLAGS = [
   { path: "recipe.lr", placeholder: "1e-6, 5e-6" },
+  { path: "recipe.gpu_type", placeholder: "H200, B300" },
+  { path: "recipe.actor_num_nodes", placeholder: "1, 2" },
+  { path: "recipe.actor_num_gpus_per_node", placeholder: "4, 8" },
+  { path: "recipe.tensor_model_parallel_size", placeholder: "1, 2" },
+  { path: "recipe.context_parallel_size", placeholder: "1, 2" },
+  { path: "recipe.max_tokens_per_gpu", placeholder: "8192, 16384" },
   { path: "recipe.weight_decay", placeholder: "0, 0.1" },
   { path: "recipe.global_batch_size", placeholder: "64, 128" },
   { path: "recipe.rollout_batch_size", placeholder: "16, 32" },
@@ -207,6 +213,16 @@ function parseGridValue(text) {
   } catch {
     return text;
   }
+}
+
+/** Build base overrides from `{ path, values }` rows; each takes one value. */
+export function overridesFromFlags(flags) {
+  const overrides = {};
+  for (const [path, values] of Object.entries(gridFromFlags(flags))) {
+    if (values.length !== 1) throw new Error(`one value expected for "${path}"`);
+    overrides[path] = values[0];
+  }
+  return overrides;
 }
 
 export function sweepRunCount(entries, grid) {

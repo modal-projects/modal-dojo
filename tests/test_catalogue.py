@@ -244,3 +244,34 @@ def test_run_fields_falls_back_to_the_recipe_gpu_type(monkeypatch) -> None:
     assert run["cost_per_step_usd"] == round(24 * 4.0 * 630 / 3600, 2)
     assert run["initial_reward"] == 0.1
     assert run["dashboard_url"] == "/training/run-1"
+
+
+def test_sweep_entries_adds_registry_models_autoconfig_swept() -> None:
+    from modal_dojo.common.catalogue import (
+        AUTOCONFIG_RECIPE_TAG,
+        CatalogueEntry,
+        sweep_entries,
+    )
+
+    def tagged(name: str, recipe: str | None) -> RunSummary:
+        overrides = {AUTOCONFIG_ENTRY_TAG: name}
+        if recipe:
+            overrides[AUTOCONFIG_RECIPE_TAG] = recipe
+        return RunSummary(
+            training_run_id=f"run-{name}",
+            run_id=f"run-{name}",
+            created_at=1,
+            group_id="autoconfig-plan-1",
+            group_tags=GroupTags(group_id="autoconfig-plan-1", overrides=overrides),
+        )
+
+    summaries = [
+        tagged("Qwen3.6-27B", "Qwen3_6_27B_Recipe"),
+        tagged("Qwen3.6-27B", "Qwen3_6_27B_Recipe"),
+        tagged("Qwen3.8-27B", "Qwen3_8_27B_Recipe"),  # already in CATALOGUE
+        tagged("Qwen3-4B", None),  # recipe unknown: cannot fill defaults
+        tagged("Nope-1B", "Qwen3_4B_Recipe"),  # not a registry model
+    ]
+    assert sweep_entries(summaries) == [
+        CatalogueEntry("Qwen3.6-27B", "Qwen3_6_27B_Recipe")
+    ]
