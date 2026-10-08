@@ -1,54 +1,38 @@
-"""Generate the data behind the recipe catalogue at dojo.modal.dev/catalogue.
+"""The recipe catalogue behind the dashboard's Autoconfig page.
 
-Each catalogue entry is a recipe trained for three steps on SWE-bench. The runs
-live in the metadata volume of the Modal environment that launched them; this
-script reads them, prices each step at Modal's current GPU rates, and writes
-``docs-next/src/generated/catalogue.json`` for the Astro page to render.
-
-    uv run scripts/generate_catalogue.py
-    uv run scripts/generate_catalogue.py --modal-env training-gym --output /tmp/catalogue.json
-    uv run scripts/generate_catalogue.py --example  # placeholder runs, no Modal access
-
-Add a finished run to the catalogue by appending its ``training_run_id`` to
-the entry's ``run_ids`` below and rerunning the script. ``--example`` fills
-every entry with a deterministic stand-in run built from the recipe's own
-defaults, so the populated page can be previewed before the runs exist.
+Each catalogue entry is a public recipe benchmarked for the first ``STEPS``
+training steps. The runs come from the dashboard's own metadata volume: a run
+belongs to an entry when an Autoconfig sweep launched it (its group tags carry
+``AUTOCONFIG_ENTRY_TAG``) or when its id is pinned on the entry. Each step is
+priced at Modal's current GPU rates.
 """
 
 from __future__ import annotations
 
-import argparse
 import dataclasses
-import datetime as dt
 import functools
 import json
-import os
 import statistics
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from urllib.parse import quote
 
 import modal_dojo
-from modal_dojo.common.dashboard import (
-    LEGACY_DASHBOARD_APP_NAME,
-    deployed_dashboard_url,
-)
 from modal_dojo.common.metric_series import RunMetrics, StepTable, metric_series_store
 from modal_dojo.common.models.validation import _ValidationConfig
-from modal_dojo.common.run_summary import build_run_summary
+from modal_dojo.common.run_summary import RunSummary, build_run_summary
 from modal_dojo.common.step_timing import measured_run_times
 from modal_dojo.train_recipes.gpu_allocation import resolve_gpu_allocation
 from modal_dojo.utils.metadata import MetadataStore, vol_get, vol_list
 
-ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT = ROOT / "docs-next" / "src" / "generated" / "catalogue.json"
-DEFAULT_MODAL_ENV = "autotrain"
-BENCHMARK = "SWE-bench"
 STEPS = 3
 REWARD_KEY = "rollout/raw_reward"
+# Group ids of sweeps the Autoconfig page launches start with this.
+AUTOCONFIG_GROUP_PREFIX = "autoconfig"
+# Group-tag override naming the catalogue entry a sweep variant benchmarks.
+AUTOCONFIG_ENTRY_TAG = "autoconfig.entry"
 # The length keys sglang reads from a Hugging Face config, in its order.
 CONTEXT_LENGTH_KEYS = (
     "max_sequence_length",
@@ -58,23 +42,16 @@ CONTEXT_LENGTH_KEYS = (
     "max_position_embeddings",
 )
 HF_URL = "https://huggingface.co"
-# Illustrative GPU-hour prices for ``--example``; real runs use billing rates.
-EXAMPLE_RATES: Mapping[str, float] = {
-    "gpu_hour_cost_b300": 6.25,
-    "gpu_hour_cost_b200": 6.25,
-    "gpu_hour_cost_h200": 4.54,
-    "gpu_hour_cost_h100": 3.95,
-}
-EXAMPLE_DATASET = "SWE-bench/SWE-smith"
+DOCS_URL = "https://dojo.modal.dev"
 
 
 @dataclass(frozen=True)
 class CatalogueEntry:
     # ``VALIDATION_CONFIGS`` name, which resolves the model and its framework.
     name: str
-    # Public recipe class the runs trained with; links to its reference page.
+    # Public recipe class the runs train with; links to its reference page.
     recipe: str
-    # SWE-bench runs of this recipe, by ``training_run_id``.
+    # Runs pinned to the entry by ``training_run_id``, besides sweep runs.
     run_ids: tuple[str, ...] = ()
 
 
@@ -86,6 +63,16 @@ CATALOGUE: tuple[CatalogueEntry, ...] = (
     CatalogueEntry("DeepSeek-V4.1-Flash", "DeepSeek_V4_1_Flash_Recipe"),
     CatalogueEntry("Kimi-K3", "Kimi_K3_LoRA_Recipe"),
 )
+
+
+def find_entry(name: str) -> CatalogueEntry:
+    """The catalogue entry named ``name``, case-insensitively."""
+    wanted = name.strip().lower()
+    for entry in CATALOGUE:
+        if entry.name.lower() == wanted:
+            return entry
+    available = ", ".join(entry.name for entry in CATALOGUE)
+    raise ValueError(f"unknown catalogue entry {name!r}; available: {available}")
 
 
 def logged_per_step(table: StepTable, key: str) -> dict[int, float]:
@@ -212,15 +199,6 @@ def recipe_defaults(recipe: str) -> dict[str, Any]:
     }
 
 
-def dashboard_url(environment: str) -> str | None:
-    """Web URL of the dashboard serving ``environment``, under either app name.
-
-    The lookup reads the active ``MODAL_ENVIRONMENT``, which ``main`` sets to
-    ``environment``.
-    """
-    return deployed_dashboard_url() or deployed_dashboard_url(LEGACY_DASHBOARD_APP_NAME)
-
-
 def gpu_hour_cost(rates: Mapping[str, Any], gpu_type: str) -> float | None:
     """List price for one GPU-hour, from ``Workspace.billing.rates()``."""
     name = gpu_type.split(":")[0].strip().rstrip("!+").lower().replace("-", "_")
@@ -240,7 +218,7 @@ def run_row(
     seconds: Mapping[int, float],
     rewards: Mapping[int, float],
     rates: Mapping[str, Any],
-    dashboard: str | None,
+    dashboard: str | None = None,
 ) -> dict[str, Any]:
     """The catalogue row fields one run supplies, from its recorded config and metrics.
 
@@ -260,9 +238,7 @@ def run_row(
     run = {
         "id": run_id,
         "dashboard_url": (
-            f"{dashboard.rstrip('/')}/training/{quote(run_id, safe='')}"
-            if dashboard
-            else None
+            f"{(dashboard or '').rstrip('/')}/training/{quote(run_id, safe='')}"
         ),
         "created_at": created_at,
         "status": status,
@@ -285,9 +261,9 @@ def run_fields(
     entry: CatalogueEntry,
     run_id: str,
     rates: Mapping[str, Any],
-    dashboard: str | None,
+    dashboard: str | None = None,
 ) -> dict[str, Any]:
-    """The catalogue row fields one finished run in the metadata volume supplies."""
+    """The catalogue row fields one run in the metadata volume supplies."""
     summary = build_run_summary(vol_get(MetadataStore.TRAINING_RUNS, run_id))
     # Run records hold the recipe's effective CLI flags, which omit fields the
     # framework never flags (slime's ``gpu_type``); the class defaults fill those.
@@ -314,47 +290,34 @@ def run_fields(
     )
 
 
-def example_fields(
-    entry: CatalogueEntry, index: int, dashboard: str | None
-) -> dict[str, Any]:
-    """Stand-in run fields for ``--example``: real recipe defaults, made-up metrics.
+def sweep_entry_name(summary: RunSummary) -> str | None:
+    """The catalogue entry an Autoconfig sweep run benchmarks, if it is one."""
+    tags = summary.group_tags
+    if tags is None or not summary.group_id.startswith(AUTOCONFIG_GROUP_PREFIX):
+        return None
+    name = tags.overrides.get(AUTOCONFIG_ENTRY_TAG)
+    return str(name) if name else None
 
-    Hardware, context, and prices follow the recipe class, so the row looks like
-    the run will; step times and rewards are deterministic placeholders that
-    differ per recipe so sorting and the step breakdown can be exercised.
-    """
-    recipe = recipe_defaults(entry.recipe)
-    config = _ValidationConfig.find(entry.name)
-    base_seconds = 540.0 + 130.0 * index
-    seconds = {
-        step: base_seconds * (1 + 0.06 * (step % 2)) for step in range(1, STEPS + 1)
-    }
-    base_reward = 0.08 + 0.025 * ((index * 5) % 7)
-    rewards = {step: base_reward + 0.015 * (step - 1) for step in range(1, STEPS + 1)}
-    return run_row(
-        run_id=f"example-{entry.recipe.lower()}",
-        recipe=recipe,
-        gpu_type=str(recipe.get("gpu_type") or ""),
-        model_name=config.model_name,
-        created_at=int(dt.datetime(2026, 1, 15, 12, tzinfo=dt.UTC).timestamp())
-        + 86400 * index,
-        status="Completed",
-        dataset=EXAMPLE_DATASET,
-        seconds=seconds,
-        rewards=rewards,
-        rates=EXAMPLE_RATES,
-        dashboard=dashboard,
+
+def entry_run_ids(entry: CatalogueEntry, summaries: Iterable[RunSummary]) -> list[str]:
+    """Pinned runs first, then the entry's sweep runs, newest first."""
+    sweep_runs = sorted(
+        (s for s in summaries if sweep_entry_name(s) == entry.name),
+        key=lambda s: s.created_at,
+        reverse=True,
     )
+    ids = list(entry.run_ids)
+    ids.extend(s.training_run_id for s in sweep_runs if s.training_run_id not in ids)
+    return ids
 
 
 def entry_rows(
     entry: CatalogueEntry,
+    run_ids: Iterable[str],
     rates: Mapping[str, Any],
-    *,
-    example: bool = False,
-    index: int = 0,
     dashboard: str | None = None,
 ) -> list[dict[str, Any]]:
+    """One row per run of the entry, or a pending row when it has none."""
     config = _ValidationConfig.find(entry.name)
     base = {
         "name": entry.name,
@@ -362,11 +325,10 @@ def entry_rows(
         "model_href": f"{HF_URL}/{config.model_name}",
         "framework": config.framework.value,
         "recipe": entry.recipe,
-        "recipe_href": f"/reference/{entry.recipe.lower()}",
+        "recipe_href": f"{DOCS_URL}/reference/{entry.recipe.lower()}",
     }
-    if example:
-        return [{**base, **example_fields(entry, index, dashboard)}]
-    if not entry.run_ids:
+    run_ids = list(run_ids)
+    if not run_ids:
         # Until it runs, a recipe's context length follows its class defaults.
         context, source = context_length(
             recipe_defaults(entry.recipe), config.model_name
@@ -375,74 +337,29 @@ def entry_rows(
             {**base, "context_length": context, "context_source": source, "run": None}
         ]
     return [
-        {**base, **run_fields(entry, run_id, rates, dashboard)}
-        for run_id in entry.run_ids
+        {**base, **run_fields(entry, run_id, rates, dashboard)} for run_id in run_ids
     ]
 
 
 def build_catalogue(
+    summaries: Iterable[RunSummary],
     rates: Mapping[str, Any],
     priced_at: str | None,
-    *,
-    example: bool = False,
     dashboard: str | None = None,
 ) -> dict[str, Any]:
+    """The Autoconfig page's payload: every entry, with the runs it has so far."""
+    summaries = list(summaries)
     return {
-        "benchmark": BENCHMARK,
         "steps": STEPS,
         "priced_at": priced_at,
-        "example": example,
+        "entries": [
+            {"name": entry.name, "recipe": entry.recipe} for entry in CATALOGUE
+        ],
         "rows": [
             row
-            for index, entry in enumerate(CATALOGUE)
+            for entry in CATALOGUE
             for row in entry_rows(
-                entry, rates, example=example, index=index, dashboard=dashboard
+                entry, entry_run_ids(entry, summaries), rates, dashboard
             )
         ],
     }
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument(
-        "--modal-env",
-        default=DEFAULT_MODAL_ENV,
-        help="Modal environment whose metadata volume holds the runs.",
-    )
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument(
-        "--example",
-        action="store_true",
-        help="Fill every entry with a placeholder run instead of reading Modal.",
-    )
-    parser.add_argument(
-        "--dashboard-url",
-        help="Dashboard base URL for run links; with --example, enables the links.",
-    )
-    args = parser.parse_args()
-    # Modal reads MODAL_ENVIRONMENT on each lookup, so this scopes every
-    # metadata-volume read below to the environment that ran the catalogue.
-    os.environ["MODAL_ENVIRONMENT"] = args.modal_env
-
-    rates: Mapping[str, Any] = {}
-    priced_at = None
-    dashboard = args.dashboard_url
-    if not args.example and any(entry.run_ids for entry in CATALOGUE):
-        import modal
-
-        rates = modal.Workspace.from_context().billing.rates()
-        priced_at = dt.date.today().isoformat()
-        dashboard = dashboard or dashboard_url(args.modal_env)
-
-    catalogue = build_catalogue(
-        rates, priced_at, example=args.example, dashboard=dashboard
-    )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(catalogue, indent=2) + "\n")
-    runs = sum(row["run"] is not None for row in catalogue["rows"])
-    kind = "example runs" if args.example else "runs"
-    print(f"Wrote {args.output} ({len(CATALOGUE)} recipes, {runs} {kind})")
-
-
-if __name__ == "__main__":
-    main()

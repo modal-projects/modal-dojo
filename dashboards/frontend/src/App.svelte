@@ -1,12 +1,13 @@
 <script>
   import { onMount } from "svelte";
-  import { Book, CheckCircle2, Zap } from "lucide-svelte";
+  import { Book, CheckCircle2, SlidersHorizontal, Zap } from "lucide-svelte";
   import "./app.css";
   import Sidebar from "./components/Sidebar.svelte";
   import DashboardHeader from "./components/DashboardHeader.svelte";
   import TrainingPage from "./pages/TrainingPage.svelte";
   import TrainingRunDetailPage from "./pages/TrainingRunDetailPage.svelte";
   import EvalsPage from "./pages/EvalsPage.svelte";
+  import AutoconfigPage from "./pages/AutoconfigPage.svelte";
   import {
     fetchRuns,
     fetchRunCounts,
@@ -67,16 +68,19 @@
   const pageMeta = {
     training: { title: "Training runs" },
     evals: { title: "Evals" },
+    autoconfig: { title: "Autoconfig" },
   };
 
   const pagePaths = {
     training: "/training",
     evals: "/evals",
+    autoconfig: "/autoconfig",
   };
 
   function pageFromPath(pathname) {
     if (pathname === "/" || pathname.startsWith("/training")) return "training";
     if (pathname.startsWith("/evals")) return "evals";
+    if (pathname.startsWith("/autoconfig")) return "autoconfig";
     return "training";
   }
 
@@ -89,6 +93,12 @@
   const navItems = [
     { key: "training", label: "Training runs", Icon: Zap, path: pagePaths.training },
     { key: "evals", label: "Evals", Icon: CheckCircle2, path: pagePaths.evals },
+    {
+      key: "autoconfig",
+      label: "Autoconfig",
+      Icon: SlidersHorizontal,
+      path: pagePaths.autoconfig,
+    },
   ];
 
   if (typeof window !== "undefined") {
@@ -753,6 +763,7 @@
     if (activePage === "training" && activeTrainingRunId) return "run details";
     if (activePage === "training" && loading) return "loading...";
     if (activePage === "evals" && loadingEvals) return "loading...";
+    if (activePage === "autoconfig") return "recipe catalogue";
     if (error) return "error";
     if (activePage === "evals")
       return `${allEvals.length} eval${allEvals.length === 1 ? "" : "s"}`;
@@ -984,6 +995,8 @@
         {getEvalDisplay}
         {evalConfigMeta}
       />
+    {:else if activePage === "autoconfig"}
+      <AutoconfigPage onOpenRun={openTrainingRunDetail} />
     {/if}
     </main>
   </div>

@@ -3,13 +3,17 @@ from __future__ import annotations
 import pytest
 
 import modal_dojo
+from modal_dojo.common.run_summary import GroupTags, RunSummary
 from modal_dojo.common.models.validation import _ValidationConfig
-from scripts import generate_catalogue
-from scripts.generate_catalogue import (
+from modal_dojo.common import catalogue
+from modal_dojo.common.catalogue import (
     CATALOGUE,
+    CatalogueEntry,
+    AUTOCONFIG_ENTRY_TAG,
     REWARD_KEY,
     STEPS,
     build_catalogue,
+    entry_run_ids,
     context_length,
     gpu_hour_cost,
     logged_per_step,
@@ -150,9 +154,7 @@ def test_native_context_length_follows_sglang(config, expected) -> None:
 
 
 def test_recipe_context_settings_win_over_the_model_window(monkeypatch) -> None:
-    monkeypatch.setattr(
-        generate_catalogue, "model_context_length", lambda model: 262144
-    )
+    monkeypatch.setattr(catalogue, "model_context_length", lambda model: 262144)
 
     assert context_length({"rollout_max_context_len": 32768}, "org/m") == (
         32768,
@@ -173,9 +175,7 @@ def test_recipe_context_settings_win_over_the_model_window(monkeypatch) -> None:
 
 
 def test_planned_context_length_follows_the_recipe_defaults(monkeypatch) -> None:
-    monkeypatch.setattr(
-        generate_catalogue, "model_context_length", lambda model: 262144
-    )
+    monkeypatch.setattr(catalogue, "model_context_length", lambda model: 262144)
 
     glm = recipe_defaults("GLM_5_3_Flash_LoRA_Recipe")
     qwen = recipe_defaults("Qwen3_6_27B_Recipe")
@@ -203,28 +203,50 @@ def test_catalogue_entries_name_registered_models_and_public_recipes(entry) -> N
     assert entry.recipe in modal_dojo.__all__
 
 
-def test_example_catalogue_fills_every_recipe_from_its_defaults(monkeypatch) -> None:
-    monkeypatch.setattr(
-        generate_catalogue, "model_context_length", lambda model: 262144
+def _sweep_summary(run_id: str, entry: str, created_at: int) -> RunSummary:
+    return RunSummary(
+        training_run_id=run_id,
+        run_id=run_id,
+        created_at=created_at,
+        group_id="autoconfig-lr-abc123",
+        group_tags=GroupTags(
+            group_id="autoconfig-lr-abc123",
+            axes=["recipe.lr"],
+            overrides={AUTOCONFIG_ENTRY_TAG: entry, "recipe.lr": 1e-6},
+        ),
     )
 
-    catalogue = build_catalogue({}, None, example=True, dashboard="https://d.test/")
 
-    assert catalogue["example"] is True
-    assert len(catalogue["rows"]) == len(CATALOGUE)
-    for entry, row in zip(CATALOGUE, catalogue["rows"], strict=True):
-        run = row["run"]
-        defaults = recipe_defaults(entry.recipe)
-        assert run["gpu_type"] == defaults["gpu_type"]
-        assert run["gpus"] > 0 and run["nodes"] > 0
-        assert run["steps_completed"] == len(run["steps"]) == STEPS
-        assert run["cost_per_step_usd"] > 0 and run["time_per_step_s"] > 0
-        assert run["initial_reward"] == run["steps"][0]["raw_reward"]
-        assert run["dashboard_url"] == f"https://d.test/training/{run['id']}"
-    # Distinct placeholder metrics keep the sort controls meaningful.
-    assert len({row["run"]["time_per_step_s"] for row in catalogue["rows"]}) == len(
-        CATALOGUE
-    )
+def test_entry_run_ids_take_pinned_runs_then_sweep_runs_newest_first() -> None:
+    entry = CATALOGUE[0]
+    summaries = [
+        _sweep_summary("old", entry.name, 1),
+        _sweep_summary("new", entry.name, 2),
+        _sweep_summary("other", CATALOGUE[1].name, 3),
+        RunSummary(
+            training_run_id="manual", run_id="manual", created_at=4, group_id="my-sweep"
+        ),
+    ]
+    pinned = CatalogueEntry(entry.name, entry.recipe, run_ids=("pinned", "new"))
+
+    assert entry_run_ids(entry, summaries) == ["new", "old"]
+    assert entry_run_ids(pinned, summaries) == ["pinned", "new", "old"]
+
+
+def test_catalogue_without_runs_has_a_pending_row_per_recipe(monkeypatch) -> None:
+    monkeypatch.setattr(catalogue, "model_context_length", lambda model: 262144)
+
+    payload = build_catalogue([], {}, None)
+
+    assert payload["steps"] == STEPS
+    assert [e["name"] for e in payload["entries"]] == [e.name for e in CATALOGUE]
+    assert len(payload["rows"]) == len(CATALOGUE)
+    for entry, row in zip(CATALOGUE, payload["rows"], strict=True):
+        assert row["name"] == entry.name and row["run"] is None
+        assert row["context_length"] in (
+            262144,
+            *recipe_defaults(entry.recipe).values(),
+        )
 
 
 def test_run_fields_falls_back_to_the_recipe_gpu_type(monkeypatch) -> None:
@@ -244,9 +266,9 @@ def test_run_fields_falls_back_to_the_recipe_gpu_type(monkeypatch) -> None:
             "dataset": {"hf_repo": "SWE-bench/SWE-smith"},
         },
     }
-    monkeypatch.setattr(generate_catalogue, "vol_get", lambda store, run_id: record)
+    monkeypatch.setattr(catalogue, "vol_get", lambda store, run_id: record)
     monkeypatch.setattr(
-        generate_catalogue,
+        catalogue,
         "vol_list",
         lambda store: [
             {
@@ -258,7 +280,7 @@ def test_run_fields_falls_back_to_the_recipe_gpu_type(monkeypatch) -> None:
             }
         ],
     )
-    monkeypatch.setattr(generate_catalogue, "measured_run_times", lambda rid: ({}, {}))
+    monkeypatch.setattr(catalogue, "measured_run_times", lambda rid: ({}, {}))
     entry = next(e for e in CATALOGUE if e.recipe == "GLM_5_3_Flash_LoRA_Recipe")
 
     fields = run_fields(entry, "run-1", {"gpu_hour_cost_h200": "4.0"}, None)
@@ -271,4 +293,4 @@ def test_run_fields_falls_back_to_the_recipe_gpu_type(monkeypatch) -> None:
     assert run["time_per_step_s"] == 630.0
     assert run["cost_per_step_usd"] == round(24 * 4.0 * 630 / 3600, 2)
     assert run["initial_reward"] == 0.1
-    assert run["dashboard_url"] is None
+    assert run["dashboard_url"] == "/training/run-1"

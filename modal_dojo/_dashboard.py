@@ -169,7 +169,18 @@ def _build_image() -> modal.Image:
             "curl -fsSL https://deb.nodesource.com/setup_22.x | bash -",
             "apt-get install -y nodejs",
         )
-        .pip_install("fastapi[standard]==0.118.0", "modal")
+        .pip_install(
+            "fastapi[standard]==0.118.0",
+            "modal",
+            # ``launch_autoconfig_sweep`` imports the training launcher.
+            "click>=8.2,<9",
+            "cloudpickle",
+            "httpx",
+            "huggingface_hub",
+            "pydantic",
+            "randomname",
+            "rich",
+        )
         .add_local_dir(
             str(_frontend),
             remote_path="/app/frontend",
@@ -578,6 +589,14 @@ def reconcile() -> None:
             print(f"  {result.training_run_id}: {result.reason}")
     else:
         print("No orphaned runs to reconcile.")
+
+
+@app.function(secrets=_function_secrets(), timeout=3600)
+def launch_autoconfig_sweep(request: dict, group_id: str) -> dict:
+    """Launch every variant of an Autoconfig sweep, detached; see ``_autoconfig``."""
+    from modal_dojo._autoconfig import launch_sweep
+
+    return launch_sweep(request, group_id)
 
 
 @app.function(
@@ -2106,6 +2125,14 @@ def fastapi_app():
         return FileResponse(
             f"{STATIC_DIR}/apple-touch-icon.png", media_type="image/png"
         )
+
+    from modal_dojo._autoconfig import ModalSweepOperations, mount_autoconfig_api
+
+    mount_autoconfig_api(
+        web,
+        load_run_summaries=load_run_summaries,
+        operations=ModalSweepOperations(launch_autoconfig_sweep),
+    )
 
     # ── SPA fallback ─────────────────────────────────────────────────────
 

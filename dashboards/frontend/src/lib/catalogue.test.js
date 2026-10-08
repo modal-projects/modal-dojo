@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
   baseModel,
@@ -13,12 +12,11 @@ import {
   inContextRange,
   rewardDigits,
   sortRows,
-  type Catalogue,
-  type CatalogueRow,
-  type CatalogueRun,
-} from './catalogue.ts';
+  parseGrid,
+  sweepRunCount,
+} from './catalogue.js';
 
-function row(name: string, run: Partial<CatalogueRun> | null): CatalogueRow {
+function row(name, run) {
   return {
     name,
     model: `org/${name}`,
@@ -51,7 +49,7 @@ function row(name: string, run: Partial<CatalogueRun> | null): CatalogueRow {
   };
 }
 
-const names = (rows: CatalogueRow[]) => rows.map((entry) => entry.name);
+const names = (rows) => rows.map((entry) => entry.name);
 
 test('sorting puts recipes without a value last in both directions', () => {
   const rows = [
@@ -145,16 +143,17 @@ test('context range labels name the open ends', () => {
   assert.equal(contextRangeLabel(at32k, at32k), '32K');
 });
 
-test('generated catalogue has a row for every recipe', () => {
-  const catalogue = JSON.parse(
-    readFileSync(new URL('../generated/catalogue.json', import.meta.url), 'utf8'),
-  ) as Catalogue;
-  assert.ok(catalogue.rows.length > 0);
-  for (const entry of catalogue.rows) {
-    assert.match(entry.recipe_href, /^\/reference\/[a-z0-9_]+_recipe$/);
-    if (entry.run) {
-      assert.ok(entry.run.gpus > 0, `${entry.name} run has no GPUs`);
-      assert.equal(entry.run.steps_completed, entry.run.steps.length);
-    }
-  }
+test('sweep grids parse one axis per line with JSON values where they parse', () => {
+  assert.deepEqual(parseGrid('recipe.lr = 1e-6, 5e-6\n# comment\n\nrecipe.gpu_type = H200, "B200"'), {
+    'recipe.lr': [0.000001, 0.000005],
+    'recipe.gpu_type': ['H200', 'B200'],
+  });
+  assert.deepEqual(parseGrid(''), {});
+  assert.throws(() => parseGrid('recipe.lr'), /expected/);
+  assert.throws(() => parseGrid('recipe.lr = '), /no values/);
+});
+
+test('a sweep launches one run per entry per grid point', () => {
+  assert.equal(sweepRunCount(['a', 'b'], {}), 2);
+  assert.equal(sweepRunCount(['a'], { x: [1, 2], y: [3, 4, 5] }), 6);
 });

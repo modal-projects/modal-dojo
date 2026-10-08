@@ -219,3 +219,32 @@ export async function fetchRunAdvantageStep(trainingRunId, rolloutId) {
   if (!res.ok) return null;
   return await res.json();
 }
+
+// ── Autoconfig ────────────────────────────────────────────────────────────
+
+export async function fetchCatalogue({ signal } = {}) {
+  const res = await fetch(`${SERVER}/autoconfig/catalogue`, { signal });
+  if (!res.ok) throw new Error(await getErrorFromResponse(res));
+  return readJson(res, "catalogue");
+}
+
+// Kicks off a sweep; the server answers 202 with an operation to poll via
+// `fetchSweep` until its status leaves "pending".
+export async function submitSweep(request) {
+  const res = await fetch(`${SERVER}/autoconfig/sweeps`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) throw new Error(await getErrorFromResponse(res));
+  return readJson(res, "sweep");
+}
+
+export async function fetchSweep(operationId, { signal } = {}) {
+  const res = await fetch(
+    `${SERVER}/autoconfig/sweeps/${encodeURIComponent(operationId)}`,
+    { signal },
+  );
+  if (!res.ok) throw new Error(await getErrorFromResponse(res));
+  return readJson(res, "sweep");
+}
