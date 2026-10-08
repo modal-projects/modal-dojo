@@ -14,6 +14,15 @@ TARGET = Path(
 MARKER = "DOJO_SGLANG_LORA_CPU_STASH"
 CHANGES = (
     (
+        "    _weight_update_loaded: bool = False\n",
+        """    _weight_update_loaded: bool = False
+    # This manager uses dataclass(slots=True); transaction state needs declared fields.
+    _dojo_lora_stash_cpu: bool = False
+    _dojo_lora_staged_bytes: int = 0
+    _dojo_lora_copy_s: float = 0.0
+""",
+    ),
+    (
         "        self._weight_update_selector = recv_req.selector\n",
         """        import os as _dojo_os
         self._dojo_lora_stash_cpu = _dojo_os.environ.get("DOJO_SGLANG_LORA_CPU_STASH") == "1"
