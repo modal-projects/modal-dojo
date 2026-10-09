@@ -40,7 +40,7 @@
   } from "../lib/api.js";
   import { formatMetricValue } from "../lib/metricSeries.js";
   import { groupByRollout, rolloutIndex, rolloutScores } from "../lib/rolloutGrouping.js";
-  import { metricProviderLabel, normalizeMetricLinks } from "../lib/metricLinks.js";
+  import { metricLinkProviderLabel, metricProviderLabel, normalizeMetricLinks } from "../lib/metricLinks.js";
   import { PERCENTILE_LINES, percentileRowFields } from "../lib/percentileLines.js";
   import {
     MAX_TERMINAL_TIMING_FAILURES,
@@ -164,15 +164,16 @@
     run?.train_result?.metric_provider || run?.config_summary?.metric_provider || "",
   );
   let metricLinks = $derived.by(() => {
-    const provider = metricProviderLabel(metricProvider);
     const raw = run?.metric_links?.length ? run.metric_links : run?.wandb_links;
     if (raw?.length) {
       return normalizeMetricLinks(raw).map((link) => ({
         ...link,
-        label: link.label.replace(/^Metric/, provider),
+        label: metricLinkProviderLabel(link, metricProvider),
       }));
     }
-    return metricUrl ? [{ label: provider, url: metricUrl }] : [];
+    return metricUrl
+      ? [{ label: metricProviderLabel(metricProvider), url: metricUrl }]
+      : [];
   });
 
   $effect(() => {
