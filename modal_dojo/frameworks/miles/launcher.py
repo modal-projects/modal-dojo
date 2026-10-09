@@ -365,6 +365,7 @@ def _build_miles_base_image(
             " local_miles checkout; transient router failures during rollout"
             " cleanup may crash the run'",
             *_REPORTING_PATCH_COMMANDS,
+            f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3",
         )
 
     image = apply_source_overlays(image, recipe)
