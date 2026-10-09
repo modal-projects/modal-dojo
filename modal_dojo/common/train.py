@@ -8,6 +8,7 @@ import warnings
 from contextlib import nullcontext
 from typing import Any
 
+import click
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
@@ -113,6 +114,25 @@ def _warn_if_external_build_app() -> None:
         "TrainConfig.train() (blocks for the TrainingRun) instead.",
         stacklevel=3,
     )
+
+
+def _confirm_routing_replay_with_custom_rollout(recipe: BaseTrainRecipe) -> None:
+    if not isinstance(recipe, MilesRecipe) or not recipe.use_rollout_routing_replay:
+        return
+    if recipe.rollout_function is None and recipe.custom_generate_function is None:
+        return
+    message = (
+        "use_rollout_routing_replay=True requires routed experts from each rollout. "
+        "If your custom rollout_function/custom_generate_function doesn't return them, "
+        "training will fail once the first rollout is converted. Set "
+        "use_rollout_routing_replay=False unless you're sure they are returned."
+    )
+    if not sys.stdin.isatty():
+        warnings.warn(message, UserWarning, stacklevel=3)
+        return
+    click.secho(f"WARNING: {message}", fg="yellow", bold=True, err=True)
+    if not click.confirm("Proceed with routing replay enabled?", default=False):
+        raise SystemExit("Launch cancelled.")
 
 
 _STAGE_LABELS: dict[str, str] = {
@@ -603,6 +623,7 @@ class TrainConfig:
 
         require_migrated_config()
         maybe_warn_gpu_oom(self.recipe, self.model)
+        _confirm_routing_replay_with_custom_rollout(self.recipe)
         training_run_id = self._generate_training_run_id()
         ensure_dashboard_deployed()
         framework_status_url = get_framework_status_url() or ""
