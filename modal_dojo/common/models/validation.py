@@ -102,6 +102,7 @@ VALIDATION_CONFIGS: set[_ValidationConfig] = {
     _ValidationConfig("Qwen3.6-27B", Qwen3_6_27B, Framework.SLIME),
     _ValidationConfig("Qwen3.6-35B-A3B", Qwen3_6_35B, Framework.SLIME),
     _ValidationConfig("Qwen3.8-27B", Qwen3_8_27B, Framework.SLIME),
+    _ValidationConfig("Qwen3.8-27B-Spindle", Qwen3_8_27B, Framework.SPINDLE),
     _ValidationConfig(
         "Moonlight-16B-A3B-Instruct",
         Moonlight_16B_A3B_Instruct,

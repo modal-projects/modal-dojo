@@ -41,4 +41,8 @@ def build_recipe_and_dataset(
         from .miles import build_miles_validation
 
         return build_miles_validation(model_config, step_count, loss_type=loss_type)
+    if framework is Framework.SPINDLE:
+        from .spindle import build_spindle_validation
+
+        return build_spindle_validation(model_config, step_count, loss_type=loss_type)
     raise DojoConfigError(f"no validation backend for framework {framework!r}")

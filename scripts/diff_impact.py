@@ -120,6 +120,10 @@ def _base_recipe_for(framework, model_config):
         from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
         return MilesRecipe.get_base_recipe(model_config)
+    if framework is Framework.SPINDLE:
+        from modal_dojo.train_recipes.spindle_recipe import SpindleRecipe
+
+        return SpindleRecipe.get_base_recipe(model_config)
     raise ValueError(f"no base recipe lookup for framework {framework!r}")
 
 
