@@ -49,6 +49,9 @@ class GrpoSettings:
     max_context_length: int = 32768
     lr: float = 4e-5
     lora_rank: int = 32
+    train_attn: bool = True
+    train_mlp: bool = True
+    train_unembed: bool = False
     num_substeps: int = 1
     kl_penalty_coef: float = 0.0
     save_every: int = 0
@@ -356,11 +359,80 @@ def build_train_config(settings: GrpoSettings):
     return train.Config(**values)
 
 
+_ATTN_LEAVES = frozenset(
+    {
+        "linear_qkv",
+        "linear_q",
+        "linear_k",
+        "linear_v",
+        "linear_proj",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+    }
+)
+_MLP_LEAVES = frozenset(
+    {
+        "linear_fc1",
+        "linear_fc1_gate",
+        "linear_fc1_up",
+        "linear_fc2",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    }
+)
+_UNEMBED_LEAVES = frozenset({"output_layer", "lm_head"})
+
+
+def lora_target_flags(target_modules: str | None) -> tuple[bool, bool, bool]:
+    """``(train_attn, train_mlp, train_unembed)`` implied by ``target_modules``.
+
+    Mirrors ``spindle.backends.miles_config.lora_target_flags``: Spindle's
+    Miles backend applies LoRA targets deployment-wide and rejects training
+    clients whose flags differ from them.
+    """
+    leaves = {
+        name.strip().rsplit(".", 1)[-1]
+        for name in (target_modules or "").split(",")
+        if name.strip()
+    }
+    return (
+        bool(leaves & _ATTN_LEAVES),
+        bool(leaves & _MLP_LEAVES),
+        bool(leaves & _UNEMBED_LEAVES),
+    )
+
+
+def _match_lora_targets(settings: GrpoSettings) -> None:
+    """Make cookbook-created LoRA clients request the deployment's targets.
+
+    ``tinker_cookbook.rl.train.main`` only forwards ``rank`` to
+    ``ServiceClient.create_lora_training_client_async``; the SDK defaults the
+    target flags to all-``True``, which Spindle rejects unless the deployment
+    also trains the unembedding.
+    """
+    import tinker  # pyright: ignore[reportMissingImports]
+
+    original = tinker.ServiceClient.create_lora_training_client_async
+
+    async def create(self, *args: Any, **kwargs: Any):
+        kwargs.setdefault("train_attn", settings.train_attn)
+        kwargs.setdefault("train_mlp", settings.train_mlp)
+        kwargs.setdefault("train_unembed", settings.train_unembed)
+        return await original(self, *args, **kwargs)
+
+    tinker.ServiceClient.create_lora_training_client_async = create
+
+
 async def run_grpo(
     settings: GrpoSettings, *, on_phase: PhaseCallback | None = None
 ) -> None:
     """Train with tinker-cookbook GRPO against ``settings.base_url``."""
     from tinker_cookbook.rl import train  # pyright: ignore[reportMissingImports]
+
+    _match_lora_targets(settings)
 
     os.environ.setdefault("TINKER_BASE_URL", settings.base_url)
     os.makedirs(settings.log_path, exist_ok=True)

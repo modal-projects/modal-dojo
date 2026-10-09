@@ -39,7 +39,11 @@ from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.run import TrainingRun
 from modal_dojo.common.status import SpindleStatus
 from modal_dojo.frameworks.spindle.deployment import spindle_config_values
-from modal_dojo.frameworks.spindle.grpo import GrpoSettings, run_grpo
+from modal_dojo.frameworks.spindle.grpo import (
+    GrpoSettings,
+    lora_target_flags,
+    run_grpo,
+)
 from modal_dojo.train_recipes.base import CHECKPOINTS_PATH, DATA_PATH, HF_CACHE_PATH
 from modal_dojo.train_recipes.spindle_recipe.recipe import (
     SPINDLE_GIT_URL,
@@ -328,6 +332,9 @@ def build_spindle_app(
             print(f"Spindle frontend: {base_url}")
 
             os.makedirs(checkpoint_dir, exist_ok=True)
+            train_attn, train_mlp, train_unembed = lora_target_flags(
+                spindle.target_modules
+            )
             settings = GrpoSettings(
                 model_name=model.model_name,
                 base_url=base_url,
@@ -351,6 +358,9 @@ def build_spindle_app(
                 max_context_length=spindle.max_context_length,
                 lr=spindle.lr,
                 lora_rank=spindle.lora_rank or 32,
+                train_attn=train_attn,
+                train_mlp=train_mlp,
+                train_unembed=train_unembed,
                 num_substeps=spindle.grpo_num_substeps,
                 kl_penalty_coef=spindle.grpo_kl_penalty_coef,
                 save_every=spindle.save_interval or 0,

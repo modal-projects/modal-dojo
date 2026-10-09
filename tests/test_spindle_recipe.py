@@ -176,3 +176,12 @@ def test_spindle_validation_backend():
     recipe, dataset = build_recipe_and_dataset(Framework.SPINDLE, Qwen3_8_27B(), 2)
     assert isinstance(recipe, Qwen3_8_27B_Spindle_Recipe)
     assert dataset.hf_split == f"train[:{recipe.rollout_batch_size * 2}]"
+
+
+def test_lora_target_flags_follow_deployment_targets():
+    from modal_dojo.frameworks.spindle.grpo import lora_target_flags
+
+    recipe = Qwen3_8_27B_Spindle_Recipe()
+    assert lora_target_flags(recipe.target_modules) == (True, True, False)
+    assert lora_target_flags("q_proj,lm_head") == (True, False, True)
+    assert lora_target_flags(None) == (False, False, False)
