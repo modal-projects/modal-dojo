@@ -50,8 +50,10 @@ from starlette.requests import Request
 # must resolve from this module's globals.
 from modal_dojo.common.advantage_distribution import AdvantageDistribution
 from modal_dojo.common.config import (
+    DASHBOARD_CSRF_HEADER,
     DASHBOARD_PASSWORD_SECRET_NAME,
     DASHBOARD_PROXY_AUTH_PATH,
+    DASHBOARD_STOP_RUN_ACTION,
     DASHBOARD_VERSION_PATH,
     dashboard_requires_proxy_auth,
     get_dashboard_trajectory_viewer,
@@ -67,6 +69,7 @@ from modal_dojo.common.dashboard_components import (
     MAX_COMPONENT_BYTES,
     DashboardComponent,
 )
+from modal_dojo.common.errors import DojoError
 from modal_dojo.common.run import (
     FrameworkStatusUpdate,
     TrainingRun,
@@ -612,7 +615,7 @@ def fastapi_app():
         summary_items_from_payload,
         vol_get,
         vol_get_summary_items_healed,
-        vol_put_summary_items,
+        vol_patch_summary_fields,
     )
 
     web = FastAPI()
@@ -659,6 +662,7 @@ def fastapi_app():
     cache_entries: dict[str, tuple[float, list[JsonDict], float]] = {
         key: (0.0, [], 0.0) for key in cache_keys
     }
+    cache_generations = {key: 0 for key in cache_keys}
 
     TIMING_CACHE_MAX_RUNS = 64
     TIMING_CACHE_TTL_S = 15.0
@@ -917,14 +921,18 @@ def fastapi_app():
             expires_at, values, loaded_at = cache_entries[key]
             if now < expires_at:
                 return values
+            generation = cache_generations[key]
             try:
                 values = await loader()
-                cache_entries[key] = (now + cache_ttl_seconds, values, now)
             except Exception:
                 # Keep serving the last known data and back off so a slow/failing
                 # loader (e.g. a heavy summary rebuild) can't be retried on every
                 # request — it must never block or break the endpoint.
-                cache_entries[key] = (now + cache_ttl_seconds, values, loaded_at)
+                if cache_generations[key] == generation:
+                    cache_entries[key] = (now + cache_ttl_seconds, values, loaded_at)
+                return values
+            if cache_generations[key] == generation:
+                cache_entries[key] = (now + cache_ttl_seconds, values, now)
             return values
 
     def invalidate_cache(key: str) -> None:
@@ -933,6 +941,7 @@ def fastapi_app():
         # blocking on a cold rebuild.
         _expires_at, values, loaded_at = cache_entries[key]
         cache_entries[key] = (0.0, values, loaded_at)
+        cache_generations[key] += 1
 
     async def get_cached_list(key: str, loader: SummaryLoader) -> list[JsonDict]:
         now = time.monotonic()
@@ -1042,10 +1051,26 @@ def fastapi_app():
         items = await run_in_threadpool(vol_get_summary_items_healed, summary_store)
         if not items:
             return []
-        items, changed = add_modal_app_urls(items)
+        healed, changed = add_modal_app_urls(items)
         if changed:
-            await run_in_threadpool(vol_put_summary_items, summary_store, items)
-        return items
+            await run_in_threadpool(
+                vol_patch_summary_fields,
+                summary_store,
+                [
+                    {
+                        "id": new["training_run_id"],
+                        "match": {"modal_app_id": new["modal_app_id"]},
+                        "set": {"modal_app_url": new["modal_app_url"]},
+                    }
+                    for old, new in zip(items, healed)
+                    if new.get("training_run_id")
+                    and new.get("modal_app_id")
+                    and new.get("modal_app_url")
+                    and old.get("modal_app_url") != new.get("modal_app_url")
+                ],
+                item_id_key="training_run_id",
+            )
+        return healed
 
     async def load_runs() -> list[JsonDict]:
         run_records = await load_list_summary(MetadataStore.TRAINING_RUNS_SUMMARY)
@@ -1230,6 +1255,34 @@ def fastapi_app():
         except KeyError:
             result = None
         return build_run_summary(run.model_dump(mode="json"), result)
+
+    @web.post("/api/runs/{training_run_id}/stop", response_model=RunSummary)
+    async def stop_run(training_run_id: str, request: Request):
+        if request.headers.get(DASHBOARD_CSRF_HEADER) != DASHBOARD_STOP_RUN_ACTION:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Header {DASHBOARD_CSRF_HEADER}: "
+                    f"{DASHBOARD_STOP_RUN_ACTION} is required"
+                ),
+            )
+        run = await _get_run_or_404(training_run_id)
+        try:
+            stopped = await run_in_threadpool(run.stop)
+        except DojoError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Could not stop Modal app {run.modal_app_id}: {exc}",
+            )
+        if not stopped:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Training run {training_run_id!r} is already {run.status.value}",
+            )
+        invalidate_cache("runs")
+        return await get_run(training_run_id)
 
     def _component_manifest(
         run: TrainingRun, component_type: str, digest: str | None = None

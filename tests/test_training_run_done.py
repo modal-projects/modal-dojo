@@ -3,7 +3,12 @@ from __future__ import annotations
 import pytest
 
 from modal_dojo.common.framework import Framework
-from modal_dojo.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.run import (
+    TrainingRun,
+    TrainingRunStatus,
+    mark_training_attempt_started,
+)
+from modal_dojo.utils.metadata import MetadataStore, vol_put
 
 
 def _run(status: TrainingRunStatus) -> TrainingRun:
@@ -42,7 +47,10 @@ def test_done_sees_status_written_after_launch(fake_volume):
 
 def test_context_manager_stops_app(monkeypatch):
     stopped: list[str] = []
-    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", stopped.append)
+
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app_best_effort", stopped.append
+    )
     run = _run(TrainingRunStatus.RUNNING)
     run.modal_app_id = "ap-1"
 
@@ -55,7 +63,10 @@ def test_context_manager_stops_app(monkeypatch):
 
 def test_context_manager_leaves_app_running_on_exception(monkeypatch):
     stopped: list[str] = []
-    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", stopped.append)
+
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app_best_effort", stopped.append
+    )
     run = _run(TrainingRunStatus.RUNNING)
     run.modal_app_id = "ap-1"
 
@@ -68,7 +79,10 @@ def test_context_manager_leaves_app_running_on_exception(monkeypatch):
 
 def test_close_is_idempotent(monkeypatch):
     stopped: list[str] = []
-    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", stopped.append)
+
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app_best_effort", stopped.append
+    )
     run = _run(TrainingRunStatus.COMPLETED)
     run.modal_app_id = "ap-1"
 
@@ -80,7 +94,10 @@ def test_close_is_idempotent(monkeypatch):
 
 def test_done_does_not_stop_app(monkeypatch, fake_volume):
     stopped: list[str] = []
-    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", stopped.append)
+
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app_best_effort", stopped.append
+    )
     run = _run(TrainingRunStatus.COMPLETED)
     run.modal_app_id = "ap-1"
 
@@ -158,7 +175,10 @@ def test_wait_timeout_does_not_mark_failed(fake_volume):
 
 def test_wait_all_closes_each_run_when_that_run_is_done(monkeypatch, fake_volume):
     stopped: list[str] = []
-    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", stopped.append)
+
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app_best_effort", stopped.append
+    )
     sleeps: list[float] = []
 
     class _FlipCall:
@@ -190,3 +210,179 @@ def test_wait_all_closes_each_run_when_that_run_is_done(monkeypatch, fake_volume
     assert stopped == ["ap-a", "ap-b"]
     assert sleeps == [0.01]
     assert second.status is TrainingRunStatus.COMPLETED
+
+
+def test_stop_stops_app_and_persists_record(monkeypatch, fake_volume):
+    stopped: list[str] = []
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app",
+        stopped.append,
+    )
+    run = _run(TrainingRunStatus.RUNNING)
+    run.modal_app_id = "ap-1"
+    run.started_at = 100
+    run.save()
+
+    assert run.stop() is True
+
+    assert stopped == ["ap-1"]
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.STOPPED
+    assert persisted.ended_at is not None
+    assert persisted.completed_at is None
+    assert persisted.metadata["terminal_reason"] == "stopped_by_user"
+    assert persisted.done() is True
+    assert run.ended_at == persisted.ended_at
+    assert run.duration_seconds == persisted.duration_seconds is not None
+    assert run.completed_at is None
+
+
+def test_stop_reaps_lingering_app_for_terminal_run(monkeypatch, fake_volume):
+    stopped: list[str] = []
+    reaped: list[str] = []
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app",
+        stopped.append,
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app_best_effort",
+        reaped.append,
+    )
+    run = _run(TrainingRunStatus.RUNNING)
+    run.modal_app_id = "ap-1"
+    run.save()
+    stored = _run(TrainingRunStatus.COMPLETED)
+    stored.modal_app_id = "ap-1"
+    stored.save()
+
+    assert run.stop() is False
+    assert stopped == []
+    assert reaped == ["ap-1"]
+    assert TrainingRun.from_id("run-1").status is TrainingRunStatus.COMPLETED
+
+
+def test_stop_reconciles_record_when_app_already_dead(monkeypatch, fake_volume):
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: False
+    )
+    monkeypatch.setattr("modal_dojo.common.modal_lifecycle.stop_app", calls.append)
+    run = _run(TrainingRunStatus.RUNNING)
+    run.modal_app_id = "ap-1"
+    run.started_at = 100
+    run.save()
+
+    assert run.stop() is True
+
+    assert calls == []
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.STOPPED
+    assert persisted.ended_at is not None
+    assert persisted.metadata["terminal_reason"] == "stopped_by_user"
+
+
+def test_save_keeps_stored_stopped_status(fake_volume):
+    stopped = _run(TrainingRunStatus.STOPPED)
+    stopped.ended_at = 200
+    stopped.metadata = {"terminal_reason": "stopped_by_user"}
+    stopped.save()
+    stale = _run(TrainingRunStatus.FAILED)
+    stale.ended_at = 300
+    stale.error_message = "boom"
+    stale.metadata = {"terminal_reason": "failed"}
+
+    stale.save()
+
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.STOPPED
+    assert persisted.ended_at == 200
+    assert persisted.error_message is None
+    assert persisted.metadata["terminal_reason"] == "stopped_by_user"
+
+
+def test_save_lets_retry_overwrite_stopped_status(fake_volume):
+    stopped = _run(TrainingRunStatus.STOPPED)
+    stopped.ended_at = 200
+    stopped.metadata = {"terminal_reason": "stopped_by_user", "attempt_count": 1}
+    stopped.save()
+
+    retry = TrainingRun.from_id("run-1")
+    mark_training_attempt_started(retry, started_at=300)
+    retry.save()
+
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.RUNNING
+    assert persisted.ended_at is None
+    assert "terminal_reason" not in persisted.metadata
+    assert persisted.metadata["attempt_count"] == 2
+
+
+def test_save_stale_attempt_cannot_overwrite_newer_record(fake_volume):
+    stopped = _run(TrainingRunStatus.STOPPED)
+    stopped.ended_at = 200
+    stopped.metadata = {"terminal_reason": "stopped_by_user", "attempt_count": 1}
+    stopped.save()
+
+    retry = TrainingRun.from_id("run-1")
+    mark_training_attempt_started(retry, started_at=300)
+    retry.modal_app_id = "ap-2"
+    retry.save()
+
+    stale = _run(TrainingRunStatus.STOPPED)
+    stale.ended_at = 400
+    stale.modal_app_id = "ap-1"
+    stale.metadata = {"terminal_reason": "stopped_by_user", "attempt_count": 1}
+    stale.save()
+
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is TrainingRunStatus.RUNNING
+    assert persisted.ended_at is None
+    assert persisted.modal_app_id == "ap-2"
+    assert persisted.metadata["attempt_count"] == 2
+    assert "terminal_reason" not in persisted.metadata
+
+
+@pytest.mark.parametrize(
+    ("run_attempt", "blob_attempt", "expected"),
+    [
+        (None, None, TrainingRunStatus.COMPLETED),
+        (1, None, TrainingRunStatus.STOPPED),
+        (2, 1, TrainingRunStatus.STOPPED),
+        (2, 2, TrainingRunStatus.COMPLETED),
+    ],
+)
+def test_stop_marks_completed_only_for_current_attempt_result(
+    monkeypatch, fake_volume, run_attempt, blob_attempt, expected
+):
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: False
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app",
+        lambda app_id: pytest.fail("stop_app should not run"),
+    )
+    run = _run(TrainingRunStatus.RUNNING)
+    run.modal_app_id = "ap-1"
+    run.started_at = 100
+    if run_attempt is not None:
+        run.metadata = {"attempt_count": run_attempt}
+    run.save()
+    blob = {"training_run_id": "run-1"}
+    if blob_attempt is not None:
+        blob["attempt_count"] = blob_attempt
+    vol_put(MetadataStore.TRAIN_RESULTS, "run-1", blob)
+
+    assert run.stop() is True
+
+    persisted = TrainingRun.from_id("run-1")
+    assert persisted.status is expected
+    if expected is TrainingRunStatus.COMPLETED:
+        assert persisted.completed_at is not None
+        assert run.completed_at == persisted.completed_at
+        assert persisted.metadata.get("last_attempt_status") == "completed"
+        assert "terminal_reason" not in (persisted.metadata or {})
+    else:
+        assert persisted.metadata["terminal_reason"] == "stopped_by_user"

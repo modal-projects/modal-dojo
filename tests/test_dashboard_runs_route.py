@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from queue import Queue
 from types import SimpleNamespace
@@ -635,3 +636,83 @@ def test_spa_html_revalidates_and_assets_are_immutable(monkeypatch, tmp_path):
         # the browser must see the failure rather than parse HTML as JavaScript.
         missing = client.get("/assets/index-gone.js")
         assert missing.status_code == 404
+
+
+def _stop_headers() -> dict[str, str]:
+    return {"X-Training-Gym-Action": "stop"}
+
+
+def test_stop_run_requires_action_header(fake_volume, monkeypatch, tmp_path):
+    _save_records()
+
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.post("/api/runs/run-route-1/stop")
+
+    assert response.status_code == 400
+
+
+def test_stop_run_stops_app_and_persists_stopped(fake_volume, monkeypatch, tmp_path):
+    _save_records()
+    stopped: list[str] = []
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app",
+        stopped.append,
+    )
+
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
+
+    assert response.status_code == 200
+    assert stopped == ["ap-route"]
+    assert response.json()["status"] == "stopped"
+    run = TrainingRun.from_id("run-route-1")
+    assert run.status.value == "stopped"
+    assert run.ended_at is not None
+
+
+def test_stop_invalidation_survives_inflight_runs_refresh(
+    fake_volume, monkeypatch, tmp_path
+):
+    _save_records()
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.app_live_status", lambda app_id: True
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.modal_lifecycle.stop_app", lambda app_id: None
+    )
+
+    real_load = metadata.vol_get_summary_items_healed
+    stale_items = real_load(MetadataStore.TRAINING_RUNS_SUMMARY)
+    entered = threading.Event()
+    release = threading.Event()
+    calls: list[MetadataStore] = []
+
+    def stale_once(store: MetadataStore) -> list[dict]:
+        if store is not MetadataStore.TRAINING_RUNS_SUMMARY:
+            return real_load(store)
+        calls.append(store)
+        if len(calls) > 1:
+            return real_load(store)
+        entered.set()
+        release.wait(timeout=30)
+        return stale_items
+
+    monkeypatch.setattr(metadata, "vol_get_summary_items_healed", stale_once)
+
+    with _client(monkeypatch, tmp_path) as client:
+        # The stale list payload must not overwrite the stop once it resumes.
+        listing = threading.Thread(target=client.get, args=("/api/runs",))
+        listing.start()
+        assert entered.wait(timeout=30)
+        response = client.post("/api/runs/run-route-1/stop", headers=_stop_headers())
+        release.set()
+        listing.join(timeout=30)
+
+        assert response.status_code == 200
+        statuses = {
+            run["run_id"]: run["status"] for run in client.get("/api/runs").json()
+        }
+        assert statuses["run-route-1"] == "stopped"

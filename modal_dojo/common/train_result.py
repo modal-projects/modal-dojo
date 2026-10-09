@@ -25,6 +25,7 @@ def train_result_payload(
     model_config: Any = None,
     metrics: dict[str, Any] | None = None,
     group_id: str = "",
+    attempt_count: int = 0,
 ) -> dict[str, Any]:
     if isinstance(model_config, dict):
         model_name = str(model_config.get("model_name") or "")
@@ -45,6 +46,7 @@ def train_result_payload(
         "model_config": {"model_name": model_name, "model_path": model_path},
         "metrics": metrics or {},
         "group_id": group_id,
+        "attempt_count": attempt_count,
     }
 
 
