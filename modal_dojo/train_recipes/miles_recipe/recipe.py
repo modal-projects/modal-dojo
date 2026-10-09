@@ -913,7 +913,7 @@ class MilesRecipe(BaseTrainRecipe):
 
     @classmethod
     def get_base_recipe(cls, model_config: ModelConfig) -> "MilesRecipe | None":
-        from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash import (
+        from modal_dojo.train_recipes.miles_recipe.deepseek_v4_1_flash import (
             DeepSeek_V4_1_Flash_Recipe,
         )
         from modal_dojo.train_recipes.miles_recipe.gemma4_26b_a4b import (

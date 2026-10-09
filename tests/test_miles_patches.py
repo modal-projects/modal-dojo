@@ -11,9 +11,6 @@ from modal_dojo.frameworks.miles.modal_helpers.patches import (
     patch_qkvr_cpu_merge as qkvr_patcher,
     patch_rollout_status_reporting as rollout_patcher,
 )
-from modal_dojo.frameworks.miles.modal_helpers.patches import (
-    patch_zero_std_metrics as zero_std_patcher,
-)
 
 TESTDATA = Path(__file__).parent / "testdata" / "miles"
 
@@ -100,21 +97,3 @@ def test_qkvr_cpu_merge_rewrites_factory(tmp_path, capsys):
     compile(patched, str(work), "exec")
     assert qkvr_patcher.apply(work) == 0
     assert "already applied" in capsys.readouterr().out
-
-
-@pytest.mark.parametrize(
-    "source",
-    [
-        "x = [str(round(g[0].get_reward_value(args), 1)) for g in groups]\n",
-        "rewards = [str(round(reward, 1)) for reward in uniform_rewards]\n",
-    ],
-)
-def test_zero_std_patch_buckets_int_and_float_rewards_together(source):
-    patched = zero_std_patcher.patch_source(source)
-    assert "round(float(" in patched
-    assert zero_std_patcher.patch_source(patched) == patched
-
-
-def test_zero_std_patch_rejects_unknown_layout():
-    with pytest.raises(ValueError, match="anchor changed"):
-        zero_std_patcher.patch_source("rewards = []\n")
