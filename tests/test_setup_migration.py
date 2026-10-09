@@ -75,6 +75,9 @@ def harness(paths, monkeypatch):
     )
 
     def setup(**kwargs):
+        # Exercise the real setup precondition rather than hiding it in a stub.
+        config.require_migrated_config()
+        assert kwargs["interactive"] is False
         resources.events.append(("setup", kwargs["proxy_auth"]))
         config.save_dashboard_url("https://new.test")
         return "https://new.test"
@@ -179,6 +182,26 @@ def test_both_configs_preserve_new_and_archive_old(paths, harness):
     assert config.get_proxy_auth() == ("new-key", "new-secret")
     assert not paths[1].exists()
     assert next(paths[0].parent.glob("*.bak")).read_bytes() == old_bytes
+
+
+def test_both_configs_deployment_failure_is_retryable(paths, harness, monkeypatch):
+    paths[0].write_text('[dashboard]\nurl="https://chosen.test"\n')
+    old_bytes = paths[1].read_bytes()
+    original_setup = migration.setup
+
+    def fail(**kwargs):
+        config.require_migrated_config()
+        raise RuntimeError("deployment failed")
+
+    monkeypatch.setattr(migration, "setup", fail)
+    with pytest.raises(CLIError, match="dashboard deployment"):
+        migration.migrate(resources=harness)
+    assert config.get_dashboard_url() == "https://chosen.test"
+    assert not paths[1].exists()
+    assert next(paths[0].parent.glob("*.bak")).read_bytes() == old_bytes
+    monkeypatch.setattr(migration, "setup", original_setup)
+    migration.migrate(resources=harness)
+    assert len(list(paths[0].parent.glob("*.bak"))) == 1
 
 
 @pytest.mark.parametrize("mode", list(ProxyAuthMode))
