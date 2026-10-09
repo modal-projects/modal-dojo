@@ -154,10 +154,7 @@ if (typeof window.setup === "function") {
 """
 
 
-RENDER_APP_NAME = "training-gym-flower-render"
-
-
-def render_image() -> modal.Image:
+def renderer_image() -> modal.Image:
     return (
         modal.Image.debian_slim(python_version="3.12")
         .apt_install("chromium", "nodejs", "npm", "fonts-liberation")
@@ -169,48 +166,11 @@ def render_image() -> modal.Image:
     )
 
 
-def render_in_sandbox(code: str) -> tuple[bytes | None, dict]:
-    app = modal.App.lookup(RENDER_APP_NAME, create_if_missing=True)
-    sandbox = modal.Sandbox.create(
-        "sleep",
-        "infinity",
-        app=app,
-        image=render_image(),
-        workdir="/render",
-        timeout=300,
-        cpu=1.0,
-        memory=2048,
-        block_network=True,
-    )
-    try:
-        sandbox.filesystem.write_text(RENDER_JS, "/render/render.js")
-        sandbox.filesystem.write_text(code, "/render/sketch.js")
-        proc = sandbox.exec(
-            "node", "/render/render.js", "/render/sketch.js", timeout=180
-        )
-        proc.wait()
-        out, err = proc.stdout.read(), proc.stderr.read()
-        if "PNGB64:" in out:
-            png = base64.b64decode(out.split("PNGB64:", 1)[1].strip())
-            return png, {"render": "ok"}
-        err = err or ""
-        kind = "fail" if "SKETCH_ERROR:" in err else "unavailable"
-        return None, {"render": kind, "stderr": err[-400:]}
-    except Exception as e:
-        return None, {
-            "render": "unavailable",
-            "stderr": f"{type(e).__name__}: {e}"[-400:],
-        }
-    finally:
-        sandbox.terminate()
-        sandbox.detach()
-
-
 REMOTE_ASSETS_DIR = "/root/flower_assets"
 REFERENCE_POOL = "HuggingEnvs/watercolour-reference-pool"
 JUDGE_REFS = 4
 
-HPSV3_APP = "training-gym-flower-hpsv3"
+HPSV3_APP = "paint-flowers-hpsv3"
 HPSV3_PROMPT = "a loose watercolour flower"
 
 _CACHE: dict[str, object] = {}
@@ -268,7 +228,7 @@ def bake_reference_pool() -> None:
 def overlay_flower_image(image: modal.Image) -> modal.Image:
     return (
         image.uv_pip_install(
-            "modal~=1.5.5", "httpx~=0.28.1", "pillow~=11.1", "datasets"
+            "modal~=1.6.1", "httpx~=0.28.1", "pillow~=11.1", "datasets"
         )
         .add_local_file(__file__, remote_path="/root/helpers.py", copy=True)
         .run_function(bake_reference_pool)
@@ -378,7 +338,7 @@ def judge_pair(candidate: bytes, reference: bytes, flip: bool, judge):
     a, b = (reference, candidate) if flip else (candidate, reference)
     try:
         with _LOCKS.setdefault("judge", threading.Lock()):
-            judge.wait_until_ready(timeout=15 * 60)
+            judge.wait_until_ready()
         msg = judge.chat(
             [
                 {

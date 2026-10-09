@@ -25,7 +25,7 @@ import requests
 import soundfile as sf
 from datasets import Audio, load_dataset
 
-from modal_training_gym import (
+from modal_dojo import (
     CustomDeployment,
     MultimodalDataset,
     Qwen3_ASR_1_7B,
@@ -37,16 +37,23 @@ from modal_training_gym import (
 #
 # Since audio models are not yet supported on
 # [Endpoints](https://modal.com/docs/guide/endpoints), we use a
-# [CustomDeployment](https://gym.modal.dev/reference/customdeployment)
+# [CustomDeployment](https://dojo.modal.dev/reference/customdeployment)
 # to deploy the base and trained models.
 
 model = Qwen3_ASR_1_7B()
-base_deployment = CustomDeployment.launch(
-    model,
-    unauthenticated=True,
-)
-base_deployment.wait_until_ready(timeout=15 * 60)
-print(f"base model deployed to {base_deployment.url}")
+
+
+def deploy_base_model():
+    print("deploying base model deployment...")
+    base_deployment = CustomDeployment.launch(
+        model,
+        unauthenticated=True,
+        app_name="audio-asr-baseline",
+    )
+    base_deployment.wait_until_ready()
+    print(f"base model deployed to {base_deployment.url}")
+    return base_deployment
+
 
 # ## Define a scoring function
 #
@@ -122,7 +129,7 @@ eval_dataset = EuroSpeechASRDataset(hf_split="validation", max_seconds=300)
 
 
 def run_eval(deployment, max_concurrency: int = 2) -> float:
-    deployment.wait_until_ready(timeout=15 * 60)
+    deployment.wait_until_ready()
 
     def _score_one(example):
         data_uri = example["audios"][0]
@@ -151,9 +158,11 @@ def run_eval(deployment, max_concurrency: int = 2) -> float:
     return sum(wers) / len(wers) if wers else float("nan")
 
 
-print("running base model evaluation...")
-base_mean = run_eval(base_deployment)
-print(f"average WER: {base_mean:.1%}")
+def run_baseline_evals(deployment):
+    print("running base model evaluation...")
+    base_mean = run_eval(deployment)
+    print(f"average WER: {base_mean:.1%}")
+
 
 # ## Creating a reward function
 #
@@ -171,6 +180,7 @@ async def wer_rm(args, sample, **kwargs) -> float:
 # the transcription rollout, padded (bshd) batches, and the many-samples/high-temperature
 # settings that surface reward variance. To not pass the burden of specifying onto you,
 # we created `Qwen3_ASR_1_7B_Recipe` so that you can focus on training.
+
 config = TrainConfig(
     model=model,
     dataset=train_dataset,
@@ -184,32 +194,54 @@ config = TrainConfig(
         custom_rm_function=wer_rm,
     ),
 )
+
+
+def train(config):
+    with config.launch() as run:
+        print(f"run id: {run.training_run_id}")
+        checkpoint = None
+        while True:
+            done = run.done()
+            latest = run.latest_checkpoint()
+            if latest is not None and latest != checkpoint:
+                checkpoint = latest
+                print(f"new checkpoint: {checkpoint.path}")
+            if done:
+                break
+            time.sleep(30)
+        if checkpoint is None:
+            raise RuntimeError("run produced no checkpoint")
+        print(f"checkpoint: {checkpoint.path}")
+    return checkpoint
+
+
 # ## Evaluate the trained checkpoint
 #
 # Let's run the same eval on the trained checkpoint.
 
-with config.launch() as run:
-    print(f"run id: {run.training_run_id}")
-    checkpoint = None
-    while True:
-        done = run.done()
-        latest = run.latest_checkpoint()
-        if latest is not None and latest != checkpoint:
-            checkpoint = latest
-            print(f"new checkpoint: {checkpoint.path}")
-        if done:
-            break
-        time.sleep(30)
-    print(f"checkpoint: {checkpoint.path}")
 
-trained_deployment = CustomDeployment.launch(
-    model,
-    checkpoint,
-    unauthenticated=True,
-)
-trained_deployment.wait_until_ready(timeout=15 * 60)
-print(f"checkpoint deployed to {trained_deployment.url}")
+def deploy_trained_model(checkpoint):
+    print("deploying trained model deployment...")
+    trained_deployment = CustomDeployment.launch(
+        model,
+        checkpoint,
+        unauthenticated=True,
+        app_name="audio-asr-trained",
+    )
+    trained_deployment.wait_until_ready()
+    print(f"checkpoint deployed to {trained_deployment.url}")
+    return trained_deployment
 
-print("running checkpoint evaluation...")
-trained_mean = run_eval(trained_deployment)
-print(f"average WER: {trained_mean:.1%}")
+
+def run_trained_evals(trained_deployment):
+    print("running checkpoint evaluation...")
+    trained_mean = run_eval(trained_deployment)
+    print(f"average WER: {trained_mean:.1%}")
+
+
+if __name__ == "__main__":
+    base_deployment = deploy_base_model()
+    run_baseline_evals(base_deployment)
+    checkpoint = train(config)
+    trained_deployment = deploy_trained_model(checkpoint)
+    run_trained_evals(trained_deployment)

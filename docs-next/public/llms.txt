@@ -1,155 +1,161 @@
-# Training Gym
+# Modal Dojo
 
-Modal Training Gym is an open-source Python SDK for RL post-training on [Modal](https://modal.com).
+Modal Dojo is an open-source library to get started with production-grade LLM training on [Modal](https://modal.com).
 
-The library takes care of infrastructure concerns such as cluster topology, Ray/NCCL bring-up, volume mounts, checkpointing, and serving for eval and rollouts, so you (or your agent!) can focus on training models.
-
-To get started, you can go through the [Quickstart](https://gym.modal.dev/#quickstart) section below, or paste the prompt below into your favorite agent:
+To get started, you can go through the [Quickstart](https://dojo.modal.dev/#quickstart) section below, or paste the prompt below into your favorite agent:
 
 ```txt
-Install the `training-gym` library. Then, install the skill bundle into the local project with `training-gym skills install`. Finally, tell the user that they can ask you to do something like: "Walk through tutorials/rl_basics.py and train Qwen3.5-4B to write 5-7-5 haikus from statworx/haiku."
+Install the `modal-dojo` library. Then, install the skill bundle into the local project with `modal-dojo skills install`. Finally, tell the user that they can ask you to do something like: "Walk through tutorials/rl_basics.py and train Qwen3.5-4B to write 5-7-5 haikus from statworx/haiku."
 ```
 
-Docs: https://gym.modal.dev/
-Repo: https://github.com/modal-projects/training-gym
+Docs: https://dojo.modal.dev/
+Repo: https://github.com/modal-projects/modal-dojo
 
 ## Docs
 
-- [Home](https://gym.modal.dev/)
-- [Guides](https://gym.modal.dev/guides)
-- [Tutorials](https://gym.modal.dev/tutorials)
-- [SDK Reference](https://gym.modal.dev/reference/sdk)
-- [CLI Reference](https://gym.modal.dev/reference/cli)
+- [Home](https://dojo.modal.dev/)
+- [Guides](https://dojo.modal.dev/guides)
+- [Tutorials](https://dojo.modal.dev/tutorials)
+- [SDK Reference](https://dojo.modal.dev/reference/sdk)
+- [CLI Reference](https://dojo.modal.dev/reference/cli)
 
 ## Guides
 
 ### Start
 
-- [Choosing a base model](https://gym.modal.dev/guides/model)
-- [Getting your data](https://gym.modal.dev/guides/dataset)
-- [Cooking with a recipe](https://gym.modal.dev/guides/recipe)
-- [Training in the Gym](https://gym.modal.dev/guides/training)
+- [Choosing a base model](https://dojo.modal.dev/guides/model)
+- [Getting your data](https://dojo.modal.dev/guides/dataset)
+- [Cooking with a recipe](https://dojo.modal.dev/guides/recipe)
+- [Training in the Modal Dojo](https://dojo.modal.dev/guides/training)
 
 ### Tools
 
-- [Agent-driven training](https://gym.modal.dev/guides/agent)
-- [Observability dashboard](https://gym.modal.dev/guides/dashboard)
-- [Logging metrics](https://gym.modal.dev/guides/metric)
+- [Agent-driven training](https://dojo.modal.dev/guides/agent)
+- [Observability dashboard](https://dojo.modal.dev/guides/dashboard)
+- [Logging metrics](https://dojo.modal.dev/guides/metric)
 
 ### Migration
 
-- [Migrating to the new dataset API](https://gym.modal.dev/guides/dataset-migration)
+- [Migrating to the new dataset API](https://dojo.modal.dev/guides/dataset-migration)
+- [Migrating from Training Gym to Modal Dojo](https://dojo.modal.dev/guides/dojo-rename)
 
 ## Tutorials
 
-- [Getting started with RL](https://gym.modal.dev/tutorials/rl_basics)
-- [Painting flowers with code](https://gym.modal.dev/tutorials/paint_flowers)
-- [Training multi-turn coding agents](https://gym.modal.dev/tutorials/coding_agent)
-- [Efficient inference using on-policy distillation](https://gym.modal.dev/tutorials/on_policy_distillation)
-- [On-policy distillation across model families](https://gym.modal.dev/tutorials/cross_tok_distill)
-- [Long chain-of-thought reasoning for large-scale RL](https://gym.modal.dev/tutorials/dapo)
-- [Speech transcription that's better, faster, and cheaper](https://gym.modal.dev/tutorials/audio_asr)
-- [Massively-parallel hyperparameter sweeps](https://gym.modal.dev/tutorials/param_sweep)
-- [GUI Grounding with Qwen3-VL-8B](https://gym.modal.dev/tutorials/computer_use)
-- [Frontier-scale training](https://gym.modal.dev/tutorials/multinode)
+- [Getting started with RL](https://dojo.modal.dev/tutorials/rl_basics)
+- [Painting flowers with code](https://dojo.modal.dev/tutorials/paint_flowers)
+- [Training multi-turn coding agents](https://dojo.modal.dev/tutorials/coding_agent)
+- [Efficient inference using on-policy distillation](https://dojo.modal.dev/tutorials/on_policy_distillation)
+- [On-policy distillation across model families](https://dojo.modal.dev/tutorials/cross_tok_distill)
+- [Long chain-of-thought reasoning for large-scale RL](https://dojo.modal.dev/tutorials/dapo)
+- [Speech transcription that's better, faster, and cheaper](https://dojo.modal.dev/tutorials/audio_asr)
+- [Fighting LLMs in Street Fighter III](https://dojo.modal.dev/tutorials/street_fighter)
+- [Massively-parallel hyperparameter sweeps](https://dojo.modal.dev/tutorials/param_sweep)
+- [Frontier-scale training](https://dojo.modal.dev/tutorials/multinode)
 
 ## Reference
 
-- [SDK Reference](https://gym.modal.dev/reference/sdk)
-- [CLI Reference](https://gym.modal.dev/reference/cli)
+- [SDK Reference](https://dojo.modal.dev/reference/sdk)
+- [CLI Reference](https://dojo.modal.dev/reference/cli)
 
 ### Models
 
-- [DeepSeek_V4_1_Flash](https://gym.modal.dev/reference/deepseek_v4_1_flash)
-- [Gemma4_26B_A4B](https://gym.modal.dev/reference/gemma4_26b_a4b)
-- [GLM_4_7](https://gym.modal.dev/reference/glm_4_7)
-- [HFModelConfiguration](https://gym.modal.dev/reference/hfmodelconfiguration)
-- [Inkling_Small](https://gym.modal.dev/reference/inkling_small)
-- [Inkling_Small_LoRA](https://gym.modal.dev/reference/inkling_small_lora)
-- [ModelArchitecture](https://gym.modal.dev/reference/modelarchitecture)
-- [ModelConfig](https://gym.modal.dev/reference/modelconfig)
-- [Moonlight_16B_A3B_Instruct](https://gym.modal.dev/reference/moonlight_16b_a3b_instruct)
-- [ParsedResponse](https://gym.modal.dev/reference/parsedresponse)
-- [Qwen3_0_6B](https://gym.modal.dev/reference/qwen3_0_6b)
-- [Qwen3_1_7B](https://gym.modal.dev/reference/qwen3_1_7b)
-- [Qwen3_30B](https://gym.modal.dev/reference/qwen3_30b)
-- [Qwen3_4B](https://gym.modal.dev/reference/qwen3_4b)
-- [Qwen3_5_0_8B](https://gym.modal.dev/reference/qwen3_5_0_8b)
-- [Qwen3_5_2B](https://gym.modal.dev/reference/qwen3_5_2b)
-- [Qwen3_5_4B](https://gym.modal.dev/reference/qwen3_5_4b)
-- [Qwen3_5_9B](https://gym.modal.dev/reference/qwen3_5_9b)
-- [Qwen3_6_27B](https://gym.modal.dev/reference/qwen3_6_27b)
-- [Qwen3_6_35B](https://gym.modal.dev/reference/qwen3_6_35b)
-- [Qwen3_8_27B](https://gym.modal.dev/reference/qwen3_8_27b)
-- [Qwen3_8B](https://gym.modal.dev/reference/qwen3_8b)
-- [Qwen3_ASR_1_7B](https://gym.modal.dev/reference/qwen3_asr_1_7b)
-- [Qwen3_VL_8B](https://gym.modal.dev/reference/qwen3_vl_8b)
-- [ToolCall](https://gym.modal.dev/reference/toolcall)
+- [DeepSeek_V4_1_Flash](https://dojo.modal.dev/reference/deepseek_v4_1_flash)
+- [Gemma4_26B_A4B](https://dojo.modal.dev/reference/gemma4_26b_a4b)
+- [GLM_4_7](https://dojo.modal.dev/reference/glm_4_7)
+- [GLM_5_3_Flash](https://dojo.modal.dev/reference/glm_5_3_flash)
+- [GLM_5_3_Flash_LoRA](https://dojo.modal.dev/reference/glm_5_3_flash_lora)
+- [HFModelConfiguration](https://dojo.modal.dev/reference/hfmodelconfiguration)
+- [Inkling_Small](https://dojo.modal.dev/reference/inkling_small)
+- [Inkling_Small_LoRA](https://dojo.modal.dev/reference/inkling_small_lora)
+- [Kimi_K3](https://dojo.modal.dev/reference/kimi_k3)
+- [ModelArchitecture](https://dojo.modal.dev/reference/modelarchitecture)
+- [ModelConfig](https://dojo.modal.dev/reference/modelconfig)
+- [Moonlight_16B_A3B_Instruct](https://dojo.modal.dev/reference/moonlight_16b_a3b_instruct)
+- [ParsedResponse](https://dojo.modal.dev/reference/parsedresponse)
+- [Qwen3_0_6B](https://dojo.modal.dev/reference/qwen3_0_6b)
+- [Qwen3_1_7B](https://dojo.modal.dev/reference/qwen3_1_7b)
+- [Qwen3_30B](https://dojo.modal.dev/reference/qwen3_30b)
+- [Qwen3_4B](https://dojo.modal.dev/reference/qwen3_4b)
+- [Qwen3_5_0_8B](https://dojo.modal.dev/reference/qwen3_5_0_8b)
+- [Qwen3_5_2B](https://dojo.modal.dev/reference/qwen3_5_2b)
+- [Qwen3_5_4B](https://dojo.modal.dev/reference/qwen3_5_4b)
+- [Qwen3_5_9B](https://dojo.modal.dev/reference/qwen3_5_9b)
+- [Qwen3_6_27B](https://dojo.modal.dev/reference/qwen3_6_27b)
+- [Qwen3_6_35B](https://dojo.modal.dev/reference/qwen3_6_35b)
+- [Qwen3_8_27B](https://dojo.modal.dev/reference/qwen3_8_27b)
+- [Qwen3_8B](https://dojo.modal.dev/reference/qwen3_8b)
+- [Qwen3_ASR_1_7B](https://dojo.modal.dev/reference/qwen3_asr_1_7b)
+- [Qwen3_VL_8B](https://dojo.modal.dev/reference/qwen3_vl_8b)
+- [ToolCall](https://dojo.modal.dev/reference/toolcall)
 
 ### Datasets
 
-- [DatasetConfig](https://gym.modal.dev/reference/datasetconfig)
-- [HarborDataset](https://gym.modal.dev/reference/harbordataset)
-- [HuggingFaceDataset](https://gym.modal.dev/reference/huggingfacedataset)
-- [MultimodalDataset](https://gym.modal.dev/reference/multimodaldataset)
-- [OnlineRollout](https://gym.modal.dev/reference/onlinerollout)
+- [DatasetConfig](https://dojo.modal.dev/reference/datasetconfig)
+- [HarborDataset](https://dojo.modal.dev/reference/harbordataset)
+- [HuggingFaceDataset](https://dojo.modal.dev/reference/huggingfacedataset)
+- [MultimodalDataset](https://dojo.modal.dev/reference/multimodaldataset)
+- [OnlineRollout](https://dojo.modal.dev/reference/onlinerollout)
 
 ### Recipes
 
-- [DeepSeek_V4_1_Flash_Recipe](https://gym.modal.dev/reference/deepseek_v4_1_flash_recipe)
-- [Gemma4_26B_A4B_Recipe](https://gym.modal.dev/reference/gemma4_26b_a4b_recipe)
-- [GLM_4_7_Recipe](https://gym.modal.dev/reference/glm_4_7_recipe)
-- [Inkling_Small_LoRA_Recipe](https://gym.modal.dev/reference/inkling_small_lora_recipe)
-- [Inkling_Small_Recipe](https://gym.modal.dev/reference/inkling_small_recipe)
-- [MilesRecipe](https://gym.modal.dev/reference/milesrecipe)
-- [Moonlight_16B_A3B_Recipe](https://gym.modal.dev/reference/moonlight_16b_a3b_recipe)
-- [Qwen3_0_6B_Recipe](https://gym.modal.dev/reference/qwen3_0_6b_recipe)
-- [Qwen3_1_7B_Recipe](https://gym.modal.dev/reference/qwen3_1_7b_recipe)
-- [Qwen3_4B_Recipe](https://gym.modal.dev/reference/qwen3_4b_recipe)
-- [Qwen3_5_0_8B_Recipe](https://gym.modal.dev/reference/qwen3_5_0_8b_recipe)
-- [Qwen3_5_2B_Recipe](https://gym.modal.dev/reference/qwen3_5_2b_recipe)
-- [Qwen3_5_4B_Miles_Recipe](https://gym.modal.dev/reference/qwen3_5_4b_miles_recipe)
-- [Qwen3_5_4B_Recipe](https://gym.modal.dev/reference/qwen3_5_4b_recipe)
-- [Qwen3_5_9B_Recipe](https://gym.modal.dev/reference/qwen3_5_9b_recipe)
-- [Qwen3_6_27B_Recipe](https://gym.modal.dev/reference/qwen3_6_27b_recipe)
-- [Qwen3_6_35B_Recipe](https://gym.modal.dev/reference/qwen3_6_35b_recipe)
-- [Qwen3_8_27B_Recipe](https://gym.modal.dev/reference/qwen3_8_27b_recipe)
-- [Qwen3_8B_Recipe](https://gym.modal.dev/reference/qwen3_8b_recipe)
-- [Qwen3_ASR_1_7B_Recipe](https://gym.modal.dev/reference/qwen3_asr_1_7b_recipe)
-- [Qwen3_VL_8B_Recipe](https://gym.modal.dev/reference/qwen3_vl_8b_recipe)
-- [SlimeRecipe](https://gym.modal.dev/reference/slimerecipe)
+- [DeepSeek_V4_1_Flash_Recipe](https://dojo.modal.dev/reference/deepseek_v4_1_flash_recipe)
+- [Gemma4_26B_A4B_Recipe](https://dojo.modal.dev/reference/gemma4_26b_a4b_recipe)
+- [GLM_4_7_Recipe](https://dojo.modal.dev/reference/glm_4_7_recipe)
+- [GLM_5_3_Flash_LoRA_Recipe](https://dojo.modal.dev/reference/glm_5_3_flash_lora_recipe)
+- [Inkling_Small_LoRA_Recipe](https://dojo.modal.dev/reference/inkling_small_lora_recipe)
+- [Inkling_Small_Recipe](https://dojo.modal.dev/reference/inkling_small_recipe)
+- [Kimi_K3_LoRA_Recipe](https://dojo.modal.dev/reference/kimi_k3_lora_recipe)
+- [MilesRecipe](https://dojo.modal.dev/reference/milesrecipe)
+- [Moonlight_16B_A3B_Recipe](https://dojo.modal.dev/reference/moonlight_16b_a3b_recipe)
+- [Qwen3_0_6B_Recipe](https://dojo.modal.dev/reference/qwen3_0_6b_recipe)
+- [Qwen3_1_7B_Recipe](https://dojo.modal.dev/reference/qwen3_1_7b_recipe)
+- [Qwen3_4B_Recipe](https://dojo.modal.dev/reference/qwen3_4b_recipe)
+- [Qwen3_5_0_8B_Recipe](https://dojo.modal.dev/reference/qwen3_5_0_8b_recipe)
+- [Qwen3_5_2B_Recipe](https://dojo.modal.dev/reference/qwen3_5_2b_recipe)
+- [Qwen3_5_4B_Miles_Recipe](https://dojo.modal.dev/reference/qwen3_5_4b_miles_recipe)
+- [Qwen3_5_4B_Recipe](https://dojo.modal.dev/reference/qwen3_5_4b_recipe)
+- [Qwen3_5_9B_Recipe](https://dojo.modal.dev/reference/qwen3_5_9b_recipe)
+- [Qwen3_6_27B_Recipe](https://dojo.modal.dev/reference/qwen3_6_27b_recipe)
+- [Qwen3_6_35B_Recipe](https://dojo.modal.dev/reference/qwen3_6_35b_recipe)
+- [Qwen3_8_27B_Recipe](https://dojo.modal.dev/reference/qwen3_8_27b_recipe)
+- [Qwen3_8B_Recipe](https://dojo.modal.dev/reference/qwen3_8b_recipe)
+- [Qwen3_ASR_1_7B_Recipe](https://dojo.modal.dev/reference/qwen3_asr_1_7b_recipe)
+- [Qwen3_VL_8B_Recipe](https://dojo.modal.dev/reference/qwen3_vl_8b_recipe)
+- [SlimeRecipe](https://dojo.modal.dev/reference/slimerecipe)
 
 ### Training
 
-- [Checkpoint](https://gym.modal.dev/reference/checkpoint)
-- [CheckpointType](https://gym.modal.dev/reference/checkpointtype)
-- [DashboardComponent](https://gym.modal.dev/reference/dashboardcomponent)
-- [DashboardMetricConfig](https://gym.modal.dev/reference/dashboardmetricconfig)
-- [GpuAllocationError](https://gym.modal.dev/reference/gpuallocationerror)
-- [MetricConfig](https://gym.modal.dev/reference/metricconfig)
-- [ModalCaptureError](https://gym.modal.dev/reference/modalcaptureerror)
-- [Sample](https://gym.modal.dev/reference/sample)
-- [TrackioConfig](https://gym.modal.dev/reference/trackioconfig)
-- [TrainConfig](https://gym.modal.dev/reference/trainconfig)
-- [TrainingGroup](https://gym.modal.dev/reference/traininggroup)
-- [TrainingGymConfigError](https://gym.modal.dev/reference/traininggymconfigerror)
-- [TrainingGymError](https://gym.modal.dev/reference/traininggymerror)
-- [TrainingRun](https://gym.modal.dev/reference/trainingrun)
-- [WandbConfig](https://gym.modal.dev/reference/wandbconfig)
-- [convert_megatron_checkpoint_to_hf](https://gym.modal.dev/reference/convert_megatron_checkpoint_to_hf)
-- [extract_code](https://gym.modal.dev/reference/extract_code)
-- [score_in_sandbox](https://gym.modal.dev/reference/score_in_sandbox)
+- [Checkpoint](https://dojo.modal.dev/reference/checkpoint)
+- [CheckpointType](https://dojo.modal.dev/reference/checkpointtype)
+- [DashboardComponent](https://dojo.modal.dev/reference/dashboardcomponent)
+- [DashboardMetricConfig](https://dojo.modal.dev/reference/dashboardmetricconfig)
+- [DojoConfigError](https://dojo.modal.dev/reference/dojoconfigerror)
+- [DojoError](https://dojo.modal.dev/reference/dojoerror)
+- [GpuAllocationError](https://dojo.modal.dev/reference/gpuallocationerror)
+- [MetricConfig](https://dojo.modal.dev/reference/metricconfig)
+- [ModalCaptureError](https://dojo.modal.dev/reference/modalcaptureerror)
+- [Sample](https://dojo.modal.dev/reference/sample)
+- [TrackioConfig](https://dojo.modal.dev/reference/trackioconfig)
+- [TrainConfig](https://dojo.modal.dev/reference/trainconfig)
+- [TrainingGroup](https://dojo.modal.dev/reference/traininggroup)
+- [TrainingRun](https://dojo.modal.dev/reference/trainingrun)
+- [WandbConfig](https://dojo.modal.dev/reference/wandbconfig)
+- [convert_megatron_checkpoint_to_hf](https://dojo.modal.dev/reference/convert_megatron_checkpoint_to_hf)
+- [extract_code](https://dojo.modal.dev/reference/extract_code)
+- [score_in_sandbox](https://dojo.modal.dev/reference/score_in_sandbox)
 
 ### Deployment
 
-- [CustomDeployment](https://gym.modal.dev/reference/customdeployment)
-- [Endpoint](https://gym.modal.dev/reference/endpoint)
-- [SglangRecipe](https://gym.modal.dev/reference/sglangrecipe)
-- [VllmRecipe](https://gym.modal.dev/reference/vllmrecipe)
+- [CustomDeployment](https://dojo.modal.dev/reference/customdeployment)
+- [Endpoint](https://dojo.modal.dev/reference/endpoint)
+- [Sandbox](https://dojo.modal.dev/reference/sandbox)
+- [SandboxResult](https://dojo.modal.dev/reference/sandboxresult)
+- [SglangRecipe](https://dojo.modal.dev/reference/sglangrecipe)
+- [VllmRecipe](https://dojo.modal.dev/reference/vllmrecipe)
 
 ## Optional
 
-- [AGENTS.md](https://github.com/modal-projects/training-gym/blob/main/AGENTS.md)
-- [skills/](https://github.com/modal-projects/training-gym/tree/main/skills)
+- [AGENTS.md](https://github.com/modal-projects/modal-dojo/blob/main/AGENTS.md)
+- [skills/](https://github.com/modal-projects/modal-dojo/tree/main/skills)
 
 <!-- Generated by scripts/generate_llms_txt.py; do not edit by hand. -->

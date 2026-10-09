@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 TESTDATA = Path(__file__).parent / "testdata"
-FRAMEWORKS = Path(__file__).parents[1] / "modal_training_gym" / "frameworks"
+FRAMEWORKS = Path(__file__).parents[1] / "modal_dojo" / "frameworks"
 
 
 def patcher_path(framework: str) -> Path:
@@ -334,7 +334,7 @@ def test_package_patch_failure_is_best_effort(
         scope=None,
         blocks=(("missing", "missing\n"),),
     )
-    monkeypatch.setenv("TRAINING_GYM_SUBSTEP_TIMING", mode)
+    monkeypatch.setenv("MODAL_DOJO_SUBSTEP_TIMING", mode)
     miles.patch_package_file(tmp_path, target)
     assert "substep timing patch skipped" in capsys.readouterr().out
 
@@ -358,7 +358,7 @@ def test_async_training_offloads_are_separate_from_train(miles, tmp_path):
         assert f"with _tg_rec.phase('{phase}'):" in patched
     assert (
         "if not args.eval_uses_snapshots:\n"
-        "                    # PATCHED_TRAINING_GYM_TIMING_EVALUATE_ROLLOUTS_END"
+        "                    # PATCHED_MODAL_DOJO_TIMING_EVALUATE_ROLLOUTS_END"
     ) in patched
     assert (
         "with _tg_rec.phase('evaluate_rollouts_end'):\n"
@@ -401,3 +401,94 @@ def test_per_sample_generation_target_wraps_only_generation_branch(
 def test_missing_package_file_warns_and_continues(miles, tmp_path, capsys):
     miles.patch_package_file(tmp_path, miles.PACKAGE_TARGETS[0])
     assert "substep timing patch skipped" in capsys.readouterr().out
+
+
+_EXECUTOR_TRAIN = """
+def train(args):
+    create_rollout_components()
+    create_training_models()
+    for rollout_id in range(args.start_rollout_id, args.num_rollout):
+        inference_controller.prepare_rollout()
+        rollout_executor.get.remote()
+        inference_controller.offload_kv()
+        inference_controller.offload_weights()
+        inference_controller.offload()
+        actor_model.onload()
+        actor_model.train()
+        critic_model.train()
+        actor_model.offload()
+        critic_model.offload()
+        offload_train()
+        actor_model.clear_memory()
+        actor_model.offload_grad_buffer()
+        inference_controller.onload_weights()
+        save()
+        inference_controller.onload_kv()
+        inference_controller.prepare_eval()
+        eval_dispatcher.dispatch()
+"""
+
+
+def test_executor_driver_tolerates_missing_grad_buffer_offload(miles, tmp_path, capsys):
+    """The K3-only gradient offload is optional on other executor layouts."""
+    src = _EXECUTOR_TRAIN.replace(
+        "        actor_model.offload_grad_buffer()\n",
+        "        # offload_grad_buffer handled elsewhere\n",
+    )
+    patched = miles._patch_executor_driver(src, tmp_path / "train.py")
+    assert "_tg_time_phase('generate_rollouts')" in patched
+    assert "offload_train_gradients" not in patched
+    assert "offload_train_gradients skipped" in capsys.readouterr().out
+    compile(patched, "train.py", "exec")
+
+
+def test_executor_driver_still_requires_required_calls(miles, tmp_path):
+    src = _EXECUTOR_TRAIN.replace("        save()\n", "")
+    with pytest.raises(RuntimeError, match="timing calls missing"):
+        miles._patch_executor_driver(src, tmp_path / "train.py")
+
+
+def test_executor_package_skips_unpatchable_files(miles, tmp_path, capsys):
+    """One executor file that drifts must not lose the others, or the build."""
+    files = {
+        "miles/ray/rollout/rollout_executor.py": (
+            "class R:\n"
+            "    def get(self, rollout_id):\n"
+            "        self._get_rollout_data()\n"
+            "        convert_samples_to_train_data()\n"
+        ),
+        "miles/backends/megatron_utils/actor.py": (
+            "class A:\n"
+            "    def compute_log_prob(self, rollout_id):\n"
+            "        pass\n"
+            "    def train(self, rollout_id):\n"
+            "        pass\n"
+        ),
+        "miles/backends/megatron_utils/model.py": (
+            "class M:\n    def train_one_step(self):\n        optimizer.step()\n"
+        ),
+        "miles/ray/train/group.py": (
+            "class G:\n"
+            "    def update_weights(self, rollout_id):\n"
+            "        self._inference_controller.start_update_weights()\n"
+            "        retry()\n"
+            "        self._inference_controller.end_update_weights()\n"
+            "        self._maybe_log_inference_engine_weight_checksums()\n"
+        ),
+    }
+    for rel, src in files.items():
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(src)
+
+    miles.patch_executor_package(tmp_path)
+
+    out = capsys.readouterr().out
+    assert "model.py" in out and "skipped" in out
+    assert (
+        miles.PREAMBLE_MARKER
+        not in (tmp_path / "miles/backends/megatron_utils/model.py").read_text()
+    )
+    for rel in files:
+        if "model.py" not in rel:
+            assert miles.PREAMBLE_MARKER in (tmp_path / rel).read_text()

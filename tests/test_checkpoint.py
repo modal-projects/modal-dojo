@@ -4,21 +4,21 @@ from dataclasses import dataclass
 import modal
 import pytest
 
-from modal_training_gym.common import checkpoint as checkpoint_mod
-from modal_training_gym.common.checkpoint import (
+from modal_dojo.common import checkpoint as checkpoint_mod
+from modal_dojo.common.checkpoint import (
     Checkpoint,
     CheckpointType,
     convert_megatron_checkpoint_to_hf,
     volume_relative_path,
 )
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.framework import Framework
-from modal_training_gym.common.launcher_helpers import (
+from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.common.framework import Framework
+from modal_dojo.common.launcher_helpers import (
     compute_recipe_save_root,
     compute_save_root,
 )
-from modal_training_gym.common.models import ModelConfig, Qwen3_5_4B
-from modal_training_gym.common.run import TrainingRun, set_checkpoint_location
+from modal_dojo.common.models import ModelConfig, Qwen3_5_4B
+from modal_dojo.common.run import TrainingRun, set_checkpoint_location
 
 
 class _CheckpointVolume:
@@ -68,7 +68,7 @@ def test_convert_megatron_checkpoint_to_hf_returns_hf_checkpoints_unchanged() ->
 
 
 def test_save_root_must_stay_inside_checkpoint_volume() -> None:
-    with pytest.raises(TrainingGymConfigError, match="outside Volume mount"):
+    with pytest.raises(DojoConfigError, match="outside Volume mount"):
         compute_save_root(
             "/tmp/checkpoints",
             recipe_default_save_root="/checkpoints",
@@ -142,7 +142,7 @@ def test_recipe_save_is_used_when_extra_config_omits_save() -> None:
 def test_training_run_id_cannot_escape_checkpoint_volume(
     training_run_id: str,
 ) -> None:
-    with pytest.raises(TrainingGymConfigError, match="outside Volume mount"):
+    with pytest.raises(DojoConfigError, match="outside Volume mount"):
         compute_save_root(
             "/checkpoints",
             recipe_default_save_root="/checkpoints",
@@ -152,7 +152,7 @@ def test_training_run_id_cannot_escape_checkpoint_volume(
 
 
 def test_relative_checkpoint_path_is_rejected() -> None:
-    with pytest.raises(TrainingGymConfigError, match="must be absolute POSIX paths"):
+    with pytest.raises(DojoConfigError, match="must be absolute POSIX paths"):
         volume_relative_path("run/iter_10", "/checkpoints")
 
 

@@ -1,11 +1,11 @@
-from modal_training_gym import (
+from modal_dojo import (
     Qwen3_6_35B,
     Qwen3_6_35B_Recipe,
 )
-from modal_training_gym.frameworks.slime.modal_helpers.utils import (
+from modal_dojo.frameworks.slime.modal_helpers.utils import (
     get_checkpoint_conversion_policy,
 )
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 def test_qwen3_6_35b_uses_disagg_two_b300_tp1_ep1() -> None:

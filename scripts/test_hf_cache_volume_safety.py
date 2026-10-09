@@ -23,7 +23,7 @@ import re
 import sys
 from pathlib import Path
 
-PACKAGE_ROOT = Path(__file__).resolve().parent.parent / "modal_training_gym"
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent / "modal_dojo"
 
 VOLUME_MOUNT_PATTERN = re.compile(
     r"""['"]\/root\/\.cache\/huggingface['"]"""

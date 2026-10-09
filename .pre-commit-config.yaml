@@ -13,7 +13,7 @@ repos:
         entry: uv run scripts/generate_models_table.py
         language: system
         pass_filenames: false
-        files: ^(scripts/generate_models_table\.py|modal_training_gym/(train_recipes/.*_recipe/__init__\.py|common/models/.*\.py))$
+        files: ^(scripts/generate_models_table\.py|modal_dojo/(train_recipes/.*_recipe/__init__\.py|common/models/.*\.py))$
       - id: regenerate-quickstart
         name: Regenerate README quickstart (scripts/generate_quickstart.py)
         entry: uv run scripts/generate_quickstart.py
@@ -25,7 +25,7 @@ repos:
         entry: uv run scripts/generate_api_reference.py
         language: system
         pass_filenames: false
-        files: ^(scripts/(generate_api_reference|api_reference_manifest|generate_models_table)\.py|modal_training_gym/(__init__|_api_reference)\.py|modal_training_gym/(cli|common|frameworks|(train|deploy)_recipes)/.*\.py|docs-next/src/(generated/reference-sidebar\.json|content/docs/reference/.*))$
+        files: ^(scripts/(generate_api_reference|api_reference_manifest|generate_models_table)\.py|modal_dojo/(__init__|_api_reference)\.py|modal_dojo/(cli|common|frameworks|(train|deploy)_recipes)/.*\.py|docs-next/src/(generated/reference-sidebar\.json|content/docs/reference/.*))$
       - id: regenerate-llms-txt
         name: Regenerate llms.txt (scripts/generate_llms_txt.py)
         entry: uv run python -m scripts.generate_llms_txt

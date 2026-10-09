@@ -6,14 +6,14 @@ import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
-from modal_training_gym import CustomDeployment
-from modal_training_gym.common.models.base import ModelConfig
-from modal_training_gym.deploy_recipes.sglang_recipe import SglangRecipe
-from modal_training_gym.deploy_recipes.sglang_recipe.serve_sglang import (
+from modal_dojo import CustomDeployment
+from modal_dojo.common.models.base import ModelConfig
+from modal_dojo.deploy_recipes.sglang_recipe import SglangRecipe
+from modal_dojo.deploy_recipes.sglang_recipe.serve_sglang import (
     build_sglang_serve_app,
 )
-from modal_training_gym.deploy_recipes.vllm_recipe import VllmRecipe
-from modal_training_gym.deploy_recipes.vllm_recipe.serve_vllm import (
+from modal_dojo.deploy_recipes.vllm_recipe import VllmRecipe
+from modal_dojo.deploy_recipes.vllm_recipe.serve_vllm import (
     build_vllm_serve_app,
 )
 
@@ -43,7 +43,7 @@ def test_vllm_builder_forwards_unauthenticated_to_app_server() -> None:
         patch("modal.App", FakeApp),
         patch("modal.Image"),
         patch("modal.Volume"),
-        patch("modal_training_gym.common.hf_secrets", return_value=[]),
+        patch("modal_dojo.common.hf_secrets", return_value=[]),
     ):
         build_vllm_serve_app(
             recipe=VllmRecipe(),
@@ -83,11 +83,11 @@ def test_sglang_serve_forwards_unauthenticated() -> None:
 
     with (
         patch(
-            "modal_training_gym.deploy_recipes.sglang_recipe.serve_sglang.build_sglang_serve_app",
+            "modal_dojo.deploy_recipes.sglang_recipe.serve_sglang.build_sglang_serve_app",
             side_effect=_capture_build,
         ),
         patch(
-            "modal_training_gym.common.deployment._run_coro",
+            "modal_dojo.common.deployment._run_coro",
             return_value="https://example.modal.run",
         ),
     ):
@@ -114,15 +114,15 @@ def _serve_vllm(*, unauthenticated: bool = True) -> tuple[object, MagicMock]:
     fake_app.Server = fake_server
     with (
         patch(
-            "modal_training_gym.deploy_recipes.vllm_recipe.serve_vllm.build_vllm_serve_app",
+            "modal_dojo.deploy_recipes.vllm_recipe.serve_vllm.build_vllm_serve_app",
             return_value=fake_app,
         ) as mock_build,
         patch(
-            "modal_training_gym.common.deployment._run_coro",
+            "modal_dojo.common.deployment._run_coro",
             return_value="https://example.modal.run",
         ),
         patch(
-            "modal_training_gym.common.deployment.modal_app_dashboard_url",
+            "modal_dojo.common.deployment.modal_app_dashboard_url",
             return_value="https://modal.com/apps/ap-test",
         ),
     ):

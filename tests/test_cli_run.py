@@ -6,8 +6,8 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from modal_training_gym import cli as cli_module
-from modal_training_gym.cli import run as run_module
+from modal_dojo import cli as cli_module
+from modal_dojo.cli import run as run_module
 
 
 class FakeDashboardClient:
@@ -251,7 +251,7 @@ def test_run_get_missing_run_returns_not_found_without_fetching_rollouts():
 
     assert result.exit_code == 3
     assert "Training run 'missing' was not found." in result.stderr
-    assert "training-gym run list" in result.stderr
+    assert "modal-dojo run list" in result.stderr
     assert FakeDashboardClient.requests == [("/api/runs/missing", None)]
 
 
@@ -305,7 +305,7 @@ def test_run_logs_help_documents_modes_and_filters():
     for flag in ("--follow", "--since", "--until", "--tail", "--search", "--json"):
         assert flag in result.stdout
     assert "RUN_ID" in result.stdout
-    assert "training-gym run logs brave-falcon-3fa8 --follow" in result.stdout
+    assert "modal-dojo run logs brave-falcon-3fa8 --follow" in result.stdout
 
 
 def test_run_logs_fetches_recent_filtered_entries():
@@ -469,7 +469,7 @@ def test_run_trace_help_documents_flags_and_examples():
     assert "RUN_ID" in result.stdout
     for flag in ("--out", "--step", "--dry-run", "--yes", "--force", "--json"):
         assert flag in result.stdout
-    assert "training-gym run trace brave-falcon-3fa8" in result.stdout
+    assert "modal-dojo run trace brave-falcon-3fa8" in result.stdout
 
 
 def test_run_trace_dry_run_filters_steps_without_downloading(tmp_path):
@@ -771,6 +771,7 @@ def test_run_trace_rejects_missing_and_invalid_steps(tmp_path):
         ("--model", "org/model", "model"),
         ("--dataset", "org/data", "dataset"),
         ("--recipe", "slime", "recipe"),
+        ("--training-type", "sft", "training_type"),
         ("--group", "nightly", "group_id"),
     ],
 )
@@ -815,6 +816,7 @@ def test_run_list_forwards_filters_and_prints_configured_fields_as_json():
                 "model": None,
                 "dataset": None,
                 "recipe": None,
+                "training_type": None,
                 "group_id": "nightly",
                 "since": 1784808000,
                 "limit": 3,
@@ -829,6 +831,7 @@ def test_run_list_forwards_filters_and_prints_configured_fields_as_json():
             "model": "org/model",
             "dataset": "org/data",
             "recipe": "slime",
+            "training_type": "rl",
             "group": "nightly",
             "created_at": "1970-01-01T00:01:40Z",
             "last_updated_at": "1970-01-01T00:03:20Z",

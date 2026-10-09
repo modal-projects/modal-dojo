@@ -30,19 +30,19 @@ from api_reference_manifest import (
     GROUPS,
     entry_sort_key,
 )
-from modal_training_gym.cli import entrypoint_cli
+from modal_dojo.cli import entrypoint_cli
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = ROOT / "docs-next" / "src" / "content" / "docs" / "reference"
 SIDEBAR_PATH = ROOT / "docs-next" / "src" / "generated" / "reference-sidebar.json"
-CLI_PROG = "training-gym"
+CLI_PROG = "modal-dojo"
 
 
 _SPHINX_ROLE = re.compile(r":(?:class|meth|func|attr|mod|exc|data|const):`([^`]+)`")
 _DEFAULT_TAIL = re.compile(r"\s*Default\s+`[^`]+`\.?\s*$")
 _QUOTED_ANNOTATION = re.compile(r""": (['"])(.*?)\1""")
 _QUOTED_RETURN = re.compile(r""" -> (['"])(.*?)\1""")
-_MODULE_PREFIX = re.compile(r"\b(?:modal_training_gym|modal)(?:\.\w+)+\.(\w+)")
+_MODULE_PREFIX = re.compile(r"\b(?:modal_dojo|modal)(?:\.\w+)+\.(\w+)")
 _INLINE_CODE = re.compile(r"`([^`]+)`")
 _MAX_DEFAULT_CHARS = 80
 
@@ -649,7 +649,7 @@ def _get_members(cls: type) -> list[_MemberDoc]:
             attr = getattr(cls, name, None)
         if attr is None or not callable(attr) or inspect.isclass(attr):
             continue
-        if not getattr(attr, "__module__", "").startswith("modal_training_gym"):
+        if not getattr(attr, "__module__", "").startswith("modal_dojo"):
             continue
         if not is_property:
             signature = _callable_signature(attr)
@@ -1082,7 +1082,7 @@ def generate_cli_page(page: CliPage, order: int) -> str:
 def generate_index_page(manifest: list[dict]) -> str:
     lines = [
         *_page_heading(0, "SDK reference"),
-        "Types and functions in the `modal-training-gym` Python SDK.",
+        "Types and functions in the `modal-dojo` Python SDK.",
         "",
     ]
 

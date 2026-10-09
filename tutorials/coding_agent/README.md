@@ -1,6 +1,6 @@
 # Coding-agent tutorial: full training run
 
-Run these commands from the repository root, with Training Gym configured and
+Run these commands from the repository root, with Modal Dojo configured and
 Modal authenticated. This branch configures the full experiment, not a smoke run.
 
 ## Dataset sizes used

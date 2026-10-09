@@ -14,16 +14,16 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
-from modal_training_gym import (
+from modal_dojo import (
     DatasetConfig,
     Qwen3_6_27B,
     Qwen3_6_27B_Recipe,
     TrainConfig,
 )
-from modal_training_gym.frameworks.slime.modal_helpers.patches.patch_entropy_no_grad import (
+from modal_dojo.frameworks.slime.modal_helpers.patches.patch_entropy_no_grad import (
     image_patch_command,
 )
-from modal_training_gym.frameworks.slime.modal_helpers.patches.patch_agentic_eval import (
+from modal_dojo.frameworks.slime.modal_helpers.patches.patch_agentic_eval import (
     image_patch_command as eval_image_patch_command,
 )
 
@@ -45,7 +45,7 @@ from tutorials.coding_agent.dataset import (
 # candidates. That count is an observed result, not a fixed output size: a new
 # probe can select a different number of tasks.
 # Since this is verbose, we have a
-# [separate preprocessing script](https://github.com/modal-projects/training-gym/blob/main/tutorials/coding_agent/dataset.py).
+# [separate preprocessing script](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/coding_agent/dataset.py).
 #
 # Run with:
 #
@@ -93,9 +93,9 @@ class AgentTaskDataset(DatasetConfig):
 #
 # This requests 48 H200 GPUs: 16 for training and 32 for rollouts. For the exact
 # dataset filenames, recorded run IDs, and reuse instructions, see the
-# [full-run guide](https://github.com/modal-projects/training-gym/blob/helena/coding-agent-tutorial-full/tutorials/coding_agent/README.md).
+# [full-run guide](https://github.com/modal-projects/modal-dojo/blob/helena/coding-agent-tutorial-full/tutorials/coding_agent/README.md).
 #
-# With the [Qwen3_6_27B_Recipe](https://gym.modal.dev/reference/qwen3_6_27b_recipe)
+# With the [Qwen3_6_27B_Recipe](https://dojo.modal.dev/reference/qwen3_6_27b_recipe)
 # recipe class, it's just that simple.
 
 RUN_NAME = f"coding-agent-{uuid4().hex}"
@@ -126,7 +126,7 @@ config = TrainConfig(
             eval_image_patch_command(),
             "apt-get update && apt-get install -y --no-install-recommends "
             "rdma-core libibverbs1 ibverbs-providers",
-            "uv pip install --system modal==1.5.5 mini-swe-agent datasets",
+            "uv pip install --system modal==1.6.1 mini-swe-agent datasets",
         ],
         image_env={"MSWEA_SILENT_STARTUP": "1"},
         app_tags={"agentic_rollout": "harbor"},

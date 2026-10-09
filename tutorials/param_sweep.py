@@ -1,18 +1,18 @@
 # ---
-# order: 7
+# order: 8
 # ---
 #
 # # Massively-parallel hyperparameter sweeps
 #
 # When tuning RL runs, finding the optimal set of hyperparameters is time-consuming
 # and error-prone if not properly guided or documented. This is made a first-class
-# operation in the Gym so you can move faster and spend less.
+# operation in the Modal Dojo so you can move faster and spend less.
 
 import re
 
 from datasets import load_dataset
 
-from modal_training_gym import (
+from modal_dojo import (
     DatasetConfig,
     Qwen3_5_4B,
     Qwen3_5_4B_Recipe,
@@ -98,17 +98,18 @@ for cfg in configs:
 #
 # Once it all looks good, `.launch()` it!
 
-launches = group.launch()
-print(f"group {group.group_id}: {len(launches)} runs launched")
-for launch in launches:
-    print(
-        f"- {launch.training_run_id}, app={launch.modal_app_id}, group_id={launch.group_id}"
-    )
-if group.failures:
-    for overrides, err in group.failures:
-        print(f"- FAILED {overrides}: {err}")
+if __name__ == "__main__":
+    launches = group.launch()
+    print(f"group {group.group_id}: {len(launches)} runs launched")
+    for launch in launches:
+        print(
+            f"- {launch.training_run_id}, app={launch.modal_app_id}, group_id={launch.group_id}"
+        )
+    if group.failures:
+        for overrides, err in group.failures:
+            print(f"- FAILED {overrides}: {err}")
 
-results = TrainingRun.wait_all(launches)
-print(f"group {group.group_id}: {len(results)} runs completed")
-for run in results:
-    print(f"completed {run.training_run_id} (group_id={run.group_id})")
+    results = TrainingRun.wait_all(launches)
+    print(f"group {group.group_id}: {len(results)} runs completed")
+    for run in results:
+        print(f"completed {run.training_run_id} (group_id={run.group_id})")

@@ -953,6 +953,32 @@ table.resizable-table.sticky-first-column tr.row-selected td:first-child {
   border-right: 1px dashed var(--color-c-gray-100, #fff);
 }
 
+/* ===== components/ChartZoomButtons.svelte ===== */
+.chart-zoom-buttons {
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.chart-zoom-buttons .btn {
+  width: 22px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  border-color: var(--border, #3a3a3a);
+  background: var(--color-c-gray-08, #1c1c1c);
+  color: var(--color-icon-primary, #a3a3a3);
+}
+
+.chart-zoom-buttons .btn:hover:not(:disabled) {
+  background: var(--color-c-gray-10, #2f2f2f);
+  color: var(--text-bright, #fff);
+}
+
+.chart-zoom-buttons .btn:disabled {
+  opacity: 0.4;
+}
+
 /* ===== components/ChartControls.svelte / ZoomOutButton.svelte / MetricsRangeDropdown.svelte ===== */
 .chart-controls-bar {
   display: flex;

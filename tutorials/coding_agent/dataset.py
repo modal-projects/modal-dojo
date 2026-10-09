@@ -22,14 +22,14 @@ from typing import Any
 
 import modal
 
-from modal_training_gym.common import hf_secrets
-from modal_training_gym.common.dataset_partitioning import sample_rows, split_rows
-from modal_training_gym.common.run import checkpoint_location
-from modal_training_gym.frameworks.slime.launcher import (
+from modal_dojo.common import hf_secrets
+from modal_dojo.common.dataset_partitioning import sample_rows, split_rows
+from modal_dojo.common.run import checkpoint_location
+from modal_dojo.frameworks.slime.launcher import (
     SLIME_IMAGE,
     _slime_git_overlay_command,
 )
-from modal_training_gym.train_recipes.base import DATA_PATH
+from modal_dojo.train_recipes.base import DATA_PATH
 
 SPLIT_SEED = 0
 TRAIN_SPLIT_SIZES = (4, 100, 300, 1000)
@@ -367,10 +367,10 @@ def _image() -> modal.Image:
                 SLIME_GIT_REPOSITORY,
                 SLIME_GIT_REVISION,
             ),
-            "uv pip install --system modal==1.5.5 datasets huggingface_hub",
+            "uv pip install --system modal==1.6.1 datasets huggingface_hub",
         )
         .add_local_python_source(
-            "modal_training_gym", "tutorials.coding_agent", copy=True
+            "modal_dojo", "tutorials.coding_agent", copy=True
         )
     )
 

@@ -6,14 +6,16 @@ from types import SimpleNamespace
 from urllib.error import HTTPError, URLError
 
 import pytest
+
+from modal_dojo.cli.setup import ProxyAuthMode
 from fastapi.testclient import TestClient
 
-from modal_training_gym import _dashboard
-from modal_training_gym.cli import setup as cli_setup_module
-from modal_training_gym.common import config
-from modal_training_gym.common import status_reporter
-from modal_training_gym.common import reporting
-from modal_training_gym.common.dashboard import (
+from modal_dojo import _dashboard
+from modal_dojo.cli import setup as cli_setup_module
+from modal_dojo.common import config
+from modal_dojo.common import status_reporter
+from modal_dojo.common import reporting
+from modal_dojo.common.dashboard import (
     DASHBOARD_VERSION,
     DashboardLookupUnknown,
     current_dashboard_version,
@@ -51,7 +53,7 @@ def test_dashboard_proxy_auth_mode_is_persisted(config_path, monkeypatch):
     config.save_dashboard_url("https://dashboard.test", proxy_auth=True)
 
     assert config.get_dashboard_url() == "https://dashboard.test"
-    assert config.get_dashboard_proxy_auth() is True
+    assert config.get_dashboard_proxy_auth("https://dashboard.test") is True
     assert "proxy_auth = true" in config_path.read_text()
 
 
@@ -62,7 +64,7 @@ def test_live_dashboard_proxy_auth_mode_is_authoritative(
     config.save_dashboard_url("https://dashboard.test", proxy_auth=not expected)
     monkeypatch.setattr(config, "urlopen", lambda *_args, **_kwargs: _Response(body))
 
-    assert config.get_dashboard_proxy_auth() is expected
+    assert config.get_dashboard_proxy_auth("https://dashboard.test") is expected
 
 
 def test_dashboard_proxy_auth_treats_403_as_enabled(config_path, monkeypatch):
@@ -73,7 +75,7 @@ def test_dashboard_proxy_auth_treats_403_as_enabled(config_path, monkeypatch):
 
     monkeypatch.setattr(config, "urlopen", forbidden)
 
-    assert config.get_dashboard_proxy_auth() is True
+    assert config.get_dashboard_proxy_auth("https://dashboard.test") is True
 
 
 def test_proxy_auth_status_does_not_require_basic_auth(monkeypatch, tmp_path):
@@ -101,7 +103,7 @@ def test_dashboard_import_sets_proxy_auth_mode(monkeypatch):
         return module
 
     monkeypatch.setattr(config, "_dashboard_requires_proxy_auth", False)
-    monkeypatch.setitem(sys.modules, "modal_training_gym._dashboard", dashboard)
+    monkeypatch.setitem(sys.modules, "modal_dojo._dashboard", dashboard)
     monkeypatch.setattr(importlib, "reload", reload_module)
 
     loaded = cli_setup_module._load_dashboard_for_deploy(True)
@@ -135,7 +137,7 @@ def test_auto_deploy_reuses_proxy_auth_mode(monkeypatch, last_proxy_auth, expect
     monkeypatch.setattr(cli_setup_module, "setup", setup)
 
     assert cli_setup_module.ensure_dashboard_deployed() == "https://dashboard.test"
-    assert calls == [{"interactive": False, "require_proxy_auth": expected}]
+    assert calls == [{"interactive": False, "proxy_auth": ProxyAuthMode.UNSPECIFIED}]
 
 
 class _ModalFn:
@@ -227,7 +229,7 @@ def test_auto_deploy_redeploys_when_incoming_version_is_newer(config_path, monke
     calls = _record_setup(monkeypatch)
 
     assert cli_setup_module.ensure_dashboard_deployed() == "https://dashboard.test"
-    assert calls == [{"interactive": False, "require_proxy_auth": False}]
+    assert calls == [{"interactive": False, "proxy_auth": ProxyAuthMode.UNSPECIFIED}]
 
 
 def _raise_version_error(error):
@@ -348,7 +350,7 @@ def test_slime_reporting_posts_include_proxy_auth_headers(config_path, monkeypat
     config.save_proxy_auth("wk-test", "ws-test")
     monkeypatch.delenv("MODAL_KEY", raising=False)
     monkeypatch.delenv("MODAL_SECRET", raising=False)
-    monkeypatch.setenv("TRAINING_GYM_FRAMEWORK_STATUS_TOKEN", "run-token")
+    monkeypatch.setenv("MODAL_DOJO_FRAMEWORK_STATUS_TOKEN", "run-token")
     requests = _capture_report(reporting, monkeypatch)
     reporting._post(
         {

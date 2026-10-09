@@ -4,9 +4,21 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
-from modal_training_gym.common.launcher_helpers import (
+import pytest
+
+from modal_dojo.common.launcher_helpers import (
     mount_caller_source,
     ship_callable,
+)
+from modal_dojo.common.launcher_helpers import ship_recipe_callables
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
+
+
+_WRAPPED_HOOKS = (
+    "custom_rollout_log_function",
+    "custom_megatron_before_log_prob_hook",
+    "custom_megatron_before_train_step_hook",
 )
 
 
@@ -54,17 +66,15 @@ def test_ship_callable_flattens_sibling_file(tmp_path: Path) -> None:
     helper = tmp_path / "reward.py"
     helper.write_text("def score() -> int:\n    return 1\n")
     module = _load_module(helper, "reward")
-    paths: list[str] = []
 
-    image = ship_callable(
+    image, path = ship_callable(
         RecordingImage(),
         module.score,
         caller_script=str(caller),
         fallback_name="score",
-        set_path=paths.append,
     )
 
-    assert paths == ["reward.score"]
+    assert path == "reward.score"
     assert image.operations == [
         (
             "add_local_file",
@@ -72,3 +82,56 @@ def test_ship_callable_flattens_sibling_file(tmp_path: Path) -> None:
             {"remote_path": "/root/reward.py", "copy": True},
         )
     ]
+
+
+@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+def test_recipe_hooks_ship_closures_to_framework_destinations(recipe_cls):
+    captured = "closure value"
+
+    def hook():
+        return captured
+
+    recipe = recipe_cls(
+        custom_rm_function=hook,
+        custom_generate_function=hook,
+        custom_reward_post_process_function=hook,
+        rollout_function=hook,
+        custom_rollout_log_function=hook,
+        custom_eval_rollout_log_function="user.eval_hook",
+        custom_megatron_before_log_prob_hook=hook,
+        custom_megatron_before_train_step_hook=hook,
+    )
+    image = ship_recipe_callables(
+        RecordingImage(),
+        recipe,
+        caller_script=str(Path(__file__).resolve()),
+        reward_post_process_in_config=recipe_cls is SlimeRecipe,
+    )
+
+    shipped = set()
+    for _, (local_path,), options in image.operations:
+        source = Path(local_path)
+        namespace: dict = {}
+        exec(compile(source.read_text(), str(source), "exec"), namespace)
+        assert namespace["hook"]() == captured  # closures ship by value
+        shipped.add(f"{Path(options['remote_path']).stem}.hook")
+        source.unlink()
+
+    config, fields = recipe.extra_config, recipe._fields()
+    reward_key = "custom_reward_post_process_path"
+    destinations = [
+        config["custom_rm_path"],
+        config["custom_generate_function_path"],
+        fields["rollout_function_path"],
+        config[reward_key] if recipe_cls is SlimeRecipe else fields[reward_key],
+        *(
+            config[f"modal_dojo_{name}_path"]
+            for name in _WRAPPED_HOOKS
+            if getattr(recipe, name) is None
+        ),
+    ]
+    assert shipped == set(destinations)
+    assert all(".phase_reporting." in fields[f"{n}_path"] for n in _WRAPPED_HOOKS)
+    assert config["modal_dojo_custom_eval_rollout_log_function_path"] == (
+        "user.eval_hook"
+    )

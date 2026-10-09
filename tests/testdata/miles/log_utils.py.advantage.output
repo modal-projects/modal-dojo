@@ -1,9 +1,9 @@
-# PATCHED_TRAINING_GYM_ADVANTAGE_PREAMBLE: bootstrap advantage-distribution reporter
+# PATCHED_MODAL_DOJO_ADVANTAGE_PREAMBLE: bootstrap advantage-distribution reporter
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
 try:
-    from modal_training_gym.frameworks.miles.phase_reporting import (
+    from modal_dojo.frameworks.miles.phase_reporting import (
         report_advantage_distribution as _tg_report_advantage_distribution,
     )
 except ImportError:
@@ -183,7 +183,7 @@ def log_rollout_data(rollout_id: int, args: Namespace, rollout_data: RolloutBatc
     - Non-tensor lists are averaged elementwise.
     - Scalars are converted to Python numbers.
     """
-    # PATCHED_TRAINING_GYM_ADVANTAGE_DIST: capture the per-group advantage distribution
+    # PATCHED_MODAL_DOJO_ADVANTAGE_DIST: capture the per-group advantage distribution
     _tg_report_advantage_distribution(rollout_id, args, rollout_data)
     parallel_state = get_parallel_state()
     if parallel_state.tp.rank == 0 and parallel_state.is_pp_last_stage:

@@ -18,13 +18,13 @@ import time
 
 from datasets import load_dataset
 
-from modal_training_gym import (
+from modal_dojo import (
     DatasetConfig,
     Endpoint,
     GLM_4_7,
     TrainConfig,
 )
-from modal_training_gym.train_recipes.slime_recipe import GLM_4_7_Recipe
+from modal_dojo.train_recipes.slime_recipe import GLM_4_7_Recipe
 
 # ## Set up
 #
@@ -120,30 +120,50 @@ config = TrainConfig(
     recipe=recipe,
 )
 
+
+def train(config):
+    with config.launch() as run:
+        print(f"run id: {run.training_run_id}")
+        checkpoint = None
+        while True:
+            done = run.done()
+            latest = run.latest_checkpoint()
+            if latest is not None and latest != checkpoint:
+                checkpoint = latest
+                print(f"new checkpoint: {checkpoint.path}")
+            if done:
+                break
+            time.sleep(30)
+        if checkpoint is None:
+            raise RuntimeError("run produced no checkpoint")
+        print(f"checkpoint: {checkpoint.path}")
+    return checkpoint
+
+
 # ## Test out the trained model
-#
-# Spin up an [Endpoint](https://modal.com/docs/guide/endpoints) and try a prompt.
 
-with config.launch() as run:
-    print(f"run id: {run.training_run_id}")
-    checkpoint = None
-    while True:
-        done = run.done()
-        latest = run.latest_checkpoint()
-        if latest is not None and latest != checkpoint:
-            checkpoint = latest
-            print(f"new checkpoint: {checkpoint.path}")
-        if done:
-            break
-        time.sleep(30)
-    print(f"checkpoint: {checkpoint.path}")
 
-trained_deployment = Endpoint.launch(
-    model, checkpoint, unauthenticated=True, recreate_if_existing=True
-)
-trained_deployment.wait_until_ready(timeout=45 * 60)
-print(f"checkpoint deployed to {trained_deployment.url}")
+def deploy_trained_model(checkpoint):
+    print("deploying trained model endpoint...")
+    trained_deployment = Endpoint.launch(
+        model,
+        checkpoint,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="multinode",
+    )
+    trained_deployment.wait_until_ready(timeout=45 * 60)
+    print(f"checkpoint deployed to {trained_deployment.url}")
+    return trained_deployment
 
-example = next(iter(dataset.rows()))
-msg = trained_deployment.chat(example[dataset.input_key()])
-print(msg.get("content") or msg.get("reasoning_content") or "")
+
+def run_trained_sample(trained_deployment):
+    example = next(iter(dataset.rows()))
+    msg = trained_deployment.chat(example[dataset.input_key()])
+    print(msg.get("content") or msg.get("reasoning_content") or "")
+
+
+if __name__ == "__main__":
+    checkpoint = train(config)
+    trained_deployment = deploy_trained_model(checkpoint)
+    run_trained_sample(trained_deployment)

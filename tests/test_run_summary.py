@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from modal_training_gym.common import run_summary as run_summary_module
-from modal_training_gym.common.run_summary import (
+from modal_dojo.common import run_summary as run_summary_module
+from modal_dojo.common.run_summary import (
     build_run_summaries,
     build_run_summary,
 )
@@ -190,6 +190,24 @@ def test_config_summary_fallbacks_and_metric_defaults():
     assert payload["wandb_url"] == summary.metric_url
     assert [link["label"] for link in payload["wandb_links"]] == ["W&B"]
     assert run_summary_module._config_summary(None, "run-id") == {}
+
+
+def test_training_type_and_sft_stage_labels():
+    sft = {"recipe": {"loss_type": "sft_loss"}}
+    assert build_run_summary({"config": sft}).training_type == "sft"
+    assert build_run_summary({"config": {}}).training_type == "rl"
+    for status, label in (
+        ("generate_rollouts", "Preparing batch"),
+        ("weight_sync", "Training"),
+    ):
+        assert (
+            build_run_summary({"config": sft, "framework_status": status}).display_stage
+            == label
+        )
+    assert (
+        build_run_summary({"framework_status": "weight_sync"}).display_stage
+        == "Weight sync"
+    )
 
 
 def test_progress_rollout_and_resume_helpers_handle_missing_and_invalid_values():

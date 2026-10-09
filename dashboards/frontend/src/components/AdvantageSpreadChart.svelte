@@ -11,13 +11,15 @@
   // is reported with a direction arrow.
 
   import { brushZoom } from "../lib/brushZoom.js";
+  import ChartZoomButtons from "./ChartZoomButtons.svelte";
   import TimeAxis from "./TimeAxis.svelte";
 
   let {
     steps = [],
     // `[min, max]` rollout ids; defaults to the data extent.
     xDomain = null,
-    // Called with `[min, max]` rollout ids when the user drags or wheels.
+    // Called with `[min, max]` rollout ids when the user drags a window or
+    // presses the zoom buttons.
     onChangeDomainX = null,
     // rollout id <-> epoch seconds; when both are given a wall-clock axis is
     // drawn under the plot.
@@ -157,13 +159,18 @@
       <span class="chart-legend-item"><span class="sw iqr"></span>IQR (p25–p75)</span>
       <span class="chart-legend-item"><span class="sw trend"></span>trend</span>
     </span>
-    <span class="spread-trend trend-{model.dir}">
-      std {ARROW[model.dir]}
-      {model.delta >= 0 ? "+" : ""}{fmt(model.delta)}
-      {#if model.pct != null}
-        ({model.pct >= 0 ? "+" : ""}{model.pct.toFixed(0)}%)
+    <span class="inline-flex items-center gap-[10px]">
+      <span class="spread-trend trend-{model.dir}">
+        std {ARROW[model.dir]}
+        {model.delta >= 0 ? "+" : ""}{fmt(model.delta)}
+        {#if model.pct != null}
+          ({model.pct >= 0 ? "+" : ""}{model.pct.toFixed(0)}%)
+        {/if}
+        over run
+      </span>
+      {#if zoomable}
+        <ChartZoomButtons onChangeDomainX={handleBrush} canZoomIn={model.count > 1} />
       {/if}
-      over run
     </span>
   </div>
   <div

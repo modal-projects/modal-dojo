@@ -4,7 +4,7 @@ the single-node identity path of clustered_if, and PYTHONPATH handoff into Ray j
 
 import pytest
 
-from modal_training_gym.common.ray_cluster import (
+from modal_dojo.common.ray_cluster import (
     _supports_rdma,
     _with_container_pythonpath,
     clustered_if,

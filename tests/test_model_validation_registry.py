@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from modal_training_gym.common.models.qwen3_0_6b import Qwen3_0_6B
-from modal_training_gym.common.models.validation import (
+from modal_dojo.common.models.qwen3_0_6b import Qwen3_0_6B
+from modal_dojo.common.models.validation import (
     VALIDATION_CONFIGS,
     Framework,
     _ValidationConfig,
@@ -36,6 +36,22 @@ def test_registry_has_both_frameworks_represented():
     assert frameworks == set(Framework)
 
 
+@pytest.mark.parametrize(
+    "name",
+    ["Qwen3.5-4B-SFT", "Moonlight-16B-A3B-Instruct-SFT"],
+)
+def test_sft_validation_entry_builds_sft_recipe(name):
+    config = _ValidationConfig.find(name)
+    recipe, dataset = build_recipe_and_dataset(
+        config.framework,
+        config.model_config(),
+        step_count=1,
+        loss_type=config.loss_type,
+    )
+    assert recipe.loss_type == "sft_loss"
+    assert dataset.hf_repo == "HuggingFaceH4/no_robots"
+
+
 def test_registry_uses_the_packages_one_framework_enum():
     """A second same-valued enum would fail every dispatch branch.
 
@@ -44,7 +60,7 @@ def test_registry_uses_the_packages_one_framework_enum():
     would fall through to "no validation backend" if the registry declared its
     own copy — equal by value, a different class.
     """
-    from modal_training_gym.common.framework import Framework as CanonicalFramework
+    from modal_dojo.common.framework import Framework as CanonicalFramework
 
     assert Framework is CanonicalFramework
     recipe, dataset = build_recipe_and_dataset(
@@ -69,10 +85,13 @@ def test_config_resolves_by_name_case_insensitively(config):
     assert _ValidationConfig.find(f"  {config.name.lower()} ") is config
 
 
-@pytest.mark.parametrize("config", ALL_CONFIGS, ids=lambda c: c.name)
+POLICY_CONFIGS = [c for c in ALL_CONFIGS if c.loss_type == "policy_loss"]
+
+
+@pytest.mark.parametrize("config", POLICY_CONFIGS, ids=lambda c: c.name)
 def test_config_resolves_by_hf_repo_id(config):
     """``check -m Qwen/Qwen3-4B`` must keep working, not just the short name."""
-    matches = [c for c in ALL_CONFIGS if c.model_name == config.model_name]
+    matches = [c for c in POLICY_CONFIGS if c.model_name == config.model_name]
     if len(matches) == 1:
         assert _ValidationConfig.find(config.model_name) is config
         assert _ValidationConfig.find(config.model_name.upper()) is config
@@ -109,11 +128,16 @@ def test_every_config_builds_a_recipe_on_its_declared_framework(config):
     fail on a GPU, minutes into a run.
     """
     recipe, dataset = build_recipe_and_dataset(
-        config.framework, config.model_config(), step_count=1
+        config.framework,
+        config.model_config(),
+        step_count=1,
+        loss_type=config.loss_type,
     )
     assert recipe is not None
     assert dataset is not None
-    assert recipe.rm_type, f"{config.name} validation recipe has no rm_type"
+    assert recipe.loss_type == config.loss_type
+    if config.loss_type != "sft_loss":
+        assert recipe.rm_type, f"{config.name} validation recipe has no rm_type"
 
 
 def test_list_prints_every_registered_model():
@@ -184,7 +208,7 @@ def test_validation_dataset_unpickles_without_the_scripts_directory(config, tmp_
     payload = serialize(dataset)
 
     # Blocking the import is a truer stand-in for the image than trimming
-    # sys.path: modal_training_gym is installed from this same tree, so the
+    # sys.path: modal_dojo is installed from this same tree, so the
     # entry that makes the backends importable is the one it needs too.
     probe = textwrap.dedent("""
         import base64, pickle, sys
@@ -248,7 +272,7 @@ def test_framework_change_preserves_shared_class_impact():
     names = {c.name for c in VALIDATION_CONFIGS}
     miles_launcher = next(iter(FRAMEWORK_VALIDATION_HARNESS_PATHS["miles"]))
     diff = _diff_touching(
-        "modal_training_gym/common/models/base.py",
+        "modal_dojo/common/models/base.py",
         str(miles_launcher.relative_to(REPO_ROOT)),
     )
 

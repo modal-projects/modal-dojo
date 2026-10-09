@@ -1,8 +1,7 @@
 // Svelte action port of the Modal dashboard's chart `Brush.svelte`:
-//
-//   - click-and-drag along the x-axis highlights an interval and zooms to it
-//   - vertical wheel / pinch zooms in or out around the pointer
-//   - horizontal wheel pans
+// click-and-drag along the x-axis highlights an interval and zooms to it.
+// The wheel is deliberately left to the page so scrolling past a chart never
+// changes its window; ChartZoomButtons emits fractions for explicit zoom steps.
 //
 // The action is unit-agnostic: every callback receives the new x-domain as
 // fractions of the node's width, where `[0, 1]` is the domain currently on
@@ -17,7 +16,7 @@
 const MIN_DRAG_PX = 5;
 
 export function brushZoom(node, params = {}) {
-  let options = { enabled: true, enableBrushZoom: true, enableWheelZoom: true, ...params };
+  let options = { enabled: true, ...params };
   let dragStartPx = null;
   let dragEndPx = null;
   let didDrag = false;
@@ -29,9 +28,8 @@ export function brushZoom(node, params = {}) {
   node.appendChild(area);
   node.classList.add("chart-brush-host");
 
-  const enabled = () => options.enabled !== false && typeof options.onChangeDomainX === "function";
-  const brushEnabled = () => enabled() && options.enableBrushZoom !== false;
-  const wheelEnabled = () => enabled() && options.enableWheelZoom !== false;
+  const brushEnabled = () =>
+    options.enabled !== false && typeof options.onChangeDomainX === "function";
 
   // Pointer position in px from the node's left edge, valid for window-level
   // events fired while the pointer is outside the node.
@@ -93,30 +91,12 @@ export function brushZoom(node, params = {}) {
     }
   }
 
-  function handleWheel(event) {
-    if (!wheelEnabled()) return;
-    event.preventDefault();
-    if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
-      const { width } = getPx(event);
-      if (!width) return;
-      const shift = event.deltaX / width;
-      options.onChangeDomainX([shift, 1 + shift]);
-    } else if (event.deltaY > 0.5 || event.deltaY < -0.5) {
-      const factor = Math.exp(event.deltaY / 100);
-      const { px, width } = getPx(event);
-      if (!width) return;
-      const center = Math.min(Math.max(px / width, 0), 1);
-      options.onChangeDomainX([center - center * factor, center + (1 - center) * factor]);
-    }
-  }
-
   function syncCursor() {
     node.classList.toggle("chart-brush-enabled", brushEnabled());
   }
 
   node.addEventListener("pointerdown", handlePointerDown);
   node.addEventListener("click", handleClick, true);
-  node.addEventListener("wheel", handleWheel, { passive: false });
   window.addEventListener("pointermove", handleWindowPointerMove);
   window.addEventListener("pointerup", handlePointerUp);
   window.addEventListener("pointercancel", handlePointerUp);
@@ -124,13 +104,12 @@ export function brushZoom(node, params = {}) {
 
   return {
     update(next = {}) {
-      options = { enabled: true, enableBrushZoom: true, enableWheelZoom: true, ...next };
+      options = { enabled: true, ...next };
       syncCursor();
     },
     destroy() {
       node.removeEventListener("pointerdown", handlePointerDown);
       node.removeEventListener("click", handleClick, true);
-      node.removeEventListener("wheel", handleWheel);
       window.removeEventListener("pointermove", handleWindowPointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);

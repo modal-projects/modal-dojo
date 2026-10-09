@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from modal_training_gym.frameworks.miles.modal_helpers.patches import (
+from modal_dojo.frameworks.miles.modal_helpers.patches import (
     patch_advantage_distribution as advantage_patcher,
     patch_qkvr_cpu_merge as qkvr_patcher,
     patch_rollout_status_reporting as rollout_patcher,

@@ -1,16 +1,16 @@
-# PATCHED_TRAINING_GYM_TIMING_PREAMBLE: bootstrap substep-timing recorder
+# PATCHED_MODAL_DOJO_TIMING_PREAMBLE: bootstrap substep-timing recorder
 import sys as _tg_sys
 if '/root' not in _tg_sys.path:
     _tg_sys.path.insert(0, '/root')
 try:
-    from modal_training_gym.common.timing_recorder import (
+    from modal_dojo.common.timing_recorder import (
         RoleRecorder as _TgRecorder,
         recording_lane as _tg_role,
         recording_lane_on_reporting_rank as _tg_mrec,
         time_phase as _tg_time_phase,
     )
 except ImportError:
-    print('WARNING: modal_training_gym not importable; substep timing off')
+    print('WARNING: modal_dojo not importable; substep timing off')
     from contextlib import contextmanager as _tg_cm
 
     class _TgRecorder:
@@ -588,14 +588,14 @@ class RolloutManager:
         return len(self.data_source) // self.args.rollout_batch_size
 
     def generate(self, rollout_id):
-        # PATCHED_TRAINING_GYM_TIMING_RECORDER
+        # PATCHED_MODAL_DOJO_TIMING_RECORDER
         with _tg_role('rollout', rollout_id):
             start_time = time.time()
             self.rollout_id = rollout_id
             self.health_monitoring_resume()
             if self.args.ci_test and self.args.use_fault_tolerance and rollout_id >= 2:
                 self._try_ci_fault_injection()
-            # PATCHED_TRAINING_GYM_TIMING_GENERATE_SAMPLES
+            # PATCHED_MODAL_DOJO_TIMING_GENERATE_SAMPLES
             with _tg_time_phase('generate_samples'):
                 data, metrics = self._get_rollout_data(rollout_id=rollout_id)
             self._save_debug_rollout_data(data, rollout_id=rollout_id, evaluation=False)
@@ -755,7 +755,7 @@ class RolloutManager:
         if self.custom_convert_samples_to_train_data_func is not None:
             return self.custom_convert_samples_to_train_data_func(self.args, samples)
 
-        # PATCHED_TRAINING_GYM_TIMING_REWARD_POST_PROCESS
+        # PATCHED_MODAL_DOJO_TIMING_REWARD_POST_PROCESS
         with _tg_time_phase('reward_post_process'):
             raw_rewards, rewards = self._post_process_rewards(samples)
 

@@ -127,8 +127,9 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
-# Gym workstation
+# Modal Dojo workstations
 .gym
+.modal-dojo
 
 # Environments
 .env

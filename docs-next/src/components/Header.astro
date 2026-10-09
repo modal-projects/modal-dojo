@@ -4,7 +4,7 @@ import { DOCS_NAV, REFERENCE_SURFACES, referenceSurfaceForPath } from '../lib/do
 import Search from './Search.astro';
 
 const currentPath = Astro.url.pathname;
-const repoHref = 'https://github.com/modal-projects/training-gym';
+const repoHref = 'https://github.com/modal-projects/modal-dojo';
 const activeReference = referenceSurfaceForPath(currentPath);
 
 const shouldRenderSearch =
@@ -18,7 +18,7 @@ const isActive = (href: string) =>
   <div class="tg-header__left">
     <a href="/" class="title-wrapper sl-flex">
       <img src="/modal-logo.svg" alt="Modal" />
-      <span class="site-title"><span class="site-title__modal">Modal</span><span class="site-title__gym">Training Gym</span></span>
+      <span class="site-title"><span class="site-title__modal">Modal</span><span class="site-title__dojo">Dojo</span></span>
     </a>
     <nav class="tg-header__nav" aria-label="Primary">
       {DOCS_NAV.map((item) =>

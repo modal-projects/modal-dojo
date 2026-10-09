@@ -7,18 +7,18 @@ import time
 
 from fastapi.testclient import TestClient
 
-from modal_training_gym import _dashboard
-from modal_training_gym.common.framework import Framework
-from modal_training_gym.common.metric_series import (
+from modal_dojo import _dashboard
+from modal_dojo.common.framework import Framework
+from modal_dojo.common.metric_series import (
     CHUNK_STEPS,
     MetricPoint,
     downsample,
     RunMetrics,
     metric_series,
 )
-from modal_training_gym.common.run import TrainingRun, TrainingRunStatus
-from modal_training_gym.utils import metadata
-from modal_training_gym.utils.metadata import MetadataStore
+from modal_dojo.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.utils import metadata
+from modal_dojo.utils.metadata import MetadataStore
 
 RUN_ID = "metric-run"
 STORE = f"{MetadataStore.METRIC_SERIES.value}/{RUN_ID}"
@@ -101,7 +101,11 @@ def test_ingest_buffers_in_memory_and_persists_chunks_on_final(
         # Live reads come from memory; nothing has hit the volume yet.
         assert _chunk_files(fake_volume) == {}
         live = client.get(f"/api/runs/{RUN_ID}/metrics").json()
-        assert live == {"series": {"train/loss": [[0, 1.0], [1, 0.8]]}, "stale": False}
+        assert live == {
+            "series": {"train/loss": [[0, 1.0, None], [1, 0.8, None]]},
+            "step_keys": {"train/loss": None},
+            "stale": False,
+        }
 
         second = client.post(
             "/api/metric-points",
@@ -130,7 +134,10 @@ def test_ingest_buffers_in_memory_and_persists_chunks_on_final(
 
         result = client.get(f"/api/runs/{RUN_ID}/metrics").json()
         assert list(result["series"]) == ["reward", "train/loss"]
-        assert result["series"]["reward"] == [[1, 0.5], [CHUNK_STEPS + 3, 0.9]]
+        assert result["series"]["reward"] == [
+            [1, 0.5, None],
+            [CHUNK_STEPS + 3, 0.9, None],
+        ]
 
 
 def test_reads_pick_up_chunks_written_by_another_replica(
@@ -145,6 +152,7 @@ def test_reads_pick_up_chunks_written_by_another_replica(
         {
             "steps": {"3": {"lr": 0.1}, "4": {"lr": 0.9}, "bad": "skip"},
             "written": {"4": {"lr": 20}},
+            "times": {"3": 1000.0},
         },
     )
     metadata.vol_put(
@@ -155,7 +163,7 @@ def test_reads_pick_up_chunks_written_by_another_replica(
     metadata.vol_put(STORE, "chunk-000002-bbbb", {})
     with _client(monkeypatch, tmp_path) as client:
         result = client.get(f"/api/runs/{RUN_ID}/metrics").json()
-        assert result["series"] == {"lr": [[3, 0.1], [4, 0.9]]}
+        assert result["series"] == {"lr": [[3, 0.1, 1000.0], [4, 0.9, None]]}
         client.post(
             "/api/metric-points",
             json=_batch([(5, {"lr": 0.3})], final=True),
@@ -179,7 +187,7 @@ def test_reading_a_finished_run_persists_whatever_is_still_buffered(
         assert _chunk_files(fake_volume) == {}
         _save_run(TrainingRunStatus.FAILED)
         result = client.get(f"/api/runs/{RUN_ID}/metrics").json()
-        assert result["series"] == {"a": [[0, 1.0]]}
+        assert result["series"] == {"a": [[0, 1.0, None]]}
         assert list(_chunk_files(fake_volume)) == [f"chunk-000000-{WRITER}.json"]
 
 
@@ -207,7 +215,11 @@ def test_finished_run_read_serves_memory_when_the_volume_is_down(
         monkeypatch.setattr(_dashboard, "_metadata_vol_put_many", boom)
         result = client.get(f"/api/runs/{RUN_ID}/metrics")
         assert result.status_code == 200
-        assert result.json() == {"series": {"a": [[0, 1.0]]}, "stale": True}
+        assert result.json() == {
+            "series": {"a": [[0, 1.0, None]]},
+            "step_keys": {"a": None},
+            "stale": True,
+        }
 
 
 def test_rejects_oversized_or_malformed_points(fake_volume, monkeypatch, tmp_path):
@@ -237,13 +249,14 @@ def test_merge_and_load_prefer_most_recently_ingested_values():
     run = RunMetrics()
     touched = run.merge_points(
         [
-            MetricPoint(step=1, metrics={"a": 1.0}),
-            MetricPoint(step=1, metrics={"a": 2.0, "b": 3.0}),
+            MetricPoint(step=1, metrics={"a": 1.0}, time=20.0),
+            MetricPoint(step=1, metrics={"a": 2.0, "b": 3.0}, time=10.0),
             MetricPoint(step=2500, metrics={}),  # no metrics: ignored
         ]
     )
     assert touched == {"chunk-000000"}
     assert run.table == {1: {"a": 2.0, "b": 3.0}}
+    assert run.chunk_payload("chunk-000000")["times"] == {"1": 20.0}
     # An older (or unstamped) file fills gaps but loses conflicts ...
     run.load_chunk({"steps": {"1": {"a": 99.0, "d": 5.0}, "7": {"a": 1}}})
     assert run.table == {1: {"a": 2.0, "b": 3.0, "d": 5.0}, 7: {"a": 1}}
@@ -270,9 +283,14 @@ def test_downsample_keeps_endpoints_and_extremes():
 
 def test_metric_series_splits_the_table_per_key_and_downsamples():
     run = RunMetrics()
-    run.merge_points([MetricPoint(step=s, metrics={"x": float(s)}) for s in range(10)])
+    run.merge_points(
+        [
+            MetricPoint(step=s, metrics={"x": float(s)}, time=100.0 + s)
+            for s in range(10)
+        ]
+    )
     run.merge_points([MetricPoint(step=3, metrics={"a": 1.0})])
-    out = metric_series(run.table, 4)
+    out = metric_series(run, 4)
     assert list(out) == ["a", "x"]
-    assert out["a"] == [[3, 1.0]]
-    assert out["x"] == [[0, 0.0], [9, 9.0]]
+    assert out["a"] == [[3, 1.0, None]]
+    assert out["x"] == [[0, 0.0, 100.0], [9, 9.0, 109.0]]

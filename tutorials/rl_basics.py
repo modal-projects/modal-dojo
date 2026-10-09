@@ -5,12 +5,12 @@
 #
 # # Getting started with RL
 #
-# This tutorial introduces some core features of the Training Gym by walking through
+# This tutorial introduces some core features of the Modal Dojo by walking through
 # a simple example of Reinforcement Learning with Verifiable Rewards (RLVR), a
 # foundational method of RL post-training. Here, we teach
 # [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B)
 # how to write correct haikus. Step by step, we'll show the foundations of running
-# training jobs on the Gym.
+# training jobs on the Modal Dojo.
 
 import nltk
 from nltk.corpus import cmudict
@@ -18,7 +18,7 @@ from nltk.corpus import cmudict
 import re
 import time
 
-from modal_training_gym import (
+from modal_dojo import (
     Endpoint,
     HuggingFaceDataset,
     Qwen3_5_4B,
@@ -35,7 +35,7 @@ from modal_training_gym import (
 # production-ready LLM inference endpoint on Modal's managed infrastructure. It supports both
 # open model weights in addition to custom fine tunes, sourced from either a Hugging Face repo or a
 # [Modal Volume](https://modal.com/docs/guide/volumes). To use it, we provide a
-# [class](https://gym.modal.dev/reference/endpoint) to instantiate one programatically.
+# [class](https://dojo.modal.dev/reference/endpoint) to instantiate one programatically.
 #
 # It will take a moment to download the model weights onto a Modal Volume and boot containers past the
 # [cold-start](https://modal.com/docs/guide/cold-start#what-is-a-cold-start).
@@ -43,11 +43,19 @@ from modal_training_gym import (
 
 model = Qwen3_5_4B()
 
-base_deployment = Endpoint.launch(
-    model, unauthenticated=True, recreate_if_existing=True
-)
-base_deployment.wait_until_ready(timeout=15 * 60)
-print(f"base model deployed to {base_deployment.url}")
+
+def deploy_base_model():
+    print("deploying base model endpoint...")
+    base_deployment = Endpoint.launch(
+        model,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="rl-basics-baseline",
+    )
+    base_deployment.wait_until_ready()
+    print(f"base model deployed to {base_deployment.url}")
+    return base_deployment
+
 
 # ## Define a scoring function
 #
@@ -117,7 +125,7 @@ def score_haiku(response: str) -> float:
 # this is because the task is sufficiently out-of-distribution, and no existing dataset
 # will serve your needs.
 #
-# See the [DatasetConfig](https://gym.modal.dev/reference/datasetconfig)
+# See the [DatasetConfig](https://dojo.modal.dev/reference/datasetconfig)
 # documentation for a deeper dive.
 
 train_dataset = HuggingFaceDataset(
@@ -152,7 +160,7 @@ eval_dataset = HuggingFaceDataset(
 def run_eval(deployment, max_concurrency: int = 2) -> float:
     from concurrent.futures import ThreadPoolExecutor
 
-    deployment.wait_until_ready(timeout=15 * 60)
+    deployment.wait_until_ready()
 
     def _score_one(example):
         msg = deployment.chat(
@@ -166,9 +174,11 @@ def run_eval(deployment, max_concurrency: int = 2) -> float:
     return sum(scores) / len(scores) if scores else float("nan")
 
 
-print("running base model evaluation...")
-base_mean = run_eval(base_deployment)
-print(f"average score: {base_mean:.1f}")
+def run_baseline_evals(deployment):
+    print("running base model evaluation...")
+    base_mean = run_eval(deployment)
+    print(f"average score: {base_mean:.1f}")
+
 
 # ## Creating a reward function
 #
@@ -183,7 +193,7 @@ async def haiku_rm(args, sample, **kwargs) -> float:
 
 # ## Train the model
 #
-# Finally, onto the training. The Gym supports both the
+# Finally, onto the training. The Modal Dojo supports both the
 # [Slime](https://github.com/THUDM/slime) and
 # [Miles](https://github.com/radixark/miles) frameworks.
 # Here, we use Slime for demonstration purposes.
@@ -216,86 +226,127 @@ config = TrainConfig(
     ),
 )
 
+
+def train(config):
+    with config.launch() as run:
+        print(f"run id: {run.training_run_id}")
+        checkpoint = None
+        while True:
+            done = run.done()
+            latest = run.latest_checkpoint()
+            if latest is not None and latest != checkpoint:
+                checkpoint = latest
+                print(f"new checkpoint: {checkpoint.path}")
+            if done:
+                break
+            time.sleep(30)
+        if checkpoint is None:
+            raise RuntimeError("run produced no checkpoint")
+        print(f"checkpoint: {checkpoint.path}")
+    return checkpoint
+
+
 # ## Serve and evaluate the trained checkpoint
 #
 # We'll get the latest checkpoint and create a new Endpoint so we may evaluate it.
-
-with config.launch() as run:
-    print(f"run id: {run.training_run_id}")
-    checkpoint = None
-    while True:
-        done = run.done()
-        latest = run.latest_checkpoint()
-        if latest is not None and latest != checkpoint:
-            checkpoint = latest
-            print(f"new checkpoint: {checkpoint.path}")
-        if done:
-            break
-        time.sleep(30)
-    print(f"checkpoint: {checkpoint.path}")
-
-trained_deployment = Endpoint.launch(
-    model, checkpoint, unauthenticated=True, recreate_if_existing=True
-)
-trained_deployment.wait_until_ready(timeout=15 * 60)
-print(f"checkpoint deployed to {trained_deployment.url}")
-
 # Now, let's run the same eval as before.
 
-print("running checkpoint evaluation...")
-trained_mean = run_eval(trained_deployment)
-print(f"average score: {trained_mean:.1f}")
+
+def deploy_trained_model(checkpoint):
+    print("deploying trained model endpoint...")
+    trained_deployment = Endpoint.launch(
+        model,
+        checkpoint,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="rl-basics-trained",
+    )
+    trained_deployment.wait_until_ready()
+    print(f"checkpoint deployed to {trained_deployment.url}")
+    return trained_deployment
+
+
+def run_trained_evals(trained_deployment):
+    print("running checkpoint evaluation...")
+    trained_mean = run_eval(trained_deployment)
+    print(f"average score: {trained_mean:.1f}")
+
 
 # ## Continue training off the checkpoint
 # Hmm, it looks like the trained model is still not doing very well.
 # A likely cause is that it only trained for 10 iterations.
 # Let's continue training, starting from the last checkpoint.
 
-new_config = TrainConfig(
-    model=model,
-    dataset=train_dataset,
-    resume_from_checkpoint=checkpoint,
-    recipe=Qwen3_5_4B_Recipe(
-        custom_rm_function=haiku_rm,
-        num_rollout=20,
-        save_interval=20,
-        rollout_batch_size=16,
-        n_samples_per_prompt=8,
-        global_batch_size=16,
-        apply_chat_template_kwargs='{"enable_thinking": false}',
-        image_overlay=lambda image: image.run_commands(
-            "uv pip install --system aiohttp 'nltk>=3.8.0'",
-            "python -c \"import nltk; nltk.download('cmudict', quiet=True)\"",
+
+def continue_training(checkpoint):
+    new_config = TrainConfig(
+        model=model,
+        dataset=train_dataset,
+        resume_from_checkpoint=checkpoint,
+        recipe=Qwen3_5_4B_Recipe(
+            custom_rm_function=haiku_rm,
+            num_rollout=20,
+            save_interval=20,
+            rollout_batch_size=16,
+            n_samples_per_prompt=8,
+            global_batch_size=16,
+            apply_chat_template_kwargs='{"enable_thinking": false}',
+            image_overlay=lambda image: image.run_commands(
+                "uv pip install --system aiohttp 'nltk>=3.8.0'",
+                "python -c \"import nltk; nltk.download('cmudict', quiet=True)\"",
+            ),
         ),
-    ),
-)
+    )
+
+    with new_config.launch() as new_run:
+        print(f"run id: {new_run.training_run_id}")
+        new_checkpoint = None
+        while True:
+            done = new_run.done()
+            latest = new_run.latest_checkpoint()
+            if latest is not None and latest != new_checkpoint:
+                new_checkpoint = latest
+                print(f"new checkpoint: {new_checkpoint.path}")
+            if done:
+                break
+            time.sleep(30)
+        if new_checkpoint is None:
+            raise RuntimeError("run produced no checkpoint")
+        print(new_checkpoint.path)
+    return new_checkpoint
+
 
 # ## Evals Evals Evals
 #
 # Once again, we'll create a new Endpoint for the new checkpoint and run evals on it.
 
-with new_config.launch() as new_run:
-    print(f"run id: {new_run.training_run_id}")
-    new_checkpoint = None
-    while True:
-        done = new_run.done()
-        latest = new_run.latest_checkpoint()
-        if latest is not None and latest != new_checkpoint:
-            new_checkpoint = latest
-            print(f"new checkpoint: {new_checkpoint.path}")  # run offline evals here
-        if done:
-            break
-        time.sleep(30)
-    if new_checkpoint is None:
-        raise RuntimeError("run produced no checkpoint")
-    print(new_checkpoint.path)
 
-new_deployment = Endpoint.launch(
-    model, new_checkpoint, unauthenticated=True, recreate_if_existing=True
-)
-new_deployment.wait_until_ready(timeout=15 * 60)
-print(f"new checkpoint deployed to {new_deployment.url}")
+def deploy_continued_model(new_checkpoint):
+    print("deploying continued model endpoint...")
+    new_deployment = Endpoint.launch(
+        model,
+        new_checkpoint,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="rl-basics-continued",
+    )
+    new_deployment.wait_until_ready()
+    print(f"new checkpoint deployed to {new_deployment.url}")
+    return new_deployment
 
-print("running new checkpoint evaluation...")
-new_mean = run_eval(new_deployment)
-print(f"average score: {new_mean:.1f}")
+
+def run_continued_evals(new_deployment):
+    print("running new checkpoint evaluation...")
+    new_mean = run_eval(new_deployment)
+    print(f"average score: {new_mean:.1f}")
+
+
+if __name__ == "__main__":
+    base_deployment = deploy_base_model()
+    run_baseline_evals(base_deployment)
+    checkpoint = train(config)
+    trained_deployment = deploy_trained_model(checkpoint)
+    run_trained_evals(trained_deployment)
+    new_checkpoint = continue_training(checkpoint)
+    new_deployment = deploy_continued_model(new_checkpoint)
+    run_continued_evals(new_deployment)

@@ -8,7 +8,7 @@ Always read the common gotchas.
 
 First try looking for the existing model running on miles. Upstream ships inside the pinned image at `/root/miles`: `scripts/models/<model>.sh` (the `MODEL_ARGS` a recipe sources), `scripts/run_<model>.py` (the validated cluster shape, parallelism and hyperparameters), `docs/models/<vendor>/<model>.md`, `miles_plugins/models/<model>/`, and `miles/backends/megatron_utils/megatron_to_hf/<model>.py` (the weight mapping selected by `model_name`). Probe the image to read them — `scripts/fetch_miles_patch_snapshots.py` is the working pattern. If you cannot find an existing model, find the model with the most similar architecture. Reference huggingface for model architecture.
 
-**Check image/version compatibility FIRST — it is the most common blocker.** The gym pins the miles image per recipe (`docker_image` on `MilesRecipe`, overridden on the recipe subclass), so a bump changes only the recipe you edit. A model added to miles *after* that image was built will not run on it. Verify:
+**Check image/version compatibility FIRST — it is the most common blocker.** The Modal Dojo pins the miles image per recipe (`docker_image` on `MilesRecipe`, overridden on the recipe subclass), so a bump changes only the recipe you edit. A model added to miles *after* that image was built will not run on it. Verify:
 - **When support landed upstream** — the model plugin, the `megatron_to_hf` mapping, **and** the sglang inside the image all have to be new enough. A model with custom kernels needs an sglang that can serve them, not just the plugin.
 - **That the tag runs on Modal** — the named tag an upstream model doc recommends may be arm64-only (GB300), which will not run on H100/H200. The dated `dev-*` nightlies are multi-arch; prefer one pushed shortly after the upstream merge.
 - **That the tag still exists** — radixark prunes dated dev tags, so a pin that once worked can 404. Modal's cache still serves existing apps, so a stale pin is invisible until a cold pull in a fresh environment fails. Report one you find on a recipe you're not otherwise changing rather than bumping it silently.
@@ -56,9 +56,9 @@ Create a doc describing the miles config changes, and justify any patches you ha
 
 `megatron_to_hf_mode` picks the checkpoint path: `"bridge"` uses megatron-bridge, `"raw"` turns on HF → torch_dist conversion, `""` disables export. Only the non-bridge path needs Megatron's torch_dist save patches.
 
-Miles registers every sglang `ServerArgs` option under a `--sglang-` prefix, so any rollout-engine knob is reachable as an `sglang_*` field with no gym code.
+Miles registers every sglang `ServerArgs` option under a `--sglang-` prefix, so any rollout-engine knob is reachable as an `sglang_*` field with no Modal Dojo code.
 
-## How the recipe maps to CLI flags (add flags without touching gym code)
+## How the recipe maps to CLI flags (add flags without touching Modal Dojo code)
 
 `MilesRecipe` inherits `BaseTrainRecipe.cli_args`, which emits `--<field-name-with-dashes> <value>` for **every dataclass field** not listed in `_MILES_SKIP` (recipe.py). So the way to add an arbitrary miles/sglang flag is simply to **declare it as a field on your recipe subclass** — no edits to `recipe.py` or the launcher. The existing recipes do exactly this for their `sglang_*` and perf flags. Rules `cli_args` follows:
 - `True` → bare flag (`--foo`); `False` / `None` / `""` → omitted entirely. So default an unwanted flag to `None`/`False`/`""`.
@@ -81,7 +81,7 @@ When a model's args aren't representable in `ModelArchitecture` (custom kernels,
 
 ## Shipped callables and hooks
 
-Miles takes custom functions as import paths; the gym ships the callable by value and writes the resolved path, via `_HOOK_PATH_FLAGS`, `_HOOK_PATH_CONFIG_KEYS` and `_HOOK_WRAPPER_PATHS` in recipe.py. The wrappers live in `frameworks/miles/phase_reporting.py` and run phase reporting and dashboard capture before delegating to yours — so **setting a raw `--*-path` yourself replaces the wrapper and the run trains fine while reporting no substep times**, failing the Phase-2 dashboard gate. Pass the callable on the recipe field instead. Prefer `custom_reward_post_process_function` over a dotted path: a `__main__` function has no importable module name and miles' `import_module` fails inside the Ray actor. `capture_trace` + `trace_sample_limit` attach a per-sample generate/reward/tool-call timeline, useful when diagnosing gibberish.
+Miles takes custom functions as import paths; the Modal Dojo ships the callable by value and writes the resolved path, via `_HOOK_PATH_FLAGS`, `_HOOK_PATH_CONFIG_KEYS` and `_HOOK_WRAPPER_PATHS` in recipe.py. The wrappers live in `frameworks/miles/phase_reporting.py` and run phase reporting and dashboard capture before delegating to yours — so **setting a raw `--*-path` yourself replaces the wrapper and the run trains fine while reporting no substep times**, failing the Phase-2 dashboard gate. Pass the callable on the recipe field instead. Prefer `custom_reward_post_process_function` over a dotted path: a `__main__` function has no importable module name and miles' `import_module` fails inside the Ray actor. `capture_trace` + `trace_sample_limit` attach a per-sample generate/reward/tool-call timeline, useful when diagnosing gibberish.
 
 ## LoRA
 
@@ -107,10 +107,10 @@ The failure modes are silent, so check the rendered prompt before believing a ba
 ## Registration checklist (Phase 4)
 
 Wiring a new `<Model>` + `<Model>_Recipe` (usually plus `<Model>_LoRA_Recipe`) requires edits in all of:
-1. `modal_training_gym/common/models/<model>.py` + export in `common/models/__init__.py` (import + `__all__`).
-2. `modal_training_gym/train_recipes/miles_recipe/<model>.py` + export in `miles_recipe/__init__.py` (import + `__all__`) — export every variant.
-3. Top-level `modal_training_gym/__init__.py`: add to `_EXPORTS` (lazy map) **and** `__all__`.
+1. `modal_dojo/common/models/<model>.py` + export in `common/models/__init__.py` (import + `__all__`).
+2. `modal_dojo/train_recipes/miles_recipe/<model>.py` + export in `miles_recipe/__init__.py` (import + `__all__`) — export every variant.
+3. Top-level `modal_dojo/__init__.py`: add to `_EXPORTS` (lazy map) **and** `__all__`.
 4. `MilesRecipe.get_base_recipe` (recipe.py): add the `model_name → Recipe()` branch. Without it the model gets no preset and every caller must pass a recipe explicitly.
 5. `common/models/validation.py: VALIDATION_CONFIGS`: `_ValidationConfig("<Name>", <Model>, Framework.MILES)`. Step 4 is a prerequisite — `build_miles_validation` raises if `get_base_recipe` returns `None` — and the dataset it picks is DAPO-Math-17k, so a non-math recipe needs that backend widened.
 
-Verify with: `uv run -m compileall`, `uv run ruff check <files>`, `uv run pytest tests/test_miles_recipe_hooks.py tests/test_miles_runtime_env.py tests/test_miles_patches.py`, and a quick `python -c "from modal_training_gym import <Model>, <Model>_Recipe; r=<Model>_Recipe(); print(r.gpu_allocation.summary())"` — instantiating the recipe runs the GPU-allocation and parallelism validators, catching bad TP/PP/EP/node math before any Modal run.
+Verify with: `uv run -m compileall`, `uv run ruff check <files>`, `uv run pytest tests/test_miles_recipe_hooks.py tests/test_miles_runtime_env.py tests/test_miles_patches.py`, and a quick `python -c "from modal_dojo import <Model>, <Model>_Recipe; r=<Model>_Recipe(); print(r.gpu_allocation.summary())"` — instantiating the recipe runs the GPU-allocation and parallelism validators, catching bad TP/PP/EP/node math before any Modal run.

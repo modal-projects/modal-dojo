@@ -10,19 +10,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.models.validation import Framework
+from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.common.models.validation import Framework
 
 if TYPE_CHECKING:
-    from modal_training_gym.common.dataset import DatasetConfig
-    from modal_training_gym.common.models import ModelConfig
-    from modal_training_gym.train_recipes.base import BaseTrainRecipe
+    from modal_dojo.common.dataset import DatasetConfig
+    from modal_dojo.common.models import ModelConfig
+    from modal_dojo.train_recipes.base import BaseTrainRecipe
 
 
 def build_recipe_and_dataset(
     framework: Framework,
     model_config: "ModelConfig",
     step_count: int,
+    *,
+    loss_type: str = "policy_loss",
 ) -> tuple["BaseTrainRecipe", "DatasetConfig"]:
     """The model's base recipe and the dataset it validates against.
 
@@ -34,9 +36,9 @@ def build_recipe_and_dataset(
     if framework is Framework.SLIME:
         from .slime import build_slime_validation
 
-        return build_slime_validation(model_config, step_count)
+        return build_slime_validation(model_config, step_count, loss_type=loss_type)
     if framework is Framework.MILES:
         from .miles import build_miles_validation
 
-        return build_miles_validation(model_config, step_count)
-    raise TrainingGymConfigError(f"no validation backend for framework {framework!r}")
+        return build_miles_validation(model_config, step_count, loss_type=loss_type)
+    raise DojoConfigError(f"no validation backend for framework {framework!r}")

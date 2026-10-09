@@ -7,22 +7,22 @@ import types
 
 import pytest
 
-from modal_training_gym.common import metric_mirror, reporting
-from modal_training_gym.common.metric_mirror import (
+from modal_dojo.common import metric_mirror, reporting
+from modal_dojo.common.metric_mirror import (
     DashboardMetricConfig,
     MetricMirror,
     flatten_numeric,
     install_wandb_shim,
     patch_wandb_module,
 )
-from modal_training_gym.common.metrics import (
+from modal_dojo.common.metrics import (
     apply_metric_image,
     metric_runtime_env,
     metric_secrets,
     preflight_metric,
 )
-from modal_training_gym.common.trackio import TrackioConfig
-from modal_training_gym.common.wandb import WandbConfig
+from modal_dojo.common.trackio import TrackioConfig
+from modal_dojo.common.wandb import WandbConfig
 
 
 class _Tensor:
@@ -69,6 +69,7 @@ def sent(monkeypatch) -> list[dict]:
         lambda payload, final=False: batches.append({**payload, "final": final}),
     )
     monkeypatch.setattr(metric_mirror, "FLUSH_INTERVAL_SECONDS", 3600)
+    monkeypatch.setattr(metric_mirror.time, "time", lambda: 1000.0)
     return batches
 
 
@@ -91,11 +92,11 @@ def test_implicit_step_and_commit_follow_wandb_semantics(sent):
             "training_run_id": "run-1",
             "final": False,
             "points": [
-                {"step": 0, "metrics": {"a": 1.0}},
-                {"step": 1, "metrics": {"b": 2.0, "c": 3.0}},
-                {"step": 3, "metrics": {"f": 6.0, "loss": 0.5}},
-                {"step": 10, "metrics": {"d": 4.0, "e": 5.0}},
-                {"step": 11, "metrics": {"g": 7.0}},
+                {"step": 0, "metrics": {"a": 1.0}, "time": 1000.0},
+                {"step": 1, "metrics": {"b": 2.0, "c": 3.0}, "time": 1000.0},
+                {"step": 3, "metrics": {"f": 6.0, "loss": 0.5}, "time": 1000.0},
+                {"step": 10, "metrics": {"d": 4.0, "e": 5.0}, "time": 1000.0},
+                {"step": 11, "metrics": {"g": 7.0}, "time": 1000.0},
             ],
         }
     ]
@@ -117,10 +118,10 @@ def test_log_schedules_one_timer_per_batch(sent, monkeypatch):
 
 def test_mirror_log_is_best_effort(sent, monkeypatch):
     monkeypatch.setattr(metric_mirror, "_MIRROR", None)
-    monkeypatch.delenv("TRAINING_GYM_TRAINING_RUN_ID", raising=False)
+    monkeypatch.delenv("MODAL_DOJO_TRAINING_RUN_ID", raising=False)
     metric_mirror.mirror_log({"a": 1})  # no run: silently ignored
 
-    monkeypatch.setenv("TRAINING_GYM_TRAINING_RUN_ID", "run-env")
+    monkeypatch.setenv("MODAL_DOJO_TRAINING_RUN_ID", "run-env")
     hooks = []
     monkeypatch.setattr(reporting, "register_pre_drain_hook", hooks.append)
     metric_mirror.mirror_log({"a": 1}, step=2)
@@ -133,7 +134,7 @@ def test_mirror_log_is_best_effort(sent, monkeypatch):
         {
             "training_run_id": "run-env",
             "final": True,
-            "points": [{"step": 2, "metrics": {"a": 1.0}}],
+            "points": [{"step": 2, "metrics": {"a": 1.0}, "time": 1000.0}],
         }
     ]
     monkeypatch.setattr(metric_mirror, "_MIRROR", None)
@@ -141,7 +142,7 @@ def test_mirror_log_is_best_effort(sent, monkeypatch):
 
 def test_enqueue_metric_points_derives_url_and_retries(monkeypatch):
     monkeypatch.setenv(
-        "TRAINING_GYM_FRAMEWORK_STATUS_URL", "https://dash.test/api/framework-status"
+        "MODAL_DOJO_FRAMEWORK_STATUS_URL", "https://dash.test/api/framework-status"
     )
     items, blocking = [], []
 
@@ -178,7 +179,7 @@ def test_drain_compaction_folds_metric_batches_into_one_prioritized_post():
         {
             "_url": metrics_url,
             "training_run_id": "r",
-            "points": [{"step": 10, "metrics": {"loss": 0.8, "lr": 1.0}}],
+            "points": [{"step": 10, "metrics": {"loss": 0.8, "lr": 1.0}, "time": 1.0}],
             "final": False,
             "_retry_count": 1,
         },
@@ -188,7 +189,7 @@ def test_drain_compaction_folds_metric_batches_into_one_prioritized_post():
         {
             "_url": metrics_url,
             "training_run_id": "r",
-            "points": [{"step": 10, "metrics": {"loss": 0.7}}],
+            "points": [{"step": 10, "metrics": {"loss": 0.7}, "time": 2.0}],
             "final": True,
             "_retry_count": 3,
         },
@@ -198,7 +199,9 @@ def test_drain_compaction_folds_metric_batches_into_one_prioritized_post():
     reporting._compact_report_queue()
     final_timing, metrics, status, rollouts = queue.queue
     assert final_timing["n"] == 4 and status["n"] == 3 and rollouts["n"] == 1
-    assert metrics["points"] == [{"step": 10, "metrics": {"loss": 0.7, "lr": 1.0}}]
+    assert metrics["points"] == [
+        {"step": 10, "metrics": {"loss": 0.7, "lr": 1.0}, "time": 2.0}
+    ]
     assert metrics["final"] is True and metrics["_retry_count"] == 3
     assert queue.unfinished_tasks == 4
     while not queue.empty():
@@ -248,7 +251,7 @@ class _FakeImage:
 def test_dashboard_config_needs_no_secrets_or_preflight():
     config = DashboardMetricConfig(project="p", group="g", exp_name="e")
     assert metric_runtime_env(config, run_id="r") == {
-        "TRAINING_GYM_METRIC_PROVIDER": "dashboard"
+        "MODAL_DOJO_METRIC_PROVIDER": "dashboard"
     }
     assert config.metadata(run_id="r") == {
         "provider": "dashboard",
@@ -262,8 +265,8 @@ def test_dashboard_config_needs_no_secrets_or_preflight():
 
 
 def test_recipes_default_to_the_dashboard_and_none_opts_out():
-    from modal_training_gym.train_recipes.miles_recipe.recipe import MilesRecipe
-    from modal_training_gym.train_recipes.slime_recipe.recipe import SlimeRecipe
+    from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
+    from modal_dojo.train_recipes.slime_recipe.recipe import SlimeRecipe
 
     for recipe_cls in (SlimeRecipe, MilesRecipe):
         assert isinstance(recipe_cls().metrics, DashboardMetricConfig)
@@ -278,7 +281,7 @@ def test_every_provider_installs_the_mirror_pth(config):
     image = apply_metric_image(_FakeImage(), config)
     assert len(image.commands) == 1
     assert "_training_gym_metric_mirror.pth" in image.commands[0]
-    assert "TRAINING_GYM_METRIC_PROVIDER" in image.commands[0]
+    assert "MODAL_DOJO_METRIC_PROVIDER" in image.commands[0]
     if isinstance(config, TrackioConfig):
         expected = [f"trackio=={config.TRACKIO_PACKAGE_VERSION}"]
     elif isinstance(config, WandbConfig):
@@ -298,7 +301,7 @@ def test_bootstrap_dispatches_on_provider(monkeypatch):
         metric_mirror, "install_wandb_tee", lambda: calls.append("wandb")
     )
     for provider in ("dashboard", "wandb", "other"):
-        monkeypatch.setenv("TRAINING_GYM_METRIC_PROVIDER", provider)
+        monkeypatch.setenv("MODAL_DOJO_METRIC_PROVIDER", provider)
         metric_mirror.bootstrap()
     assert calls == ["dashboard", "wandb"]
 
@@ -340,8 +343,8 @@ def test_dashboard_shim_routes_wandb_calls_to_the_mirror(isolated_wandb, sent):
     assert wandb.run is None
     metric_mirror._MIRROR.flush()
     assert sent[0]["points"] == [
-        {"step": 1, "metrics": {"train/loss": 0.9}},
-        {"step": 2, "metrics": {"train/loss": 0.4, "reward": 1.5}},
+        {"step": 1, "metrics": {"train/loss": 0.9}, "time": 1000.0},
+        {"step": 2, "metrics": {"train/loss": 0.4, "reward": 1.5}, "time": 1000.0},
     ]
 
 
@@ -377,14 +380,14 @@ def test_tee_patches_run_log_and_keeps_calling_wandb(isolated_wandb, sent):
     assert len(run.logged) == 4
     metric_mirror._MIRROR.flush()
     assert sent[0]["points"] == [
-        {"step": 0, "metrics": {"a": 1.0}},
-        {"step": 1, "metrics": {"b": 2.0, "c": 3.0}},
-        {"step": 7, "metrics": {"d": 4.0}},
+        {"step": 0, "metrics": {"a": 1.0}, "time": 1000.0},
+        {"step": 1, "metrics": {"b": 2.0, "c": 3.0}, "time": 1000.0},
+        {"step": 7, "metrics": {"d": 4.0}, "time": 1000.0},
     ]
 
 
 def test_trackio_shim_mirrors(isolated_wandb, sent, monkeypatch):
-    from modal_training_gym.common import trackio as trackio_module
+    from modal_dojo.common import trackio as trackio_module
 
     logged = []
     fake_trackio = types.SimpleNamespace(
@@ -401,4 +404,4 @@ def test_trackio_shim_mirrors(isolated_wandb, sent, monkeypatch):
     wandb.log({"x": 1.0}, step=4)
     assert logged == [({"x": 1.0}, 4)]
     metric_mirror._MIRROR.flush()
-    assert sent[0]["points"] == [{"step": 4, "metrics": {"x": 1.0}}]
+    assert sent[0]["points"] == [{"step": 4, "metrics": {"x": 1.0}, "time": 1000.0}]

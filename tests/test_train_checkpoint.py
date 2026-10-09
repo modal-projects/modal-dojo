@@ -4,15 +4,16 @@ import inspect
 
 import pytest
 
-from modal_training_gym.common.checkpoint import Checkpoint, CheckpointType
-from modal_training_gym.common.dataset import HuggingFaceDataset
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.models import Qwen3_5_4B
-from modal_training_gym.common.train import TrainConfig
-from modal_training_gym.frameworks.miles.launcher import build_miles_app
-from modal_training_gym.frameworks.slime.launcher import build_slime_app
-from modal_training_gym.train_recipes.miles_recipe import MilesRecipe
-from modal_training_gym.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.common.checkpoint import Checkpoint, CheckpointType
+from modal_dojo.common.dataset import HuggingFaceDataset
+from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.common.launcher_helpers import resumed_recipe
+from modal_dojo.common.models import Qwen3_5_4B
+from modal_dojo.common.train import TrainConfig
+from modal_dojo.frameworks.miles.launcher import build_miles_app
+from modal_dojo.frameworks.slime.launcher import build_slime_app
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 _RECIPE_KW = dict(
     gpu_type="H100",
@@ -135,7 +136,7 @@ def test_hf_export_is_not_a_training_resume_checkpoint() -> None:
     config = _config(SlimeRecipe(**_RECIPE_KW), CheckpointType.hf)
 
     with pytest.raises(
-        TrainingGymConfigError,
+        DojoConfigError,
         match="Hugging Face exports are serving artifacts",
     ):
         config._prepare_recipe()
@@ -154,8 +155,7 @@ def test_slime_conversion_uses_wrapper_with_expected_environment() -> None:
     source = inspect.getsource(build_slime_app)
 
     assert (
-        "modal_training_gym.frameworks.slime.modal_helpers.convert_hf_to_torch_dist"
-        in source
+        "modal_dojo.frameworks.slime.modal_helpers.convert_hf_to_torch_dist" in source
     )
     assert (
         'convert_script = f"{SLIME_ROOT}/tools/convert_hf_to_torch_dist.py"'
@@ -169,21 +169,53 @@ def test_slime_conversion_uses_wrapper_with_expected_environment() -> None:
     assert 'if num_nodes > 1:\n            env["SKIP_RELEASE_RENAME"] = "1"' in source
 
 
-def test_internal_resume_loads_adam_when_the_run_saved_it() -> None:
-    miles = inspect.getsource(build_miles_app)
-    slime = inspect.getsource(build_slime_app)
+@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize("no_save_optim", [False, True])
+def test_internal_resume_uses_saved_optimizer_and_restores_recipe(
+    recipe_cls, no_save_optim
+) -> None:
+    from modal_dojo.common.launcher_helpers import resumed_recipe
 
-    assert "miles.no_load_optim = miles.no_save_optim" in miles
-    assert "miles.no_load_optim = original_no_load_optim" in miles
-    assert 'object.__setattr__(slime, "no_load_optim", slime.no_save_optim)' in slime
+    recipe = recipe_cls(
+        num_rollout=10,
+        load="/checkpoints/seed",
+        start_rollout_id=0,
+        no_load_optim=not no_save_optim,
+        no_save_optim=no_save_optim,
+    )
+    checkpoint = {
+        "resume_from_iteration": 2,
+        "resume_checkpoint_path": "/checkpoints/run/iter_0000002",
+    }
+    with pytest.raises(RuntimeError, match="command failed"):
+        with resumed_recipe(recipe, "/checkpoints/run", checkpoint):
+            fields = recipe._fields()
+            assert fields["load"] == "/checkpoints/run"
+            assert fields["start_rollout_id"] is None
+            assert fields["no_load_optim"] is no_save_optim
+            raise RuntimeError("command failed")
+
+    assert recipe.load == "/checkpoints/seed"
+    assert recipe.start_rollout_id == 0
+    assert recipe.no_load_optim is not no_save_optim
+
+
+@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+def test_internal_resume_after_epoch_save_under_num_epoch(recipe_cls) -> None:
+    recipe = recipe_cls(num_rollout=1, extra_config={"num_epoch": 3})
+    checkpoint = {
+        "resume_from_iteration": 5,
+        "resume_checkpoint_path": "/checkpoints/run/iter_0000005",
+    }
+    with resumed_recipe(recipe, "/checkpoints/run", checkpoint):
+        assert recipe.load == "/checkpoints/run"
 
 
 def test_miles_conversion_uses_wrapper_with_expected_environment() -> None:
     source = inspect.getsource(build_miles_app)
 
     assert (
-        "modal_training_gym.frameworks.miles.modal_helpers.convert_hf_to_torch_dist"
-        in source
+        "modal_dojo.frameworks.miles.modal_helpers.convert_hf_to_torch_dist" in source
     )
     assert (
         'convert_script = f"{MILES_ROOT}/tools/convert_hf_to_torch_dist.py"'
@@ -207,10 +239,11 @@ def test_miles_conversion_uses_wrapper_with_expected_environment() -> None:
 def test_auto_resume_drops_extra_config_start_rollout_id(recipe, tmp_path) -> None:
     import yaml
 
-    from modal_training_gym.common.launcher_utils import (
-        drop_materialized_config_key,
+    from modal_dojo.common.launcher_utils import (
         prepare_launch_config,
     )
+
+    from modal_dojo.common.launcher_helpers import resumed_recipe
 
     recipe.extra_config = {"start_rollout_id": 0, "qkv_format": "bshd"}
     prepare_launch_config(
@@ -218,7 +251,12 @@ def test_auto_resume_drops_extra_config_start_rollout_id(recipe, tmp_path) -> No
     )
     assert "start_rollout_id" in recipe._escape_hatch_keys()
 
-    drop_materialized_config_key(recipe, "start_rollout_id")
+    with resumed_recipe(
+        recipe,
+        "/checkpoints/run",
+        {"resume_checkpoint_path": "/checkpoints/run/iter_0000000"},
+    ):
+        assert recipe.start_rollout_id is None
 
     assert recipe._escape_hatch_keys() == ("qkv_format",)
     with open(recipe.extra_config) as f:

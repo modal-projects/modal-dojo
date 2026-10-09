@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from modal_training_gym.frameworks.slime.modal_helpers.patches import (
+from modal_dojo.frameworks.slime.modal_helpers.patches import (
     patch_entropy_no_grad as patcher,
 )
 

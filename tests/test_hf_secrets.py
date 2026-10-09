@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from modal_training_gym.common import hf_secrets, hf_token
+from modal_dojo.common import hf_secrets, hf_token
 
 
 def _mock_secret_cls():

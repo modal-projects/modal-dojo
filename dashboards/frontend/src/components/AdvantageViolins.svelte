@@ -14,7 +14,8 @@
   // it over each bucket to get that bucket's mass. Bar lengths are normalised
   // across all buckets of all violins so widths are comparable between steps.
 
-  import { brushZoom } from "../lib/brushZoom.js";
+  import { brushZoom, fractionsToDomain } from "../lib/brushZoom.js";
+  import ChartZoomButtons from "./ChartZoomButtons.svelte";
   import TimeAxis from "./TimeAxis.svelte";
 
   let {
@@ -22,7 +23,8 @@
     labels = null,
     // `[min, max]` rollout ids; only steps inside are drawn.
     xDomain = null,
-    // Called with `[min, max]` rollout ids when the user drags or wheels.
+    // Called with `[min, max]` rollout ids when the user drags a window or
+    // presses the zoom buttons.
     onChangeDomainX = null,
     // rollout id <-> epoch seconds; when both are given a wall-clock axis is
     // drawn under the plot.
@@ -158,9 +160,14 @@
 
   // Violins sit in equal-width columns, so a brush selection is a span of
   // column indices; map it back to rollout ids, extrapolating past the ends
-  // with the mean step spacing so wheel zoom-out keeps working.
+  // with the mean step spacing so zooming out past the data keeps working.
   function handleBrush([f0, f1]) {
     if (!zoomable) return;
+    // Expand the current domain even when it contains just one sparse rollout.
+    if (hasDomain && f1 - f0 > 1) {
+      onChangeDomainX(fractionsToDomain([f0, f1], xDomain));
+      return;
+    }
     const xs = pts.map((p) => p.x);
     const n = xs.length;
     let toX;
@@ -300,9 +307,14 @@
 </script>
 
 {#if model}
-  <div class="flex items-center gap-[12px] mb-[8px] text-[11px] text-(--muted)">
+  <div class="flex flex-wrap items-center gap-[12px] mb-[8px] text-[11px] text-(--muted)">
     <span class="chart-legend-item"><span class="vsw fill"></span>sample density</span>
     <span class="chart-legend-item"><span class="vsw median"></span>median</span>
+    {#if zoomable}
+      <span class="ml-auto">
+        <ChartZoomButtons onChangeDomainX={handleBrush} canZoomIn={pts.length > 1} />
+      </span>
+    {/if}
   </div>
   <div class="flex items-stretch">
     <div class="flex flex-[0_0_56px] w-[56px] h-[210px]">
@@ -373,10 +385,13 @@
   </div>
 {:else if hasDomain && allPts.length}
   <div
-    class="relative h-[210px] rounded-[4px] bg-[#0a0e14] flex items-center justify-center text-(--muted) text-[12px]"
+    class="relative h-[210px] rounded-[4px] bg-[#0a0e14] flex items-center justify-center gap-[10px] text-(--muted) text-[12px]"
     use:brushZoom={{ onChangeDomainX: handleBrush, enabled: zoomable }}
   >
     No data in this range.
+    {#if zoomable}
+      <ChartZoomButtons onChangeDomainX={handleBrush} canZoomIn={false} />
+    {/if}
   </div>
 {:else}
   <div class="plot-empty">Advantage distribution needs ≥1 step of data.</div>

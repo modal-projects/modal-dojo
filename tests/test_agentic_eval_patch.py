@@ -14,7 +14,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from modal_training_gym.frameworks.slime.modal_helpers.patches import (
+from modal_dojo.frameworks.slime.modal_helpers.patches import (
     patch_agentic_eval as patcher,
 )
 

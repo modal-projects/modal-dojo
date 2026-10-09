@@ -1,4 +1,4 @@
-"""Weekly synthetic monitoring for training-gym model validation.
+"""Weekly synthetic monitoring for modal-dojo model validation.
 
 Test it out with:
 
@@ -19,8 +19,8 @@ from pathlib import Path
 
 import modal
 
-from modal_training_gym.common.models.validation import _ValidationConfig
-from modal_training_gym.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.models.validation import _ValidationConfig
+from modal_dojo.common.run import TrainingRun, TrainingRunStatus
 from scripts.validate_model_configs import ValidationResult, run_base_training
 from synthetic_monitoring.chart import RunPoint, render_timing_history_chart
 
@@ -37,7 +37,7 @@ probe_image = (
     .uv_sync(uv_project_dir=str(REPO_ROOT), extra_options="--no-dev")
     .uv_pip_install("slack-sdk==3.27.1", "matplotlib==3.10.1")
     .env({"MODAL_ENVIRONMENT": MODAL_ENV})
-    .add_local_python_source("modal_training_gym", "synthetic_monitoring", "scripts")
+    .add_local_python_source("modal_dojo", "synthetic_monitoring", "scripts")
     .add_local_dir(
         str(REPO_ROOT / "dashboards" / "frontend"),
         remote_path="/root/dashboards/frontend",
@@ -45,7 +45,7 @@ probe_image = (
     )
 )
 
-slack_secret = modal.Secret.from_name("gym-bot-slack", environment_name=MODAL_ENV)
+slack_secret = modal.Secret.from_name("dojo-bot-slack", environment_name=MODAL_ENV)
 hf_secret = modal.Secret.from_name("huggingface-secret", environment_name="main")
 
 app = modal.App("gym-synmon-launcher")
@@ -262,7 +262,7 @@ def monitor(model: str = "", num_steps: int = 1) -> dict:
         print(f"synmon: {QUICKSTART_NAME!r}")
         run: TrainingRun | None = None
         try:
-            run = runpy.run_module("scripts.quickstart")["run"]
+            run = runpy.run_module("scripts.quickstart", run_name="__main__")["run"]
             completed = run.result(timeout=PROBE_TIMEOUT_S)
             training_run = TrainingRun.from_id(completed.training_run_id)
             url = training_run.modal_app_url or _lookup_app_url(

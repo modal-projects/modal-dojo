@@ -9,28 +9,28 @@ When doing RL post-training, experiment management and observability are particu
 Since it's just a [Modal App](https://modal.com/docs/guide/apps), you can get a dedicated dashboard for your workspace with:
 
 ```bash
-training-gym setup
+modal-dojo setup
 ```
 
-Note that you'll have to rerun this command when you bump your `training-gym` version.
+Note that you'll have to rerun this command when you bump your `modal-dojo` version.
 
 Once deployed, open the dashboard any time with:
 
 ```bash
-training-gym open
+modal-dojo open
 ```
 
 By default, the dashboard is deployed without authentication. To put it behind HTTP Basic Auth, set a password:
 
 ```bash
-training-gym set-password
+modal-dojo set-password
 ```
 
 ## At a glance
 
 The landing page lists every training run in your workspace:
 
-![Training runs list with annotated components](/observability_dashboard_1_annotated.png)
+![Training runs list with annotated components](https://modal-cdn.com/cdnbot/runs-3ncqocknt_51d0b014.webp)
 
 You can easily see:
 
@@ -41,14 +41,13 @@ You can easily see:
 
 Click any run to see a detailed view:
 
-![Run summary view with annotated components](/observability_dashboard_2_annotated.png)
+![Run summary tab with annotated components](https://modal-cdn.com/cdnbot/summary-4frve6mu8_328deaa6.webp)
 
 Some highlights:
 
 1. Per-step breakdown of wall-clock time for the run; see more below.
 2. Mean reward of all rollouts per step; [past returns do not guarantee future results](https://russellinvestments.com/us/blog/past-performance-no-guarantee-future-results).
 3. Score distribution and advantage charts; useful for spotting reward collapse (all-equal rewards) long before the mean flatlines.
-4. Link to the underlying Modal app for container-level debugging.
 
 The step and substep timeline is the dashboard's built-in profiler. Each step is segmented by:
 
@@ -68,11 +67,18 @@ Some tips:
 
 Custom phases emitted by your code (e.g., a custom reward function) appear as their own markers for easy debugging and tracking.
 
+The Metrics tab charts every scalar the run reports, grouped by namespace:
+
+![Metrics tab with annotated components](https://modal-cdn.com/cdnbot/metrics-1jomskpp4_746f3dbe.webp)
+
+1. Metric namespaces: `perf`, `rollout`, and `train`.
+2. One chart per reported metric.
+
 ## Per rollout
 
 You can even inspect each rollout to quickly debug poor performance:
 
-![Rollouts tab with annotated components](/observability_dashboard_3_annotated.png)
+![Rollouts tab with annotated components](https://modal-cdn.com/cdnbot/rollouts-2k11urb7a_8fe92fcf.webp)
 
 You'll see:
 
@@ -80,16 +86,25 @@ You'll see:
 2. Reward distribution across all rollouts. A healthy run is represented as a bimodal distribution for the majority of the run, while an unhealthy one will gravitate towards one end or the other before training has completed. Pictured above is one indicative of the end of a run, as most rollouts have already saturated the reward.
 3. Per-rollout trace that shows the full prompt, the system message, the model's thinking, every conversation turn, and the reward.
 
+## Logs
+
+The Logs tab streams every worker's logs live while the run is going, and stores them once the run finishes:
+
+![Logs tab with annotated components](https://modal-cdn.com/cdnbot/logsnl1wp83k_d171ed1e.webp)
+
+1. Substring filter and time-range picker.
+2. Interleaved log lines from all workers in the run.
+
 ## Housekeeping
 
 Metadata from old failed or cancelled runs will accumulate in the dashboard over time. See what will be removed with:
 
 ```bash
-training-gym cleanup --older-than-days 7 --dry-run
+modal-dojo cleanup --older-than-days 7 --dry-run
 ```
 
 Then execute:
 
 ```bash
-training-gym cleanup --older-than-days 7
+modal-dojo cleanup --older-than-days 7
 ```

@@ -2,67 +2,59 @@
 
 from __future__ import annotations
 
-from modal_training_gym.frameworks.miles import launcher
-from modal_training_gym.frameworks.miles.launcher import build_ray_runtime_env
-from modal_training_gym.train_recipes.miles_recipe import MilesRecipe
+import pytest
+
+from modal_dojo.frameworks.miles import launcher
+from modal_dojo.frameworks.miles.launcher import build_ray_runtime_env
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
 
-class _FakeImage:
-    def __init__(self):
-        self.commands: list[str] = []
+@pytest.fixture
+def image_commands(monkeypatch):
+    commands = []
 
-    @classmethod
-    def from_registry(cls, _docker_image: str) -> "_FakeImage":
-        return cls()
+    def run_commands(image, *args, **kwargs):
+        commands.extend(args)
+        return image
 
-    def entrypoint(self, _entrypoint: list[str]) -> "_FakeImage":
-        return self
-
-    def run_commands(self, *commands: str) -> "_FakeImage":
-        self.commands.extend(commands)
-        return self
-
-    def env(self, _environment: dict[str, str]) -> "_FakeImage":
-        return self
+    monkeypatch.setattr(launcher.Image, "run_commands", run_commands)
+    return commands
 
 
-def test_multinode_image_reinstalls_matching_rdma_runtime(monkeypatch):
-    monkeypatch.setattr(launcher, "Image", _FakeImage)
+def test_multinode_image_reinstalls_matching_rdma_runtime(image_commands):
     recipe = MilesRecipe(colocate=False, actor_num_gpus_per_node=8, rollout_num_gpus=8)
 
-    image = launcher._build_miles_base_image(recipe)
+    launcher._build_miles_base_image(recipe)
 
-    assert launcher.RDMA_RUNTIME_INSTALL_COMMAND in image.commands
+    assert launcher.RDMA_RUNTIME_INSTALL_COMMAND in image_commands
 
 
-def test_colocate_multinode_skips_rdma_reinstall(monkeypatch):
-    monkeypatch.setattr(launcher, "Image", _FakeImage)
+def test_colocate_multinode_skips_rdma_reinstall(image_commands):
     recipe = MilesRecipe(colocate=True, actor_num_nodes=2, actor_num_gpus_per_node=8)
 
-    image = launcher._build_miles_base_image(recipe)
+    launcher._build_miles_base_image(recipe)
 
-    assert launcher.RDMA_RUNTIME_INSTALL_COMMAND not in image.commands
-
-
-def test_single_node_image_keeps_base_rdma_runtime(monkeypatch):
-    monkeypatch.setattr(launcher, "Image", _FakeImage)
-
-    image = launcher._build_miles_base_image(MilesRecipe())
-
-    assert launcher.RDMA_RUNTIME_INSTALL_COMMAND not in image.commands
+    assert launcher.RDMA_RUNTIME_INSTALL_COMMAND not in image_commands
 
 
-def test_ld_library_path_comes_from_the_container(monkeypatch):
-    """Workers get the container's linker path, behind the system lib dir."""
-    monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/local/cuda/lib64:/wheel/nvidia/lib")
+def test_single_node_image_keeps_base_rdma_runtime(image_commands):
+    launcher._build_miles_base_image(MilesRecipe())
+
+    assert launcher.RDMA_RUNTIME_INSTALL_COMMAND not in image_commands
+
+
+def test_ld_library_path_is_inherited_from_the_container(monkeypatch):
+    """Ray workers keep the container's path, e.g. Modal's EFA dirs first."""
+    monkeypatch.setenv(
+        "LD_LIBRARY_PATH",
+        "/opt/amazon/efa/lib:/opt/amazon/ofi-nccl/lib:/usr/local/cuda/lib64",
+    )
 
     env_vars = build_ray_runtime_env(
         head_addr="10.0.0.1", metric_env={}, environment={}
     )["env_vars"]
 
-    assert env_vars["LD_LIBRARY_PATH"] == (
-        "/usr/lib/x86_64-linux-gnu:/usr/local/cuda/lib64:/wheel/nvidia/lib"
-    )
+    assert "LD_LIBRARY_PATH" not in env_vars
     assert env_vars["MASTER_ADDR"] == "10.0.0.1"
     assert env_vars["no_proxy"] == "127.0.0.1,10.0.0.1"
     assert "MASTER_PORT" not in env_vars
@@ -82,29 +74,6 @@ def test_recipe_environment_still_wins(monkeypatch):
 
     assert env_vars["LD_LIBRARY_PATH"] == "/from/recipe"
     assert env_vars["PYTHONPATH"] == "/root/Megatron-LM/"
-
-
-def test_unset_container_path_yields_only_the_system_lib_dir(monkeypatch):
-    """No empty entry, which the loader would read as the working directory."""
-    monkeypatch.delenv("LD_LIBRARY_PATH", raising=False)
-
-    env_vars = build_ray_runtime_env(
-        head_addr="10.0.0.1", metric_env={}, environment={}
-    )["env_vars"]
-
-    assert env_vars["LD_LIBRARY_PATH"] == "/usr/lib/x86_64-linux-gnu"
-
-
-def test_system_lib_dir_is_not_duplicated(monkeypatch):
-    monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/lib/x86_64-linux-gnu:/wheel/nvidia/lib")
-
-    env_vars = build_ray_runtime_env(
-        head_addr="10.0.0.1", metric_env={}, environment={}
-    )["env_vars"]
-
-    assert env_vars["LD_LIBRARY_PATH"] == (
-        "/usr/lib/x86_64-linux-gnu:/wheel/nvidia/lib"
-    )
 
 
 def test_metric_env_is_preserved(monkeypatch):

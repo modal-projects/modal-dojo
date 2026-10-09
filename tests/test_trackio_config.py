@@ -9,9 +9,9 @@ from dataclasses import fields
 from importlib.util import find_spec
 from typing import Any
 
-from modal_training_gym.common.metrics import apply_metric_image
-from modal_training_gym.common.errors import TrainingGymConfigError
-from modal_training_gym.common.trackio import (
+from modal_dojo.common.metrics import apply_metric_image
+from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.common.trackio import (
     TrackioConfig,
     install_wandb_shim,
     require_trackio_destination,
@@ -20,7 +20,7 @@ from modal_training_gym.common.trackio import (
 
 
 def test_trackio_config_is_provider_specific_without_provider_or_label_fields():
-    from modal_training_gym import TrackioConfig as PublicTrackioConfig
+    from modal_dojo import TrackioConfig as PublicTrackioConfig
 
     config = TrackioConfig(
         project="rl",
@@ -33,8 +33,8 @@ def test_trackio_config_is_provider_specific_without_provider_or_label_fields():
     assert PublicTrackioConfig is TrackioConfig
     assert {field.name for field in fields(config)}.isdisjoint({"provider", "label"})
     assert config.runtime_env(run_id="run-a2") == {
-        "TRAINING_GYM_METRIC_PROVIDER": "trackio",
-        "TRAINING_GYM_TRACKIO_RUN_NAME": "run-a2",
+        "MODAL_DOJO_METRIC_PROVIDER": "trackio",
+        "MODAL_DOJO_TRACKIO_RUN_NAME": "run-a2",
         "TRACKIO_SPACE_ID": "modal-labs/training-metrics",
         "TRACKIO_BUCKET_ID": "modal-labs/training-metrics",
     }
@@ -54,12 +54,12 @@ def test_trackio_dashboard_urls_do_not_expose_credentials():
         "?write_token=secret#fragment"
     )
     assert config.url(run_id="run-a2") == (
-        "https://metrics.example.com:8443/path?project=training-gym&runs=run-a2"
+        "https://metrics.example.com:8443/path?project=modal-dojo&runs=run-a2"
     )
 
     config = TrackioConfig(server_url="https://user:pw@[2001:db8::1]:8443/path")
     assert config.url(run_id="run-a2") == (
-        "https://[2001:db8::1]:8443/path?project=training-gym&runs=run-a2"
+        "https://[2001:db8::1]:8443/path?project=modal-dojo&runs=run-a2"
     )
 
     config.project = "rl"
@@ -79,7 +79,7 @@ def test_deploy_to_modal_returns_a_self_hosted_config(monkeypatch):
         return "https://example--training-gym-trackio.modal.run"
 
     monkeypatch.setattr(
-        "modal_training_gym.common.trackio._deploy_modal_dashboard", fake_deploy
+        "modal_dojo.common.trackio._deploy_modal_dashboard", fake_deploy
     )
 
     config = TrackioConfig.deploy_to_modal(
@@ -125,11 +125,11 @@ def test_trackio_image_installs_trackio_and_the_metric_bootstrap():
     assert image.packages == ["trackio==0.34.0"]
     assert len(image.commands) == 1
     assert "_training_gym_metric_mirror.pth" in image.commands[0]
-    assert "TRAINING_GYM_METRIC_PROVIDER" in image.commands[0]
+    assert "MODAL_DOJO_METRIC_PROVIDER" in image.commands[0]
 
 
 def test_trackio_package_version_is_configurable():
-    """A pinned default, but bumpable without waiting on a Training Gym release."""
+    """A pinned default, but bumpable without waiting on a Modal Dojo release."""
     image = _FakeImage()
     apply_metric_image(image, TrackioConfig(TRACKIO_PACKAGE_VERSION="0.35.0"))
 
@@ -193,7 +193,7 @@ def test_trackio_wandb_adapter_covers_the_framework_surface(monkeypatch):
         "wandb.sdk.lib.runid",
     ):
         monkeypatch.delitem(sys.modules, module_name, raising=False)
-    monkeypatch.setenv("TRAINING_GYM_TRACKIO_RUN_NAME", "training-run-a2")
+    monkeypatch.setenv("MODAL_DOJO_TRACKIO_RUN_NAME", "training-run-a2")
     monkeypatch.setenv("TRACKIO_SPACE_ID", "modal-labs/training-metrics")
     monkeypatch.setenv("TRACKIO_SERVER_URL", "https://metrics.example.com")
     monkeypatch.setenv("TRACKIO_BUCKET_ID", "modal-labs/training-metrics")
@@ -212,7 +212,10 @@ def test_trackio_wandb_adapter_covers_the_framework_surface(monkeypatch):
         id="framework-id",
         group="baseline",
         name="framework-name",
-        config={"learning_rate": 1e-5},
+        config={
+            "learning_rate": 1e-5,
+            "_is_global_batch_size_explicitly_specified": True,
+        },
         settings=settings,
         reinit=True,
         dir="/tmp/wandb",
@@ -284,7 +287,7 @@ def _install_shim_with_contextvar_trackio(monkeypatch):
         "wandb.sdk.lib.runid",
     ):
         monkeypatch.delitem(sys.modules, module_name, raising=False)
-    monkeypatch.setenv("TRAINING_GYM_TRACKIO_RUN_NAME", "training-run-a2")
+    monkeypatch.setenv("MODAL_DOJO_TRACKIO_RUN_NAME", "training-run-a2")
     install_wandb_shim()
     return logged
 
@@ -344,11 +347,11 @@ def test_trackio_adapter_preserves_native_train_and_eval_metric_names(monkeypatc
 
 def _stub_discovery(monkeypatch, *, url="https://trackio.example", secret_exists=True):
     monkeypatch.setattr(
-        "modal_training_gym.common.trackio.deployed_trackio_url",
+        "modal_dojo.common.trackio.deployed_trackio_url",
         lambda app_name="training-gym-trackio": url,
     )
     monkeypatch.setattr(
-        "modal_training_gym.common.trackio._secret_exists",
+        "modal_dojo.common.trackio._secret_exists",
         lambda name: secret_exists,
     )
 
@@ -361,7 +364,7 @@ def test_a_custom_token_secret_is_not_guessed_at(monkeypatch):
     """
     _stub_discovery(monkeypatch, secret_exists=False)
 
-    with pytest.raises(TrainingGymConfigError, match="custom modal_secret_name"):
+    with pytest.raises(DojoConfigError, match="custom modal_secret_name"):
         resolve_trackio_destination(TrackioConfig(project="rl"))
 
 
@@ -375,7 +378,7 @@ def test_a_failed_resolution_leaves_the_config_untouched(monkeypatch):
     config = TrackioConfig(project="rl")
 
     _stub_discovery(monkeypatch, secret_exists=False)
-    with pytest.raises(TrainingGymConfigError):
+    with pytest.raises(DojoConfigError):
         resolve_trackio_destination(config)
 
     assert config.server_url == ""
@@ -387,7 +390,7 @@ def test_a_failed_resolution_leaves_the_config_untouched(monkeypatch):
     resolve_trackio_destination(config)
 
     assert config.server_url == "https://trackio.example"
-    assert config.modal_secret_name == "_training-gym-trackio-write-token"
+    assert config.modal_secret_name == "_modal-dojo-trackio-write-token"
 
 
 def test_an_explicit_token_secret_is_kept(monkeypatch):
@@ -414,7 +417,7 @@ def test_a_bare_config_resolves_to_the_deployed_server(monkeypatch):
     assert config.server_url == "https://trackio.example"
     assert config.dashboard_url == "https://trackio.example"
     # Ingestion authenticates with the deployed server's write token.
-    assert config.modal_secret_name == "_training-gym-trackio-write-token"
+    assert config.modal_secret_name == "_modal-dojo-trackio-write-token"
 
 
 def test_an_explicit_destination_is_left_alone(monkeypatch):
@@ -430,13 +433,13 @@ def test_an_explicit_destination_is_left_alone(monkeypatch):
 def test_no_destination_and_nothing_deployed_is_refused(monkeypatch):
     """Otherwise metrics go to a container-local DB that dies with the run."""
     monkeypatch.setattr(
-        "modal_training_gym.common.trackio.deployed_trackio_url",
+        "modal_dojo.common.trackio.deployed_trackio_url",
         lambda app_name="training-gym-trackio": None,
     )
-    with pytest.raises(TrainingGymConfigError, match="no destination"):
+    with pytest.raises(DojoConfigError, match="no destination"):
         resolve_trackio_destination(TrackioConfig(project="rl"))
 
     # The in-container assertion still holds for anything that slips through.
-    with pytest.raises(TrainingGymConfigError, match="no destination"):
+    with pytest.raises(DojoConfigError, match="no destination"):
         require_trackio_destination(TrackioConfig(project="rl"))
     require_trackio_destination(TrackioConfig(project="rl", server_url="https://x"))

@@ -2,12 +2,12 @@
   // Metrics tab: the scalars mirrored from wandb/trackio, laid out like a
   // W&B workspace — one collapsible section per key prefix (`train/`,
   // `rollout/`, ...), a grid of small panels, a search box, and a shared
-  // step window so brushing one chart zooms them all.
+  // step window per axis so training and rollout counters stay distinct.
   import ChartSkeleton from "./ChartSkeleton.svelte";
   import GroupSection from "./GroupSection.svelte";
   import LineChart from "./LineChart.svelte";
   import { fetchRunMetrics } from "../lib/api.js";
-  import { formatMetricValue, groupMetricKeys } from "../lib/metricSeries.js";
+  import { formatMetricValue, groupMetricKeys, metricAxisLabel } from "../lib/metricSeries.js";
 
   let { runId, isRunning = false } = $props();
 
@@ -17,7 +17,7 @@
   let error = $state("");
   let search = $state("");
   let collapsed = $state(new Set());
-  let stepDomain = $state(null); // [lo, hi] steps while zoomed; null → all
+  let stepDomains = $state({}); // axis → [lo, hi] while zoomed
 
   async function load(id, signal) {
     try {
@@ -35,7 +35,7 @@
     payload = null;
     error = "";
     collapsed = new Set();
-    stepDomain = null;
+    stepDomains = {};
   });
   // Poll while the run is live or the dashboard still has points buffered.
   // (`stale` is a derived boolean so a fresh payload only reruns this when it flips.)
@@ -54,6 +54,7 @@
   });
 
   let series = $derived(payload?.series ?? {});
+  let stepKeys = $derived(payload?.step_keys ?? {});
   let allKeys = $derived(Object.keys(series));
   let groups = $derived(groupMetricKeys(allKeys, search));
   let rows = $derived.by(() => {
@@ -68,8 +69,8 @@
     collapsed = next;
   }
 
-  function onDomainChange(domain) {
-    stepDomain = domain && domain[1] > domain[0] ? [Math.floor(domain[0]), Math.ceil(domain[1])] : null;
+  function onDomainChange(axis, domain) {
+    stepDomains = { ...stepDomains, [axis]: domain && domain[1] > domain[0] ? [Math.floor(domain[0]), Math.ceil(domain[1])] : null };
   }
 </script>
 
@@ -98,8 +99,8 @@
         bind:value={search}
         aria-label="Search panels by metric name"
       />
-      {#if stepDomain}
-        <button class="log-button" type="button" onclick={() => onDomainChange(null)}>Reset zoom</button>
+      {#if Object.values(stepDomains).some(Boolean)}
+        <button class="log-button" type="button" onclick={() => stepDomains = {}}>Reset zoom</button>
       {/if}
       {#if error}
         <span class="text-[#fbbf24] text-[12px]" role="status">Metrics may be out of date: {error}</span>
@@ -126,11 +127,11 @@
                 height={150}
                 label="value"
                 axes
-                ariaLabel={`${key} over training steps`}
-                formatX={(row) => `step ${row?.x ?? ""}`}
+                ariaLabel={`${key} over ${metricAxisLabel(stepKeys[key]).toLowerCase()}s`}
+                formatX={(row) => `${metricAxisLabel(stepKeys[key])} ${row?.x ?? ""}`}
                 formatY={formatMetricValue}
-                xDomain={stepDomain}
-                onChangeDomainX={onDomainChange}
+                xDomain={stepDomains[stepKeys[key] ?? ""] ?? null}
+                onChangeDomainX={(domain) => onDomainChange(stepKeys[key] ?? "", domain)}
               />
             </div>
           {/each}
