@@ -81,7 +81,8 @@ def patch(root: Path) -> None:
         "        with urllib.request.urlopen(req, timeout=self.query_timeout) as resp:\n"
         "            data = json.loads(resp.read())\n"
         "        self.gen_time += time.perf_counter() - t0\n",
-        """        try:
+        """        started_at = time.time()
+        try:
             with urllib.request.urlopen(req, timeout=self.query_timeout) as resp:
                 data = json.loads(resp.read())
         except Exception as error:
@@ -89,6 +90,8 @@ def patch(root: Path) -> None:
                 "phase": "generation", "error_type": type(error).__name__,
                 "message": str(error)[:500],
                 "seconds": round(time.perf_counter() - t0, 3),
+                "started_at": started_at, "ended_at": time.time(),
+                "routing_key": self.headers.get("X-SMG-Routing-Key"),
                 "input_tokens": len(input_ids),
                 "max_new_tokens": sp.get("max_new_tokens"),
                 "timeout_seconds": self.query_timeout,

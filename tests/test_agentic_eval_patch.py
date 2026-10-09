@@ -253,6 +253,7 @@ def test_request_failure_records_duration_and_budget(sources, monkeypatch):
     assert model.request_errors[0]["input_tokens"] == 2
     assert model.request_errors[0]["max_new_tokens"] == 8192
     assert model.request_errors[0]["error_type"] == "TimeoutError"
+    assert model.request_errors[0]["started_at"] <= model.request_errors[0]["ended_at"]
 
 
 def test_only_eval_concurrency_is_limited(sources):
