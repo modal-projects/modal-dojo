@@ -304,3 +304,29 @@ def test_diagnostics_do_not_hide_ungraded_samples(runtime):
         recovered_grade_count=1,
         solve_rate_on_graded=0.5,
     )
+
+
+def test_evaluation_runner_preserves_protocol_without_training():
+    from tutorials.coding_agent.evaluate import build_config
+    from tutorials.coding_agent.main import config
+
+    base = build_config()
+    trained = build_config(checkpoint="/checkpoints/test-run", checkpoint_step=29)
+    for cfg in (base, trained):
+        assert cfg.recipe.num_rollout == 0
+        assert cfg.recipe.save is None and cfg.recipe.save_interval is None
+        assert cfg.recipe.max_retries == 0 and cfg.recipe.no_load_optim
+        assert cfg.recipe.extra_config["agentic_eval_concurrency"] == 128
+        assert cfg.recipe.extra_config["agentic_eval_recover_generation_errors"]
+        assert cfg.recipe.extra_config["agentic_max_steps"] == 75
+        assert cfg.recipe.extra_config["agentic_episode_timeout"] == 1800
+        assert cfg.recipe.eval_max_response_len == 8192
+        assert cfg.recipe.eval_config["defaults"] == {
+            "n_samples_per_eval_prompt": 1,
+            "temperature": 0.6,
+            "top_p": 1.0,
+        }
+    assert base.recipe.eval_config == trained.recipe.eval_config
+    assert trained.recipe.extra_config["ckpt_step"] == 29
+    assert build_config(proof=True).recipe.extra_config["agentic_eval_concurrency"] == 4
+    assert config.recipe.num_rollout == 500

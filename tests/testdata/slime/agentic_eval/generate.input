@@ -1,87 +1,5 @@
-"""Per-sample agentic-RL rollout hook for slime.
-
-Wire-up: ``--custom-generate-function-path agentic_rl.core.generate.generate``.
-
-One call = one episode: pick the env by ``metadata.task_type``, run the
-in-process mini-swe loop (the token-recording ``RecordingModel`` + a bash-only
-Modal ``Sandbox``) in a worker thread, and build token-faithful training
-Sample(s). Each turn carries the ``weight_version`` live at generation, so
-fully-async off-policy correction (TIS/clipping) and the async-health metrics
-work. A weight-update abort mid-generation -> ``Status.ABORTED`` -> slime
-recycles the episode. Reward is computed inline so slime's reward-model step is
-skipped. Train and eval take the same path.
-
-Episode limits come from ``args`` (``--custom-config-path``): ``agentic_max_steps``,
-``agentic_episode_timeout``, ``agentic_exec_timeout``, ``agentic_grade_timeout``,
-``agentic_eval_timeout``, ``agentic_query_timeout``, ``agentic_max_empty_turns``.
-"""
-
+# Excerpt from modal-projects/slime 3585d4a7eb1a5c108810238b47c37d3107d0a2ba
 from __future__ import annotations
-
-import asyncio
-import concurrent.futures
-import copy
-import dataclasses
-import logging
-import threading
-import time
-import uuid
-from typing import Any
-
-from agentic_rl.envs.base import EnvMetadataError, EpisodeLimits, RewardResult, load_env
-
-from slime.rollout.sglang_rollout import GenerateState
-from slime.utils.types import Sample
-
-from .model import RecordingModel
-
-logger = logging.getLogger("agentic_rl")
-
-# Episodes are long I/O-bound chains; asyncio.to_thread caps at min(32, cpu+4)
-# threads, which throttles in-flight episodes regardless of sglang concurrency.
-# Use a wide dedicated pool sized to the rollout's serving concurrency.
-_episode_pool: concurrent.futures.ThreadPoolExecutor | None = None
-_pool_lock = threading.Lock()
-
-
-def _episode_executor(args) -> concurrent.futures.ThreadPoolExecutor:
-    global _episode_pool
-    if _episode_pool is None:
-        with _pool_lock:
-            if _episode_pool is None:
-                from slime.utils.http_utils import get_rollout_num_engines
-
-                n = getattr(args, "sglang_server_concurrency", 128) * get_rollout_num_engines(args)
-                n = min(max(n, 32), 2048)
-                _episode_pool = concurrent.futures.ThreadPoolExecutor(max_workers=n, thread_name_prefix="episode")
-                logger.info("[agentic_rl] episode thread pool: max_workers=%d", n)
-    return _episode_pool
-
-
-def _limits(args) -> EpisodeLimits:
-    return EpisodeLimits(
-        max_steps=getattr(args, "agentic_max_steps", 30),
-        episode_timeout=getattr(args, "agentic_episode_timeout", 1800),
-        exec_timeout=getattr(args, "agentic_exec_timeout", 120),
-        grade_timeout=getattr(args, "agentic_grade_timeout", 1800),
-        eval_timeout=getattr(args, "agentic_eval_timeout", None),
-    )
-
-
-def _sampling_params(state: GenerateState, overrides: dict[str, Any] | None) -> dict[str, Any]:
-    """Base on the rollout's sampling defaults; let slime's per-call params (eval
-    temperature/top_p, max_new_tokens) override."""
-    params = dict(state.sampling_params)
-    for k in ("temperature", "top_p", "top_k", "max_new_tokens", "stop", "stop_token_ids"):
-        if overrides and overrides.get(k) is not None:
-            params[k] = overrides[k]
-    return params
-
-
-def _session_id(sample: Sample, md: dict[str, Any]) -> str:
-    if sample.index is not None and sample.group_index is not None:
-        return f"agent-{md['instance_id']}-{sample.index}-{sample.group_index}"
-    return f"agent-{md['instance_id']}-{uuid.uuid4().hex[:8]}"
 
 
 def _run_episode(env, md: dict[str, Any], model: RecordingModel, limits: EpisodeLimits) -> RewardResult:
@@ -95,7 +13,6 @@ def _run_episode(env, md: dict[str, Any], model: RecordingModel, limits: Episode
             extra={"error": "episode_exception", "grading_error": str(e)},
             grading_status="timeout" if isinstance(e, TimeoutError) else "infrastructure_error",
         )
-
 
 async def generate(args, sample: Sample, sampling_params: dict[str, Any], evaluation: bool = False):
     state = GenerateState(args)
@@ -152,7 +69,6 @@ async def generate(args, sample: Sample, sampling_params: dict[str, Any], evalua
     return _build_samples(
         sample, model, result, state.tokenizer, md, args, elapsed=time.time() - t0, evaluation=evaluation
     )
-
 
 def _build_samples(sample, model, result, tokenizer, md, args, *, elapsed: float, evaluation: bool = False):
     key = sample.label or md.get("instance_id") or ""
@@ -257,63 +173,3 @@ def _build_samples(sample, model, result, tokenizer, md, args, *, elapsed: float
     samples[0].prefix_cache_info.cached_tokens = model.cached_tokens
     samples[0].prefix_cache_info.total_prompt_tokens = model.input_tokens
     return samples[0] if k == 1 else samples
-
-
-def _ship_null(
-    sample: Sample,
-    tokenizer,
-    md: dict[str, Any],
-    reason: str,
-    *,
-    tail: dict | None = None,
-    full_prompt: str | None = None,
-    elapsed: float | None = None,
-) -> Sample:
-    """A valid but fully-masked reward-0 sample for a permanently-failing task:
-    ships to leave the buffer, contributes no gradient (remove_sample=True).
-
-    ``reason`` is the real terminal cause (the model's ``exit_status``, or an
-    ``ImageUnusable`` fallback when no LLM call ran). ``tail``/``full_prompt`` carry
-    the rolled-back terminal generation and the exact prompt so the dashboard can
-    show what the episode did before it was discarded -- convert.py renders the tail
-    as a synthetic turn, so a turn-1 runaway ``<think>`` is visible instead of blank."""
-    ptoks = tokenizer.encode(md.get("problem_statement", "") or reason, add_special_tokens=False)[:512]
-    eos = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else (ptoks[-1] if ptoks else 0)
-    sample.tokens = ptoks + [eos]
-    sample.response = ""
-    sample.response_length = 1
-    sample.loss_mask = [0]
-    sample.rollout_log_probs = [0.0]
-    sample.weight_versions = []
-    sample.reward = 0.0
-    sample.status = Sample.Status.COMPLETED
-    sample.remove_sample = True
-    sample.rollout_id = sample.index
-    agentic: dict[str, Any] = {"exit_status": reason, "turns": 0, "gen_timestamp": time.time()}
-    if elapsed is not None:
-        agentic["elapsed_sec"] = round(elapsed, 1)
-    if tail is not None:
-        agentic["truncated_tail"] = tail
-    if full_prompt is not None:
-        agentic["full_prompt"] = full_prompt
-    sample.metadata = {**(sample.metadata or {}), "agentic": agentic}
-    return sample
-
-
-def _abort(sample: Sample, reason: str) -> Sample:
-    sample.tokens = [0, 0]
-    sample.response = ""
-    sample.response_length = 1
-    sample.loss_mask = [0]
-    sample.rollout_log_probs = [0.0]
-    sample.reward = 0.0
-    sample.rollout_id = sample.index
-    sample.status = Sample.Status.ABORTED
-    sample.remove_sample = True
-    sample.metadata = {
-        **(sample.metadata or {}),
-        "abort_reason": reason,
-        "agentic": {"grading_status": "infrastructure_error"},
-    }
-    logger.warning("[agentic_rl] aborted: %s", reason)
-    return sample
