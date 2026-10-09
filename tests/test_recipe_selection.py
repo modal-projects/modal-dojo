@@ -33,6 +33,7 @@ from modal_dojo.train_recipes.miles_recipe.qwen3_5_4b import (
     Qwen3_5_4B_Miles_Recipe,
 )
 from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.spindle_recipe import SpindleRecipe
 from modal_dojo.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
 from modal_dojo.train_recipes.slime_recipe.qwen3_5_0_8b import (
     Qwen3_5_0_8B_Recipe,
@@ -46,6 +47,7 @@ _RECIPE_PACKAGES = (
 _BASE_RECIPE = {
     Framework.SLIME: SlimeRecipe.get_base_recipe,
     Framework.MILES: MilesRecipe.get_base_recipe,
+    Framework.SPINDLE: SpindleRecipe.get_base_recipe,
 }
 
 

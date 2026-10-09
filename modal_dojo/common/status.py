@@ -38,7 +38,28 @@ class MilesStatus(str, Enum):
     TRAINING = "training"
 
 
-FrameworkStatus: TypeAlias = SlimeStatus | MilesStatus
+class SpindleStatus(str, Enum):
+    INITIALIZING = "initializing"
+    DOWNLOAD_MODEL = "download_model"
+    CONVERT_MODEL = "convert_model"
+    PREPARE_DATASET = "prepare_dataset"
+    DEPLOY_SPINDLE = "deploy_spindle"
+    ROLLOUT_INITIALIZING = "initialize_rollouts"
+    ROLLOUT_LOGGING = "generate_rollouts"
+    EVAL_ROLLOUT_LOGGING = "evaluate_rollouts"
+    OPTIMIZER_STEP = "optimizer_step"
+    WEIGHT_SYNC = "weight_sync"
+    CHECKPOINT_SAVE = "checkpoint_save"
+    TRAINING = "training"
+
+
+FrameworkStatus: TypeAlias = SlimeStatus | MilesStatus | SpindleStatus
+
+_STATUS_ENUMS: dict[str, type[FrameworkStatus]] = {
+    "miles": MilesStatus,
+    "slime": SlimeStatus,
+    "spindle": SpindleStatus,
+}
 
 
 def resolve_framework_status(phase: str, framework: str) -> FrameworkStatus | None:
@@ -46,10 +67,10 @@ def resolve_framework_status(phase: str, framework: str) -> FrameworkStatus | No
 
     Returns ``None`` for a phase the framework doesn't know.
     """
-    if framework.strip().lower() not in ("miles", "slime"):
+    status_enum = _STATUS_ENUMS.get(framework.strip().lower())
+    if status_enum is None:
         raise ValueError(f"Invalid framework string detected: {framework}")
 
-    status_enum = MilesStatus if framework.strip().lower() == "miles" else SlimeStatus
     try:
         return status_enum(phase.strip())
     except ValueError:

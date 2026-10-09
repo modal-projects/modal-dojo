@@ -85,6 +85,10 @@
       "link": "/reference/parsedresponse"
     },
     {
+      "label": "Qwen3_8_27B_Spindle_Recipe",
+      "link": "/reference/qwen3_8_27b_spindle_recipe"
+    },
+    {
       "label": "Sample",
       "link": "/reference/sample"
     },
@@ -103,6 +107,10 @@
     {
       "label": "SlimeRecipe",
       "link": "/reference/slimerecipe"
+    },
+    {
+      "label": "SpindleRecipe",
+      "link": "/reference/spindlerecipe"
     },
     {
       "label": "ToolCall",

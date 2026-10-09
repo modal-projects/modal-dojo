@@ -104,6 +104,11 @@ _EXPORTS = {
         "Moonlight_16B_A3B_Recipe",
     ),
     "MilesRecipe": ("modal_dojo.train_recipes.miles_recipe", "MilesRecipe"),
+    "SpindleRecipe": ("modal_dojo.train_recipes.spindle_recipe", "SpindleRecipe"),
+    "Qwen3_8_27B_Spindle_Recipe": (
+        "modal_dojo.train_recipes.spindle_recipe",
+        "Qwen3_8_27B_Spindle_Recipe",
+    ),
     "ParsedResponse": ("modal_dojo.common.models", "ParsedResponse"),
     "Qwen3_0_6B": ("modal_dojo.common.models", "Qwen3_0_6B"),
     "Qwen3_0_6B_Recipe": (
@@ -244,6 +249,8 @@ __all__ = [
     "Moonlight_16B_A3B_Instruct",
     "Moonlight_16B_A3B_Recipe",
     "MilesRecipe",
+    "SpindleRecipe",
+    "Qwen3_8_27B_Spindle_Recipe",
     "ParsedResponse",
     "Qwen3_0_6B",
     "Qwen3_0_6B_Recipe",

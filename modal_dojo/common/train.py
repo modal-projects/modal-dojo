@@ -29,12 +29,15 @@ from modal_dojo.common.status import (
     FrameworkStatus,
     MilesStatus,
     SlimeStatus,
+    SpindleStatus,
 )
 from modal_dojo.frameworks.miles import build_miles_app
 from modal_dojo.frameworks.slime import build_slime_app
+from modal_dojo.frameworks.spindle import build_spindle_app
 from modal_dojo.train_recipes.base import BaseTrainRecipe
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.spindle_recipe import SpindleRecipe
 from modal_dojo.utils.metadata import MetadataStore, vol_put
 
 
@@ -453,6 +456,17 @@ class TrainConfig:
         if training_run_id is None:
             training_run_id = self._generate_training_run_id()
         recipe = self._prepare_recipe()
+        if isinstance(recipe, SpindleRecipe):
+            return build_spindle_app(
+                training_run_id=training_run_id,
+                spindle=recipe,
+                model=self.model,
+                dataset=self.dataset,
+                eval_dataset=self.eval_dataset,
+                checkpoint=self.resume_from_checkpoint,
+                name=training_run_id,
+                group_id=self.group_id,
+            )
         if isinstance(recipe, MilesRecipe):
             return build_miles_app(
                 training_run_id=training_run_id,
@@ -483,6 +497,8 @@ class TrainConfig:
     def framework(self) -> Framework:
         if isinstance(self.recipe, SlimeRecipe):
             return Framework.SLIME
+        if isinstance(self.recipe, SpindleRecipe):
+            return Framework.SPINDLE
         if isinstance(self.recipe, MilesRecipe):
             return Framework.MILES
         raise DojoConfigError(f"Unknown training recipe: {type(self.recipe).__name__}")
@@ -492,6 +508,8 @@ class TrainConfig:
             return SlimeStatus.INITIALIZING
         if self.framework is Framework.MILES:
             return MilesStatus.INITIALIZING
+        if self.framework is Framework.SPINDLE:
+            return SpindleStatus.INITIALIZING
         raise DojoConfigError(f"Unknown training framework: {self.framework}")
 
     def _build_config_summary(self, training_run_id: str) -> dict[str, Any]:
@@ -724,10 +742,14 @@ class TrainConfig:
                             self.recipe, "megatron_to_hf_mode", ""
                         )
                         needs_conversion = megatron_to_hf_mode != "bridge"
+                        status_enum = {
+                            Framework.SLIME: SlimeStatus,
+                            Framework.MILES: MilesStatus,
+                            Framework.SPINDLE: SpindleStatus,
+                        }[self.framework]
                         download_status, convert_status = (
-                            (SlimeStatus.DOWNLOAD_MODEL, SlimeStatus.CONVERT_MODEL)
-                            if isinstance(self.recipe, SlimeRecipe)
-                            else (MilesStatus.DOWNLOAD_MODEL, MilesStatus.CONVERT_MODEL)
+                            status_enum.DOWNLOAD_MODEL,
+                            status_enum.CONVERT_MODEL,
                         )
                         _set_status(download_status, is_active=False)
                         app.download.remote(
