@@ -21,6 +21,8 @@ from modal_dojo.common.metrics import MetricConfig
 _DEFAULT_TRACKIO_VERSION = "0.34.0"
 _DEFAULT_MODAL_APP_NAME = "modal-dojo-trackio"
 _RUN_NAME_ENV = "MODAL_DOJO_TRACKIO_RUN_NAME"
+_PROJECT_ENV = "MODAL_DOJO_TRACKIO_PROJECT"
+_GROUP_ENV = "MODAL_DOJO_TRACKIO_GROUP"
 _SHIM_MARKER = "_modal_dojo_trackio_adapter"
 
 
@@ -97,6 +99,8 @@ class TrackioConfig(MetricConfig):
         env = super().runtime_env(run_id=run_id, entity=entity)
         for key, value in (
             (_RUN_NAME_ENV, run_id),
+            (_PROJECT_ENV, self.project),
+            (_GROUP_ENV, self.group),
             ("TRACKIO_SPACE_ID", self.space_id),
             ("TRACKIO_SERVER_URL", self.server_url),
             ("TRACKIO_BUCKET_ID", self.bucket_id),
@@ -382,11 +386,16 @@ def install_wandb_shim() -> None:
     shim.__path__ = []
     setattr(shim, _SHIM_MARKER, True)
     shim.run = None
+    shim.finished = False
     shim.config = {}
     shim.Settings = _Settings
 
     def init(*args: Any, **kwargs: Any) -> _RunProxy:
-        project = kwargs.pop("project", args[0] if args else "") or "modal-dojo"
+        project = (
+            kwargs.pop("project", args[0] if args else "")
+            or os.environ.get(_PROJECT_ENV, "")
+            or "modal-dojo"
+        )
         framework_id = kwargs.pop("id", "")
         framework_name = kwargs.pop("name", "")
         requested_name = (
@@ -413,17 +422,18 @@ def install_wandb_shim() -> None:
         run = trackio.init(
             project=project,
             name=requested_name or None,
-            group=kwargs.pop("group", None),
+            group=kwargs.pop("group", os.environ.get(_GROUP_ENV) or None),
             config=config,
             resume=resume,
             embed=False,
             **routing,
         )
-        # Materialize the remote run before Slime's worker processes resume it.
-        trackio.log({}, step=-1)
         proxy = _RunProxy(run, requested_name or run.name)
         shim.run = proxy
+        shim.finished = False
         shim.config = run.config
+        # Materialize the remote run before Slime's worker processes resume it.
+        trackio.log({}, step=-1)
         return proxy
 
     def log(
@@ -445,10 +455,14 @@ def install_wandb_shim() -> None:
         return result
 
     def finish(*_args: Any, **_kwargs: Any) -> Any:
-        try:
-            return trackio.finish()
-        finally:
-            shim.run = None
+        if shim.run is None:
+            if shim.finished:
+                return None
+            init()
+        result = trackio.finish()
+        shim.run = None
+        shim.finished = True
+        return result
 
     def save(glob_str: str, *_args: Any, **_kwargs: Any) -> Any:
         return trackio.save(glob_str)
