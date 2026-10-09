@@ -172,12 +172,21 @@ def _load_running_runs() -> list[TrainingRun]:
     runs_by_id: dict[str, TrainingRun] = {}
 
     raws_by_id: dict[str, dict[str, Any]] = {}
+
+    def _consider(raw: Any) -> None:
+        if not isinstance(raw, dict):
+            return
+        key = raw.get("training_run_id") or raw.get("run_id")
+        if not key or str(key) in raws_by_id:
+            return
+        if _parse_running_run(raw) is None:
+            return
+        raws_by_id[str(key)] = raw
+
     for raw in vol_list(MetadataStore.TRAINING_RUNS):
-        if isinstance(raw, dict) and raw.get("training_run_id"):
-            raws_by_id[str(raw["training_run_id"])] = raw
+        _consider(raw)
     for raw in vol_get_summary_items_healed(MetadataStore.TRAINING_RUNS_SUMMARY) or []:
-        if isinstance(raw, dict) and raw.get("training_run_id"):
-            raws_by_id.setdefault(str(raw["training_run_id"]), raw)
+        _consider(raw)
 
     for raw in raws_by_id.values():
         run = _parse_running_run(merge_run_updates(raw, load_run_updates(raw)))
