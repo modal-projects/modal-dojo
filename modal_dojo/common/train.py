@@ -145,11 +145,14 @@ def _confirm_launch_warnings(caught: list[warnings.WarningMessage]) -> None:
         for w in caught:
             warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
         return
-    click.secho(
-        f"{len(messages)} warning{'s' if len(messages) != 1 else ''} found:\n"
-        + "\n".join(f"* {m}" for m in messages),
+    header = click.style(
+        f"{len(messages)} warning{'s' if len(messages) != 1 else ''}:",
         fg="yellow",
         bold=True,
+    )
+    bullet = click.style("•", fg="yellow", bold=True)
+    click.echo(
+        header + "\n" + "\n".join(f"{bullet} {m}" for m in messages),
         err=True,
     )
     if not click.confirm("Continue anyway?", default=False, err=True):
