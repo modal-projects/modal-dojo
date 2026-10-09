@@ -80,3 +80,45 @@ to compute entropy telemetry without retaining backward tensors when
 `entropy_coef=0`. Nonzero entropy regularization keeps its gradients. The fix
 does not shorten trajectories or alter the effective batch. Full GPU replay of
 the failed long-sequence workload is still required to establish memory headroom.
+
+## Evaluate without training
+
+The evaluation patch limits the full eval to 128 simultaneous episodes (the
+previous configuration allowed 512). Task IDs, temperature 0.6, top-p 1.0,
+8,192 output tokens per turn, 75 turns, and the 1,800-second agent budget stay
+the same. The 600-second generation request timeout is unchanged.
+
+On a recoverable generation transport failure, evaluation runs the verifier
+against the surviving sandbox before cleanup. It records the failure phase,
+exception, request duration, input token count, and request token budget.
+Recovered grades are marked separately. A verifier failure remains ungraded;
+it never receives credit merely because generation recovery was attempted.
+Training and the dataset selection probe do not enable grade recovery.
+
+New eval metrics include `graded_count`, `ungraded_count`,
+`generation_error_count`, `recovered_grade_count`, and `solve_rate_on_graded`.
+The last metric is diagnostic; retain the full-set score and disclose invalid
+episodes rather than silently dropping hard tasks from the denominator.
+
+Start with the four-task proof (24 H200 GPUs, zero optimizer updates):
+
+```bash
+uv run -m tutorials.coding_agent.evaluate --proof
+```
+
+Then compare both arms on the same 800 held-out tasks. Each command launches
+an evaluation-only job with the original 48-H200 topology and no checkpoint
+writes or optimizer updates. Wait for each job to finish before starting the
+next one:
+
+```bash
+uv run -m tutorials.coding_agent.evaluate
+uv run -m tutorials.coding_agent.evaluate \
+  --checkpoint /checkpoints/convoluted-cove-8024ab40bc4f \
+  --checkpoint-step 29
+```
+
+Saved iteration 29 is the checkpoint after 30 updates. Add `--dry-run` to
+inspect either configuration without launching, or `--concurrency N` for a
+controlled serving-load comparison. Infrastructure retries are disabled for
+these diagnostic runs; inspect failures before launching another job.

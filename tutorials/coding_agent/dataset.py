@@ -433,7 +433,13 @@ def build_probe_config(root: Path):
         save=None,
         save_interval=None,
         n_samples_per_eval_prompt=8,
-        extra_config={**config.recipe.extra_config, "lr_decay_iters": 1},
+        extra_config={
+            **config.recipe.extra_config,
+            "lr_decay_iters": 1,
+            # Preserve the selection rule: every probe episode must finish
+            # without an infrastructure failure to select its task.
+            "agentic_eval_recover_generation_errors": False,
+        },
         eval_config={
             "defaults": {
                 "n_samples_per_eval_prompt": 8,

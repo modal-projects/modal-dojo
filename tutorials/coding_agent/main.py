@@ -23,6 +23,9 @@ from modal_training_gym import (
 from modal_training_gym.frameworks.slime.modal_helpers.patches.patch_entropy_no_grad import (
     image_patch_command,
 )
+from modal_training_gym.frameworks.slime.modal_helpers.patches.patch_agentic_eval import (
+    image_patch_command as eval_image_patch_command,
+)
 
 from tutorials.coding_agent.dataset import (
     DATA_VOLUME_NAME,
@@ -120,6 +123,7 @@ config = TrainConfig(
         image_run_commands=[
             # Keep entropy telemetry without saving its unused backward tensors.
             image_patch_command(),
+            eval_image_patch_command(),
             "apt-get update && apt-get install -y --no-install-recommends "
             "rdma-core libibverbs1 ibverbs-providers",
             "uv pip install --system modal==1.5.5 mini-swe-agent datasets",
@@ -175,6 +179,8 @@ config = TrainConfig(
             "agentic_max_steps": 75,
             "agentic_episode_timeout": 1800,
             "agentic_eval_timeout": None,
+            "agentic_eval_concurrency": 128,
+            "agentic_eval_recover_generation_errors": True,
             "agentic_exec_timeout": 120,
             "router_policy": "consistent_hashing",
             "skip_eval_before_train": False,
