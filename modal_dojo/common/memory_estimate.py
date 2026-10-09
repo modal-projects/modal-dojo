@@ -13,8 +13,10 @@ from modal_dojo.train_recipes.gpu_allocation import gpu_memory_gib
 
 GIB = 1024**3
 
+_UNMODELED_CFG_HINTS = ("engram", "index_", "dspark_", "nextn", "vision")
 
-def _arch_from_hf(model_name: str) -> ModelArchitecture | None:
+
+def _hf_cfg(model_name: str) -> dict | None:
     try:
         validate_repo_id(model_name)
         with open(hf_hub_download(repo_id=model_name, filename="config.json")) as f:
@@ -28,6 +30,14 @@ def _arch_from_hf(model_name: str) -> ModelArchitecture | None:
         return None
     if isinstance(cfg.get("text_config"), dict):
         cfg = {**cfg, **cfg["text_config"]}
+    return cfg
+
+
+def _arch_from_hf(model_name: str, cfg: dict | None = None) -> ModelArchitecture | None:
+    if cfg is None:
+        cfg = _hf_cfg(model_name)
+    if cfg is None:
+        return None
     layers, hidden, heads = (
         int(cfg.get(k) or 0)
         for k in ("num_hidden_layers", "hidden_size", "num_attention_heads")
@@ -64,6 +74,14 @@ def _arch_from_hf(model_name: str) -> ModelArchitecture | None:
         moe_ffn_hidden_size=moe_ffn,
         moe_shared_expert_intermediate_size=shared,
         moe_layer_freq=freq,
+        multi_latent_attention=bool(
+            cfg.get("kv_lora_rank") and cfg.get("qk_rope_head_dim")
+        ),
+        kv_lora_rank=int(cfg.get("kv_lora_rank") or 0),
+        q_lora_rank=int(cfg.get("q_lora_rank") or 0),
+        qk_head_dim=int(cfg.get("qk_nope_head_dim") or 0),
+        qk_pos_emb_head_dim=int(cfg.get("qk_rope_head_dim") or 0),
+        v_head_dim=int(cfg.get("v_head_dim") or 0),
     )
 
 
@@ -84,7 +102,23 @@ def _peak_gib(
 
     h, heads = arch.hidden_size, max(1, arch.num_attention_heads)
     kv, nqg = arch.kv_channels or h // heads, arch.num_query_groups or heads
-    attn = h * heads * kv * 2 + h * nqg * kv * 2
+    if arch.multi_latent_attention:
+        qk = arch.qk_head_dim or kv
+        pos = arch.qk_pos_emb_head_dim
+        v = arch.v_head_dim or qk
+        q = (
+            h * arch.q_lora_rank + arch.q_lora_rank * heads * (qk + pos)
+            if arch.q_lora_rank
+            else h * heads * (qk + pos)
+        )
+        attn = (
+            q
+            + h * (arch.kv_lora_rank + pos)
+            + arch.kv_lora_rank * heads * (qk + v)
+            + heads * v * h
+        )
+    else:
+        attn = h * heads * kv * 2 + h * nqg * kv * 2
     gates = 3 if arch.swiglu else 2
     if not arch.num_experts:
         moe_n = 0
@@ -123,7 +157,10 @@ def _peak_gib(
     else:
         offload = get("optimizer_cpu_offload")
         raise_("optimizer_cpu_offload", offload, not offload)
-        opt = 0.0 if offload else 12.0
+        fraction = get("optimizer_offload_fraction")
+        fraction = 1.0 if fraction is None else min(1.0, max(0.0, float(fraction)))
+        raise_("optimizer_offload_fraction", fraction, offload and fraction < 1.0)
+        opt = 12.0 * (1.0 - fraction) if offload else 12.0
         d_div = e_div = 1.0
         if get("use_distributed_optimizer"):
             d_div = max(1, world // (tp * pp))
@@ -187,9 +224,23 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     gpu_gib = gpu_memory_gib(recipe.gpu_type)
     if gpu_gib is None:
         return
-    arch = model.architecture or _arch_from_hf(model.model_name)
+    arch = model.architecture
+    unmodeled: list[str] = []
     if arch is None:
-        return
+        cfg = _hf_cfg(model.model_name)
+        if cfg is None:
+            return
+        arch = _arch_from_hf(model.model_name, cfg)
+        if arch is None:
+            return
+        unmodeled = sorted(k for k in cfg if any(h in k for h in _UNMODELED_CFG_HINTS))
+    if unmodeled:
+        warnings.warn(
+            "HF config declares parameters the GPU OOM estimate can't model "
+            f"({', '.join(unmodeled[:8])}); the estimate is a lower bound.",
+            UserWarning,
+            stacklevel=3,
+        )
     knobs = recipe._field_values() | recipe._escape_hatch_values()
     peak, raised = _peak_gib(arch, knobs, gpu_gib)
     multi_turn_hooks = ["custom_generate_function", "custom_generate_function_path"]

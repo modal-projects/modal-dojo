@@ -141,6 +141,7 @@ def _append_common_arch_args(extra_args: list[str], arch: Any) -> None:
 def _append_extended_arch_args(extra_args: list[str], arch: Any) -> None:
     for attr, flag in (
         ("kv_lora_rank", "kv-lora-rank"),
+        ("q_lora_rank", "q-lora-rank"),
         ("qk_head_dim", "qk-head-dim"),
         ("qk_pos_emb_head_dim", "qk-pos-emb-head-dim"),
         ("v_head_dim", "v-head-dim"),
