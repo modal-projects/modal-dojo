@@ -118,10 +118,12 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [Qwen3_6_27B_Recipe](https://dojo.modal.dev/reference/qwen3_6_27b_recipe)
 - [Qwen3_6_35B_Recipe](https://dojo.modal.dev/reference/qwen3_6_35b_recipe)
 - [Qwen3_8_27B_Recipe](https://dojo.modal.dev/reference/qwen3_8_27b_recipe)
+- [Qwen3_8_27B_Spindle_Recipe](https://dojo.modal.dev/reference/qwen3_8_27b_spindle_recipe)
 - [Qwen3_8B_Recipe](https://dojo.modal.dev/reference/qwen3_8b_recipe)
 - [Qwen3_ASR_1_7B_Recipe](https://dojo.modal.dev/reference/qwen3_asr_1_7b_recipe)
 - [Qwen3_VL_8B_Recipe](https://dojo.modal.dev/reference/qwen3_vl_8b_recipe)
 - [SlimeRecipe](https://dojo.modal.dev/reference/slimerecipe)
+- [SpindleRecipe](https://dojo.modal.dev/reference/spindlerecipe)
 
 ### Training
 
