@@ -60,6 +60,19 @@ def _git_install_commands(url: str, ref: str, checkout: str) -> list[str]:
     ]
 
 
+DOJO_IMPORT_DEPS = (
+    "click>=8.2,<9",
+    "cloudpickle",
+    "datasets",
+    "httpx",
+    "pydantic",
+    "fastapi",
+    "randomname",
+    "rich",
+    "transformers>=5.12.1",
+)
+
+
 def build_spindle_image(recipe: SpindleRecipe) -> Image:
     return (
         Image.debian_slim(python_version=PYTHON_VERSION)
@@ -69,6 +82,8 @@ def build_spindle_image(recipe: SpindleRecipe) -> Image:
                 SPINDLE_GIT_URL, recipe.spindle_git_ref, "/opt/spindle"
             )
         )
+        .uv_pip_install(*DOJO_IMPORT_DEPS)
+        .add_local_python_source("modal_dojo", copy=True)
     )
 
 
