@@ -5,10 +5,15 @@ Run a four-task proof first, then use the same eval-800 protocol for both arms.
 
 import argparse
 import json
+import runpy
 from dataclasses import replace
+from pathlib import Path
 from uuid import uuid4
 
-from tutorials.coding_agent.main import DATA_ROOT, config
+# Like the dataset-selection probe, load the tutorial by value so its inline
+# DatasetConfig can be serialized into workers without a tutorials package.
+_tutorial = runpy.run_path(str(Path(__file__).with_name("main.py")))
+DATA_ROOT, config = _tutorial["DATA_ROOT"], _tutorial["config"]
 
 
 def build_config(*, checkpoint="", checkpoint_step=None, proof=False, concurrency=128):
