@@ -159,8 +159,6 @@
       run?.config_summary?.metric_project || run?.config_summary?.wandb_project || "";
     return project ? `https://wandb.ai/home?search=${encodeURIComponent(project)}` : "";
   });
-  // Latest-attempt external metrics link: attempt links sort ascending, so
-  // the highest attempt wins; a bare metric_url is the fallback.
   let metricLink = $derived.by(() => {
     const raw = run?.metric_links?.length ? run.metric_links : run?.wandb_links;
     const links = raw?.length ? raw : metricUrl ? [{ url: metricUrl }] : [];
@@ -242,7 +240,6 @@
     if (!embedded) history.replaceState({}, "", urlForTab(DEFAULT_TAB));
   });
 
-  // With an external metrics link the Metrics tab is a link, not a tab.
   $effect(() => {
     if (!metricLink || activeTab !== "metrics") return;
     activeTab = DEFAULT_TAB;

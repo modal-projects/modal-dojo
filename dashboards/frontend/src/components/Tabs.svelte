@@ -1,8 +1,7 @@
 <script>
   // Underlined tab bar, ported from Modal's UnderlinedTabList / UnderlinedTab:
   // a bottom-bordered nav where the active tab gets a green underline + bright
-  // text. `tabs` is [{ value, label, count?, href? }] — an entry with `href`
-  // renders as an external link instead of a selectable tab.
+  // text. `tabs` is [{ value, label, count? }].
   import { ExternalLink } from "lucide-svelte";
 
   let { tabs = [], active, onSelect } = $props();
