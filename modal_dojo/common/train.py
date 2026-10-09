@@ -8,6 +8,7 @@ import warnings
 from contextlib import nullcontext
 from typing import Any
 
+import click
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
@@ -113,6 +114,49 @@ def _warn_if_external_build_app() -> None:
         "TrainConfig.train() (blocks for the TrainingRun) instead.",
         stacklevel=3,
     )
+
+
+def _warn_routing_replay_with_custom_rollout(recipe: BaseTrainRecipe) -> None:
+    if not isinstance(recipe, MilesRecipe) or not recipe.use_rollout_routing_replay:
+        return
+    knobs = recipe._field_values() | recipe._escape_hatch_values()
+    if not any(
+        knobs.get(key)
+        for key in (
+            "rollout_function",
+            "rollout_function_path",
+            "custom_generate_function",
+            "custom_generate_function_path",
+        )
+    ):
+        return
+    warnings.warn(
+        "use_rollout_routing_replay=True requires routed experts from each rollout. "
+        "If your custom rollout_function/custom_generate_function doesn't return them, "
+        "training will fail once the first rollout is converted. Set "
+        "use_rollout_routing_replay=False unless you're sure they are returned.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
+def _confirm_launch_warnings(caught: list[warnings.WarningMessage]) -> None:
+    messages = list(dict.fromkeys(str(w.message) for w in caught))
+    if not messages:
+        return
+    if not sys.stdin.isatty():
+        for w in caught:
+            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
+        return
+    click.secho(
+        f"{len(messages)} warning{'s' if len(messages) != 1 else ''} found:\n"
+        + "\n".join(f"* {m}" for m in messages),
+        fg="yellow",
+        bold=True,
+        err=True,
+    )
+    if not click.confirm("Continue anyway?", default=False):
+        raise SystemExit("Launch cancelled.")
 
 
 _STAGE_LABELS: dict[str, str] = {
@@ -602,7 +646,11 @@ class TrainConfig:
         from modal_dojo.common.config import require_migrated_config
 
         require_migrated_config()
-        maybe_warn_gpu_oom(self.recipe, self.model)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", UserWarning)
+            maybe_warn_gpu_oom(self.recipe, self.model)
+            _warn_routing_replay_with_custom_rollout(self.recipe)
+        _confirm_launch_warnings(caught)
         training_run_id = self._generate_training_run_id()
         ensure_dashboard_deployed()
         framework_status_url = get_framework_status_url() or ""
