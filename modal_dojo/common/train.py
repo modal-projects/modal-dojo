@@ -117,18 +117,15 @@ def _warn_if_external_build_app() -> None:
 
 
 def _warn_routing_replay_with_custom_rollout(recipe: BaseTrainRecipe) -> None:
-    if not isinstance(recipe, MilesRecipe) or not recipe.use_rollout_routing_replay:
+    if not isinstance(recipe, MilesRecipe):
         return
     knobs = recipe._field_values() | recipe._escape_hatch_values()
-    if not any(
-        knobs.get(key)
-        for key in (
-            "rollout_function",
-            "rollout_function_path",
-            "custom_generate_function",
-            "custom_generate_function_path",
-        )
-    ):
+    if not knobs.get("use_rollout_routing_replay"):
+        return
+    hooks = ["custom_generate_function", "custom_generate_function_path"]
+    if knobs.get("loss_type") != "sft_loss":
+        hooks += ["rollout_function", "rollout_function_path"]
+    if not any(knobs.get(key) for key in hooks):
         return
     warnings.warn(
         "use_rollout_routing_replay=True requires routed experts from each rollout. "
@@ -155,7 +152,7 @@ def _confirm_launch_warnings(caught: list[warnings.WarningMessage]) -> None:
         bold=True,
         err=True,
     )
-    if not click.confirm("Continue anyway?", default=False):
+    if not click.confirm("Continue anyway?", default=False, err=True):
         raise SystemExit("Launch cancelled.")
 
 
@@ -647,7 +644,6 @@ class TrainConfig:
 
         require_migrated_config()
         with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always", UserWarning)
             maybe_warn_gpu_oom(self.recipe, self.model)
             _warn_routing_replay_with_custom_rollout(self.recipe)
         _confirm_launch_warnings(caught)
