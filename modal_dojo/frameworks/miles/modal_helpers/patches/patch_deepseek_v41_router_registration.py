@@ -1,4 +1,4 @@
-"""Wait for asynchronous router registration in the DeepSeek V4.1 image.
+"""Wait for asynchronous router registration for the DeepSeek V4.1 recipe.
 
 Miles' SGLangRouterApiClient treats HTTP 202 as completed registration. The
 router is still discovering engine metadata at that point; a following weight

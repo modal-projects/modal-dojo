@@ -8,7 +8,7 @@ tables live outside the transformer stack.
 Neither the indexer nor Engram is representable as a ``ModelArchitecture``, so
 ``architecture`` is left ``None`` and the Miles recipe renders upstream's
 ``scripts/models/deepseek-v4.1.py`` via ``miles_model_name`` — including its
-``--spec miles_plugins.models.deepseek_v41.deepseek_v41 get_dsv41_spec``. Same
+``--spec miles_plugins.models.deepseek_v4_1.deepseek_v4_1 get_dsv41_spec``. Same
 arrangement as ``Qwen3_5_4B_Miles``.
 
 The released checkpoint is fp8; Miles converts it to a bf16 torch_dist

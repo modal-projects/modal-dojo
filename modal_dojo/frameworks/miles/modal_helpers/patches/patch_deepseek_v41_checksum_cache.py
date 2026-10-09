@@ -5,8 +5,8 @@ keeps the freed allocations cached, but torch_memory_saver resumes the KV pool
 through cuMemCreate, which cannot reclaim that cache. Miles calls onload_kv
 immediately after the checksum, so return the scratch memory to CUDA first.
 
-Image: radixark/miles:dsv41-h200-ea751aac8
-SGLang: 7e74b31b2668934cf89dbe15188a010fda381aba
+Image: radixark/miles:dev-202610082133
+SGLang: b84bec5761a6cdc8b1df86b9b89ead80a7a9bb02
 """
 
 from pathlib import Path

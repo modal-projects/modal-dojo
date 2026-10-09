@@ -18,8 +18,8 @@ Run the same capture hook ``select_experts`` runs, mirroring
 
 Executed at image-build time via ``python3 <this file>``.
 
-Image: radixark/miles:dsv41-h200-ea751aac8
-SGLang: 7e74b31b2668934cf89dbe15188a010fda381aba
+Image: radixark/miles:dev-202610082133
+SGLang: b84bec5761a6cdc8b1df86b9b89ead80a7a9bb02
 """
 
 import pathlib

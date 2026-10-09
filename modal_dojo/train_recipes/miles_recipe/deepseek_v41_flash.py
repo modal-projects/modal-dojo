@@ -1,4 +1,4 @@
-"""DeepSeek-V4.1-Flash GRPO recipe, ported from upstream's ``run_deepseek_v41.py``."""
+"""DeepSeek-V4.1-Flash GRPO recipe, ported from upstream's ``run_deepseek_v4_1.py``."""
 
 from dataclasses import field
 from pathlib import Path
@@ -11,11 +11,10 @@ from modal_dojo.common.models import DeepSeek_V4_1_Flash, ModelConfig
 from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
-# The dedicated amd64/H200 image includes the DeepSeek sources together:
-# miles ea751aac8, sglang 7e74b31b2, and Megatron-LM b0b23e198.
-# Keep those bundled revisions instead of overlaying the older PR head and
-# the arm64 deepseek-v41 image's SGLang tree. The named tag is outside miles'
-# automatic dev/PR tag cleanup; the digest also prevents tag updates drifting.
+# The standard multi-arch dev image carries DeepSeek-V4.1 on miles main:
+# miles f5757caab (with the radixark/miles#3605-#3634 kernel stack),
+# sglang-miles b84bec576, and Megatron-LM fd15ee20a. The digest pins it, since
+# miles prunes old dated dev tags and the tag could otherwise drift.
 
 # Node-local disk: 768 GiB stages the params-only save (~1.1 TB bf16 over 8
 # nodes, so ~140 GB a node); 1.5 TiB holds the NVMe-streamed optimizer
@@ -66,8 +65,8 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     model_config_class: ClassVar[type[ModelConfig]] = DeepSeek_V4_1_Flash
 
     docker_image: str = (
-        "radixark/miles:dsv41-h200-ea751aac8@sha256:"
-        "eff12eb317af7021f637ab6bf21359164e27274ca07a3b2b3754dfa4c5d1bd66"
+        "radixark/miles:dev-202610082133@sha256:"
+        "9cf2ed11d587af9884c75344681cf4100b8025eb357cb4d09a063823d4d81975"
     )
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "H200"
@@ -80,7 +79,7 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     # ${MODEL_ARGS[@]} verbatim — including its --spec for the V4.1 layer spec.
     miles_model_name: str = "deepseek-v4.1"
     # Selects miles' megatron→HF weight mapping (miles/backends/megatron_utils/
-    # megatron_to_hf/deepseekv41.py).
+    # megatron_to_hf/deepseekv4_1.py).
     model_name: str = "deepseekv41"
     # Selects the miles (not sglang) V4.1 training implementation.
     dsv4_impl: str = "miles"
@@ -115,6 +114,9 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
             "SGLANG_HEALTH_CHECK_TIMEOUT": "900",
             "SGLANG_DG_CACHE_DIR_PER_PROCESS": "1",
             "SGLANG_OPT_FP8_WO_A_GEMM": "0",
+            # Upstream: the compensated mHC weight split caches derived weights
+            # that online weight updates cannot refresh.
+            "SGLANG_OPT_DEEPGEMM_HC_PRENORM": "0",
             "SGLANG_OPT_FUSE_WQA_WKV": "0",
             "SGLANG_DISABLE_MULTIMEM_AG": "1",
             # Frozen Engram tables are omitted from weight sync. Keep them in
@@ -132,7 +134,7 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
 
     # ── Checkpoints ──────────────────────────────────────────────────────────
     # "raw" turns on the HF → torch_dist conversion that upstream runs as
-    # `run_deepseek_v41.py prepare-spmd`; miles then loads it as ref_load.
+    # `run_deepseek_v4_1.py prepare-spmd`; miles then loads it as ref_load.
     megatron_to_hf_mode: str = "raw"
     ref_load: str = "/checkpoints/DeepSeek-V4.1-Flash_torch_dist"
 

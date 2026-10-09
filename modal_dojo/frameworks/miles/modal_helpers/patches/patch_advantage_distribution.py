@@ -76,8 +76,15 @@ def _patch_file(path: Path) -> None:
     print(f"Patched {path.name} with advantage-distribution reporting")
 
 
+# radixark/miles#3248 moved log_utils.py under training_utils/metrics/.
+_CANDIDATES = (
+    Path("/root/miles/miles/backends/training_utils/metrics/log_utils.py"),
+    Path("/root/miles/miles/backends/training_utils/log_utils.py"),
+)
+
+
 def main() -> None:
-    _patch_file(Path("/root/miles/miles/backends/training_utils/log_utils.py"))
+    _patch_file(next((p for p in _CANDIDATES if p.exists()), _CANDIDATES[-1]))
 
 
 if __name__ == "__main__":
