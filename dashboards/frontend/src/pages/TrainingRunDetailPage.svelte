@@ -40,7 +40,6 @@
   } from "../lib/api.js";
   import { formatMetricValue } from "../lib/metricSeries.js";
   import { groupByRollout, rolloutIndex, rolloutScores } from "../lib/rolloutGrouping.js";
-  import { normalizeMetricLinks } from "../lib/metricLinks.js";
   import { PERCENTILE_LINES, percentileRowFields } from "../lib/percentileLines.js";
   import {
     MAX_TERMINAL_TIMING_FAILURES,
@@ -160,15 +159,15 @@
       run?.config_summary?.metric_project || run?.config_summary?.wandb_project || "";
     return project ? `https://wandb.ai/home?search=${encodeURIComponent(project)}` : "";
   });
-  let metricLinks = $derived.by(() =>
-    run?.metric_links?.length
-      ? normalizeMetricLinks(run.metric_links)
-      : run?.wandb_links?.length
-        ? normalizeMetricLinks(run.wandb_links)
-        : metricUrl
-          ? [{ label: "Metric", url: metricUrl }]
-          : [],
-  );
+  let metricLink = $derived.by(() => {
+    const raw = run?.metric_links?.length ? run.metric_links : run?.wandb_links;
+    const links = raw?.length ? raw : metricUrl ? [{ url: metricUrl }] : [];
+    return links.length
+      ? links.reduce((best, link) =>
+          (link?.attempt ?? 0) > (best?.attempt ?? 0) ? link : best,
+        )
+      : null;
+  });
 
   $effect(() => {
     const id = runId;
@@ -237,6 +236,12 @@
 
   $effect(() => {
     if (!isSftRun || activeTab !== "rollouts") return;
+    activeTab = DEFAULT_TAB;
+    if (!embedded) history.replaceState({}, "", urlForTab(DEFAULT_TAB));
+  });
+
+  $effect(() => {
+    if (!metricLink || activeTab !== "metrics") return;
     activeTab = DEFAULT_TAB;
     if (!embedded) history.replaceState({}, "", urlForTab(DEFAULT_TAB));
   });
@@ -1654,17 +1659,6 @@
           <span>Collapse</span>
         </button>
       {/if}
-      {#each metricLinks as link (link.url)}
-        <a
-          class="header-link metric-link inline-flex items-center gap-[6px] min-h-[32px] leading-[16px]"
-          href={link.url}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <span>{link.label}</span>
-          <ExternalLink size={12} strokeWidth={2.1} />
-        </a>
-      {/each}
       {#if run?.modal_app_url}
         <a
           class="header-link inline-flex items-center gap-[6px] min-h-[32px] leading-[16px]"
@@ -1703,7 +1697,7 @@
       onSelect={selectTab}
       tabs={[
         { value: "summary", label: "Summary" },
-        { value: "metrics", label: "Metrics" },
+        { value: "metrics", label: "Metrics", href: metricLink?.url },
         ...(isSftRun
           ? []
           : [{ value: "rollouts", label: "Rollouts", count: rolloutSummaries.length || undefined }]),
