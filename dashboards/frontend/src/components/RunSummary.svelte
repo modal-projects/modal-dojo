@@ -5,7 +5,6 @@
   import FrameworkStageProgress from "./FrameworkStageProgress.svelte";
   import TimeAgo from "./TimeAgo.svelte";
   import { formatTagValue, getGroupTags } from "../lib/format.js";
-  import { normalizeMetricLinks } from "../lib/metricLinks.js";
 
   // The run-summary block shared by the list drawer and the detail page's
   // Summary tab, so both render identical metadata: status, stage, model,
@@ -74,11 +73,6 @@
     (run?.modal_app_id ? `https://modal.com/id/${run.modal_app_id}` : ""),
   );
   let groupTags = $derived(getGroupTags(run));
-  let metricLinks = $derived(
-    normalizeMetricLinks(
-      run?.metric_links?.length ? run.metric_links : run?.wandb_links,
-    ),
-  );
   let attemptMetadata = $derived.by(() => {
     const state = run?.resume_state;
     if (!state) return null;
@@ -254,25 +248,6 @@
             <span class="kv-value">{attemptMetadata.resumeFromIteration}</span>
           </div>
         {/if}
-      </section>
-    {/if}
-
-    {#if metricLinks.length}
-      <section class="summary-section">
-        <h3 class="summary-section-title">Metric</h3>
-        <div class="flex flex-wrap gap-[6px]">
-          {#each metricLinks as link (link.url)}
-            <a
-              class="[border:1px_solid_var(--color-c-gray-10,#2f2f2f)] rounded-[999px] text-(--accent) text-[12px] leading-[16px] p-[2px_8px] [text-decoration:none] hover:[text-decoration:underline] [border-color:color-mix(in_srgb,var(--yellow,#fbbf24)_45%,transparent)] text-(--yellow,#fbbf24)!"
-              href={link.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={link.run_id || link.url}
-            >
-              {link.label}
-            </a>
-          {/each}
-        </div>
       </section>
     {/if}
 

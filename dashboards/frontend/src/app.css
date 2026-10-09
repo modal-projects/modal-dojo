@@ -2000,19 +2000,6 @@ table.training-runs-table td.row-open-cell {
   border-color: var(--border-strong);
 }
 
-.training-open-metric-link {
-  border-color: color-mix(in srgb, var(--yellow, #fbbf24) 45%, transparent);
-}
-
-.training-open-metric-link .open-modal-link-label,
-.training-open-metric-link .training-open-modal-link-icon {
-  color: var(--yellow, #fbbf24);
-}
-
-.training-open-metric-link:hover {
-  border-color: color-mix(in srgb, var(--yellow, #fbbf24) 60%, transparent);
-}
-
 /* ===== pages/TrainingRunDetailPage.svelte ===== */
 .detail {
   color: var(--text);
@@ -2044,15 +2031,6 @@ table.training-runs-table td.row-open-cell {
 
 .header-link:hover {
   color: var(--accent);
-}
-
-.metric-link {
-  color: var(--yellow, #fbbf24);
-}
-
-.metric-link:hover {
-  color: var(--yellow, #fbbf24);
-  opacity: 0.8;
 }
 
 /* ── Tab panels ───────────────────────────────────────────────────────── */
