@@ -40,7 +40,6 @@
   } from "../lib/api.js";
   import { formatMetricValue } from "../lib/metricSeries.js";
   import { groupByRollout, rolloutIndex, rolloutScores } from "../lib/rolloutGrouping.js";
-  import { metricLinkProviderLabel, metricProviderLabel, normalizeMetricLinks } from "../lib/metricLinks.js";
   import { PERCENTILE_LINES, percentileRowFields } from "../lib/percentileLines.js";
   import {
     MAX_TERMINAL_TIMING_FAILURES,
@@ -160,20 +159,16 @@
       run?.config_summary?.metric_project || run?.config_summary?.wandb_project || "";
     return project ? `https://wandb.ai/home?search=${encodeURIComponent(project)}` : "";
   });
-  let metricProvider = $derived(
-    run?.train_result?.metric_provider || run?.config_summary?.metric_provider || "",
-  );
-  let metricLinks = $derived.by(() => {
+  // Latest-attempt external metrics link: attempt links sort ascending, so
+  // the highest attempt wins; a bare metric_url is the fallback.
+  let metricLink = $derived.by(() => {
     const raw = run?.metric_links?.length ? run.metric_links : run?.wandb_links;
-    if (raw?.length) {
-      return normalizeMetricLinks(raw).map((link) => ({
-        ...link,
-        label: metricLinkProviderLabel(link, metricProvider),
-      }));
-    }
-    return metricUrl
-      ? [{ label: metricProviderLabel(metricProvider), url: metricUrl }]
-      : [];
+    const links = raw?.length ? raw : metricUrl ? [{ url: metricUrl }] : [];
+    return links.length
+      ? links.reduce((best, link) =>
+          (link?.attempt ?? 0) > (best?.attempt ?? 0) ? link : best,
+        )
+      : null;
   });
 
   $effect(() => {
@@ -243,6 +238,13 @@
 
   $effect(() => {
     if (!isSftRun || activeTab !== "rollouts") return;
+    activeTab = DEFAULT_TAB;
+    if (!embedded) history.replaceState({}, "", urlForTab(DEFAULT_TAB));
+  });
+
+  // With an external metrics link the Metrics tab is a link, not a tab.
+  $effect(() => {
+    if (!metricLink || activeTab !== "metrics") return;
     activeTab = DEFAULT_TAB;
     if (!embedded) history.replaceState({}, "", urlForTab(DEFAULT_TAB));
   });
@@ -1698,7 +1700,7 @@
       onSelect={selectTab}
       tabs={[
         { value: "summary", label: "Summary" },
-        { value: "metrics", label: "Metrics" },
+        { value: "metrics", label: "Metrics", href: metricLink?.url },
         ...(isSftRun
           ? []
           : [{ value: "rollouts", label: "Rollouts", count: rolloutSummaries.length || undefined }]),
@@ -2257,7 +2259,7 @@
       </div>
     {:else if activeTab === "metrics"}
       <div class="tab-panel">
-        <RunMetricsPanel {runId} {isRunning} links={metricLinks} />
+        <RunMetricsPanel {runId} {isRunning} />
       </div>
     {:else if activeTab === "logs"}
       <div class="tab-panel">

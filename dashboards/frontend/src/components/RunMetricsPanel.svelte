@@ -3,14 +3,13 @@
   // W&B workspace — one collapsible section per key prefix (`train/`,
   // `rollout/`, ...), a grid of small panels, a search box, and a shared
   // step window per axis so training and rollout counters stay distinct.
-  import { ExternalLink } from "lucide-svelte";
   import ChartSkeleton from "./ChartSkeleton.svelte";
   import GroupSection from "./GroupSection.svelte";
   import LineChart from "./LineChart.svelte";
   import { fetchRunMetrics } from "../lib/api.js";
   import { formatMetricValue, groupMetricKeys, metricAxisLabel } from "../lib/metricSeries.js";
 
-  let { runId, isRunning = false, links = [] } = $props();
+  let { runId, isRunning = false } = $props();
 
   const POLL_MS = 5000;
 
@@ -86,28 +85,10 @@
     <div class="detail-empty" role="alert">Couldn't load metrics: {error}</div>
   {:else if !allKeys.length}
     <div class="detail-empty">
-      {#if links.length}
-        <div class="text-(--text-bright) mb-[6px]">No metrics mirrored locally.</div>
-        <div class="flex flex-wrap gap-[6px]">
-          {#each links as link (link.url)}
-            <a
-              class="inline-flex items-center gap-[6px] [border:1px_solid_color-mix(in_srgb,var(--yellow,#fbbf24)_45%,transparent)] rounded-[999px] text-(--yellow,#fbbf24) text-[12px] leading-[16px] p-[2px_8px] [text-decoration:none] hover:[text-decoration:underline]"
-              href={link.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={link.run_id || link.url}
-            >
-              <span>{link.label}</span>
-              <ExternalLink size={12} strokeWidth={2.1} />
-            </a>
-          {/each}
-        </div>
-      {:else}
-        <div class="text-(--text-bright) mb-[6px]">No metrics reported yet.</div>
-        <div class="max-w-[64ch] leading-[1.5]">
-          Scalars the framework logs through <code>wandb.log</code> show up here for every metric provider.
-        </div>
-      {/if}
+      <div class="text-(--text-bright) mb-[6px]">No metrics reported yet.</div>
+      <div class="max-w-[64ch] leading-[1.5]">
+        Scalars the framework logs through <code>wandb.log</code> show up here for every metric provider.
+      </div>
     </div>
   {:else}
     <div class="flex flex-wrap items-center gap-[10px]">
