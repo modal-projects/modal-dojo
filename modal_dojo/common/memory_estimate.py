@@ -34,7 +34,7 @@ def _hf_cfg(model_name: str) -> dict | None:
 
 
 def _arch_from_hf(model_name: str, cfg: dict | None = None) -> ModelArchitecture | None:
-    cfg = cfg or _hf_cfg(model_name)
+    cfg = cfg if cfg is not None else _hf_cfg(model_name)
     if cfg is None:
         return None
     layers, hidden, heads = (
