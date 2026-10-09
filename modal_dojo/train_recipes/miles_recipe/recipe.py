@@ -1,4 +1,3 @@
-import warnings
 from collections.abc import Callable
 from dataclasses import field
 from typing import Any, ClassVar, Literal
@@ -738,17 +737,16 @@ class MilesRecipe(BaseTrainRecipe):
         return self
 
     @model_validator(mode="after")
-    def _warn_routing_replay_with_custom_rollout(self) -> "MilesRecipe":
+    def _validate_routing_replay_with_custom_rollout(self) -> "MilesRecipe":
         if not self.use_rollout_routing_replay:
             return self
         if self.rollout_function is None and self.custom_generate_function is None:
             return self
-        warnings.warn(
-            "use_rollout_routing_replay=True requires routed experts from each rollout. "
-            "Update your custom rollout to return them, or set use_rollout_routing_replay=False.",
-            stacklevel=2,
+        raise ValueError(
+            "use_rollout_routing_replay=True requires routed experts from each rollout, "
+            "which custom rollout_function/custom_generate_function don't return. "
+            "Set use_rollout_routing_replay=False."
         )
-        return self
 
     # ── Container → miles flag converters ────────────────────────────────────
 
