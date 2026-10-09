@@ -85,6 +85,7 @@ class ModelArchitecture:
     no_masked_softmax_fusion: bool = False
     multi_latent_attention: bool = False
     kv_lora_rank: int = 0
+    q_lora_rank: int = 0
     qk_head_dim: int = 0
     qk_pos_emb_head_dim: int = 0
     v_head_dim: int = 0

@@ -791,6 +791,7 @@ class MilesRecipe(BaseTrainRecipe):
         )
         optional = {
             "kv_lora_rank": arch.kv_lora_rank,
+            "q_lora_rank": arch.q_lora_rank,
             "qk_head_dim": arch.qk_head_dim,
             "qk_pos_emb_head_dim": arch.qk_pos_emb_head_dim,
             "v_head_dim": arch.v_head_dim,

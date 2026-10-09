@@ -147,3 +147,17 @@ def test_multi_turn_without_context_cap_warns(hook: str) -> None:
         warnings.simplefilter("always")
         maybe_warn_gpu_oom(recipe, model)
     assert any("rollout_max_context_len" in str(w.message) for w in caught)
+
+
+def test_offload_fraction_retains_opt_state_on_gpu() -> None:
+    full, _ = _peak_gib(_QWEN3_5_4B, _qwen3_5_knobs(), 79.2)
+    retained, raised = _peak_gib(
+        _QWEN3_5_4B, _qwen3_5_knobs(optimizer_offload_fraction=0.65), 79.2
+    )
+    assert retained > full
+    assert raised["optimizer_offload_fraction"] == 0.65
+    no_offload, _ = _peak_gib(
+        _QWEN3_5_4B, _qwen3_5_knobs(optimizer_cpu_offload=False), 79.2
+    )
+    zero, _ = _peak_gib(_QWEN3_5_4B, _qwen3_5_knobs(optimizer_offload_fraction=0), 79.2)
+    assert zero == no_offload
