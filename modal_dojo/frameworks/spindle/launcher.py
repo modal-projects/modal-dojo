@@ -343,7 +343,7 @@ def build_spindle_app(
                 f"x {spindle.n_samples_per_prompt} samples"
             )
             await set_status(SpindleStatus.TRAINING)
-            run_grpo(settings)
+            await run_grpo(settings)
             await checkpoints_volume.commit.aio()
             return await shared.complete_training_run(
                 run_record,

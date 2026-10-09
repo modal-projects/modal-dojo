@@ -356,7 +356,9 @@ def build_train_config(settings: GrpoSettings):
     return train.Config(**values)
 
 
-def run_grpo(settings: GrpoSettings, *, on_phase: PhaseCallback | None = None) -> None:
+async def run_grpo(
+    settings: GrpoSettings, *, on_phase: PhaseCallback | None = None
+) -> None:
     """Train with tinker-cookbook GRPO against ``settings.base_url``."""
     from tinker_cookbook.rl import train  # pyright: ignore[reportMissingImports]
 
@@ -365,7 +367,7 @@ def run_grpo(settings: GrpoSettings, *, on_phase: PhaseCallback | None = None) -
     config = build_train_config(settings)
     if on_phase:
         on_phase("training")
-    asyncio.run(train.main(config))
+    await train.main(config)
 
 
 def main(argv: Iterable[str] | None = None) -> None:
@@ -377,7 +379,7 @@ def main(argv: Iterable[str] | None = None) -> None:
             "usage: python -m modal_dojo.frameworks.spindle.grpo <settings.json>"
         )
     with open(args[0]) as f:
-        run_grpo(GrpoSettings.from_json(f.read()))
+        asyncio.run(run_grpo(GrpoSettings.from_json(f.read())))
 
 
 if __name__ == "__main__":
