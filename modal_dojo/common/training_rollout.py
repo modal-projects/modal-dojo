@@ -24,7 +24,11 @@ from modal_dojo.common.coerce import optional_int, safe_int
 from modal_dojo.common.sample import Sample
 from modal_dojo.utils.metadata import (
     MetadataStore,
+    vol_get,
     vol_get_summary_items,
+    vol_list,
+    vol_list_keys,
+    vol_put_summary_items,
     vol_put_with_summary,
 )
 
@@ -336,36 +340,28 @@ class TrainingRolloutResult(BaseModel):
             self.created_at = int(time.time())
 
     @staticmethod
-    def _summary_sort_key(item: dict[str, Any]) -> tuple[str, int]:
-        return (
-            str(item.get("training_run_id", "")),
-            int(item.get("rollout_id", 0) or 0),
-        )
+    def summary_store(training_run_id: str) -> str:
+        return f"{MetadataStore.TRAINING_ROLLOUTS_SUMMARY.value}/{training_run_id}"
 
-    def _summary_item(self, *, export_size_bytes: int) -> dict[str, Any]:
-        # summary_key keeps (run_id, rollout_id) uniqueness across runs.
-        return {
-            **self.to_summary(),
-            "export_size_bytes": export_size_bytes,
-            "summary_key": self.storage_key,
-        }
-
-    def save(self, *, is_async: bool = False) -> None | Awaitable[None]:
-        self._touch_created_at()
-        payload = self.model_dump(mode="json")
+    def _stored_summary(self, payload: dict[str, Any]) -> dict[str, Any]:
         export_payload = copy.deepcopy(payload)
         _apply_parsed(export_payload.get("samples"))
         export_size_bytes = len(
             (json.dumps(export_payload, ensure_ascii=False, indent=2) + "\n").encode()
         )
+        return {**self.to_summary(), "export_size_bytes": export_size_bytes}
+
+    def save(self, *, is_async: bool = False) -> None | Awaitable[None]:
+        self._touch_created_at()
+        payload = self.model_dump(mode="json")
         return vol_put_with_summary(
             MetadataStore.TRAINING_ROLLOUTS,
             self.storage_key,
             payload,
-            summary_store=MetadataStore.TRAINING_ROLLOUTS_SUMMARY,
-            summary_item=self._summary_item(export_size_bytes=export_size_bytes),
-            item_id_key="summary_key",
-            sort_key=self._summary_sort_key,
+            summary_store=self.summary_store(self.training_run_id),
+            summary_item=self._stored_summary(payload),
+            item_id_key="rollout_id",
+            sort_key=lambda item: int(item.get("rollout_id") or 0),
             reverse=False,
             is_async=is_async,
         )
@@ -375,16 +371,62 @@ class TrainingRolloutResult(BaseModel):
         cls, training_run_id: str
     ) -> list[TrainingRolloutSummary]:
         """Lightweight per-rollout summaries for one run, sorted by rollout_id."""
-        items = vol_get_summary_items(MetadataStore.TRAINING_ROLLOUTS_SUMMARY) or []
-        summaries: list[TrainingRolloutSummary] = []
-        for item in items:
+        store = cls.summary_store(training_run_id)
+
+        def parse(item: Any) -> TrainingRolloutSummary | None:
             if (
                 not isinstance(item, dict)
                 or item.get("training_run_id") != training_run_id
             ):
-                continue
+                return None
             try:
-                summaries.append(TrainingRolloutSummary.model_validate(item))
+                return TrainingRolloutSummary.model_validate(item)
             except ValidationError:
+                return None
+
+        summaries: dict[str, TrainingRolloutSummary] = {}
+        items = vol_get_summary_items(store)
+        changed = items is None
+        for item in vol_list(store) if items is None else items:
+            if summary := parse(item):
+                summaries.setdefault(
+                    f"{training_run_id}__{summary.rollout_id:08d}", summary
+                )
+        if items is not None and len(summaries) != len(items):
+            changed = True
+
+        keys = set(
+            vol_list_keys(MetadataStore.TRAINING_ROLLOUTS, f"{training_run_id}__")
+        )
+        for key in sorted(keys - summaries.keys()):
+            try:
+                payload = vol_get(MetadataStore.TRAINING_ROLLOUTS, key)
+                result = cls.model_validate(payload)
+                if (
+                    result.training_run_id != training_run_id
+                    or result.storage_key != key
+                ):
+                    continue
+                summaries[key] = TrainingRolloutSummary.model_validate(
+                    result._stored_summary(payload)
+                )
+                changed = True
+            except (KeyError, ValueError):
                 continue
-        return sorted(summaries, key=lambda summary: summary.rollout_id)
+
+        if items is None or keys - summaries.keys():
+            legacy = vol_get_summary_items(MetadataStore.TRAINING_ROLLOUTS_SUMMARY)
+            for item in legacy or []:
+                if (summary := parse(item)) is None:
+                    continue
+                key = f"{training_run_id}__{summary.rollout_id:08d}"
+                if key not in summaries:
+                    summaries[key] = summary
+                    changed = True
+
+        results = sorted(summaries.values(), key=lambda summary: summary.rollout_id)
+        if changed:
+            vol_put_summary_items(
+                store, [item.model_dump(mode="json") for item in results]
+            )
+        return results
