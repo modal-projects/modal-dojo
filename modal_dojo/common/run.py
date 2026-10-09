@@ -73,7 +73,7 @@ def merge_run_updates(
         order = (
             ("updated_at",)
             if field == "framework_progress"
-            else ("rollout_id", "created_at")
+            else ("created_at", "rollout_id")
         )
         update = max(
             candidates,
@@ -90,7 +90,7 @@ def merge_run_updates(
     return data
 
 
-def _load_run_updates(data: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+def load_run_updates(data: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     updates: dict[str, list[dict[str, Any]]] = {}
     for key in run_update_keys(data).values():
         try:
@@ -782,7 +782,7 @@ class TrainingRun(BaseModel):
                 return cls.from_stored_data(merge_run_updates(stored, updates))
 
             return _run()
-        return cls.from_stored_data(merge_run_updates(data, _load_run_updates(data)))
+        return cls.from_stored_data(merge_run_updates(data, load_run_updates(data)))
 
     @classmethod
     def from_stored_data(cls, data: object) -> TrainingRun:

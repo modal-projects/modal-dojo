@@ -18,7 +18,7 @@ from modal_dojo.utils.metadata import (
     MetadataStore,
     summary_items_from_payload,
     vol_get,
-    vol_get_summary_items,
+    vol_get_summary_items_healed,
     vol_put,
 )
 
@@ -178,7 +178,7 @@ class EvalSummary(BaseModel):
                     summaries[item["eval_id"]] = cls.model_validate(item)
                 except Exception:
                     continue
-        for item in vol_get_summary_items(MetadataStore.EVAL_SUMMARIES) or []:
+        for item in vol_get_summary_items_healed(MetadataStore.EVAL_SUMMARIES) or []:
             if isinstance(item, dict) and item.get("eval_id"):
                 try:
                     summaries[item["eval_id"]] = cls.model_validate(item)

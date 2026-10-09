@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from modal_dojo.common.modal_lifecycle import resolve_app_liveness, stop_app
-from modal_dojo.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.run import (
+    TrainingRun,
+    TrainingRunStatus,
+    load_run_updates,
+    merge_run_updates,
+)
 from modal_dojo.utils.metadata import (
     MetadataStore,
     vol_get,
@@ -169,14 +174,14 @@ def _load_running_runs() -> list[TrainingRun]:
     for raw in vol_list(MetadataStore.TRAINING_RUNS):
         if not isinstance(raw, dict):
             continue
-        run = _parse_running_run(raw)
+        run = _parse_running_run(merge_run_updates(raw, load_run_updates(raw)))
         if run is not None:
             runs_by_id[run.training_run_id] = run
 
     for raw in vol_get_summary_items_healed(MetadataStore.TRAINING_RUNS_SUMMARY) or []:
         if not isinstance(raw, dict):
             continue
-        run = _parse_running_run(raw)
+        run = _parse_running_run(merge_run_updates(raw, load_run_updates(raw)))
         if run is not None:
             runs_by_id.setdefault(run.training_run_id, run)
 

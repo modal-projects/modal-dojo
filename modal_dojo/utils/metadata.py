@@ -896,14 +896,16 @@ def vol_put_summary_items(
     item_id_key: str | None = None,
     key: str = SUMMARY_KEY,
     payload_key: str = SUMMARY_ITEMS_KEY,
+    prune: bool = False,
     is_async: bool = False,
     prune: bool = False,
 ) -> None | Awaitable[None]:
-    """Replace a summary's contents: per-item files plus the legacy list file.
+    """Write per-item summary files plus the legacy list file.
 
     The per-item files are written first so the shared file never advertises
-    items the per-item layout lacks; afterwards, files for items absent from
-    ``items`` are pruned so a replace-shaped write stays exact.
+    items the per-item layout lacks. ``prune`` additionally removes per-item
+    files absent from ``items`` — only callers replacing the store wholesale
+    (compaction) should set it, since pruning races concurrent writers.
     """
     cfg = _SUMMARY_COMPACTION.get(store) if isinstance(store, MetadataStore) else None
     id_key = item_id_key or (cfg.item_id_key if cfg is not None else None)
