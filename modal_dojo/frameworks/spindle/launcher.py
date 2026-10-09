@@ -125,6 +125,27 @@ def _chat_template_kwargs(recipe: SpindleRecipe) -> dict[str, Any]:
     return dict(json.loads(value) if isinstance(value, str) else value)
 
 
+def _use_real_spindle_images() -> None:
+    """Make Spindle select its real trainer/rollout images in this container.
+
+    ``spindle.providers.modal.deployment_apps.image_for`` returns a placeholder
+    ``debian_slim`` image whenever ``modal.is_local()`` is false, assuming the
+    module is only imported remotely by its own workers. Dojo deploys Spindle
+    from inside a Modal function, so without this the trainer and SGLang apps
+    would be deployed with an image that lacks Spindle itself.
+    """
+    from spindle.providers.modal import (  # pyright: ignore[reportMissingImports]
+        deployment_apps,
+    )
+
+    images = {
+        "miles": deployment_apps.miles_image,
+        "megatron": deployment_apps.megatron_image,
+        "sglang": deployment_apps.rollout_image,
+    }
+    deployment_apps.image_for = lambda backend: images[backend]
+
+
 def deploy_spindle_deployment(config_values: dict[str, Any]) -> str:
     """Deploy Spindle for ``config_values`` and return the frontend base URL.
 
@@ -135,6 +156,7 @@ def deploy_spindle_deployment(config_values: dict[str, Any]) -> str:
     from spindle.deployment_cli import deploy  # pyright: ignore[reportMissingImports]
     from spindle.deployments import DeploymentConfig  # pyright: ignore[reportMissingImports]
 
+    _use_real_spindle_images()
     recipe = BaseConfig(**config_values)
     deployment = DeploymentConfig.create(recipe)
     deploy([deployment])
