@@ -293,6 +293,10 @@ def build_spindle_app(
         framework_status_url: str = "",
         framework_status_token: str = "",
     ):
+        if framework_status_url:
+            os.environ["MODAL_DOJO_FRAMEWORK_STATUS_URL"] = framework_status_url
+        if framework_status_token:
+            os.environ["MODAL_DOJO_FRAMEWORK_STATUS_TOKEN"] = framework_status_token
         metric_entity = preflight_metric(spindle.metrics)
         print(f"Training run id: {training_run_id}")
         run_record: TrainingRun
