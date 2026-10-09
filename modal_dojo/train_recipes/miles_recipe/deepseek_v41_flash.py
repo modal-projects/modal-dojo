@@ -160,6 +160,9 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     tensor_model_parallel_size: int = 4
     sequence_parallel: bool = True
     expert_model_parallel_size: int = 64
+    # Megatron's NCCL watchdog timeout. Checkpoint Volume commits run on a
+    # separate gloo group, so this only has to cover training collectives.
+    distributed_timeout_minutes: int = 60
 
     recompute_granularity: str = "full"
     recompute_method: str = "uniform"
