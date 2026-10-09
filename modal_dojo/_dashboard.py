@@ -67,10 +67,13 @@ from modal_dojo.common.dashboard_components import (
     MAX_COMPONENT_BYTES,
     DashboardComponent,
 )
+from modal_dojo.common.eval import EvalSummary
 from modal_dojo.common.run import (
     FrameworkStatusUpdate,
     TrainingRun,
     TrainingRunStatus,
+    merge_run_updates,
+    run_update_keys,
 )
 from modal_dojo.common.run_list import (
     FACET_NAMES,
@@ -575,7 +578,8 @@ def reconcile() -> None:
     if outcome.runs:
         print(f"Reconciled {len(outcome.runs)} orphaned run(s):")
         for result in outcome.runs:
-            print(f"  {result.training_run_id}: {result.reason}")
+            stopped = " (stopped Modal app)" if result.stopped_modal_app else ""
+            print(f"  {result.training_run_id}: {result.reason}{stopped}")
     else:
         print("No orphaned runs to reconcile.")
 
@@ -609,9 +613,9 @@ def fastapi_app():
     from modal_dojo.common.modal_urls import modal_app_dashboard_url
     from modal_dojo.utils.metadata import (
         MetadataStore,
-        summary_items_from_payload,
         vol_get,
         vol_get_summary_items_healed,
+        vol_list_prefix,
         vol_put_summary_items,
     )
 
@@ -992,12 +996,10 @@ def fastapi_app():
         return {key: value for key, value in fetched if value is not None}
 
     async def load_eval_summaries() -> list[JsonDict]:
-        try:
-            payload = await run_in_threadpool(vol_get, MetadataStore.EVALS, "summary")
-        except KeyError:
-            return []
-
-        summaries = summary_items_from_payload(payload, payload_key="summaries")
+        summaries = [
+            summary.model_dump(mode="json")
+            for summary in await run_in_threadpool(EvalSummary.list_summaries)
+        ]
         if not summaries:
             return []
 
@@ -1049,6 +1051,21 @@ def fastapi_app():
 
     async def load_runs() -> list[JsonDict]:
         run_records = await load_list_summary(MetadataStore.TRAINING_RUNS_SUMMARY)
+        keys = [key for run in run_records for key in run_update_keys(run).values()]
+        fetched = await bounded_gather_with_retries(
+            [
+                lambda key=key: run_in_threadpool(
+                    vol_list_prefix, MetadataStore.TRAINING_RUN_UPDATES, key
+                )
+                for key in keys
+            ]
+        )
+        updates = {
+            key: result
+            for key, result in zip(keys, fetched)
+            if not isinstance(result, BaseException)
+        }
+        run_records = [merge_run_updates(run, updates) for run in run_records]
         try:
             result_records = await load_list_summary(
                 MetadataStore.TRAIN_RESULTS_SUMMARY
@@ -1444,7 +1461,7 @@ def fastapi_app():
                     f"for {run.framework.value}"
                 ),
             )
-        await run.save(is_async=True)
+        await run._save_dashboard_update("framework_progress")
         invalidate_cache("runs")
         if run.status in {
             TrainingRunStatus.STOPPED,
@@ -1531,7 +1548,7 @@ def fastapi_app():
 
         await run_in_threadpool(result.save)
         run.record_latest_rollout(result)
-        await run.save(is_async=True)
+        await run._save_dashboard_update("latest_rollout")
         invalidate_cache("runs")
 
         return JSONResponse(

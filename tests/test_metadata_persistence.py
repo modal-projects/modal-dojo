@@ -228,19 +228,11 @@ def test_summary_upsert_survives_unreadable_summary_file(
             "run-b",
             {"training_run_id": "run-b"},
             summary_store=MetadataStore.TRAINING_RUNS_SUMMARY,
-            item_id_key="training_run_id",
         )
         if is_async:
             asyncio.run(write)
 
-    if is_async:
-        items = asyncio.run(
-            metadata.vol_get_summary_items(
-                MetadataStore.TRAINING_RUNS_SUMMARY, is_async=True
-            )
-        )
-    else:
-        items = metadata.vol_get_summary_items(MetadataStore.TRAINING_RUNS_SUMMARY)
+    items = metadata.vol_get_summary_items_healed(MetadataStore.TRAINING_RUNS_SUMMARY)
     assert {item["training_run_id"] for item in items or []} == {"run-a", "run-b"}
 
 
@@ -403,6 +395,8 @@ def test_compaction_keeps_unread_summary_when_canonical_read_fails(
         )
 
     monkeypatch.setattr(fake_volume, "read_file", read_file)
-    assert (
-        metadata.vol_get_summary_items(MetadataStore.TRAINING_RUNS_SUMMARY) == summary
-    )
+    items = metadata.vol_get_summary_items(MetadataStore.TRAINING_RUNS_SUMMARY)
+    assert {item["training_run_id"]: item["status"] for item in items} == {
+        "run-0": "completed",
+        "run-1": "running",
+    }
