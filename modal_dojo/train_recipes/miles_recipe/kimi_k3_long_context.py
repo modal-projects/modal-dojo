@@ -7,7 +7,6 @@ from dataclasses import field
 from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
-from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.miles_recipe.kimi_k3 import (
     Kimi_K3_LoRA_Recipe,
     _PATCH_DIR,
@@ -42,12 +41,6 @@ def _image_patches() -> list[str]:
     return [
         *_base_image_patches(),
         *[_compressed_patch(name) for name in _PATCHES],
-        # Retain pinned CPU allocations using the image's allocator revision.
-        "git clone https://github.com/fzyzcjy/torch_memory_saver.git /tmp/dojo-tms "
-        "&& git -C /tmp/dojo-tms checkout b5588e83de86412a48689a6583a4b567e75f7acc",
-        f"echo {encode_patch('patch_tms_retain_backup', _PATCH_DIR)} | base64 -d | python3",
-        "TMS_CUDA_MAJOR=13 uv pip install --python /opt/sglang/bin/python "
-        "--no-deps --no-build-isolation --reinstall /tmp/dojo-tms",
     ]
 
 
@@ -64,8 +57,6 @@ class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
             "TRITON_PRINT_AUTOTUNING": "1",
             # Warm each pipeline stage before the first training microbatch.
             "DOJO_K3_KERNEL_WARMUP": "1",
-            # Reuse host allocations while copying fresh weights on every pause.
-            "DOJO_TMS_RETAIN_BACKUP_TAG": "weights",
             # A full unsharded adapter does not fit alongside TP8 inference weights.
             "DOJO_SGLANG_LORA_CPU_STASH": "1",
         }
@@ -73,6 +64,7 @@ class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
 
     # ── Colocation and weight sync ───────────────────────────────────────────
     # Offload the active model before restoring the other to avoid GPU overlap.
+    # Release restored inference CPU backups before staging the next adapter.
     colocate_memory_peak_device: str = "cpu"
     memory: tuple[int, int] = (2560 * 1024, 3072 * 1024)
 
