@@ -111,7 +111,6 @@ class MetricLink(BaseModel):
     url: str
     run_id: str = ""
     attempt: int | None = None
-    provider: str = ""
 
 
 WandbLink = MetricLink
@@ -378,14 +377,7 @@ def _metric_summary(
     if not url and provider in ("", "wandb"):
         url = _wandb_url(entity, project, run_id) or ""
     metric_link = (
-        [
-            MetricLink(
-                label="Metric",
-                url=url,
-                run_id=_text(run_id).strip(),
-                provider=provider,
-            )
-        ]
+        [MetricLink(label="Metric", url=url, run_id=_text(run_id).strip())]
         if url
         else []
     )
@@ -593,7 +585,6 @@ def _metric_attempt_links(metadata: JsonDict) -> list[MetricLink]:
                     url=url,
                     run_id=run_id,
                     attempt=attempt_number or None,
-                    provider=provider,
                 )
             )
     return links
