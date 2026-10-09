@@ -16,6 +16,7 @@ from modal_dojo.common.models.qwen3_4b import Qwen3_4B
 from modal_dojo.common.models.validation import VALIDATION_CONFIGS
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.spindle_recipe import SpindleRecipe
 
 
 @pytest.mark.parametrize(
@@ -25,9 +26,11 @@ from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 )
 def test_presets_do_not_warn(entry) -> None:
     model = entry.model_config()
-    recipe = (
-        SlimeRecipe if entry.framework is Framework.SLIME else MilesRecipe
-    ).get_base_recipe(model)
+    recipe = {
+        Framework.SLIME: SlimeRecipe,
+        Framework.MILES: MilesRecipe,
+        Framework.SPINDLE: SpindleRecipe,
+    }[entry.framework].get_base_recipe(model)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         maybe_warn_gpu_oom(recipe, model)
