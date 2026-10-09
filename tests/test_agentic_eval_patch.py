@@ -6,6 +6,8 @@ import contextlib
 import json
 import logging
 import math
+import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -330,3 +332,28 @@ def test_evaluation_runner_preserves_protocol_without_training():
     assert trained.recipe.extra_config["ckpt_step"] == 29
     assert build_config(proof=True).recipe.extra_config["agentic_eval_concurrency"] == 4
     assert config.recipe.num_rollout == 500
+
+
+def test_evaluation_dataset_loads_without_tutorial_package():
+    import cloudpickle
+
+    from tutorials.coding_agent.evaluate import build_config
+
+    child = '''import builtins, cloudpickle, sys
+original = builtins.__import__
+def restricted(name, *args, **kwargs):
+    if name.startswith("tutorials"):
+        raise ModuleNotFoundError(name)
+    return original(name, *args, **kwargs)
+builtins.__import__ = restricted
+dataset = cloudpickle.loads(sys.stdin.buffer.read())
+assert dataset.input_key() == "prompt"
+assert dataset.label_key() == "label"
+assert not dataset.apply_chat_template()
+'''
+    subprocess.run(
+        [sys.executable, "-c", child],
+        input=cloudpickle.dumps(build_config().dataset),
+        check=True,
+        timeout=30,
+    )
