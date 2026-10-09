@@ -52,6 +52,7 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [Fighting LLMs in Street Fighter III](https://dojo.modal.dev/tutorials/street_fighter)
 - [Massively-parallel hyperparameter sweeps](https://dojo.modal.dev/tutorials/param_sweep)
 - [Frontier-scale training](https://dojo.modal.dev/tutorials/multinode)
+- [Pick and place with a vision-language-action model](https://dojo.modal.dev/tutorials/pick_and_place)
 
 ## Reference
 
