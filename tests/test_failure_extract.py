@@ -92,3 +92,65 @@ def test_streaming_collector_survives_long_logs() -> None:
     for i in range(10_000):
         collector.feed(f"[rank 0] rollout line {i}")
     assert collector.result() == "torch.OutOfMemoryError: CUDA out of memory."
+
+
+def test_signature_split_across_chunks_is_seen_whole() -> None:
+    collector = FailureExcerpt()
+    for chunk in [
+        "some log\nTraceback (most recent call la",
+        'st):\n  File "t.py", line 1\ntorch.OutOfMemoryEr',
+        "ror: CUDA out of memory.\nrest\n",
+    ]:
+        collector.feed_chunk(chunk)
+    assert collector.result() == "torch.OutOfMemoryError: CUDA out of memory."
+
+
+def test_unterminated_tail_is_flushed_at_result() -> None:
+    collector = FailureExcerpt()
+    collector.feed_chunk("log\nRuntimeError: partial tail")
+    assert collector.result() == "RuntimeError: partial tail"
+
+
+def test_interleaved_line_inside_traceback() -> None:
+    lines = [
+        "Traceback (most recent call last):",
+        '  File "a.py", line 1, in <module>',
+        "[rank 7] step 3 done",
+        "megatron.core.CustomError: bespoke failure",
+    ]
+    assert (
+        extract_failure_excerpt(lines) == "megatron.core.CustomError: bespoke failure"
+    )
+
+
+def test_bare_exception_line_closes_traceback() -> None:
+    lines = [
+        "Traceback (most recent call last):",
+        '  File "a.py", line 1',
+        "KeyboardInterrupt",
+        "worker cleanup",
+    ]
+    assert extract_failure_excerpt(lines) == "KeyboardInterrupt"
+
+
+def test_log_prefixed_traceback_lines() -> None:
+    lines = [
+        "(TrainActor pid=1) Traceback (most recent call last):",
+        '(TrainActor pid=1)   File "a.py", line 1',
+        "(TrainActor pid=1) megatron.core.CustomError: bespoke",
+    ]
+    excerpt = extract_failure_excerpt(lines)
+    assert excerpt is not None
+    assert "CustomError" in excerpt
+
+
+def test_duplicate_signatures_are_deduplicated() -> None:
+    lines = [
+        "RuntimeError: same failure",
+        "RuntimeError: same failure",
+        "ValueError: other",
+    ]
+    assert (
+        extract_failure_excerpt(lines)
+        == "RuntimeError: same failure\nValueError: other"
+    )

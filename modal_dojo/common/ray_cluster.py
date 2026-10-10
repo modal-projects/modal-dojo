@@ -333,11 +333,10 @@ class ModalRayCluster:
         print(f"Submitted Ray job: {job_id}")
 
         _TERMINAL = {"SUCCEEDED", "FAILED", "STOPPED"}
-        # Bounded tail of every streamed line, kept for failure attribution on
-        # a non-success result — the first fatal signature is usually a worker
-        # traceback that precedes Ray's generic driver error.
-        # Streamed per-line so a failure early in a long log is still
-        # attributed; the collector's memory is bounded.
+        # Collects the first fatal signature from the streamed log for failure
+        # attribution on a non-success result — usually a worker traceback that
+        # precedes Ray's generic driver error. Memory is bounded, so a failure
+        # early in an arbitrarily long log is still attributed.
         failure_excerpt = FailureExcerpt()
         retry_count = 0
 
@@ -359,13 +358,11 @@ class ModalRayCluster:
                     log_stream = await log_stream
                 if hasattr(log_stream, "__aiter__"):
                     async for chunk in log_stream:
-                        for line in chunk.splitlines():
-                            failure_excerpt.feed(line)
+                        failure_excerpt.feed_chunk(chunk)
                         print(chunk, end="", flush=True)
                 else:
                     for chunk in log_stream:
-                        for line in chunk.splitlines():
-                            failure_excerpt.feed(line)
+                        failure_excerpt.feed_chunk(chunk)
                         print(chunk, end="", flush=True)
 
             tail_task = asyncio.create_task(_tail_logs())

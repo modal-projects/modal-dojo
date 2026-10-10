@@ -16,16 +16,26 @@ _MAX_CHARS = 2000
 # Bounded lookahead for an in-progress traceback block. Tracebacks longer than
 # this commit their header line only.
 _MAX_TRACEBACK_LINES = 400
-# Foreign log lines tolerated between a "During handling" chain marker and the
-# chained traceback that follows it (other ranks' output interleaves freely).
+# Foreign log lines tolerated inside a traceback block, or between a
+# "During handling" chain marker and the chained traceback that follows it
+# (other ranks' output interleaves freely).
 _MAX_INTERLEAVE = 8
 
 _TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\)")
 # The exception line closing a traceback block, e.g. "torch.OutOfMemoryError:
-# CUDA out of memory." or "RuntimeError: Step 1: 2 groups failed".
+# CUDA out of memory." or "RuntimeError: Step 1: 2 groups failed". The
+# ": message" part is optional — bare raises (KeyboardInterrupt, SystemExit)
+# print the exception name alone.
 _EXCEPTION_LINE_RE = re.compile(
     r"^(?:[\w.]+)?\w*(?:Error|Exception|Interrupt|Exit|Timeout|Aborted|Failure|"
-    r"Killed|OOM)\w*:.*"
+    r"Killed|OOM)\w*(?::.*)?$"
+)
+# The same exception-name shape appearing mid-line — Ray prefixes worker
+# output per line ("(TrainActor pid=N) ...", "[rank N] ..."), so the closing
+# line of a worker traceback may not start at column 0.
+_PREFIXED_EXCEPTION_RE = re.compile(
+    r"\b\w+(?:Error|Exception|Interrupt|Exit|Timeout|Aborted|Failure|Killed|"
+    r"OOM)\w*:"
 )
 
 # Fatal signatures worth excerpting when no traceback is present. Ordered
@@ -42,6 +52,10 @@ _SIGNATURE_RES = [
     re.compile(
         r"exited? with (?:exit )?code (?!0\b)\d+|received SIG(?:KILL|TERM|SEGV)"
     ),
+    # Any exception line stranded outside a parsed traceback — a block
+    # abandoned to interleaving, or a custom error name not listed above.
+    _PREFIXED_EXCEPTION_RE,
+    _EXCEPTION_LINE_RE,
 ]
 
 
@@ -69,12 +83,20 @@ def _traceback_excerpt(lines: list[str], start: int) -> tuple[str | None, int]:
         if in_block:
             if stripped.startswith("File ") or line.startswith((" ", "\t")):
                 continue
-            if _EXCEPTION_LINE_RE.match(stripped):
+            if _EXCEPTION_LINE_RE.match(stripped) or _PREFIXED_EXCEPTION_RE.search(
+                stripped
+            ):
                 exception_line = stripped
                 in_block = False
                 continue
             if stripped.startswith(("During handling", "The above exception")):
                 expect_chain = True
+                continue
+            # Foreign line mid-block — another rank's output interleaved into
+            # the traceback, or a per-line prefix on a frame. Tolerate a few
+            # before giving up on reaching the exception line.
+            if interleave < _MAX_INTERLEAVE:
+                interleave += 1
                 continue
             break
         # Block is closed by its exception line; only a chained continuation
@@ -102,16 +124,32 @@ def _traceback_excerpt(lines: list[str], start: int) -> tuple[str | None, int]:
 class FailureExcerpt:
     """Collects the first fatal signatures from a streamed log, line by line.
 
-    Memory is bounded: it keeps only the collected excerpt lines plus one
-    in-progress traceback block (needed to reach its exception line), so a
-    failure early in an arbitrarily long log is still attributed. Feed each
-    line via :meth:`feed`; call :meth:`result` when the stream ends.
+    Memory is bounded: it keeps only the collected excerpt lines, one
+    in-progress traceback block (needed to reach its exception line), and an
+    unterminated line tail, so a failure early in an arbitrarily long log is
+    still attributed. Feed raw chunks via :meth:`feed_chunk`; call
+    :meth:`result` when the stream ends.
     """
 
     def __init__(self) -> None:
         self._excerpt: list[str] = []
         self._pending: list[str] | None = None  # in-progress traceback block
+        self._buf = ""  # unterminated line tail carried across chunks
         self._done = False
+
+    def feed_chunk(self, text: str) -> None:
+        """Feed a raw stream chunk.
+
+        Only newline-terminated lines are consumed; the unterminated tail is
+        buffered onto the next chunk so a signature split across the stream's
+        boundaries is still seen whole.
+        """
+        if self._done:
+            return
+        lines = (self._buf + text).split("\n")
+        self._buf = lines.pop()
+        for line in lines:
+            self.feed(line)
 
     def feed(self, line: str) -> None:
         if self._done:
@@ -144,13 +182,18 @@ class FailureExcerpt:
                 return
 
     def _commit(self, text: str) -> None:
-        if self._excerpt and self._excerpt[-1] == text:
+        # Global dedup: a reconnected log stream can replay earlier lines, and
+        # several ranks often emit the identical signature.
+        if text in self._excerpt:
             return
         self._excerpt.append(text)
         if len(self._excerpt) >= _MAX_LINES:
             self._done = True
 
     def result(self) -> str | None:
+        if self._buf:
+            self.feed(self._buf)
+            self._buf = ""
         if self._pending is not None:
             excerpt, _ = _traceback_excerpt(self._pending, 0)
             self._commit(excerpt or self._pending[0].strip())
