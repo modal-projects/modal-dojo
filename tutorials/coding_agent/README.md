@@ -122,3 +122,42 @@ Saved iteration 29 is the checkpoint after 30 updates. Add `--dry-run` to
 inspect either configuration without launching, or `--concurrency N` for a
 controlled serving-load comparison. Infrastructure retries are disabled for
 these diagnostic runs; inspect failures before launching another job.
+
+### Recorded evaluation validation (October 9–10, 2026)
+
+The four-task proof `worn-tag-b51a5149b56c` completed with four valid grades,
+two solves, and no generation errors. The full comparison used the commands
+above at concurrency 128, with the same 800 task IDs in both saved artifacts:
+
+| Weights | Run ID | Solved / 800 | Valid grades | Generation errors |
+| --- | --- | --- | --- | --- |
+| Pretrained | `pounded-electricity-02a362e0622f` | 302 (37.75%) | 798 | 0 |
+| After 30 updates, saved iteration 29 | `rectilinear-school-f04a611b283c` | 315 (39.375%) | 799 | 0 |
+
+Startup logs confirmed the pretrained checkpoint at iteration 0 and the
+training checkpoint at iteration 29. Both jobs performed zero optimizer
+updates and their Modal apps stopped after completion.
+
+The net gain was 13 tasks: 46 new passes and 33 regressions. This single
+sampled comparison does not establish a reliable improvement (paired exact
+McNemar p=0.177; approximate task-level 95% interval for the difference:
+−0.55 to +3.80 percentage points). These uncertainty calculations do not model
+correlation between tasks from the same repository.
+
+Ungraded episodes were verifier timeouts: `getmoto__moto-7607` in both arms,
+and `getmoto__moto-7608` in the baseline. They remain zero in the full-set
+score. Both tasks passed with their supplied reference fixes in separate
+sandbox checks. Restricting to the 798 tasks graded in both arms still gives
+302 versus 315 solves.
+
+Mean generated output grew from 10,661 to 18,939 tokens per episode. Episodes
+ending on an 8,192-token generation with no usable tool call grew from 5 to 29. The
+framework labels these `ContextLengthExceeded`, but the saved tails show a
+per-turn output limit, not proof that the full context window was exhausted.
+The reliability fix therefore does not explain away the weak held-out gain;
+length usage and transfer across task types remain learning diagnostics.
+
+Grade recovery was separately verified by injecting a generation timeout
+after a correct Click patch: the real sandbox verifier still returned a valid
+passing grade and retained the generation-error metadata. Neither full run
+needed recovery. The patch's 11 local tests also passed.
