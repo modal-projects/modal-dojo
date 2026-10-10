@@ -44,7 +44,11 @@ _SIGNATURE_LITERALS = (
 )
 
 
+_MAX_PREFIX = max(map(len, _SIGNATURE_LITERALS))
+
+
 def _live_prefix_len(text: str) -> int:
+    text = text[-_MAX_PREFIX:]
     best = 0
     for literal in _SIGNATURE_LITERALS:
         for i in range(min(len(literal) - 1, len(text)), best, -1):
@@ -185,10 +189,11 @@ class FailureExcerpt:
         if len(self._buf) > _MAX_TAIL_CHARS:
             head = self._buf[:-_MAX_TAIL_CHARS]
             boundary = 0
-            for match in re.finditer(r"[^\w.]", head):
-                candidate = match.end()
-                if _live_prefix_len(head[:candidate]) == 0:
+            candidates = [match.end() for match in re.finditer(r"[^\w.]", head)]
+            for candidate in reversed(candidates):
+                if not _live_prefix_len(head[:candidate]):
                     boundary = candidate
+                    break
             if not boundary:
                 boundary = len(head) - _live_prefix_len(head)
             boundary = max(boundary, len(head) - _MAX_TAIL_CHARS)

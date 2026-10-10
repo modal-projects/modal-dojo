@@ -237,3 +237,10 @@ def test_signature_literal_split_at_cutoff_reassembles() -> None:
     excerpt = collector.result()
     assert excerpt is not None
     assert "Watchdog caught collective operation timeout" in excerpt
+
+
+def test_separated_giant_tail_is_bounded() -> None:
+    collector = FailureExcerpt()
+    for _ in range(3):
+        collector.feed_chunk("a " * 50_000)
+    assert len(collector._buf) <= 16 * 1024
