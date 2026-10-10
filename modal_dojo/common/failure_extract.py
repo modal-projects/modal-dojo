@@ -189,11 +189,11 @@ class FailureExcerpt:
         if len(self._buf) > _MAX_TAIL_CHARS:
             head = self._buf[:-_MAX_TAIL_CHARS]
             boundary = 0
-            candidates = [match.end() for match in re.finditer(r"[^\w.]", head)]
-            for candidate in reversed(candidates):
-                if not _live_prefix_len(head[:candidate]):
+            for match in re.finditer(r"[^\w.]", head):
+                candidate = match.end()
+                window = head[max(0, candidate - _MAX_PREFIX) : candidate]
+                if not _live_prefix_len(window):
                     boundary = candidate
-                    break
             if not boundary:
                 boundary = len(head) - _live_prefix_len(head)
             boundary = max(boundary, len(head) - _MAX_TAIL_CHARS)
