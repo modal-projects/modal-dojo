@@ -171,24 +171,40 @@ def _load_running_runs() -> list[TrainingRun]:
     """Load running runs from canonical metadata, with healed summary as fallback."""
     runs_by_id: dict[str, TrainingRun] = {}
 
-    raws_by_id: dict[str, dict[str, Any]] = {}
+    raws_by_id: dict[str, dict[str, Any] | None] = {}
 
-    def _consider(raw: Any) -> None:
+    def _canonical_key(raw: Any) -> str | None:
         if not isinstance(raw, dict):
-            return
+            return None
         key = raw.get("training_run_id") or raw.get("run_id")
-        if not key or str(key) in raws_by_id:
-            return
-        if _parse_running_run(raw) is None:
-            return
-        raws_by_id[str(key)] = raw
+        return str(key) if key else None
 
     for raw in vol_list(MetadataStore.TRAINING_RUNS):
-        _consider(raw)
+        key = _canonical_key(raw)
+        if key is None or key in raws_by_id:
+            continue
+        if _parse_running_run(raw) is not None:
+            raws_by_id[key] = raw
+            continue
+        # A valid but non-running canonical record is authoritative: block a
+        # stale "running" summary from resurrecting the run. An unparseable
+        # canonical yields to whatever the summary holds.
+        try:
+            TrainingRun.model_validate(raw)
+            raws_by_id[key] = None
+        except Exception:
+            continue
+
     for raw in vol_get_summary_items_healed(MetadataStore.TRAINING_RUNS_SUMMARY) or []:
-        _consider(raw)
+        key = _canonical_key(raw)
+        if key is None or key in raws_by_id:
+            continue
+        if _parse_running_run(raw) is not None:
+            raws_by_id[key] = raw
 
     for raw in raws_by_id.values():
+        if raw is None:
+            continue
         run = _parse_running_run(merge_run_updates(raw, load_run_updates(raw)))
         if run is not None:
             runs_by_id[run.training_run_id] = run

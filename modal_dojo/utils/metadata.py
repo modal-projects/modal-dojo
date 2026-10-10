@@ -110,6 +110,63 @@ def _summary_projection(
     return getattr(importlib.import_module(module_name), attr)
 
 
+_SUMMARY_CANONICAL_STORES: dict[MetadataStore, MetadataStore] = {
+    summary: cfg.item_store for summary, cfg in _SUMMARY_COMPACTION.items()
+}
+
+
+@overload
+def _canonical_items_for(
+    store: MetadataStore | str,
+    item_id_key: str,
+    *,
+    is_async: Literal[True],
+) -> Awaitable[list[dict[str, Any]]]: ...
+
+
+@overload
+def _canonical_items_for(
+    store: MetadataStore | str,
+    item_id_key: str,
+    *,
+    is_async: Literal[False] = False,
+) -> list[dict[str, Any]]: ...
+
+
+def _canonical_items_for(
+    store: MetadataStore | str,
+    item_id_key: str,
+    *,
+    is_async: bool = False,
+) -> list[dict[str, Any]] | Awaitable[list[dict[str, Any]]]:
+    """Rebuild seed items for an empty summary from its canonical store.
+
+    Returns ``[]`` for stores with no registered canonical mapping.
+    """
+    item_store = (
+        _SUMMARY_CANONICAL_STORES.get(store)
+        if isinstance(store, MetadataStore)
+        else None
+    )
+
+    def _keep(listed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            item
+            for item in listed
+            if isinstance(item, dict) and item.get(item_id_key) is not None
+        ]
+
+    if is_async:
+
+        async def _run() -> list[dict[str, Any]]:
+            if item_store is None:
+                return []
+            return _keep(await vol_list(item_store, is_async=True))
+
+        return _run()
+    return [] if item_store is None else _keep(vol_list(item_store))
+
+
 def _metadata_volume():
     import modal
 
@@ -896,7 +953,6 @@ def vol_put_summary_items(
     item_id_key: str | None = None,
     key: str = SUMMARY_KEY,
     payload_key: str = SUMMARY_ITEMS_KEY,
-    prune: bool = False,
     is_async: bool = False,
     prune: bool = False,
 ) -> None | Awaitable[None]:
@@ -996,6 +1052,51 @@ def vol_compact_summary_items(
     return items
 
 
+def vol_upsert_summary_item(
+    store: MetadataStore | str,
+    item: dict[str, Any],
+    *,
+    item_id_key: str,
+    key: str = SUMMARY_KEY,
+    payload_key: str = SUMMARY_ITEMS_KEY,
+    sort_key: Any = None,
+    reverse: bool = False,
+    is_async: bool = False,
+) -> None | Awaitable[None]:
+    item_id = item.get(item_id_key)
+    if item_id is None:
+        raise KeyError(f"Missing summary item id key {item_id_key!r}")
+
+    def _merge(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        items = [existing for existing in items if existing.get(item_id_key) != item_id]
+        items.append(item)
+        if sort_key is not None:
+            items.sort(key=sort_key, reverse=reverse)
+        return items
+
+    if is_async:
+
+        async def _run() -> None:
+            items = (
+                await vol_get_summary_items(
+                    store, key=key, payload_key=payload_key, is_async=True
+                )
+                or []
+            )
+            if not items:
+                items = await _canonical_items_for(store, item_id_key, is_async=True)
+            await vol_put_summary_items(
+                store, _merge(items), key=key, payload_key=payload_key, is_async=True
+            )
+
+        return _run()
+
+    items = vol_get_summary_items(store, key=key, payload_key=payload_key) or []
+    if not items:
+        items = _canonical_items_for(store, item_id_key)
+    vol_put_summary_items(store, _merge(items), key=key, payload_key=payload_key)
+
+
 def vol_put_with_summary(
     item_store: MetadataStore | str,
     key: str,
@@ -1003,21 +1104,34 @@ def vol_put_with_summary(
     *,
     summary_store: MetadataStore | str,
     summary_item: dict[str, Any] | None = None,
+    item_id_key: str | None = None,
+    sort_key: Callable[[dict[str, Any]], Any] | None = None,
+    reverse: bool = False,
     is_async: bool = False,
 ) -> None | Awaitable[None]:
-    """Persist a canonical item file, then its per-item summary file.
+    """Persist a canonical item file, then its summary.
 
-    Canonical first (source of truth), then the summary row under the same
-    key — a single-owner single-file write, so concurrent writers can never
-    collapse a shared summary file. ``summary_item`` defaults to ``payload``
-    for stores whose summary rows mirror the canonical shape.
+    Canonical first (source of truth). Without ``item_id_key`` the summary row
+    lands as a per-item file under the same key — a single-owner single-file
+    write, so concurrent writers can never collapse a shared summary file.
+    With ``item_id_key`` the item is upserted into a shared summary (used by
+    per-run summary stores where one writer owns the file). ``summary_item``
+    defaults to ``payload`` for stores whose summary rows mirror the canonical
+    shape.
     """
+    item = payload if summary_item is None else summary_item
     put = partial(vol_put, item_store, key, payload)
-    put_summary = partial(
-        vol_put,
-        summary_store,
-        key,
-        payload if summary_item is None else summary_item,
+    put_summary = (
+        partial(
+            vol_upsert_summary_item,
+            summary_store,
+            item,
+            item_id_key=item_id_key,
+            sort_key=sort_key,
+            reverse=reverse,
+        )
+        if item_id_key is not None
+        else partial(vol_put, summary_store, key, item)
     )
     if is_async:
 
@@ -1051,4 +1165,5 @@ __all__ = [
     "vol_put_summary_items",
     "vol_put_with_summary",
     "vol_compact_summary_items",
+    "vol_upsert_summary_item",
 ]
