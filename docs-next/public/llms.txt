@@ -104,6 +104,7 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [GLM_5_3_Flash_LoRA_Recipe](https://dojo.modal.dev/reference/glm_5_3_flash_lora_recipe)
 - [Inkling_Small_LoRA_Recipe](https://dojo.modal.dev/reference/inkling_small_lora_recipe)
 - [Inkling_Small_Recipe](https://dojo.modal.dev/reference/inkling_small_recipe)
+- [Kimi_K3_LoRA_Long_Context_Recipe](https://dojo.modal.dev/reference/kimi_k3_lora_long_context_recipe)
 - [Kimi_K3_LoRA_Recipe](https://dojo.modal.dev/reference/kimi_k3_lora_recipe)
 - [MilesRecipe](https://dojo.modal.dev/reference/milesrecipe)
 - [Moonlight_16B_A3B_Recipe](https://dojo.modal.dev/reference/moonlight_16b_a3b_recipe)
