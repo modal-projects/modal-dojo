@@ -160,7 +160,7 @@ def test_newline_free_chunks_bound_the_tail_buffer() -> None:
     collector = FailureExcerpt()
     for _ in range(10):
         collector.feed_chunk("x" * 100_000)
-    assert len(collector._buf) <= 8 * 1024
+    assert len(collector._buf) <= 8 * 1024 + 256
 
 
 def test_carriage_return_progress_does_not_hide_exception() -> None:
@@ -206,6 +206,15 @@ def test_nccl_tag_is_not_stripped_as_prefix() -> None:
 def test_oversized_line_head_still_classifies() -> None:
     collector = FailureExcerpt()
     collector.feed_chunk("RuntimeError: " + "x" * 100_000 + "\n")
+    excerpt = collector.result()
+    assert excerpt is not None
+    assert "RuntimeError" in excerpt
+
+
+def test_signature_split_at_tail_boundary_reassembles() -> None:
+    collector = FailureExcerpt()
+    collector.feed_chunk("-" * (8 * 1024 + 256) + "Runtime")
+    collector.feed_chunk("Error: boom\n")
     excerpt = collector.result()
     assert excerpt is not None
     assert "RuntimeError" in excerpt

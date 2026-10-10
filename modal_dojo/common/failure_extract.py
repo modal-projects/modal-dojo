@@ -28,6 +28,9 @@ _TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\)")
 _RAY_PREFIX_RE = re.compile(r"^\([^()\n]*\)\s*|^\[[^\[\]\n]*\d[^\[\]\n]*\]\s*")
 _LINE_SPLIT_RE = re.compile(r"\r\n|\r|\n")
 _MAX_TAIL_CHARS = 8 * 1024
+# Kept from the classified head so a signature split across the
+# truncation boundary still reassembles (signatures are short).
+_TAIL_OVERLAP = 256
 # The exception line closing a traceback block, e.g. "torch.OutOfMemoryError:
 # CUDA out of memory." or "RuntimeError: Step 1: 2 groups failed". The
 # ": message" part is optional — bare raises (KeyboardInterrupt, SystemExit)
@@ -157,11 +160,9 @@ class FailureExcerpt:
         for line in lines:
             self.feed(line)
         if len(self._buf) > _MAX_TAIL_CHARS:
-            head, self._buf = (
-                self._buf[:-_MAX_TAIL_CHARS],
-                self._buf[-_MAX_TAIL_CHARS:],
-            )
+            head = self._buf[:-_MAX_TAIL_CHARS]
             self.feed(head)
+            self._buf = head[-_TAIL_OVERLAP:] + self._buf[-_MAX_TAIL_CHARS:]
 
     def feed(self, line: str) -> None:
         if self._done:
@@ -189,8 +190,10 @@ class FailureExcerpt:
             self._pending = [line]
             return
         for pattern in _SIGNATURE_RES:
-            if pattern.search(stripped):
-                self._commit(stripped)
+            match = pattern.search(stripped)
+            if match:
+                start = max(0, match.end() - _MAX_CHARS)
+                self._commit(stripped[start : start + _MAX_CHARS])
                 return
 
     def flush(self) -> None:
