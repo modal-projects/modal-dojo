@@ -839,7 +839,8 @@ def _merge_summary_records(
             continue
         item_id = item.get(id_key) if id_key else None
         if item_id is None:
-            items.append(item)
+            if not prefix:
+                items.append(item)
             continue
         item_id = str(item_id)
         if prefix and not item_id.startswith(prefix):
