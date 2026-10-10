@@ -25,7 +25,7 @@ _TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\)")
 # Ray prefixes worker output per line ("(TrainActor pid=N) ...",
 # "[rank N] ..."); strip one leading "(...)" or "[...]" group so prefixed
 # frames, source lines, and exception lines classify like unprefixed ones.
-_RAY_PREFIX_RE = re.compile(r"^\([^()\n]*\)\s*|^\[[^\[\]\n]*\]\s*")
+_RAY_PREFIX_RE = re.compile(r"^\([^()\n]*\)\s*|^\[[^\[\]\n]*\d[^\[\]\n]*\]\s*")
 _LINE_SPLIT_RE = re.compile(r"\r\n|\r|\n")
 _MAX_TAIL_CHARS = 8 * 1024
 # The exception line closing a traceback block, e.g. "torch.OutOfMemoryError:
@@ -33,8 +33,8 @@ _MAX_TAIL_CHARS = 8 * 1024
 # ": message" part is optional — bare raises (KeyboardInterrupt, SystemExit)
 # print the exception name alone.
 _EXCEPTION_LINE_RE = re.compile(
-    r"^(?:[\w.]+)?\w*(?:Error|Exception|Interrupt|Exit|Timeout|Aborted|Failure|"
-    r"Killed|OOM)\w*(?::.*)?$"
+    r"^[\w.]*?(?:Error|Exception|Interrupt|Exit|Timeout|Aborted|Failure|"
+    r"Killed|OOM)[\w.]*(?::.*)?$"
 )
 # The same exception-name shape appearing mid-line — Ray prefixes worker
 # output per line ("(TrainActor pid=N) ...", "[rank N] ..."), so the closing
@@ -154,10 +154,14 @@ class FailureExcerpt:
             return
         lines = _LINE_SPLIT_RE.split(self._buf + text)
         self._buf = lines.pop()
-        if len(self._buf) > _MAX_TAIL_CHARS:
-            self._buf = self._buf[-_MAX_TAIL_CHARS:]
         for line in lines:
             self.feed(line)
+        if len(self._buf) > _MAX_TAIL_CHARS:
+            head, self._buf = (
+                self._buf[:-_MAX_TAIL_CHARS],
+                self._buf[-_MAX_TAIL_CHARS:],
+            )
+            self.feed(head)
 
     def feed(self, line: str) -> None:
         if self._done:

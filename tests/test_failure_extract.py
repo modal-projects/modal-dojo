@@ -194,3 +194,18 @@ def test_flush_separates_fragments_across_reconnect() -> None:
     collector.flush()
     collector.feed_chunk("ValueError: second\n")
     assert collector.result() == "RuntimeError: first\nValueError: second"
+
+
+def test_nccl_tag_is_not_stripped_as_prefix() -> None:
+    lines = ["[NCCL] error: unhandled system error"]
+    excerpt = extract_failure_excerpt(lines)
+    assert excerpt is not None
+    assert "NCCL" in excerpt
+
+
+def test_oversized_line_head_still_classifies() -> None:
+    collector = FailureExcerpt()
+    collector.feed_chunk("RuntimeError: " + "x" * 100_000 + "\n")
+    excerpt = collector.result()
+    assert excerpt is not None
+    assert "RuntimeError" in excerpt
