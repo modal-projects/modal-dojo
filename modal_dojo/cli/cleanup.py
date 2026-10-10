@@ -75,9 +75,7 @@ def cleanup(*, older_than_days: int = 7, dry_run: bool = False) -> None:
         vol_remove(MetadataStore.TRAINING_RUNS_SUMMARY, rid)
         vol_remove(MetadataStore.TRAIN_RESULTS, rid)
         vol_remove(MetadataStore.TRAIN_RESULTS_SUMMARY, rid)
-        vol_remove_keys_with_prefix(
-            MetadataStore.TRAINING_RUN_UPDATES, f"{rid}__"
-        )
+        vol_remove_keys_with_prefix(MetadataStore.TRAINING_RUN_UPDATES, f"{rid}__")
         vol_remove(MetadataStore.FRAMEWORK_STATUS_TOKENS, rid)
         vol_remove_keys_with_prefix(
             MetadataStore.ADVANTAGE_DISTRIBUTIONS,
@@ -87,6 +85,7 @@ def cleanup(*, older_than_days: int = 7, dry_run: bool = False) -> None:
             MetadataStore.TRAINING_ROLLOUTS, f"{rid}__"
         )
         vol_remove_keys_with_prefix(TrainingRolloutResult.summary_store(rid), "")
+        vol_remove_keys_with_prefix(MetadataStore.TRAINING_ROLLOUTS_SUMMARY, f"{rid}__")
         timing_volume = metadata._metadata_volume()
         metadata._safe_reload(timing_volume)
         try:
