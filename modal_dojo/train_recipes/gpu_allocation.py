@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 import warnings
 from dataclasses import dataclass
 from math import prod
 from typing import Any
 
-from modal_dojo.common.errors import GpuAllocationError
+from modal_dojo.common.errors import DojoConfigError, GpuAllocationError
 
 _MAX_GPUS_PER_CONTAINER = {"A10": 4}
 
@@ -161,6 +162,127 @@ def validate_megatron_actor_parallelism(config: Any) -> None:
     )
 
 
+def validate_microbatch_schedule(config: Any) -> None:
+    actor_world = _positive_int_field(config, "actor_num_nodes") * _positive_int_field(
+        config, "actor_num_gpus_per_node"
+    )
+    model_parallel = prod(
+        _positive_int_knob(config, field_name, default=1)
+        for field_name in (
+            "tensor_model_parallel_size",
+            "pipeline_model_parallel_size",
+            "context_parallel_size",
+        )
+    )
+    if actor_world % model_parallel:
+        return
+    dp_size = actor_world // model_parallel
+
+    micro_batch_size = _positive_int_knob(config, "micro_batch_size", default=1)
+
+    eval_global_batch_size = _eval_knob_value(config, "eval_global_batch_size")
+    if eval_global_batch_size is not None:
+        if type(eval_global_batch_size) is not int or eval_global_batch_size <= 0:
+            raise DojoConfigError(
+                f"eval_global_batch_size must be a positive integer, "
+                f"got {eval_global_batch_size!r}"
+            )
+        eval_micro_batch_size = _eval_knob_value(config, "eval_micro_batch_size")
+        if eval_micro_batch_size is None:
+            eval_micro_batch_size = micro_batch_size
+        elif type(eval_micro_batch_size) is not int or eval_micro_batch_size <= 0:
+            raise DojoConfigError(
+                f"eval_micro_batch_size must be a positive integer, "
+                f"got {eval_micro_batch_size!r}"
+            )
+        if eval_global_batch_size % (eval_micro_batch_size * dp_size):
+            raise DojoConfigError(
+                f"eval_global_batch_size={eval_global_batch_size} must be "
+                f"divisible by eval_micro_batch_size={eval_micro_batch_size} * "
+                f"data_parallel_size={dp_size} "
+                f"(actor world_size={actor_world} / TP*PP*CP={model_parallel})."
+            )
+
+    if _knob_value(config, "use_dynamic_batch_size", True):
+        return
+
+    if _knob_value(config, "loss_type", "policy_loss") == "sft_loss":
+        hatch = getattr(config, "_escape_hatch_values", None)
+        hatch_values = hatch() if callable(hatch) else {}
+        resolved = next(
+            (
+                value
+                for value in (
+                    hatch_values.get("global_batch_size"),
+                    hatch_values.get("rollout_batch_size"),
+                    getattr(config, "global_batch_size", None),
+                    getattr(config, "rollout_batch_size", None),
+                )
+                if value is not None
+            ),
+            None,
+        )
+        if resolved is None:
+            resolved = _positive_int_knob(config, "global_batch_size")
+        if type(resolved) is not int or resolved <= 0:
+            raise DojoConfigError(
+                f"global_batch_size must be a positive integer, got {resolved!r}"
+            )
+        global_batch_size = resolved
+    else:
+        global_batch_size = _positive_int_knob(config, "global_batch_size")
+
+    micro_batches, remainder = divmod(global_batch_size, micro_batch_size)
+    if remainder:
+        raise DojoConfigError(
+            f"static batch path: global_batch_size={global_batch_size} "
+            f"is not a multiple of micro_batch_size={micro_batch_size}."
+        )
+    if micro_batches % dp_size:
+        raise DojoConfigError(
+            f"static batch path: global_batch_size={global_batch_size} "
+            f"packs into {micro_batches} micro-batches of size {micro_batch_size}, "
+            f"which is not a multiple of dp_size={dp_size} "
+            f"(actor world_size={actor_world} / TP*PP*CP={model_parallel})."
+        )
+
+    if _knob_value(config, "loss_type", "policy_loss") != "sft_loss":
+        rollout_samples = _positive_int_knob(
+            config, "rollout_batch_size", default=global_batch_size
+        ) * _positive_int_knob(config, "n_samples_per_prompt", default=1)
+        if rollout_samples % global_batch_size:
+            raise DojoConfigError(
+                f"static batch path: rollout_batch_size x n_samples_per_prompt "
+                f"yields {rollout_samples} samples per rollout, which is not a "
+                f"multiple of global_batch_size={global_batch_size}."
+            )
+
+
+def _eval_knob_value(config: Any, field_name: str) -> Any:
+    hatch = getattr(config, "_escape_hatch_values", None)
+    if callable(hatch):
+        value = hatch().get(field_name)
+        if value is not None:
+            return value
+    eval_config = getattr(config, "eval_config", None)
+    if isinstance(eval_config, dict):
+        return eval_config.get(field_name)
+    if isinstance(eval_config, str):
+        import yaml
+
+        try:
+            if os.path.exists(eval_config):
+                with open(eval_config) as f:
+                    loaded = yaml.safe_load(f)
+            else:
+                loaded = yaml.safe_load(eval_config)
+        except (OSError, yaml.YAMLError):
+            return None
+        if isinstance(loaded, dict):
+            return loaded.get(field_name)
+    return None
+
+
 def validate_num_experts_divisible_by_expert_parallel_size(
     config: Any, model: Any
 ) -> None:
@@ -294,6 +416,28 @@ def _require_divisible(
     if hint:
         message += f". {hint}"
     raise GpuAllocationError(message)
+
+
+def _knob_value(config: Any, field_name: str, default: Any = None) -> Any:
+    hatch = getattr(config, "_escape_hatch_values", None)
+    if callable(hatch):
+        value = hatch().get(field_name)
+        if value is not None:
+            return value
+    return getattr(config, field_name, default)
+
+
+def _positive_int_knob(
+    config: Any, field_name: str, *, default: int | None = None
+) -> int:
+    value = _knob_value(config, field_name)
+    if value is None:
+        value = default
+    if value is None:
+        raise DojoConfigError(f"{field_name} must be set")
+    if type(value) is not int or value <= 0:
+        raise DojoConfigError(f"{field_name} must be a positive integer, got {value!r}")
+    return value
 
 
 def _positive_int_field(

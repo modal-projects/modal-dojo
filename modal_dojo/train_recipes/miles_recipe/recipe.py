@@ -31,6 +31,7 @@ from modal_dojo.train_recipes.base import (
 )
 from modal_dojo.train_recipes.gpu_allocation import (
     resolve_gpu_allocation,
+    validate_microbatch_schedule,
     validate_multi_node_gpu_count,
     validate_num_experts_divisible_by_expert_parallel_size,
 )
@@ -734,6 +735,7 @@ class MilesRecipe(BaseTrainRecipe):
     @model_validator(mode="after")
     def _validate_gpu_allocation(self) -> "MilesRecipe":
         validate_multi_node_gpu_count(resolve_gpu_allocation(self), self.gpu_type)
+        validate_microbatch_schedule(self)
         return self
 
     # ── Container → miles flag converters ────────────────────────────────────
