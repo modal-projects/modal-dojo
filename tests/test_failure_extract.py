@@ -160,7 +160,7 @@ def test_newline_free_chunks_bound_the_tail_buffer() -> None:
     collector = FailureExcerpt()
     for _ in range(10):
         collector.feed_chunk("x" * 100_000)
-    assert len(collector._buf) <= 8 * 1024 + 256
+    assert len(collector._buf) <= 16 * 1024
 
 
 def test_carriage_return_progress_does_not_hide_exception() -> None:
@@ -228,3 +228,12 @@ def test_tail_overlap_is_not_reclassified() -> None:
     excerpt = collector.result()
     assert excerpt is not None
     assert excerpt.count("RuntimeError") == 1
+
+
+def test_signature_literal_split_at_cutoff_reassembles() -> None:
+    collector = FailureExcerpt()
+    collector.feed_chunk("a" * 8290 + " Watchdog caught collective operation time")
+    collector.feed_chunk("out: BOOM\n")
+    excerpt = collector.result()
+    assert excerpt is not None
+    assert "Watchdog caught collective operation timeout" in excerpt

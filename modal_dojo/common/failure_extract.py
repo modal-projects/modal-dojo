@@ -28,6 +28,32 @@ _TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\)")
 _RAY_PREFIX_RE = re.compile(r"^\([^()\n]*\)\s*|^\[[^\[\]\n]*\d[^\[\]\n]*\]\s*")
 _LINE_SPLIT_RE = re.compile(r"\r\n|\r|\n")
 _MAX_TAIL_CHARS = 8 * 1024
+# Literal spans that make up signatures — a truncation cut inside one keeps
+# its halves from ever matching, so the cut must land outside them.
+_SIGNATURE_LITERALS = (
+    "Watchdog caught collective operation timeout",
+    "Traceback (most recent call last)",
+    "exited with code",
+    "exit with code",
+    "received SIGKILL",
+    "received SIGTERM",
+    "received SIGSEGV",
+    "OutOfMemoryError",
+    "CUDA out of memory",
+    "NCCL",
+)
+
+
+def _live_prefix_len(text: str) -> int:
+    best = 0
+    for literal in _SIGNATURE_LITERALS:
+        for i in range(min(len(literal) - 1, len(text)), best, -1):
+            if text.endswith(literal[:i]):
+                best = i
+                break
+    return best
+
+
 # The exception line closing a traceback block, e.g. "torch.OutOfMemoryError:
 # CUDA out of memory." or "RuntimeError: Step 1: 2 groups failed". The
 # ": message" part is optional — bare raises (KeyboardInterrupt, SystemExit)
@@ -158,9 +184,14 @@ class FailureExcerpt:
             self.feed(line)
         if len(self._buf) > _MAX_TAIL_CHARS:
             head = self._buf[:-_MAX_TAIL_CHARS]
-            boundary = len(head)
+            boundary = 0
             for match in re.finditer(r"[^\w.]", head):
-                boundary = match.end()
+                candidate = match.end()
+                if _live_prefix_len(head[:candidate]) == 0:
+                    boundary = candidate
+            if not boundary:
+                boundary = len(head) - _live_prefix_len(head)
+            boundary = max(boundary, len(head) - _MAX_TAIL_CHARS)
             self.feed(head[:boundary])
             self._buf = head[boundary:] + self._buf[-_MAX_TAIL_CHARS:]
 
