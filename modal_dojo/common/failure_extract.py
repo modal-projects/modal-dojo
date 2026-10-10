@@ -161,7 +161,7 @@ class FailureExcerpt:
             self.feed(line)
         if len(self._buf) > _MAX_TAIL_CHARS:
             head = self._buf[:-_MAX_TAIL_CHARS]
-            self.feed(head)
+            self.feed(head[:-_TAIL_OVERLAP])
             self._buf = head[-_TAIL_OVERLAP:] + self._buf[-_MAX_TAIL_CHARS:]
 
     def feed(self, line: str) -> None:

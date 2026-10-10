@@ -218,3 +218,13 @@ def test_signature_split_at_tail_boundary_reassembles() -> None:
     excerpt = collector.result()
     assert excerpt is not None
     assert "RuntimeError" in excerpt
+
+
+def test_tail_overlap_is_not_reclassified() -> None:
+    collector = FailureExcerpt()
+    collector.feed_chunk("a" * 300 + "RuntimeError: boom" + "b" * 8192)
+    collector.feed_chunk("c" * 9000)
+    collector.feed_chunk("d" * 9000)
+    excerpt = collector.result()
+    assert excerpt is not None
+    assert excerpt.count("RuntimeError") == 1
