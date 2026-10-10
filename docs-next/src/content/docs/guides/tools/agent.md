@@ -6,15 +6,14 @@ order: 0
 
 Agents are particularly useful when you need to validate hypotheses or run many experiments in parallel. However, they are less effective when forced to create and sift through thousands of lines of configuration files and training scripts. The Modal Dojo solves this with an intuitive API, a CLI for maximum observability into the run status, and skills that teach agents best practices such as smoking runs and tactics for debugging.
 
-This guide demonstrates how to effectively use agents with the Modal Dojo by getting Claude to post-train a model of its choosing to respond only in [rhyme](https://open.spotify.com/episode/5txYOHA44zWiSgNK623Epp).
+This guide demonstrates how to effectively use agents with the Modal Dojo by getting Claude to post-train Qwen3.5-4B to respond only in [rhyme](https://open.spotify.com/episode/5txYOHA44zWiSgNK623Epp).
 
 ## Set up
 
-First, we'll install the `modal-dojo` CLI:
+First, we'll install `modal-dojo`:
 
 ```bash
-pip install -q git+https://github.com/modal-projects/modal-dojo.git@main
-modal-dojo --help
+uv add 'modal-dojo @ git+https://github.com/modal-projects/modal-dojo.git@main'
 ```
 
 Then, we'll install the provided skills into our current project:
@@ -23,7 +22,7 @@ Then, we'll install the provided skills into our current project:
 modal-dojo skills install
 ```
 
-The main skill agents should use is `agent-driven-training`, which lays out the RL training lifecycle:
+The main skill agents use is `agent-driven-training`, which lays out the RL training lifecycle:
 
 - Ask before making choices that change model behavior or GPU cost.
 - Catch dataset and reward bugs locally before they waste GPU time.
@@ -38,43 +37,64 @@ To learn more about the CLI and the provided skills, see the [reference page](ht
 Here's the example prompt:
 
 ```txt
-can you post-train a model to rhyme in its output
+using Modal Dojo, train Qwen3.5-4B to speak only in rhymes.
 ```
 
-We leave it ambiguous to demonstrate that when empowered with the right tools and skills, agents are capable of making sensible choices. Here, it chose to train [Qwen3-4B](https://huggingface.co/Qwen/Qwen3-4B) on prompts taken from [tatsu-lab/alpaca](https://huggingface.co/datasets/tatsu-lab/alpaca).
+Since it is just writing Python code, we can easily inspect what it wrote.
 
-Since it is just writing Python code, we can easily inspect what it wrote. First, it loaded the dataset:
+First, it loaded questions from [databricks/databricks-dolly-15k](https://huggingface.co/datasets/databricks/databricks-dolly-15k) and added a descriptive system prompt:
 
 ```python
-from modal_dojo import HuggingFaceDataset
+from datasets import load_dataset
+
+from modal_dojo import DatasetConfig
 
 SYSTEM_PROMPT = (
-    "You are a poet who answers every question in rhyme. Answer the question "
-    "correctly and completely, but write the entire answer as verse: at least "
-    "four lines, one clause per line, with line endings that rhyme in couplets "
-    "(AABB). Do not write any prose, preamble, or explanation outside the verse."
+    "You only speak in rhyming couplets. Answer every request as a short poem "
+    "where each pair of consecutive lines rhymes."
 )
+CATEGORIES = {"open_qa", "general_qa", "brainstorming", "creative_writing"}
 
 
-rhyme_dataset = HuggingFaceDataset(
-    hf_repo="tatsu-lab/alpaca",
-    hf_split=f"train[:512]",
-    input_column="instruction",
-    output_column="output",
-    input_format="text",
-    system_prompt=SYSTEM_PROMPT,
-)
+class DollyQuestions(DatasetConfig):
+    def __init__(self, start: int, stop: int) -> None:
+        self.start, self.stop = start, stop
+
+    def cache_key(self) -> str:
+        return f"dolly-rhyme-{self.start}-{self.stop}"
+
+    def input_key(self) -> str:
+        return "messages"
+
+    def label_key(self) -> None:
+        return None
+
+    def rows(self):
+        questions = dict.fromkeys(
+            row["instruction"]
+            for row in load_dataset("databricks/databricks-dolly-15k", split="train")
+            if not row["context"].strip()
+            and row["category"] in CATEGORIES
+            and 0 < len(row["instruction"]) <= 300
+        )
+        for question in list(questions)[self.start : self.stop]:
+            yield {
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": question},
+                ]
+            }
 ```
 
-Next, it defined the reward function. Here, we care about the model's ability to both rhyme and answer the user's question. As our [intro tutorial](https://dojo.modal.dev/tutorials/rl_basics) shows, NLTK’s [CMU Pronouncing Dictionary](https://github.com/prosegrinder/python-cmudict) is a useful library for measuring the former.
+Next, it defined the reward function. As our [intro tutorial](https://dojo.modal.dev/tutorials/rl_basics) shows, NLTK's [CMU Pronouncing Dictionary](https://github.com/prosegrinder/python-cmudict) is a useful library for determining if prose rhymes.
 
 <details>
 <summary>What's going on here</summary>
 
 The reward function finds phonemes from each line's last stressed vowel onward and compares line endings under both the AABB and ABAB rhyme schemes. After some initial testing, the agent found two exploits the model took advantage of:
 
-- Words rhyme with themselves, so the model repeated the last word of the sentence.
-- One-word lines are easy to write and rhyme, so the model found that being concise was better than trying its best.
+- Words missing from the dictionary fell back to matching their last three letters, so the model invented words like "qouls" to rhyme with "souls".
+- Longer poems weren't penalized, so answers grew until they were cut off at the response length limit.
 
 Luckily, these are simple problems that can be detected, and the agent implemented anti-gaming measures accordingly.
 
@@ -83,227 +103,130 @@ Luckily, these are simple problems that can be detected, and the agent implement
 ```python
 import re
 
-_CMUDICT: dict = {}
-_VOWELS = ("A", "E", "I", "O", "U")
+import nltk
+from nltk.corpus import cmudict
+
+_cmudict_cache = {}
 
 
-def _cmudict() -> dict:
-    if not _CMUDICT:
-        import nltk
-        from nltk.corpus import cmudict
-
+def _rhyme_tails(word: str) -> set[tuple[str, ...]]:
+    if not _cmudict_cache:
         nltk.download("cmudict", quiet=True)
-        _CMUDICT.update(cmudict.dict())
-    return _CMUDICT
+        _cmudict_cache.update(cmudict.dict())
+    tails = set()
+    for phones in _cmudict_cache.get(word, []):
+        stressed = [i for i, p in enumerate(phones) if p[-1] in "12"]
+        if stressed:
+            tails.add(tuple(phones[stressed[-1] :]))
+    return tails
 
 
-def _strip_thinking(text: str) -> str:
-    """Drop a ``<think>`` block and any stray markdown bullets/numbering."""
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-    text = re.sub(r"</?think>", "", text)
-    return text.strip()
-
-
-def _lines(text: str) -> list[str]:
-    return [line.strip() for line in _strip_thinking(text).split("\n") if line.strip()]
+def _rhymes(a: str, b: str) -> bool:
+    return bool(a and b and a != b and _rhyme_tails(a) & _rhyme_tails(b))
 
 
 def _end_word(line: str) -> str:
-    words = re.findall(r"[a-zA-Z']+", line)
-    return words[-1].lower().strip("'") if words else ""
+    words = re.findall(r"[a-z]+", line.lower())
+    return words[-1] if words else ""
 
 
-def rhyme_tail(word: str) -> tuple:
-    """Phonemes from the last stressed vowel onward, stress markers removed.
-
-    Falls back to the last three letters for words the dictionary doesn't know
-    (names, coinages), which is a decent orthographic proxy.
-    """
-    if not word:
-        return ()
-    phones = _cmudict().get(word)
-    if not phones:
-        return ("~", word[-3:])
-    seq = phones[0]
-    stressed = [i for i, p in enumerate(seq) if p[-1] in ("1", "2")]
-    if stressed:
-        start = stressed[-1]
-    else:
-        vowels = [i for i, p in enumerate(seq) if p[0] in _VOWELS]
-        start = vowels[-1] if vowels else 0
-    return tuple(re.sub(r"\d", "", p) for p in seq[start:])
-
-
-def words_rhyme(a: str, b: str) -> bool:
-    """True when two *different* words share a rhyme tail."""
-    if not a or not b or a == b:
-        return False
-    return rhyme_tail(a) == rhyme_tail(b)
-
-
-def _scheme_score(end_words: list[str], offset: int) -> float:
-    """Fraction of rhyming pairs: offset 1 = AABB, offset 2 = ABAB."""
-    pairs = []
-    for start in range(0, len(end_words) - offset, 2 * offset):
-        for k in range(offset):
-            i, j = start + k, start + k + offset
-            if j < len(end_words):
-                pairs.append((end_words[i], end_words[j]))
-    if not pairs:
-        return 0.0
-    return sum(words_rhyme(a, b) for a, b in pairs) / len(pairs)
+def _pair_fraction(ends: list[str], pairs: list[tuple[int, int]]) -> float:
+    return sum(_rhymes(ends[i], ends[j]) for i, j in pairs) / len(pairs)
 
 
 def score_rhyme(response: str) -> float:
-    """Rhyme quality of a response in ``[0, 1]``."""
-    lines = _lines(response)
-    if len(lines) < 2:
+    lines = [
+        re.sub(r"^\s*(?:[-*+]|\d+[.)])\s+", "", line).strip()
+        for line in response.splitlines()
+    ]
+    lines = [line for line in lines if line]
+    if not 4 <= len(lines) <= 12 or any(len(line.split()) > 25 for line in lines):
         return 0.0
-    end_words = [_end_word(line) for line in lines]
-    if not any(end_words):
+    if len({line.casefold() for line in lines}) < 0.7 * len(lines):
         return 0.0
-
-    scheme = max(_scheme_score(end_words, 1), _scheme_score(end_words, 2))
-    distinct = len({w for w in end_words if w}) / len(end_words)
-    substantial = sum(
-        len(re.findall(r"[a-zA-Z']+", line)) >= 3 for line in lines
-    ) / len(lines)
-    length_factor = min(1.0, len(lines) / 4)
-    return scheme * distinct * substantial * length_factor
+    ends = [_end_word(line) for line in lines]
+    aabb = [(i, i + 1) for i in range(0, len(ends) - 1, 2)]
+    abab = [(s + k, s + k + 2) for s in range(0, len(ends) - 3, 4) for k in (0, 1)]
+    return max(_pair_fraction(ends, aabb), _pair_fraction(ends, abab))
 ```
 
-Of course, we still care that the model answers the question. Interestingly, the agent decided to use a small sentence-embedding model to compare the response to the reference answer.
+Of course, we still care that the model answers the question. For demonstration purposes, we simply halve the score of a response if it doesn't share any words with the question.
 
 ```python
-EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-EMBED_DIR = "/opt/rhyme-embedder"
+from modal_dojo import Qwen3_5_4B
 
-_EMBEDDER: dict = {}
+STOPWORDS = set(
+    "that this with from have been were they them their what when where which "
+    "your about into over then than also just only very more most such other "
+    "because while would could should there these those some many will does "
+    "each both after before being under again".split()
+)
 
-
-def _embedder():
-    """Mean-pooling MiniLM loaded once per worker from the baked image dir."""
-    if not _EMBEDDER:
-        import torch
-        from transformers import AutoModel, AutoTokenizer
-
-        tokenizer = AutoTokenizer.from_pretrained(EMBED_DIR)
-        model = AutoModel.from_pretrained(EMBED_DIR)
-        model.eval()
-        _EMBEDDER["tokenizer"] = tokenizer
-        _EMBEDDER["model"] = model
-        _EMBEDDER["torch"] = torch
-        print(f"[rhyme_rm] embedder ready: {EMBED_MODEL}")
-    return _EMBEDDER
+model = Qwen3_5_4B()
 
 
-def embed(texts: list[str]) -> list:
-    """L2-normalized mean-pooled sentence embeddings."""
-    parts = _embedder()
-    torch = parts["torch"]
-    batch = parts["tokenizer"](
-        texts, padding=True, truncation=True, max_length=256, return_tensors="pt"
-    )
-    with torch.no_grad():
-        out = parts["model"](**batch).last_hidden_state
-    mask = batch["attention_mask"].unsqueeze(-1).float()
-    pooled = (out * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
-    return torch.nn.functional.normalize(pooled, p=2, dim=1)
-
-
-def _lexical_overlap(a: str, b: str) -> float:
-    """Token-F1 fallback used only if the embedder fails to load."""
-    ta = {w for w in re.findall(r"[a-z']+", a.lower()) if len(w) > 3}
-    tb = {w for w in re.findall(r"[a-z']+", b.lower()) if len(w) > 3}
-    if not ta or not tb:
-        return 0.0
-    return 2 * len(ta & tb) / (len(ta) + len(tb))
-
-
-def score_relevance(response: str, reference: str) -> float:
-    """Topical agreement with the reference answer, rescaled to ``[0, 1]``."""
-    response = _strip_thinking(response)
-    reference = (reference or "").strip()
-    if not response or not reference:
-        return 0.0
-    try:
-        vectors = embed([response, reference])
-        cosine = float((vectors[0] * vectors[1]).sum())
-    except Exception as exc:  # noqa: BLE001
-        print(f"[rhyme_rm] embedder unavailable ({exc}); using lexical overlap")
-        cosine = _lexical_overlap(response, reference)
-    return max(0.0, min(1.0, (cosine - 0.10) / 0.45))
-
-
-def rhyme_reward(response: str, reference: str) -> float:
-    """Gated rhyme quality plus a smaller standalone relevance term."""
-    rhyme = score_rhyme(response)
-    relevance = score_relevance(response, reference)
-    gate = min(1.0, relevance / 0.4)
-    return gate * rhyme + 0.3 * relevance
+def _content_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]{4,}", text.lower()) if w not in STOPWORDS}
 
 
 async def rhyme_rm(args, sample, **kwargs) -> float:
-    from modal_dojo import Qwen3_4B
-
-    model = Qwen3_4B()
-    response = model.parse_response(getattr(sample, "response", "") or "")
-    reference = getattr(sample, "label", "") or ""
-    return rhyme_reward(response.content or "", str(reference))
+    prompt = str(sample.prompt)
+    user = re.search(r"<\|im_start\|>user\s*(.*?)<\|im_end\|>", prompt, re.DOTALL)
+    question = user.group(1) if user else prompt
+    response = model.parse_response(sample.response).content or ""
+    score = score_rhyme(response)
+    question_words = _content_words(question)
+    if question_words and not question_words & _content_words(response):
+        score *= 0.5
+    return score
 ```
 
 Then, it wrote the training code:
 
 ```python
-from modal_dojo import Qwen3_4B, TrainConfig
-from modal_dojo.train_recipes.slime_recipe import Qwen3_4B_Recipe
+import os
 
+from modal_dojo import Qwen3_5_4B_Recipe, TrainConfig
 
-def _image_overlay(image):
-    return image.run_commands(
-        "uv pip install --system 'nltk>=3.8.0'",
-        "python -c \"import nltk; nltk.download('cmudict', quiet=True)\"",
-        # Download through a scratch cache so the image does not leave files
-        # where the shared Hugging Face Volume needs to mount.
-        "HF_HOME=/tmp/hf-build HF_HUB_CACHE=/tmp/hf-build "
-        'python -c "from huggingface_hub import snapshot_download; '
-        f"snapshot_download('{EMBED_MODEL}', local_dir='{EMBED_DIR}')\"",
-        "rm -rf /tmp/hf-build /root/.cache/huggingface",
-    )
+NUM_ROLLOUT = int(os.environ.get("NUM_ROLLOUT", "1"))
 
-
-def build_config(*, num_rollout: int, save_interval: int) -> TrainConfig:
-    return TrainConfig(
-        model=Qwen3_4B(),
-        dataset=rhyme_dataset,
-        recipe=Qwen3_4B_Recipe(
-            custom_rm_function=rhyme_rm,
-            num_rollout=num_rollout,
-            rollout_batch_size=16,
-            n_samples_per_prompt=8,
-            rollout_max_response_len=1024,
-            save_interval=save_interval,
-            apply_chat_template_kwargs='{"enable_thinking": false}',
-            capture_trace=True,
-            trace_sample_limit=16,
-            image_overlay=_image_overlay,
+config = TrainConfig(
+    model=model,
+    dataset=DollyQuestions(0, 2000),
+    eval_dataset=DollyQuestions(2000, 2050),
+    recipe=Qwen3_5_4B_Recipe(
+        num_rollout=NUM_ROLLOUT,
+        save_interval=NUM_ROLLOUT,
+        rollout_batch_size=16,
+        n_samples_per_prompt=8,
+        global_batch_size=16,
+        rollout_max_response_len=512,
+        apply_chat_template_kwargs='{"enable_thinking": false}',
+        custom_rm_function=rhyme_rm,
+        image_overlay=lambda image: image.run_commands(
+            "uv pip install --system aiohttp 'nltk>=3.8.0'",
+            "python -c \"import nltk; nltk.download('cmudict', quiet=True)\"",
         ),
-    )
+    ),
+)
+
+if __name__ == "__main__":
+    run = config.train()
+    print(f"run id: {run.training_run_id}")
+    print(f"checkpoint: {run.latest_checkpoint().path}")
 ```
 
-Before making [GPUs go Brrr](https://hazyresearch.stanford.edu/blog/2024-05-12-tk), the provided skill prompts the agent to run smoke tests.
+Before making [GPUs go Brrr](https://hazyresearch.stanford.edu/blog/2024-05-12-tk), the provided skill prompts the agent to test the reward locally and run smoke tests.
 
-Following suit, it does a one-step run:
-
-```python
-training_run = build_config(num_rollout=1, save_interval=1)
-run = training_run.launch()
-print(f"training_run_id: {run.training_run_id}")
+```bash
+NUM_ROLLOUT=1 uv run rhyme.py
+NUM_ROLLOUT=10 uv run rhyme.py
+NUM_ROLLOUT=50 uv run rhyme.py
 ```
 
 ## Monitor runs
 
-Throughout the run, the agent used the following commands to:
+Throughout the run, the agent had the following commands at its disposal:
 
 - Confirm a run was launched successfully:
 
@@ -328,20 +251,16 @@ modal-dojo run logs <run-id> --search "checkpoint" --json
 - Observe the raw model responses:
 
 ```bash
-modal-dojo run trace <run-id> --out ./traces --dry-run --json
 modal-dojo run trace <run-id> --out ./traces --yes --json
 ```
 
 ## Results
 
+Over 50 rollouts on one H100, the mean reward rose from 0.20 to about 0.95.
+
+Here's what it looks like in action:
+
 <video controls playsinline width="100%">
-  <source src="/agent-driven-training-rhyme.mp4" type="video/mp4">
-  <source src="https://dojo.modal.dev/agent-driven-training-rhyme.mp4" type="video/mp4">
-  <a href="https://dojo.modal.dev/agent-driven-training-rhyme.mp4">Watch the agent-driven training demo.</a>
+  <source src="https://modal-cdn.com/cdnbot/agent-1-fast_be9e2663.webm" type="video/webm">
+  <a href="https://modal-cdn.com/cdnbot/agent-1-fast_be9e2663.webm">Watch the agent-driven training demo.</a>
 </video>
-
-After 46 minutes of training, the model makes all responses [rhyme](#1) [damn well](#2) while still [answering the user](#3).
-
-1. <a id="1"></a>Non-rhyming answers reduced from 35/128 to 0/128.
-2. <a id="2"></a>Rhyme score improved from 0.475 to 0.908.
-3. <a id="3"></a>Relevance remained essentially the same from 0.877 to 0.886.
