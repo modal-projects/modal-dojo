@@ -37,6 +37,7 @@ from modal_dojo.train_recipes.base import (
 from modal_dojo.train_recipes.gpu_allocation import (
     resolve_gpu_allocation,
     validate_megatron_actor_parallelism,
+    validate_microbatch_schedule,
     validate_multi_node_gpu_count,
     validate_num_experts_divisible_by_expert_parallel_size,
 )
@@ -656,6 +657,7 @@ class SlimeRecipe(BaseTrainRecipe):
     def _validate_gpu_allocation(self) -> "SlimeRecipe":
         validate_multi_node_gpu_count(resolve_gpu_allocation(self), self.gpu_type)
         validate_megatron_actor_parallelism(self)
+        validate_microbatch_schedule(self)
         return self
 
     # ── Container → slime flag converters ────────────────────────────────────
