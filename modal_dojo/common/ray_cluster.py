@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import modal
 
+from modal_dojo.common.failure_extract import FailureExcerpt
 from modal_dojo.train_recipes.gpu_allocation import _normalize_gpu_type
 
 RAY_PORT = 6379
@@ -145,6 +146,10 @@ class ModalRayJobResult:
     status: str
     is_success: bool
     message: str | None = None
+    # Excerpt of the first fatal event found in the streamed logs; usually a
+    # better cause than ``message`` (Ray's driver-side error is often cascade
+    # noise from a dead rank). None when the stream held no failure signature.
+    error_excerpt: str | None = None
 
 
 class ModalRayCluster:
@@ -326,6 +331,11 @@ class ModalRayCluster:
         print(f"Submitted Ray job: {job_id}")
 
         _TERMINAL = {"SUCCEEDED", "FAILED", "STOPPED"}
+        # Collects the first fatal signature from the streamed log for failure
+        # attribution on a non-success result — usually a worker traceback that
+        # precedes Ray's generic driver error. Memory is bounded, so a failure
+        # early in an arbitrarily long log is still attributed.
+        failure_excerpt = FailureExcerpt()
         retry_count = 0
 
         async def _poll_status() -> str | None:
@@ -345,11 +355,13 @@ class ModalRayCluster:
                 if inspect.isawaitable(log_stream):
                     log_stream = await log_stream
                 if hasattr(log_stream, "__aiter__"):
-                    async for line in log_stream:
-                        print(line, end="", flush=True)
+                    async for chunk in log_stream:
+                        failure_excerpt.feed_chunk(chunk)
+                        print(chunk, end="", flush=True)
                 else:
-                    for line in log_stream:
-                        print(line, end="", flush=True)
+                    for chunk in log_stream:
+                        failure_excerpt.feed_chunk(chunk)
+                        print(chunk, end="", flush=True)
 
             tail_task = asyncio.create_task(_tail_logs())
             try:
@@ -374,6 +386,7 @@ class ModalRayCluster:
 
             if status in _TERMINAL:
                 break
+            failure_excerpt.flush()
             retry_count += 1
             print(
                 f"\n[ray] Log stream ended but job {job_id} is still {status}; "
@@ -401,8 +414,14 @@ class ModalRayCluster:
                 pass
             suffix = f": {message}" if message else ""
             print(f"Ray job {job_id} finished with status: {status}{suffix}")
+            error_excerpt = failure_excerpt.result()
+            if error_excerpt:
+                print(f"First fatal log signature:\n{error_excerpt}")
             return ModalRayJobResult(
-                status=status, is_success=status == "SUCCEEDED", message=message
+                status=status,
+                is_success=status == "SUCCEEDED",
+                message=message,
+                error_excerpt=error_excerpt,
             )
         return ModalRayJobResult(status=status, is_success=status == "SUCCEEDED")
 
