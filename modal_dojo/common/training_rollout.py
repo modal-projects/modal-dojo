@@ -424,6 +424,10 @@ class TrainingRolloutResult(BaseModel):
                     summaries[key] = summary
                     changed = True
 
+        for key in summaries.keys() - keys:
+            del summaries[key]
+            changed = True
+
         results = sorted(summaries.values(), key=lambda summary: summary.rollout_id)
         if changed:
             vol_put_summary_items(

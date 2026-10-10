@@ -37,6 +37,7 @@ class MetadataStore(Enum):
     # data-parallel rank (keyed ``{run}__{rollout:08d}__dp{dp:03d}``) so
     # concurrent DP-rank posts never race on a shared file.
     ADVANTAGE_DISTRIBUTIONS = "advantage-distributions"
+    TRAINING_RUN_UPDATES = "training-run-updates"
     EVAL_RESULTS = "eval-results"
     EVALS = "evals"
     EVAL_SUMMARIES = "eval-summaries"
@@ -52,18 +53,24 @@ SUMMARY_KEY = "summary"
 SUMMARY_ITEMS_KEY = "items"
 
 
-# Summary stores whose canonical per-item files share the summary's shape, so a
-# collapsed/stale summary can be rebuilt from the canonical files rather than
-# trusted blindly. Rollouts are intentionally excluded: their canonical files
-# hold full sample payloads, not the reduced summary shape.
+# Summary stores keep one JSON file per item, named after the canonical item's
+# key, so concurrent writers can never race on a shared file. The legacy
+# single ``summary`` file written by older code is still read for items that
+# were never rewritten by a new writer; healed reads compare canonical keys
+# against summary ids in both directions and rebuild/drop until the summary
+# converges to the canonical set. ``item_id_key`` names the payload field that
+# carries the canonical file's key. ``project`` is a ``module:attr`` path to a
+# canonical-payload -> summary-item reducer for stores whose canonical shape
+# differs from the summary row (resolved lazily to avoid import cycles).
 class _SummaryCompaction:
-    __slots__ = ("item_store", "item_id_key", "sort_key", "reverse")
+    __slots__ = ("item_store", "item_id_key", "sort_key", "reverse", "project")
 
-    def __init__(self, item_store, item_id_key, sort_key, reverse):
+    def __init__(self, item_store, item_id_key, sort_key, reverse, project=None):
         self.item_store = item_store
         self.item_id_key = item_id_key
         self.sort_key = sort_key
         self.reverse = reverse
+        self.project = project
 
 
 _SUMMARY_COMPACTION: dict[MetadataStore, _SummaryCompaction] = {
@@ -82,7 +89,26 @@ _SUMMARY_COMPACTION: dict[MetadataStore, _SummaryCompaction] = {
         sort_key=lambda item: str(item.get("training_run_id", "")),
         reverse=True,
     ),
+    MetadataStore.EVAL_SUMMARIES: _SummaryCompaction(
+        item_store=MetadataStore.EVAL_RESULTS,
+        item_id_key="eval_id",
+        sort_key=lambda item: str(item.get("created_at", "")),
+        reverse=True,
+        project="modal_dojo.common.eval:eval_summary_item",
+    ),
 }
+
+
+def _summary_projection(
+    cfg: _SummaryCompaction,
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    if cfg.project is None:
+        return lambda payload: payload
+    import importlib
+
+    module_name, _, attr = cfg.project.partition(":")
+    return getattr(importlib.import_module(module_name), attr)
+
 
 _SUMMARY_CANONICAL_STORES: dict[MetadataStore, MetadataStore] = {
     summary: cfg.item_store for summary, cfg in _SUMMARY_COMPACTION.items()
@@ -706,25 +732,63 @@ def compact_summary_store(summary_store: MetadataStore) -> list[dict[str, Any]]:
         summary_store,
         cfg.item_store,
         item_id_key=cfg.item_id_key,
+        project=_summary_projection(cfg),
         sort_key=cfg.sort_key,
         reverse=cfg.reverse,
     )
 
 
-def vol_get_summary_items_healed(summary_store: MetadataStore) -> list[dict[str, Any]]:
-    """Read a summary, rebuilding from canonical files if it looks collapsed.
+def vol_get_summary_items_healed(
+    summary_store: MetadataStore, *, prefix: str = ""
+) -> list[dict[str, Any]]:
+    """Read a summary, converging it to the canonical key set first.
 
-    Self-heals the read path: if a racing writer clobbered the summary down to
-    fewer items than there are canonical files, rebuild from canonical instead
-    of surfacing the truncated list. The canonical count is a cheap one-op
-    directory listing, so the expensive rebuild only runs when actually needed.
+    Per-item summary files make lost updates impossible, but items written
+    before this layout (or never summarized) only exist in the canonical
+    store, and deleted canonical items leave stale summary rows behind. One
+    directory listing per side finds both directions of drift; missing items
+    are rebuilt (and back-filled as per-item files) and stale ones pruned, so
+    every reader after the first sees the converged summary.
     """
-    items = vol_get_summary_items(summary_store) or []
+    items = vol_get_summary_items(summary_store, prefix=prefix) or []
     cfg = _SUMMARY_COMPACTION.get(summary_store)
     if cfg is None:
         return items
-    if vol_count_items(cfg.item_store) > len(items):
-        return compact_summary_store(summary_store)
+    canonical_keys = set(vol_list_keys(cfg.item_store, prefix))
+    by_id = {
+        str(item[cfg.item_id_key]): item
+        for item in items
+        if item.get(cfg.item_id_key) is not None
+    }
+    missing = sorted(canonical_keys - by_id.keys())
+    stale = sorted(by_id.keys() - canonical_keys)
+    if not missing and not stale:
+        return items
+    project = _summary_projection(cfg)
+    for key in missing:
+        try:
+            payload = vol_get(cfg.item_store, key)
+        except KeyError:
+            continue
+        item = project(payload)
+        if not isinstance(item, dict):
+            continue
+        item.setdefault(cfg.item_id_key, key)
+        by_id[key] = item
+        try:
+            vol_put(summary_store, key, item)
+        except Exception:
+            pass
+    for item_id in stale:
+        by_id.pop(item_id, None)
+        vol_remove(summary_store, item_id)
+    items = list(by_id.values())
+    items.sort(key=cfg.sort_key, reverse=cfg.reverse)
+    if not prefix:
+        try:
+            vol_put_summary_items(summary_store, items, item_id_key=cfg.item_id_key)
+        except Exception:
+            pass
     return items
 
 
@@ -743,10 +807,59 @@ def summary_items_from_payload(
     return [item for item in items if isinstance(item, dict)]
 
 
+def _summary_entry_names(
+    entries: list[dict[str, Any]], key: str, prefix: str
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    item_entries: list[dict[str, Any]] = []
+    legacy_entry: dict[str, Any] | None = None
+    for entry in entries:
+        name = entry["path"].rsplit("/", 1)[-1][: -len(".json")]
+        if name == key:
+            legacy_entry = entry
+        elif not prefix or name.startswith(prefix):
+            item_entries.append(entry)
+    return item_entries, legacy_entry
+
+
+def _merge_summary_records(
+    records: list[dict[str, Any]],
+    legacy_items: list[dict[str, Any]],
+    id_key: str | None,
+    prefix: str,
+    cfg: _SummaryCompaction | None,
+) -> list[dict[str, Any]]:
+    items = [record for record in records if isinstance(record, dict)]
+    have = (
+        {str(item[id_key]) for item in items if item.get(id_key) is not None}
+        if id_key
+        else set()
+    )
+    for item in legacy_items:
+        if not isinstance(item, dict):
+            continue
+        item_id = item.get(id_key) if id_key else None
+        if item_id is None:
+            if not prefix:
+                items.append(item)
+            continue
+        item_id = str(item_id)
+        if prefix and not item_id.startswith(prefix):
+            continue
+        if item_id in have:
+            continue
+        items.append(item)
+        have.add(item_id)
+    if cfg is not None:
+        items.sort(key=cfg.sort_key, reverse=cfg.reverse)
+    return items
+
+
 @overload
 def vol_get_summary_items(
     store: MetadataStore | str,
     *,
+    item_id_key: str | None = None,
+    prefix: str = "",
     key: str = SUMMARY_KEY,
     payload_key: str = SUMMARY_ITEMS_KEY,
     is_async: Literal[True],
@@ -757,6 +870,8 @@ def vol_get_summary_items(
 def vol_get_summary_items(
     store: MetadataStore | str,
     *,
+    item_id_key: str | None = None,
+    prefix: str = "",
     key: str = SUMMARY_KEY,
     payload_key: str = SUMMARY_ITEMS_KEY,
     is_async: Literal[False] = False,
@@ -766,53 +881,121 @@ def vol_get_summary_items(
 def vol_get_summary_items(
     store: MetadataStore | str,
     *,
+    item_id_key: str | None = None,
+    prefix: str = "",
     key: str = SUMMARY_KEY,
     payload_key: str = SUMMARY_ITEMS_KEY,
     is_async: bool = False,
 ) -> list[dict[str, Any]] | None | Awaitable[list[dict[str, Any]] | None]:
-    from modal.exception import ExecutionError
+    """Read a summary: per-item files, then the legacy shared file fills gaps.
 
-    vol = _metadata_volume()
+    Per-item files are authoritative (each is written by its item's owner);
+    the legacy ``summary`` file only contributes items that newer writers
+    never materialized. ``prefix`` restricts both sides to keys/ids sharing a
+    prefix. Returns ``None`` when the store holds nothing at all.
+    """
+    cfg = _SUMMARY_COMPACTION.get(store) if isinstance(store, MetadataStore) else None
+    id_key = item_id_key or (cfg.item_id_key if cfg is not None else None)
+    listed = _list_metadata_entries(store, is_async=is_async)
+
+    async def _run(
+        entries_result: list[dict[str, Any]],
+    ) -> list[dict[str, Any]] | None:
+        item_entries, legacy_entry = _summary_entry_names(entries_result, key, prefix)
+        records, _ = await _read_metadata_records(item_entries, is_async=True)
+        legacy_items: list[dict[str, Any]] = []
+        if legacy_entry is not None:
+            legacy_records, legacy_failure = await _read_metadata_records(
+                [legacy_entry], is_async=True
+            )
+            if legacy_failure is not None:
+                print(f"WARNING: unreadable summary {store}/{key}: {legacy_failure}")
+            if legacy_records:
+                legacy_items = summary_items_from_payload(
+                    legacy_records[0], payload_key
+                )
+        if not item_entries and legacy_entry is None:
+            return None
+        return _merge_summary_records(records, legacy_items, id_key, prefix, cfg)
+
     if is_async:
 
-        async def _run() -> list[dict[str, Any]] | None:
-            await _safe_reload(vol, is_async=True)
-            try:
-                payload = await vol_get(store, key, is_async=True)
-            except KeyError:
-                return None
-            except (ExecutionError, ValueError) as exc:
-                print(
-                    f"WARNING: unreadable summary {store}/{key}; "
-                    f"rebuilding from canonical items: {exc}"
-                )
-                return None
-            return summary_items_from_payload(payload, payload_key=payload_key)
+        async def _await() -> list[dict[str, Any]] | None:
+            entries_result, failure = await cast(
+                Awaitable[tuple[list[dict[str, Any]], BaseException | None]], listed
+            )
+            if failure is not None:
+                raise failure
+            return await _run(entries_result)
 
-        return _run()
-    _safe_reload(vol)
-    try:
-        payload = vol_get(store, key)
-    except KeyError:
+        return _await()
+    entries_result, failure = cast(
+        tuple[list[dict[str, Any]], BaseException | None], listed
+    )
+    if failure is not None:
+        raise failure
+    item_entries, legacy_entry = _summary_entry_names(entries_result, key, prefix)
+    records, _ = _read_metadata_records(item_entries)
+    legacy_items = []
+    if legacy_entry is not None:
+        legacy_records, legacy_failure = _read_metadata_records([legacy_entry])
+        if legacy_failure is not None:
+            print(f"WARNING: unreadable summary {store}/{key}: {legacy_failure}")
+        if legacy_records:
+            legacy_items = summary_items_from_payload(legacy_records[0], payload_key)
+    if not item_entries and legacy_entry is None:
         return None
-    except (ExecutionError, ValueError) as exc:
-        print(
-            f"WARNING: unreadable summary {store}/{key}; "
-            f"rebuilding from canonical items: {exc}"
-        )
-        return None
-    return summary_items_from_payload(payload, payload_key=payload_key)
+    return _merge_summary_records(records, legacy_items, id_key, prefix, cfg)
 
 
 def vol_put_summary_items(
     store: MetadataStore | str,
     items: list[dict[str, Any]],
     *,
+    item_id_key: str | None = None,
     key: str = SUMMARY_KEY,
     payload_key: str = SUMMARY_ITEMS_KEY,
     is_async: bool = False,
+    prune: bool = False,
 ) -> None | Awaitable[None]:
-    return vol_put(store, key, {payload_key: items}, is_async=is_async)
+    """Write per-item summary files plus the legacy list file.
+
+    The per-item files are written first so the shared file never advertises
+    items the per-item layout lacks. ``prune`` additionally removes per-item
+    files absent from ``items`` — only callers replacing the store wholesale
+    (compaction) should set it, since pruning races concurrent writers.
+    """
+    cfg = _SUMMARY_COMPACTION.get(store) if isinstance(store, MetadataStore) else None
+    id_key = item_id_key or (cfg.item_id_key if cfg is not None else None)
+    per_item: dict[str, dict[str, Any]] = {}
+    if id_key:
+        for item in items:
+            if isinstance(item, dict) and item.get(id_key) is not None:
+                per_item[str(item[id_key])] = item
+
+    def _prune_stale() -> None:
+        try:
+            names = set(vol_list_keys(store))
+        except Exception:
+            return
+        for name in names - set(per_item) - {key}:
+            vol_remove(store, name)
+
+    if is_async:
+
+        async def _run() -> None:
+            if per_item:
+                await vol_put_many(store, per_item, is_async=True)
+            await vol_put(store, key, {payload_key: items}, is_async=True)
+            if prune:
+                await asyncio.to_thread(_prune_stale)
+
+        return _run()
+    if per_item:
+        vol_put_many(store, per_item)
+    vol_put(store, key, {payload_key: items})
+    if prune:
+        _prune_stale()
 
 
 def vol_compact_summary_items(
@@ -820,6 +1003,7 @@ def vol_compact_summary_items(
     item_store: MetadataStore | str,
     *,
     item_id_key: str,
+    project: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     key: str = SUMMARY_KEY,
     payload_key: str = SUMMARY_ITEMS_KEY,
     sort_key: Callable[[dict[str, Any]], Any] | None = None,
@@ -827,13 +1011,14 @@ def vol_compact_summary_items(
 ) -> list[dict[str, Any]]:
     """Rebuild a denormalized summary from canonical per-item metadata files.
 
-    Summary files are a list cache. Writers persist the canonical item file first,
-    then best-effort update the summary. If parallel read-modify-write summary
-    upserts clobber each other, compaction merges the canonical files back into
-    the summary so list readers become self-healing.
+    The current summary contents seed the rebuild (covering items whose
+    canonical read fails); canonical payloads then overlay them. ``project``
+    reduces a canonical payload to its summary row for stores whose canonical
+    shape is richer than the summary's; it defaults to identity.
     """
+    project = project or (lambda payload: payload)
     summary_items = vol_get_summary_items(
-        summary_store, key=key, payload_key=payload_key
+        summary_store, item_id_key=item_id_key, key=key, payload_key=payload_key
     )
     canonical_items, failure = _vol_list_core(item_store)
     if failure is not None and summary_items is None:
@@ -844,7 +1029,10 @@ def vol_compact_summary_items(
         for item in summary_items or []
         if item.get(item_id_key) is not None
     }
-    for item in canonical_items:
+    for canonical in canonical_items:
+        item = project(canonical)
+        if not isinstance(item, dict):
+            continue
         item_id = item.get(item_id_key)
         if item_id is None:
             continue
@@ -853,7 +1041,14 @@ def vol_compact_summary_items(
     items = list(items_by_id.values())
     if sort_key is not None:
         items.sort(key=sort_key, reverse=reverse)
-    vol_put_summary_items(summary_store, items, key=key, payload_key=payload_key)
+    vol_put_summary_items(
+        summary_store,
+        items,
+        item_id_key=item_id_key,
+        key=key,
+        payload_key=payload_key,
+        prune=True,
+    )
     if failure is not None:
         raise failure
     return items
@@ -911,35 +1106,44 @@ def vol_put_with_summary(
     *,
     summary_store: MetadataStore | str,
     summary_item: dict[str, Any] | None = None,
-    item_id_key: str,
+    item_id_key: str | None = None,
     sort_key: Callable[[dict[str, Any]], Any] | None = None,
     reverse: bool = False,
     is_async: bool = False,
 ) -> None | Awaitable[None]:
-    """Persist a canonical item file, then upsert it into its summary.
+    """Persist a canonical item file, then its summary.
 
-    The standard writer pattern: canonical file first (source of truth), then
-    the best-effort summary update. ``summary_item`` defaults to ``payload``
-    for stores whose summary rows mirror the canonical shape.
+    Canonical first (source of truth). Without ``item_id_key`` the summary row
+    lands as a per-item file under the same key — a single-owner single-file
+    write, so concurrent writers can never collapse a shared summary file.
+    With ``item_id_key`` the item is upserted into a shared summary (used by
+    per-run summary stores where one writer owns the file). ``summary_item``
+    defaults to ``payload`` for stores whose summary rows mirror the canonical
+    shape.
     """
+    item = payload if summary_item is None else summary_item
     put = partial(vol_put, item_store, key, payload)
-    upsert = partial(
-        vol_upsert_summary_item,
-        summary_store,
-        payload if summary_item is None else summary_item,
-        item_id_key=item_id_key,
-        sort_key=sort_key,
-        reverse=reverse,
+    put_summary = (
+        partial(
+            vol_upsert_summary_item,
+            summary_store,
+            item,
+            item_id_key=item_id_key,
+            sort_key=sort_key,
+            reverse=reverse,
+        )
+        if item_id_key is not None
+        else partial(vol_put, summary_store, key, item)
     )
     if is_async:
 
         async def _run() -> None:
             await put(is_async=True)
-            await upsert(is_async=True)
+            await put_summary(is_async=True)
 
         return _run()
     put()
-    upsert()
+    put_summary()
 
 
 __all__ = [
