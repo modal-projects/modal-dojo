@@ -388,6 +388,7 @@ class ModalRayCluster:
 
             if status in _TERMINAL:
                 break
+            failure_excerpt.flush()
             retry_count += 1
             print(
                 f"\n[ray] Log stream ended but job {job_id} is still {status}; "

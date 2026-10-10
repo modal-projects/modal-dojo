@@ -154,3 +154,43 @@ def test_duplicate_signatures_are_deduplicated() -> None:
         extract_failure_excerpt(lines)
         == "RuntimeError: same failure\nValueError: other"
     )
+
+
+def test_newline_free_chunks_bound_the_tail_buffer() -> None:
+    collector = FailureExcerpt()
+    for _ in range(10):
+        collector.feed_chunk("x" * 100_000)
+    assert len(collector._buf) <= 8 * 1024
+
+
+def test_carriage_return_progress_does_not_hide_exception() -> None:
+    collector = FailureExcerpt()
+    collector.feed_chunk("10%|\r20%||\rRuntimeError: boom\n")
+    assert collector.result() == "RuntimeError: boom"
+
+
+def test_long_prefixed_traceback_still_finds_cause() -> None:
+    lines = ["(TrainActor pid=1) Traceback (most recent call last):"]
+    lines += [
+        f'(TrainActor pid=1)   File "f{i}.py", line {i}, in run' for i in range(20)
+    ]
+    lines.append("(TrainActor pid=1) torch.OutOfMemoryError: CUDA out of memory.")
+    excerpt = extract_failure_excerpt(lines)
+    assert excerpt == "torch.OutOfMemoryError: CUDA out of memory."
+
+
+def test_bare_prefixed_exception_closes_traceback() -> None:
+    lines = [
+        "(TrainActor pid=1) Traceback (most recent call last):",
+        '(TrainActor pid=1)   File "a.py", line 1',
+        "(TrainActor pid=1) KeyboardInterrupt",
+    ]
+    assert extract_failure_excerpt(lines) == "KeyboardInterrupt"
+
+
+def test_flush_separates_fragments_across_reconnect() -> None:
+    collector = FailureExcerpt()
+    collector.feed_chunk("RuntimeError: first")
+    collector.flush()
+    collector.feed_chunk("ValueError: second\n")
+    assert collector.result() == "RuntimeError: first\nValueError: second"

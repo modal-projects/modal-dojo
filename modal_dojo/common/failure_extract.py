@@ -22,6 +22,12 @@ _MAX_TRACEBACK_LINES = 400
 _MAX_INTERLEAVE = 8
 
 _TRACEBACK_RE = re.compile(r"Traceback \(most recent call last\)")
+# Ray prefixes worker output per line ("(TrainActor pid=N) ...",
+# "[rank N] ..."); strip one leading "(...)" or "[...]" group so prefixed
+# frames, source lines, and exception lines classify like unprefixed ones.
+_RAY_PREFIX_RE = re.compile(r"^\([^()\n]*\)\s*|^\[[^\[\]\n]*\]\s*")
+_LINE_SPLIT_RE = re.compile(r"\r\n|\r|\n")
+_MAX_TAIL_CHARS = 8 * 1024
 # The exception line closing a traceback block, e.g. "torch.OutOfMemoryError:
 # CUDA out of memory." or "RuntimeError: Step 1: 2 groups failed". The
 # ": message" part is optional — bare raises (KeyboardInterrupt, SystemExit)
@@ -75,7 +81,7 @@ def _traceback_excerpt(lines: list[str], start: int) -> tuple[str | None, int]:
     interleave = 0
     end = start + 1
     for end in range(start + 1, len(lines)):
-        line = lines[end]
+        line = _RAY_PREFIX_RE.sub("", lines[end])
         stripped = line.strip()
         if not stripped:
             # Blank lines separate a traceback from its chained continuation.
@@ -146,8 +152,10 @@ class FailureExcerpt:
         """
         if self._done:
             return
-        lines = (self._buf + text).split("\n")
+        lines = _LINE_SPLIT_RE.split(self._buf + text)
         self._buf = lines.pop()
+        if len(self._buf) > _MAX_TAIL_CHARS:
+            self._buf = self._buf[-_MAX_TAIL_CHARS:]
         for line in lines:
             self.feed(line)
 
@@ -158,7 +166,7 @@ class FailureExcerpt:
             self._pending.append(line)
             if len(self._pending) > _MAX_TRACEBACK_LINES:
                 overflow = self._pending[-1]
-                self._commit(self._pending[0].strip())
+                self._commit(_RAY_PREFIX_RE.sub("", self._pending[0]).strip())
                 self._pending = None
                 self.feed(overflow)
                 return
@@ -167,12 +175,12 @@ class FailureExcerpt:
                 # Block still open.
                 return
             block, self._pending = self._pending, None
-            self._commit(excerpt or block[0].strip())
+            self._commit(excerpt or _RAY_PREFIX_RE.sub("", block[0]).strip())
             # Lines buffered past the block's end may carry signatures.
             for extra in block[end:]:
                 self.feed(extra)
             return
-        stripped = line.strip()
+        stripped = _RAY_PREFIX_RE.sub("", line).strip()
         if _TRACEBACK_RE.search(stripped):
             self._pending = [line]
             return
@@ -180,6 +188,12 @@ class FailureExcerpt:
             if pattern.search(stripped):
                 self._commit(stripped)
                 return
+
+    def flush(self) -> None:
+        """Terminate the buffered partial line (e.g. a stream ended mid-line)."""
+        if self._buf:
+            self.feed(self._buf)
+            self._buf = ""
 
     def _commit(self, text: str) -> None:
         # Global dedup: a reconnected log stream can replay earlier lines, and
@@ -196,7 +210,7 @@ class FailureExcerpt:
             self._buf = ""
         if self._pending is not None:
             excerpt, _ = _traceback_excerpt(self._pending, 0)
-            self._commit(excerpt or self._pending[0].strip())
+            self._commit(excerpt or _RAY_PREFIX_RE.sub("", self._pending[0]).strip())
             self._pending = None
         if not self._excerpt:
             return None
