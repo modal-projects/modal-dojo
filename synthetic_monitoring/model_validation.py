@@ -28,7 +28,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 QUICKSTART_TIMEOUT_S = 60 * 60
 PROBE_TIMEOUT_S = max(c.timeout_s for c in _ValidationConfig.select())
 CLEANUP_GRACE_S = 5 * 60
-LAUNCH_TIMEOUT_S = PROBE_TIMEOUT_S + CLEANUP_GRACE_S + 30 * 60
+MONITOR_TIMEOUT_S = PROBE_TIMEOUT_S + CLEANUP_GRACE_S + 30 * 60
+LAUNCH_TIMEOUT_S = MONITOR_TIMEOUT_S + 30 * 60
 MODAL_ENV = "training-gym"
 HISTORY_DICT_NAME = "gym-synmon-timing-baselines"
 QUICKSTART_NAME = "quickstart"
@@ -255,7 +256,7 @@ def _post_report(rows: list[dict]) -> None:
 
 @app.function(
     image=probe_image,
-    timeout=PROBE_TIMEOUT_S + CLEANUP_GRACE_S,
+    timeout=MONITOR_TIMEOUT_S,
     secrets=[hf_secret],
 )
 def monitor(model: str = "", num_steps: int = 1) -> dict:
