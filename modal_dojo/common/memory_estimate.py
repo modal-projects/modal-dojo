@@ -15,6 +15,23 @@ GIB = 1024**3
 
 _UNMODELED_CFG_HINTS = ("engram", "index_", "dspark_", "nextn", "vision")
 
+_ROLLOUT_GEN_HOOK_KEYS = (
+    "custom_generate_function_path",
+    "rollout_function_path",
+    "custom_generate_function",
+    "rollout_function",
+)
+
+
+def _rollout_gen_path(knobs: dict) -> str:
+    for key in _ROLLOUT_GEN_HOOK_KEYS:
+        value = knobs.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+        if callable(value):
+            return BaseTrainRecipe._callable_path(value)
+    return ""
+
 
 def _hf_cfg(model_name: str) -> dict | None:
     try:
@@ -168,9 +185,7 @@ def _peak_gib(
             (dense_p + expert_p) * 6 + dense_p * opt / d_div + expert_p * opt / e_div
         ) / GIB
 
-    path = str(
-        get("custom_generate_function_path") or get("rollout_function_path") or ""
-    )
+    path = _rollout_gen_path(knobs)
     mt = path == "miles.rollout.generate_hub.multi_turn.generate"
     prompt = int(get("rollout_max_prompt_len") or 0)
     response = int(get("rollout_max_response_len") or 0)
@@ -231,11 +246,7 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     hooks = ["custom_generate_function", "custom_generate_function_path"]
     if knobs.get("loss_type") != "sft_loss":
         hooks += ["rollout_function", "rollout_function_path"]
-    path = str(
-        knobs.get("custom_generate_function_path")
-        or knobs.get("rollout_function_path")
-        or ""
-    )
+    path = _rollout_gen_path(knobs)
     single_turn = path == "miles.rollout.generate_hub.single_turn.generate"
     multi_turn_builtin = path == "miles.rollout.generate_hub.multi_turn.generate"
     if (
