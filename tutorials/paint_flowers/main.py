@@ -177,6 +177,7 @@ def deploy_judge():
         Qwen3_6_27B(),
         unauthenticated=True,
         recreate_if_existing=True,
+        endpoint_name="paint-flowers",
     )
     helpers.launch_hpsv3()
     judge.wait_until_ready(timeout=30 * 60)

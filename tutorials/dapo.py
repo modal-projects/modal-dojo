@@ -37,7 +37,10 @@ model = Qwen3_5_4B()
 def deploy_base_model():
     print("deploying base model endpoint...")
     base_deployment = Endpoint.launch(
-        model, unauthenticated=True, recreate_if_existing=True
+        model,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="dapo-baseline",
     )
     base_deployment.wait_until_ready()
     print(f"base model deployed to {base_deployment.url}")
@@ -235,7 +238,11 @@ def train(config):
 def deploy_trained_model(checkpoint):
     print("deploying trained model endpoint...")
     trained_deployment = Endpoint.launch(
-        model, checkpoint, unauthenticated=True, recreate_if_existing=True
+        model,
+        checkpoint,
+        unauthenticated=True,
+        recreate_if_existing=True,
+        endpoint_name="dapo-trained",
     )
     trained_deployment.wait_until_ready()
     print(f"checkpoint deployed to {trained_deployment.url}")

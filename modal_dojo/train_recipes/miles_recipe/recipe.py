@@ -1,4 +1,3 @@
-import warnings
 from collections.abc import Callable
 from dataclasses import field
 from typing import Any, ClassVar, Literal
@@ -745,16 +744,18 @@ class MilesRecipe(BaseTrainRecipe):
         return self
 
     @model_validator(mode="after")
-    def _warn_routing_replay_with_custom_rollout(self) -> "MilesRecipe":
-        if not self.use_rollout_routing_replay:
-            return self
-        if self.rollout_function is None and self.custom_generate_function is None:
-            return self
-        warnings.warn(
-            "use_rollout_routing_replay=True requires routed experts from each rollout. "
-            "Update your custom rollout to return them, or set use_rollout_routing_replay=False.",
-            stacklevel=2,
+    def _validate_tito_session_server(self) -> "MilesRecipe":
+        hatch = self._escape_hatch_values()
+        tito_model = hatch.get("tito_model", getattr(self, "tito_model", None))
+        use_session_server = hatch.get(
+            "use_session_server", getattr(self, "use_session_server", None)
         )
+        if tito_model not in (None, "", "default") and not use_session_server:
+            raise DojoConfigError(
+                f"tito_model={tito_model!r} requires use_session_server; Miles only "
+                "applies TITO in the session server. Set use_session_server=True "
+                "or tito_model='default'."
+            )
         return self
 
     # ── Container → miles flag converters ────────────────────────────────────
@@ -812,6 +813,7 @@ class MilesRecipe(BaseTrainRecipe):
         )
         optional = {
             "kv_lora_rank": arch.kv_lora_rank,
+            "q_lora_rank": arch.q_lora_rank,
             "qk_head_dim": arch.qk_head_dim,
             "qk_pos_emb_head_dim": arch.qk_pos_emb_head_dim,
             "v_head_dim": arch.v_head_dim,

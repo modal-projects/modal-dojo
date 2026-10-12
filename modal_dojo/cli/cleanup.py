@@ -9,6 +9,7 @@ from modal.exception import InvalidError, NotFoundError
 from modal_dojo.common.advantage_distribution import AdvantageDistribution
 from modal_dojo.common.run import TrainingRun, TrainingRunStatus
 from modal_dojo.common.step_timing import RoleTimingRecord
+from modal_dojo.common.training_rollout import TrainingRolloutResult
 from modal_dojo.utils import metadata
 from modal_dojo.utils.metadata import (
     MetadataStore,
@@ -76,6 +77,10 @@ def cleanup(*, older_than_days: int = 7, dry_run: bool = False) -> None:
             MetadataStore.ADVANTAGE_DISTRIBUTIONS,
             AdvantageDistribution.run_prefix(rid),
         )
+        deleted_rollouts += vol_remove_keys_with_prefix(
+            MetadataStore.TRAINING_ROLLOUTS, f"{rid}__"
+        )
+        vol_remove_keys_with_prefix(TrainingRolloutResult.summary_store(rid), "")
         timing_volume = metadata._metadata_volume()
         metadata._safe_reload(timing_volume)
         try:
@@ -90,16 +95,12 @@ def cleanup(*, older_than_days: int = 7, dry_run: bool = False) -> None:
     rollout_summary = (
         vol_get_summary_items(MetadataStore.TRAINING_ROLLOUTS_SUMMARY) or []
     )
-    kept_rollout_items = []
-    for item in rollout_summary:
-        if item.get("training_run_id") in target_ids:
-            key = item.get("summary_key") or ""
-            if key:
-                vol_remove(MetadataStore.TRAINING_ROLLOUTS, key)
-                deleted_rollouts += 1
-        else:
-            kept_rollout_items.append(item)
-    if deleted_rollouts:
+    kept_rollout_items = [
+        item
+        for item in rollout_summary
+        if item.get("training_run_id") not in target_ids
+    ]
+    if len(kept_rollout_items) != len(rollout_summary):
         vol_put_summary_items(
             MetadataStore.TRAINING_ROLLOUTS_SUMMARY, kept_rollout_items
         )

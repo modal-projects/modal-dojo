@@ -1,93 +1,50 @@
-# Debug reward
+# 01 — Reward is flat or unexpectedly low
 
-Use this reference when reward is flat, declining, saturated, unexpectedly
-volatile, or improving suspiciously fast.
-
-## Characterize the trajectory
-
-```bash
-modal-dojo run get <run-id> --verbose
-```
+## Inspect attempts and scoring
 
 Compare the baseline, early steps, recent steps, sample counts, and variance.
 Do not infer learning from the final value alone.
 
-Before interpreting the curve, identify what population the algorithm reports.
-Algorithms that oversample or dynamically filter candidates may report reward
-over a changing retained population, so their reward need not rise
-monotonically. DAPO is one example. A plateau alone is not a stop signal;
-compare fixed task metrics, filter/retention counts, and representative traces.
-Use `run params` to confirm the sampling configuration, `run get --verbose` to
-inspect rollout summaries and task metrics, and `run trace` to inspect
-filtering evidence and raw samples.
-
-- Flat near chance: the model may not be learning, the signal may be sparse,
-  or extraction may return zero broadly.
-- Declining: inspect regressions, truncation, instability, and whether the
-  optimization target matches the task metric.
 - Near the ceiling from the first rollout: the base model may already solve the
   task, the evaluation set may be too easy, or the reward may leak or overmatch.
 - Abrupt jump to perfect reward: inspect for answer leakage, permissive parsing,
   duplicated samples, and reward hacking before treating it as success.
 
-Ceiling thresholds are task-relative. Require enough steps and samples to
-separate saturation from normal variance.
+**Inspect the attempt → validate the verifier → interpret the reward distribution.**
 
-## Decide whether to stop an active run
-
-Set an early efficacy checkpoint proportional to the run length; for example,
-reassess a 150-step run across roughly steps 10–40. If enough comparable
-samples and fixed task metrics show that learning remains flat outside normal
-noise, declines, or is otherwise uninformative, stop the run instead of waiting
-for completion. Do not stop on a single noisy point or an algorithm-expected plateau, 
-but do not keep a healthy yet ineffective job alive only because it has not failed.
-
-To stop it, use `modal-dojo run get <run-id>` to obtain the Modal
-app ID, then:
-
-```bash
-modal app stop <app-id>
-```
-
-Diagnose the trajectory, change one parameter, and launch a fresh smoke test
-before promoting again.
-
-## Download representative traces
-
-Choose baseline, anomalous, transition, and recent steps based on the observed
-reward trajectory, then download their traces after a dry-run:
-
-```bash
-modal-dojo run trace <run-id> --out ./traces --step <steps>
-```
-
-## Classify samples
-
-Compare both low- and high-reward samples. Classify:
-
-- correct answer scored incorrectly,
-- incorrect or malformed answer scored as correct,
-- prediction extracted from the prompt/reference instead of the response,
-- response truncation or missing final answer,
-- repeated tool-call or environment failures,
-- parser mismatch with otherwise valid answers,
-- repeated templates, copied references, or other reward-hacking behavior,
-- infrastructure errors represented as task failures.
+| Inspect first | What should hold |
+| --- | --- |
+| [**Generation trace**](../SKILL.md#trace-monitoring) | Confirm the intended prompt and tool observations reached the policy. Distinguish wrong answers, budget exhaustion, repetitive loops and tool failures. Check the termination reason and end-of-sequence (EOS)/stop settings. |
+| **Verifier input and decision** | Confirm the verifier received the intended answer or artifact. Inspect extraction and tests using known correct and incorrect examples. Separate verifier errors from valid failure judgments. |
+| **Recorded reward** | Confirm the value matches the verifier's decision and the stated objective. Count truncations and execution errors separately. Repair generation or scoring errors before tuning learning. |
 
 Recompute the reward locally for representative samples using the exact
 prompt, response, and reference fields. Add fixture cases for every discovered
 false positive or false negative.
 
-## Decide the next experiment
+**If attempts end too early:** fix unintended stop conditions; increase the budget (`rollout_max_response_len` for training rollouts, `eval_max_response_len` for evaluation) only if the task objective permits. If success must fit a fixed budget, keep that constraint explicit in scoring and evaluation. Masking truncated responses removes their direct policy-loss contribution, but their rewards may still affect other group members' advantages. Check the implementation.
 
-- Reward implementation bug: fix it and rerun the one-step proof.
-- Task is already saturated: make the task or evaluation more discriminative;
-  do not launch a full horizon to produce an uninformative curve.
-- Sparse but valid signal: adjust one reward or sampling choice and repeat the
-  smoke test.
-- Base model almost never crosses a required correctness gate: propose a
-  stronger model or a justified graded signal/curriculum.
-- Model behavior problem: change one training setting and compare fresh runs
-  over equivalent steps and samples.
+## Inspect group contrast and choose an intervention
 
-Never silently redefine the task metric merely to make the curve rise.
+For Group Relative Policy Optimization (GRPO) and similar methods, next inspect rewards **within each prompt group**. The example uses binary rewards; with graded rewards, inspect within-group variation.
+
+**Compare prompt groups, not only batch accuracy.** Batches with the same
+overall accuracy can have different learning signal: mixed correct/incorrect
+responses within each group provide reward contrast, while a batch of all-correct
+and all-wrong groups does not. In uniform groups, centered advantages are zero:
+this reward term supplies no policy-gradient signal, though auxiliary losses
+may still contribute.
+
+Uniform groups are normal. Investigate a sustained lack of reward contrast across the training data.
+
+| Pattern across batches | Interpretation and possible response |
+| --- | --- |
+| **Mostly all wrong** | Successes may be too rare under this policy and budget. Consider a curriculum, stronger initial policy or larger budget if the objective permits. Filtering cannot create successful attempts. |
+| **Mostly all correct** | The policy may already meet the objective. Otherwise, introduce harder or underrepresented tasks. |
+| **Mixed rewards, little progress** | Inspect exploration ([02](debug-entropy.md)) and the update ([04](debug-updates.md)). Reward contrast alone does not guarantee improvement. |
+
+**If informative groups are scarce but obtainable:** [dynamic sampling](https://arxiv.org/html/2503.14476v2#S3.SS2) fills each fixed-size training batch with mixed-reward groups. For binary rewards, retain groups with **at least one correct and one incorrect response**; discard uniform groups. Keep accepted groups while sampling more until the target is met, then update the policy.
+
+Track **group acceptance rate** (accepted groups divided by sampled groups) and collection time. Low acceptance means more generation per retained group; check whether rejections are mainly all-wrong or all-correct. There is no universal cutoff: judge whether the additional learning signal justifies the collection cost.
+
+**Filtering can help learning, but a change in training-batch accuracy is not proof.** Selection changes which outcomes enter that metric, so it no longer estimates success on the original prompt distribution. Compare unfiltered held-out improvement **per update and per elapsed time** against a run without filtering. Training metrics still diagnose reward contrast, gradients and stability.

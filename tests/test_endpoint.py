@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import inspect
+import json
 import subprocess
 from types import SimpleNamespace
 from typing import Any
 
 import httpx
-import modal
 import pytest
 from modal.cli.endpoint import create as modal_endpoint_create
 
@@ -60,19 +60,18 @@ class _FakeResponse:
 
 
 class _FakeModalCli:
-    """Records ``modal endpoint create`` invocations and scripts ``get_url()``."""
-
     DEFAULT_URL = "https://ws--ep-test.modal.run"
+    ENDPOINT_ID = "ep-EiL9qLU2NnQ8Vim3jOmoAf"
 
     def __init__(
         self,
-        urls: list[str | None | BaseException] | None,
+        urls: list[str | None] | None,
         stop_returncode: int = 0,
         stop_error: BaseException | None = None,
     ) -> None:
         self.commands: list[list[str]] = []
         self.run_kwargs: list[dict[str, Any]] = []
-        self.servers: list[tuple[str, str, str | None]] = []
+        self.infos: list[list[str]] = []
         self._urls = urls
         self._stop_returncode = stop_returncode
         self._stop_error = stop_error
@@ -82,6 +81,20 @@ class _FakeModalCli:
         self._create_stdout = ""
 
     def run(self, command: list[str], **kwargs: Any) -> SimpleNamespace:
+        if command[4] == "info":
+            self.infos.append(list(command))
+            return SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps(
+                    {
+                        "name": "my-ft",
+                        "endpoint_id": self.ENDPOINT_ID,
+                        "service_url": self.next_url(),
+                        "environment_name": "ajhinh-dev",
+                    }
+                ),
+                stderr="",
+            )
         self.commands.append(list(command))
         self.run_kwargs.append(kwargs)
         if "stop" in command:
@@ -106,19 +119,10 @@ class _FakeModalCli:
             stderr="",
         )
 
-    def from_name(
-        self, app_name: str, cls_name: str, environment_name: str | None = None
-    ) -> SimpleNamespace:
-        self.servers.append((app_name, cls_name, environment_name))
-        return SimpleNamespace(get_url=self.get_url)
-
-    def get_url(self) -> str | None:
+    def next_url(self) -> str | None:
         if self._urls is None:
             return self.DEFAULT_URL
-        value = self._urls.pop(0) if self._urls else None
-        if isinstance(value, BaseException):
-            raise value
-        return value
+        return self._urls.pop(0) if self._urls else None
 
     @property
     def last_command(self) -> list[str]:
@@ -138,7 +142,7 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> _FakeClock:
 @pytest.fixture
 def fake_modal_cli(monkeypatch: pytest.MonkeyPatch, clock: _FakeClock):
     def _install(
-        urls: list[str | None | BaseException] | None = None,
+        urls: list[str | None] | None = None,
         stop_returncode: int = 0,
         stop_error: BaseException | None = None,
     ) -> _FakeModalCli:
@@ -146,14 +150,6 @@ def fake_modal_cli(monkeypatch: pytest.MonkeyPatch, clock: _FakeClock):
             urls, stop_returncode=stop_returncode, stop_error=stop_error
         )
         monkeypatch.setattr(endpoint_module.subprocess, "run", cli.run)
-        monkeypatch.setattr(
-            endpoint_module,
-            "modal",
-            SimpleNamespace(
-                Server=SimpleNamespace(from_name=cli.from_name),
-                exception=modal.exception,
-            ),
-        )
         return cli
 
     return _install
@@ -162,7 +158,7 @@ def fake_modal_cli(monkeypatch: pytest.MonkeyPatch, clock: _FakeClock):
 def _endpoint(*, requires_proxy_auth: bool = False) -> Endpoint:
     return Endpoint(
         "https://ws--ep.modal.run",
-        endpoint_name="my-ft",
+        endpoint_id=_FakeModalCli.ENDPOINT_ID,
         model_name="model",
         requires_proxy_auth=requires_proxy_auth,
     )
@@ -189,7 +185,6 @@ def test_launch_creates_a_public_endpoint(fake_modal_cli) -> None:
 
     assert cli.last_command[1:5] == ["-m", "modal", "endpoint", "create"]
     assert cli.flag_value("--model") == "Qwen/Qwen3-4B"
-    assert cli.flag_value("--name") == endpoint.endpoint_name
     assert "--unauthenticated" in cli.last_command
     assert "--env" not in cli.last_command
     assert "--routing-region" not in cli.last_command
@@ -204,6 +199,8 @@ def test_launch_creates_a_public_endpoint(fake_modal_cli) -> None:
         "capture_output": True,
         "text": True,
     }
+    assert endpoint.endpoint_id == _FakeModalCli.ENDPOINT_ID
+    assert endpoint.url == _FakeModalCli.DEFAULT_URL
     assert endpoint.model_name == "Qwen/Qwen3-4B"
     assert endpoint.requires_proxy_auth is False
 
@@ -229,7 +226,7 @@ def test_launch_forwards_environment_and_routing_region(fake_modal_cli) -> None:
 
     assert cli.flag_value("--env") == "dev"
     assert cli.flag_value("--routing-region") == "us-east"
-    assert cli.servers[-1][2] == "dev"
+    assert cli.infos[-1][-2:] == ["--env", "dev"]
 
 
 def test_launch_appends_colocate_compute(fake_modal_cli) -> None:
@@ -402,66 +399,53 @@ def test_launch_never_puts_an_hf_token_on_the_command_line(fake_modal_cli) -> No
     assert cli.last_command.count("--custom-hf-token") == 0
 
 
-def test_launch_derives_stable_names_from_the_serving_spec(fake_modal_cli) -> None:
-    fake_modal_cli()
+def _created_names(cli: _FakeModalCli) -> list[str]:
+    return [
+        command[command.index("--name") + 1]
+        for command in cli.commands
+        if "create" in command
+    ]
 
-    public = Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=True)
-    repeated = Endpoint.launch(
-        ModelConfig(model_name="Qwen/Qwen3-4B"), unauthenticated=True
-    )
-    authenticated = Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=False)
-    other_model = Endpoint.launch("Qwen/Qwen3-8B", unauthenticated=True)
-    other_region = Endpoint.launch(
-        "Qwen/Qwen3-4B", unauthenticated=True, routing_region="us-east"
-    )
-    checkpointed = Endpoint.launch("Qwen/Qwen3-4B", _checkpoint(), unauthenticated=True)
-    other_checkpoint = Endpoint.launch(
+
+def test_launch_derives_stable_names_from_the_serving_spec(fake_modal_cli) -> None:
+    cli = fake_modal_cli()
+
+    Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=True)
+    Endpoint.launch(ModelConfig(model_name="Qwen/Qwen3-4B"), unauthenticated=True)
+    Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=False)
+    Endpoint.launch("Qwen/Qwen3-8B", unauthenticated=True)
+    Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=True, routing_region="us-east")
+    Endpoint.launch("Qwen/Qwen3-4B", _checkpoint(), unauthenticated=True)
+    Endpoint.launch(
         "Qwen/Qwen3-4B",
         _checkpoint("/checkpoints/run-1/iter_20_hf"),
         unauthenticated=True,
     )
 
-    assert public.endpoint_name.startswith("training-gym-")
-    assert public.endpoint_name == repeated.endpoint_name
-    assert (
-        len(
-            {
-                public.endpoint_name,
-                authenticated.endpoint_name,
-                other_model.endpoint_name,
-                other_region.endpoint_name,
-                checkpointed.endpoint_name,
-                other_checkpoint.endpoint_name,
-            }
-        )
-        == 6
-    )
-    assert public.endpoint_name == "training-gym-814a133f9cff"
+    public, repeated, *others = _created_names(cli)
+    assert public == repeated == "training-gym-814a133f9cff"
+    assert len({public, *others}) == 6
 
 
 def test_launch_derived_name_changes_for_colocate(
     fake_modal_cli,
 ) -> None:
-    fake_modal_cli()
+    cli = fake_modal_cli()
 
-    default = Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=True)
-    colocated = Endpoint.launch(
-        "Qwen/Qwen3-4B", unauthenticated=True, colocate_compute=True
-    )
+    Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=True)
+    Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=True, colocate_compute=True)
 
-    assert default.endpoint_name != colocated.endpoint_name
+    default, colocated = _created_names(cli)
+    assert default != colocated
 
 
 def test_launch_uses_an_explicit_endpoint_name(fake_modal_cli) -> None:
     cli = fake_modal_cli()
 
-    endpoint = Endpoint.launch(
-        "Qwen/Qwen3-4B", endpoint_name="my-ft", unauthenticated=True
-    )
+    Endpoint.launch("Qwen/Qwen3-4B", endpoint_name="my-ft", unauthenticated=True)
 
-    assert endpoint.endpoint_name == "my-ft"
     assert cli.flag_value("--name") == "my-ft"
-    assert cli.servers[-1][:2] == ("ep-my-ft", "Server")
+    assert cli.infos[-1][5:] == ["my-ft", "--json"]
 
 
 def test_launch_does_not_stop_by_default(fake_modal_cli) -> None:
@@ -485,7 +469,8 @@ def test_launch_reuses_existing_named_endpoint(fake_modal_cli) -> None:
     )
 
     assert [command[4] for command in cli.commands] == ["create"]
-    assert endpoint.endpoint_name == "my-ft"
+    assert cli.infos[-1][5:] == ["my-ft", "--json"]
+    assert endpoint.endpoint_id == _FakeModalCli.ENDPOINT_ID
     assert endpoint.url == _FakeModalCli.DEFAULT_URL
 
 
@@ -498,7 +483,7 @@ def test_launch_raises_when_create_fails(fake_modal_cli) -> None:
         Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=True)
 
     assert [command[4] for command in cli.commands] == ["create"]
-    assert cli.servers == []
+    assert cli.infos == []
 
 
 def test_launch_reuses_existing_named_endpoint_after_recreate_stop(
@@ -516,7 +501,7 @@ def test_launch_reuses_existing_named_endpoint_after_recreate_stop(
     )
 
     assert [command[4] for command in cli.commands] == ["stop", "create"]
-    assert endpoint.endpoint_name == "my-ft"
+    assert endpoint.endpoint_id == _FakeModalCli.ENDPOINT_ID
     assert endpoint.url == _FakeModalCli.DEFAULT_URL
 
 
@@ -539,7 +524,7 @@ def test_launch_stops_then_creates_when_recreate_if_existing(fake_modal_cli) -> 
         "timeout": 120,
     }
     assert cli.flag_value("--name") == "my-ft"
-    assert endpoint.endpoint_name == "my-ft"
+    assert endpoint.endpoint_id == _FakeModalCli.ENDPOINT_ID
 
 
 def test_recreate_stop_forwards_environment(fake_modal_cli) -> None:
@@ -578,7 +563,7 @@ def test_recreate_creates_when_stop_name_is_absent(fake_modal_cli) -> None:
     )
 
     assert [command[4] for command in cli.commands] == ["stop", "create"]
-    assert endpoint.endpoint_name == "my-ft"
+    assert endpoint.endpoint_id == _FakeModalCli.ENDPOINT_ID
     assert endpoint.url == _FakeModalCli.DEFAULT_URL
 
 
@@ -596,7 +581,7 @@ def test_recreate_creates_when_stop_already_stopped(fake_modal_cli) -> None:
     )
 
     assert [command[4] for command in cli.commands] == ["stop", "create"]
-    assert endpoint.endpoint_name == "my-ft"
+    assert endpoint.endpoint_id == _FakeModalCli.ENDPOINT_ID
     assert endpoint.url == _FakeModalCli.DEFAULT_URL
 
 
@@ -646,26 +631,19 @@ def test_recreate_raises_when_stop_times_out(fake_modal_cli) -> None:
 
 
 def test_recreate_does_not_change_derived_name(fake_modal_cli) -> None:
-    fake_modal_cli()
+    cli = fake_modal_cli()
 
-    created = Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=True)
-    recreated = Endpoint.launch(
-        "Qwen/Qwen3-4B", unauthenticated=True, recreate_if_existing=True
-    )
+    Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=True)
+    Endpoint.launch("Qwen/Qwen3-4B", unauthenticated=True, recreate_if_existing=True)
 
-    assert created.endpoint_name == recreated.endpoint_name
+    created, recreated = _created_names(cli)
+    assert created == recreated
 
 
 def test_launch_polls_until_the_server_publishes_a_url(
     fake_modal_cli, clock: _FakeClock
 ) -> None:
-    fake_modal_cli(
-        [
-            modal.exception.NotFoundError("no server yet"),
-            None,
-            "https://ws--ep-my-ft.modal.run/",
-        ]
-    )
+    fake_modal_cli([None, None, "https://ws--ep-my-ft.modal.run/"])
 
     endpoint = Endpoint.launch(
         "Qwen/Qwen3-4B", endpoint_name="my-ft", unauthenticated=True
@@ -689,6 +667,37 @@ def test_launch_times_out_when_no_url_is_published(
         )
 
     assert clock.now >= 5
+
+
+def test_stop_invokes_modal_endpoint_stop(fake_modal_cli) -> None:
+    cli = fake_modal_cli()
+
+    _endpoint().stop()
+
+    assert [command[4] for command in cli.commands] == ["stop"]
+    assert cli.commands[0][1:] == [
+        "-m",
+        "modal",
+        "endpoint",
+        "stop",
+        _FakeModalCli.ENDPOINT_ID,
+        "--yes",
+    ]
+    assert cli.run_kwargs[0] == {
+        "check": False,
+        "capture_output": True,
+        "text": True,
+        "timeout": 120,
+    }
+
+
+def test_stop_tolerates_missing_endpoint(fake_modal_cli) -> None:
+    cli = fake_modal_cli(stop_returncode=1)
+    cli._stop_stderr = f"Endpoint '{_FakeModalCli.ENDPOINT_ID}' not found."
+
+    _endpoint().stop()
+
+    assert [command[4] for command in cli.commands] == ["stop"]
 
 
 def test_headers_are_empty_for_public_endpoints(
@@ -762,8 +771,9 @@ def test_wait_until_ready_sends_proxy_headers_when_required(
 
 @pytest.mark.parametrize("status_code", [401, 403])
 def test_wait_until_ready_reports_rejected_proxy_credentials(
-    monkeypatch: pytest.MonkeyPatch, clock: _FakeClock, status_code: int
+    monkeypatch: pytest.MonkeyPatch, fake_modal_cli, status_code: int
 ) -> None:
+    fake_modal_cli()
     monkeypatch.setattr(
         endpoint_module,
         "modal_proxy_auth_headers",
@@ -773,7 +783,10 @@ def test_wait_until_ready_reports_rejected_proxy_credentials(
         endpoint_module.httpx, "get", lambda *_, **__: _FakeResponse(status_code)
     )
 
-    with pytest.raises(RuntimeError, match="rejected proxy authentication"):
+    with pytest.raises(
+        RuntimeError,
+        match="Endpoint 'my-ft' in environment 'ajhinh-dev' rejected proxy",
+    ):
         _endpoint(requires_proxy_auth=True).wait_until_ready(timeout=60)
 
 
@@ -789,14 +802,18 @@ def test_wait_until_ready_surfaces_unexpected_statuses(
 
 
 def test_wait_until_ready_times_out_and_keeps_the_last_error(
-    monkeypatch: pytest.MonkeyPatch, clock: _FakeClock
+    monkeypatch: pytest.MonkeyPatch, clock: _FakeClock, fake_modal_cli
 ) -> None:
+    fake_modal_cli()
+
     def _get(*_: Any, **__: Any) -> _FakeResponse:
         raise httpx.ConnectError("connection refused")
 
     monkeypatch.setattr(endpoint_module.httpx, "get", _get)
 
-    with pytest.raises(TimeoutError, match="my-ft") as excinfo:
+    with pytest.raises(
+        TimeoutError, match="endpoint 'my-ft' in environment 'ajhinh-dev'"
+    ) as excinfo:
         _endpoint().wait_until_ready(timeout=6)
 
     assert isinstance(excinfo.value.__cause__, httpx.ConnectError)

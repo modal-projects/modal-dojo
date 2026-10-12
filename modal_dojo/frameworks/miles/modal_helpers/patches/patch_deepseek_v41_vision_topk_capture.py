@@ -17,6 +17,9 @@ Run the same capture hook ``select_experts`` runs, mirroring
 ``build_precomputed_topk_output``.
 
 Executed at image-build time via ``python3 <this file>``.
+
+Image: radixark/miles:dsv41-h200-ea751aac8
+SGLang: 7e74b31b2668934cf89dbe15188a010fda381aba
 """
 
 import pathlib
@@ -28,27 +31,29 @@ TARGET = pathlib.Path(
 )
 
 OLD_IMPORT = """from sglang.srt.layers.moe.topk import (
+    _RENORMALIZE_SUM_EPSILON,
     StandardTopKOutput,
+    StandardTopKOutputPacked,
     _mask_topk_ids_padded_region,
     _zero_topk_weights_padded_region,
 )
 """
 NEW_IMPORT = f"""from sglang.srt.layers.moe.topk import (  # {MARKER}
+    _RENORMALIZE_SUM_EPSILON,
     StandardTopKOutput,
+    StandardTopKOutputPacked,
     _mask_topk_ids_padded_region,
     _zero_topk_weights_padded_region,
     capture_routed_experts_if_allowed,
 )
 """
 
-OLD_CUDA_RETURN = """            num_token_non_padded=num_token_non_padded,
-        )
-        return StandardTopKOutput(weights, indices, logits)
+OLD_CUDA_RETURN = """        if packed_topk is not None:
+            return StandardTopKOutputPacked(weights, indices, logits, packed_topk)
 """
-NEW_CUDA_RETURN = """            num_token_non_padded=num_token_non_padded,
-        )
-        capture_routed_experts_if_allowed(config, moe.layer_id, indices)
-        return StandardTopKOutput(weights, indices, logits)
+NEW_CUDA_RETURN = """        capture_routed_experts_if_allowed(config, moe.layer_id, indices)
+        if packed_topk is not None:
+            return StandardTopKOutputPacked(weights, indices, logits, packed_topk)
 """
 
 OLD_NATIVE_RETURN = """        _zero_topk_weights_padded_region(weights, num_token_non_padded)
@@ -59,27 +64,26 @@ NEW_NATIVE_RETURN = """        _zero_topk_weights_padded_region(weights, num_tok
     return StandardTopKOutput(weights, indices, logits)
 """
 
-if not TARGET.exists():
-    print(f"{TARGET} not found; skipping DeepSeek-V4.1 vision_topk capture patch")
-    raise SystemExit(0)
 
-src = TARGET.read_text()
-if MARKER in src:
-    print("DeepSeek-V4.1 vision_topk capture patch already applied")
-    raise SystemExit(0)
+def patch_source(src: str) -> str:
+    if MARKER in src:
+        return src
+    replacements = (
+        (OLD_IMPORT, NEW_IMPORT),
+        (OLD_CUDA_RETURN, NEW_CUDA_RETURN),
+        (OLD_NATIVE_RETURN, NEW_NATIVE_RETURN),
+    )
+    for old, _ in replacements:
+        if src.count(old) != 1:
+            raise ValueError(
+                "DeepSeek-V4.1 vision_topk capture patch did not match; re-check "
+                "whether vision_topk now captures routed experts itself."
+            )
+    for old, new in replacements:
+        src = src.replace(old, new, 1)
+    return src
 
-for old in (OLD_IMPORT, OLD_CUDA_RETURN, OLD_NATIVE_RETURN):
-    if src.count(old) != 1:
-        raise SystemExit(
-            "DeepSeek-V4.1 vision_topk capture patch did not match; sglang's "
-            "multimodal/dsv41/vl_routing.py has changed. Re-check whether "
-            "vision_topk now runs capture_routed_experts_if_allowed itself."
-        )
 
-src = (
-    src.replace(OLD_IMPORT, NEW_IMPORT, 1)
-    .replace(OLD_CUDA_RETURN, NEW_CUDA_RETURN, 1)
-    .replace(OLD_NATIVE_RETURN, NEW_NATIVE_RETURN, 1)
-)
-TARGET.write_text(src)
-print("Patched sglang vl_routing.py: vision_topk records routed experts")
+if __name__ == "__main__":
+    TARGET.write_text(patch_source(TARGET.read_text()))
+    print("Patched vision_topk routed-expert capture, including packed CUDA output")
