@@ -15,7 +15,10 @@ from modal_dojo.train_recipes.miles_recipe.kimi_k3 import (
 
 _PATCHES = (
     "patch_sglang_lora_cpu_stash",
+    "patch_sglang_freeze_gc",
     "patch_k3_ddp_stream",
+    "patch_k3_kernel_warmup",
+    "patch_checkpoint_tensor_reads",
     "patch_k3_lora_health",
 )
 
@@ -49,6 +52,8 @@ class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
             # Cache autotuning decisions as well as compiled kernels.
             "TRITON_CACHE_AUTOTUNING": "1",
             "TRITON_PRINT_AUTOTUNING": "1",
+            # Warm each pipeline stage before the first training microbatch.
+            "DOJO_K3_KERNEL_WARMUP": "1",
             # A full unsharded adapter does not fit alongside TP8 inference weights.
             "DOJO_SGLANG_LORA_CPU_STASH": "1",
         }
