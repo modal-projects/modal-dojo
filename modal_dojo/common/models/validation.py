@@ -42,6 +42,7 @@ class _ValidationConfig:
     # Which framework's ``get_base_recipe`` trains this model.
     framework: Framework
     loss_type: str = "policy_loss"
+    timeout_s: int = 60 * 60
 
     @property
     def model_name(self) -> str:
@@ -83,8 +84,10 @@ class _ValidationConfig:
 
 
 VALIDATION_CONFIGS: set[_ValidationConfig] = {
-    _ValidationConfig("GLM-4.7", GLM_4_7, Framework.SLIME),
-    _ValidationConfig("GLM-5.3-Flash-LoRA", GLM_5_3_Flash_LoRA, Framework.MILES),
+    _ValidationConfig("GLM-4.7", GLM_4_7, Framework.SLIME, timeout_s=2 * 60 * 60),
+    _ValidationConfig(
+        "GLM-5.3-Flash-LoRA", GLM_5_3_Flash_LoRA, Framework.MILES, timeout_s=3 * 60 * 60
+    ),
     _ValidationConfig("Qwen3-0.6B", Qwen3_0_6B, Framework.SLIME),
     _ValidationConfig("Qwen3-1.7B", Qwen3_1_7B, Framework.SLIME),
     _ValidationConfig("Qwen3-4B", Qwen3_4B, Framework.SLIME),
@@ -98,14 +101,21 @@ VALIDATION_CONFIGS: set[_ValidationConfig] = {
         "Qwen3.5-4B-SFT", Qwen3_5_4B, Framework.SLIME, loss_type="sft_loss"
     ),
     _ValidationConfig("Qwen3.5-4B-Miles", Qwen3_5_4B, Framework.MILES),
-    _ValidationConfig("Qwen3.5-9B", Qwen3_5_9B, Framework.SLIME),
-    _ValidationConfig("Qwen3.6-27B", Qwen3_6_27B, Framework.SLIME),
-    _ValidationConfig("Qwen3.6-35B-A3B", Qwen3_6_35B, Framework.SLIME),
-    _ValidationConfig("Qwen3.8-27B", Qwen3_8_27B, Framework.SLIME),
+    _ValidationConfig("Qwen3.5-9B", Qwen3_5_9B, Framework.SLIME, timeout_s=2 * 60 * 60),
+    _ValidationConfig(
+        "Qwen3.6-27B", Qwen3_6_27B, Framework.SLIME, timeout_s=2 * 60 * 60
+    ),
+    _ValidationConfig(
+        "Qwen3.6-35B-A3B", Qwen3_6_35B, Framework.SLIME, timeout_s=2 * 60 * 60
+    ),
+    _ValidationConfig(
+        "Qwen3.8-27B", Qwen3_8_27B, Framework.SLIME, timeout_s=2 * 60 * 60
+    ),
     _ValidationConfig(
         "Moonlight-16B-A3B-Instruct",
         Moonlight_16B_A3B_Instruct,
         Framework.MILES,
+        timeout_s=2 * 60 * 60,
     ),
     _ValidationConfig(
         "Moonlight-16B-A3B-Instruct-SFT",
@@ -113,9 +123,20 @@ VALIDATION_CONFIGS: set[_ValidationConfig] = {
         Framework.MILES,
         loss_type="sft_loss",
     ),
-    _ValidationConfig("Gemma-4-26B-A4B-it", Gemma4_26B_A4B, Framework.MILES),
-    _ValidationConfig("Inkling-Small", Inkling_Small, Framework.MILES),
-    _ValidationConfig("Inkling-Small-LoRA", Inkling_Small_LoRA, Framework.MILES),
-    _ValidationConfig("DeepSeek-V4.1-Flash", DeepSeek_V4_1_Flash, Framework.MILES),
-    _ValidationConfig("Kimi-K3", Kimi_K3, Framework.MILES),
+    _ValidationConfig(
+        "Gemma-4-26B-A4B-it", Gemma4_26B_A4B, Framework.MILES, timeout_s=2 * 60 * 60
+    ),
+    _ValidationConfig(
+        "Inkling-Small", Inkling_Small, Framework.MILES, timeout_s=3 * 60 * 60
+    ),
+    _ValidationConfig(
+        "Inkling-Small-LoRA", Inkling_Small_LoRA, Framework.MILES, timeout_s=2 * 60 * 60
+    ),
+    _ValidationConfig(
+        "DeepSeek-V4.1-Flash",
+        DeepSeek_V4_1_Flash,
+        Framework.MILES,
+        timeout_s=2 * 60 * 60,
+    ),
+    _ValidationConfig("Kimi-K3", Kimi_K3, Framework.MILES, timeout_s=3 * 60 * 60),
 }
