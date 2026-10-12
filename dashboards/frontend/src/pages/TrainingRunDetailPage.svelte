@@ -146,19 +146,13 @@
   // the auto-refresh hands us a new `run` object with the same status (which
   // would otherwise tear down and rebuild the log stream, flashing the tail).
   let runStatus = $derived(String(run?.status || "").toLowerCase());
-  let metricUrl = $derived.by(() => {
-    const directUrl =
-      run?.train_result?.metric_url ||
+  let metricUrl = $derived(
+    run?.train_result?.metric_url ||
       run?.config_summary?.metric_url ||
       run?.train_result?.wandb_url ||
       run?.config_summary?.wandb_url ||
-      "";
-    if (directUrl) return directUrl;
-
-    const project =
-      run?.config_summary?.metric_project || run?.config_summary?.wandb_project || "";
-    return project ? `https://wandb.ai/home?search=${encodeURIComponent(project)}` : "";
-  });
+      "",
+  );
   let metricLink = $derived.by(() => {
     const raw = run?.metric_links?.length ? run.metric_links : run?.wandb_links;
     const links = raw?.length ? raw : metricUrl ? [{ url: metricUrl }] : [];
