@@ -2,6 +2,9 @@
 image: radixark/miles:dev-202609251434
 commit: https://github.com/sgl-project/sglang/commit/880e3d2453eb7ef1738350e8c35ba2b956cc93a9
 file: python/sglang/srt/entrypoints/http_server.py::_freeze_gc_after_server_warmup
+
+TODO: Remove once this merges and we bump the Miles image to include it:
+https://github.com/sgl-project/sglang/pull/40653
 """
 
 from pathlib import Path
