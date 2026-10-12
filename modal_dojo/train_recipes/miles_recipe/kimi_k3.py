@@ -137,6 +137,7 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
     global_batch_size: int = 64
     use_dynamic_global_batch_size: bool = True
     balance_data: bool = True
+    use_rollout_routing_replay: bool = True
     use_miles_router: bool = True
     miles_router_max_connections: int = 68
     skip_eval_before_train: bool = True
