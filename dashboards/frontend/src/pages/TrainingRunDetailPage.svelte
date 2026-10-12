@@ -41,6 +41,7 @@
   import { formatMetricValue } from "../lib/metricSeries.js";
   import { groupByRollout, rolloutIndex, rolloutScores } from "../lib/rolloutGrouping.js";
   import { normalizeMetricLinks } from "../lib/metricLinks.js";
+  import { retainedRollouts, retainedTimings } from "../lib/resume.js";
   import { PERCENTILE_LINES, percentileRowFields } from "../lib/percentileLines.js";
   import {
     MAX_TERMINAL_TIMING_FAILURES,
@@ -292,7 +293,8 @@
   });
 
   // ── Rollouts (auto-refresh while run is running) ─────────────────────
-  let rolloutSummaries = $state([]);
+  let allRolloutSummaries = $state([]);
+  let rolloutSummaries = $derived(retainedRollouts(allRolloutSummaries, run?.resume_state));
   let rolloutsLoading = $state(false);
   let rolloutsError = $state("");
   let expandedRolloutId = $state(null);
@@ -307,7 +309,8 @@
 
   // Per-step advantage distribution summaries (one row per step, each with the
   // step's overall stats + quantiles) — drives the advantage fan chart.
-  let advantageSteps = $state([]);
+  let allAdvantageSteps = $state([]);
+  let advantageSteps = $derived(retainedRollouts(allAdvantageSteps, run?.resume_state));
   let hasAdvantages = $derived(advantageSteps.length > 0);
 
   let lossPoints = $state(null);
@@ -516,7 +519,7 @@
       const wasEmpty = untrack(() => rolloutSummaries.length === 0);
       const rows = await fetchRunRollouts(runId, { signal });
       if (signal?.aborted) return;
-      rolloutSummaries = rows;
+      allRolloutSummaries = rows;
       rolloutsError = "";
 
       // Reveal the first rollout
@@ -566,7 +569,7 @@
       const serialized = timingReadFingerprint(timings);
       if (serialized !== runTimingsSerialized) {
         runTimingsSerialized = serialized;
-        runTimings = timings;
+        allRunTimings = timings;
       }
       const timingStale = Boolean(timings?.metadata?.timing_stale);
       if (!terminal) {
@@ -637,7 +640,7 @@
     try {
       const rows = await fetchRunAdvantages(runId, { signal });
       if (signal?.aborted) return;
-      advantageSteps = rows;
+      allAdvantageSteps = rows;
       return true;
     } catch {
       // Advantage data is optional (only present once the slime hook has
@@ -663,9 +666,9 @@
   // so flipping between the summary/rollouts tabs doesn't clear what's loaded).
   $effect(() => {
     runId;
-    rolloutSummaries = [];
+    allRolloutSummaries = [];
     rolloutsError = "";
-    runTimings = {};
+    allRunTimings = {};
     runTimingsSerialized = "{}";
     timingFailures = 0;
     terminalTimingFailures = 0;
@@ -677,10 +680,19 @@
     timingError = "";
     expandedRolloutId = null;
     expandedRollout = null;
-    advantageSteps = [];
+    allAdvantageSteps = [];
     lossPoints = null;
     lossError = "";
     lossStale = false;
+    closeBucket();
+  });
+
+  let resumeStartedAt = $derived(run?.resume_state?.last_attempt_started_at);
+  $effect(() => {
+    resumeStartedAt;
+    expandedRolloutId = null;
+    expandedRollout = null;
+    expandedRolloutLoading = false;
     closeBucket();
   });
 
@@ -747,7 +759,8 @@
     };
   });
 
-  let runTimings = $state({});
+  let allRunTimings = $state({});
+  let runTimings = $derived(retainedTimings(allRunTimings, run?.resume_state));
   let runTimingsSerialized = $state("{}");
   let showTimingSection = $derived(shouldShowTimingSection(runTimings));
   let timelineAsync = $derived(timingIsAsync(runTimings));
@@ -768,16 +781,17 @@
     expandedRollout = null;
     closeBucket();
     expandedRolloutLoading = true;
+    const attemptStartedAt = resumeStartedAt;
     try {
       const detail = await fetchRollout(runId, rolloutId);
-      if (expandedRolloutId === rolloutId) {
+      if (expandedRolloutId === rolloutId && resumeStartedAt === attemptStartedAt) {
         expandedRollout = detail;
         const d = sampleDist;
         const first = d ? d.buckets.findIndex((b) => b.length > 0) : -1;
         if (first >= 0) openBucket(first);
       }
     } finally {
-      if (expandedRolloutId === rolloutId) {
+      if (expandedRolloutId === rolloutId && resumeStartedAt === attemptStartedAt) {
         expandedRolloutLoading = false;
       }
     }

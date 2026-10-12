@@ -72,6 +72,10 @@ def cleanup(*, older_than_days: int = 7, dry_run: bool = False) -> None:
         rid = r.training_run_id
         if vol_remove(MetadataStore.TRAINING_RUNS, rid):
             deleted_runs += 1
+        vol_remove(MetadataStore.TRAINING_RUNS_SUMMARY, rid)
+        vol_remove(MetadataStore.TRAIN_RESULTS, rid)
+        vol_remove(MetadataStore.TRAIN_RESULTS_SUMMARY, rid)
+        vol_remove_keys_with_prefix(MetadataStore.TRAINING_RUN_UPDATES, f"{rid}__")
         vol_remove(MetadataStore.FRAMEWORK_STATUS_TOKENS, rid)
         vol_remove_keys_with_prefix(
             MetadataStore.ADVANTAGE_DISTRIBUTIONS,
@@ -80,16 +84,20 @@ def cleanup(*, older_than_days: int = 7, dry_run: bool = False) -> None:
         deleted_rollouts += vol_remove_keys_with_prefix(
             MetadataStore.TRAINING_ROLLOUTS, f"{rid}__"
         )
-        vol_remove_keys_with_prefix(TrainingRolloutResult.summary_store(rid), "")
+        vol_remove_keys_with_prefix(MetadataStore.TRAINING_ROLLOUTS_SUMMARY, f"{rid}__")
         timing_volume = metadata._metadata_volume()
         metadata._safe_reload(timing_volume)
-        try:
-            timing_volume.remove_file(RoleTimingRecord.store(rid), recursive=True)
-        except (FileNotFoundError, NotFoundError):
-            pass
-        except InvalidError as exc:
-            if "No such file or directory" not in str(exc):
-                raise
+        for store_path in (
+            TrainingRolloutResult.summary_store(rid),
+            RoleTimingRecord.store(rid),
+        ):
+            try:
+                timing_volume.remove_file(store_path, recursive=True)
+            except (FileNotFoundError, NotFoundError):
+                pass
+            except InvalidError as exc:
+                if "No such file or directory" not in str(exc):
+                    raise
         deleted_tokens += 1
 
     rollout_summary = (

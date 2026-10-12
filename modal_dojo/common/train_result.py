@@ -56,8 +56,5 @@ def save_train_result_blob(
         str(payload["training_run_id"]),
         payload,
         summary_store=MetadataStore.TRAIN_RESULTS_SUMMARY,
-        item_id_key="training_run_id",
-        sort_key=lambda item: str(item.get("training_run_id", "")),
-        reverse=True,
         is_async=is_async,
     )

@@ -14,7 +14,13 @@ from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.dataset import DatasetRow
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.ids import create_hash
-from modal_dojo.utils.metadata import MetadataStore, vol_get, vol_put
+from modal_dojo.utils.metadata import (
+    MetadataStore,
+    summary_items_from_payload,
+    vol_get,
+    vol_get_summary_items_healed,
+    vol_put,
+)
 
 from modal_dojo.common.sample import Sample
 from modal_dojo.common.sandbox import Sandbox
@@ -161,29 +167,25 @@ class EvalSummary(BaseModel):
 
     @classmethod
     def list_summaries(cls) -> list["EvalSummary"]:
+        summaries: dict[str, EvalSummary] = {}
         try:
             payload = vol_get(EVAL_SUMMARY_STORE, EVAL_SUMMARY_KEY)
         except KeyError:
-            return []
-        summaries = (
-            payload.get(EVAL_SUMMARY_PAYLOAD_KEY, [])
-            if isinstance(payload, dict)
-            else payload
-        )
-        if not isinstance(summaries, list):
-            return []
-        return [cls.model_validate(summary) for summary in summaries]
-
-    @classmethod
-    def save_summaries(cls, summaries: list["EvalSummary"]) -> None:
-        vol_put(
-            EVAL_SUMMARY_STORE,
-            EVAL_SUMMARY_KEY,
-            {
-                EVAL_SUMMARY_PAYLOAD_KEY: [
-                    summary.model_dump(mode="json") for summary in summaries
-                ]
-            },
+            payload = None
+        for item in summary_items_from_payload(payload, EVAL_SUMMARY_PAYLOAD_KEY):
+            if isinstance(item, dict) and item.get("eval_id"):
+                try:
+                    summaries[item["eval_id"]] = cls.model_validate(item)
+                except Exception:
+                    continue
+        for item in vol_get_summary_items_healed(MetadataStore.EVAL_SUMMARIES) or []:
+            if isinstance(item, dict) and item.get("eval_id"):
+                try:
+                    summaries[item["eval_id"]] = cls.model_validate(item)
+                except Exception:
+                    continue
+        return sorted(
+            summaries.values(), key=lambda summary: summary.created_at, reverse=True
         )
 
 
@@ -221,16 +223,16 @@ class EvalResult(BaseModel):
 
     def save(self) -> None:
         vol_put(MetadataStore.EVAL_RESULTS, self.eval_id, self.model_dump(mode="json"))
-        summaries = EvalSummary.list_summaries()
-        summaries_by_id = {summary.eval_id: summary for summary in summaries}
-        summaries_by_id[self.eval_id] = self.to_summary()
-        EvalSummary.save_summaries(
-            sorted(
-                summaries_by_id.values(),
-                key=lambda summary: summary.created_at,
-                reverse=True,
-            )
+        vol_put(
+            MetadataStore.EVAL_SUMMARIES,
+            self.eval_id,
+            self.to_summary().model_dump(mode="json"),
         )
+
+
+def eval_summary_item(payload: dict[str, Any]) -> dict[str, Any]:
+    """Reduce a canonical eval result payload to its summary row."""
+    return EvalResult.model_validate(payload).to_summary().model_dump(mode="json")
 
     @classmethod
     def from_id(cls, eval_id: str) -> "EvalResult":

@@ -2,6 +2,57 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { clipIdleSpans, nestedHitTargetsForRow, runTimeline } from "./timing.js";
+import { retainedRollouts, retainedTimings } from "./resume.js";
+
+const resumedRun = {
+  attempt_count: 2,
+  last_attempt_started_at: 1000,
+  resumed_from_checkpoint: true,
+  resume_from_iteration: 19,
+};
+
+test("resume keeps checkpoint history and fresh rollouts, not discarded steps", () => {
+  const rows = [
+    { rollout_id: 19, created_at: 900 },
+    { rollout_id: 20, created_at: 1000 },
+    { rollout_id: 21, created_at: 1100 },
+    { rollout_id: 22, created_at: 950 },
+    { rollout_id: 33, created_at: 990 },
+    { rollout_id: 34 },
+  ];
+  assert.deepEqual(retainedRollouts(rows, resumedRun), rows.slice(0, 3));
+  assert.deepEqual(retainedRollouts(rows, null), rows);
+  assert.deepEqual(retainedRollouts(rows, { ...resumedRun, attempt_count: 1 }), rows);
+  assert.deepEqual(retainedRollouts(rows, { ...resumedRun, last_attempt_started_at: null }), rows);
+  assert.deepEqual(retainedRollouts(rows, { ...resumedRun, resumed_from_checkpoint: false }), rows.slice(1, 3));
+  assert.deepEqual(retainedRollouts(rows, { ...resumedRun, resume_from_iteration: null }), rows.slice(1, 3));
+});
+
+test("a checkpoint at zero retains its completed first step", () => {
+  const rows = [{ rollout_id: 0, created_at: 900 }, { rollout_id: 1, created_at: 950 }];
+  assert.deepEqual(retainedRollouts(rows, { ...resumedRun, resume_from_iteration: 0 }), [rows[0]]);
+});
+
+test("resume filters timing lanes before aligning repeated step IDs", () => {
+  const old = { lane_start_unix_s: 900, phases: {} };
+  const current = { lane_start_unix_s: 1000, phases: {} };
+  const timings = {
+    metadata: { timing_stale: false },
+    startup: { roles: { driver: old } },
+    19: { roles: { actor: old } },
+    20: { roles: { driver: current, actor: old, rollout: current } },
+    33: { roles: { driver: old, actor: old } },
+    34: { roles: { actor: { phases: {} } } },
+  };
+  assert.deepEqual(retainedTimings(timings, resumedRun), {
+    metadata: timings.metadata,
+    startup: timings.startup,
+    19: timings[19],
+    20: { roles: { driver: current, rollout: current } },
+  });
+  assert.equal(timings[20].roles.actor, old);
+  assert.deepEqual(retainedTimings(timings, null), timings);
+});
 
 test("nested hit targets cover drawn bars without entering siblings", () => {
   const bars = [

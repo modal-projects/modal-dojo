@@ -7,8 +7,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from modal_dojo.common.modal_lifecycle import resolve_app_liveness
-from modal_dojo.common.run import TrainingRun, TrainingRunStatus
+from modal_dojo.common.modal_lifecycle import resolve_app_liveness, stop_app
+from modal_dojo.common.run import (
+    TrainingRun,
+    TrainingRunStatus,
+    load_run_updates,
+    merge_run_updates,
+)
 from modal_dojo.utils.metadata import (
     MetadataStore,
     vol_get,
@@ -40,6 +45,7 @@ class ReconcileResult:
     training_run_id: str
     reason: str
     previous_status: str
+    stopped_modal_app: bool = False
 
 
 def _has_modal_app(run: TrainingRun) -> bool:
@@ -165,19 +171,43 @@ def _load_running_runs() -> list[TrainingRun]:
     """Load running runs from canonical metadata, with healed summary as fallback."""
     runs_by_id: dict[str, TrainingRun] = {}
 
-    for raw in vol_list(MetadataStore.TRAINING_RUNS):
+    raws_by_id: dict[str, dict[str, Any] | None] = {}
+
+    def _canonical_key(raw: Any) -> str | None:
         if not isinstance(raw, dict):
+            return None
+        key = raw.get("training_run_id") or raw.get("run_id")
+        return str(key) if key else None
+
+    for raw in vol_list(MetadataStore.TRAINING_RUNS):
+        key = _canonical_key(raw)
+        if key is None or key in raws_by_id:
             continue
-        run = _parse_running_run(raw)
-        if run is not None:
-            runs_by_id[run.training_run_id] = run
+        if _parse_running_run(raw) is not None:
+            raws_by_id[key] = raw
+            continue
+        # A valid but non-running canonical record is authoritative: block a
+        # stale "running" summary from resurrecting the run. An unparseable
+        # canonical yields to whatever the summary holds.
+        try:
+            TrainingRun.model_validate(raw)
+            raws_by_id[key] = None
+        except Exception:
+            continue
 
     for raw in vol_get_summary_items_healed(MetadataStore.TRAINING_RUNS_SUMMARY) or []:
-        if not isinstance(raw, dict):
+        key = _canonical_key(raw)
+        if key is None or key in raws_by_id:
             continue
-        run = _parse_running_run(raw)
+        if _parse_running_run(raw) is not None:
+            raws_by_id[key] = raw
+
+    for raw in raws_by_id.values():
+        if raw is None:
+            continue
+        run = _parse_running_run(merge_run_updates(raw, load_run_updates(raw)))
         if run is not None:
-            runs_by_id.setdefault(run.training_run_id, run)
+            runs_by_id[run.training_run_id] = run
 
     return list(runs_by_id.values())
 
@@ -188,8 +218,10 @@ def reconcile_orphan_runs(
     now: int | None = None,
     get_lifecycle_state: Callable[[str], int | None] | None = None,
     has_train_result: Callable[[str], bool] | None = None,
+    stop_modal_app: Callable[[str], None] | None = None,
 ) -> list[ReconcileResult]:
     """Terminalize orphaned ``running`` runs. Returns reconciled run summaries."""
+    stop = stop_modal_app or stop_app
     now_ts = int(now if now is not None else time.time())
     has_result = has_train_result or _default_has_train_result
 
@@ -227,14 +259,25 @@ def reconcile_orphan_runs(
         if run.started_at:
             run.duration_seconds = max(0, finished_at - run.started_at)
 
+        # A launched run lives in a detached Modal app, so terminalizing the
+        # metadata alone leaves the cluster billing. Stop any app that isn't
+        # already known-dead before writing the terminal state.
+        stopped_modal_app = bool(app_id) and app_live is not False
+
         result = ReconcileResult(
             training_run_id=run.training_run_id,
             reason=decision.reason,
             previous_status=previous_status,
+            stopped_modal_app=stopped_modal_app,
         )
         if dry_run:
             results.append(result)
             continue
+
+        if stopped_modal_app:
+            stop(app_id)
+            metadata["stopped_modal_app_at"] = finished_at
+            run.metadata = metadata
 
         try:
             run.save()
