@@ -736,6 +736,21 @@ class MilesRecipe(BaseTrainRecipe):
         validate_multi_node_gpu_count(resolve_gpu_allocation(self), self.gpu_type)
         return self
 
+    @model_validator(mode="after")
+    def _validate_tito_session_server(self) -> "MilesRecipe":
+        hatch = self._escape_hatch_values()
+        tito_model = hatch.get("tito_model", getattr(self, "tito_model", None))
+        use_session_server = hatch.get(
+            "use_session_server", getattr(self, "use_session_server", None)
+        )
+        if tito_model not in (None, "", "default") and not use_session_server:
+            raise DojoConfigError(
+                f"tito_model={tito_model!r} requires use_session_server; Miles only "
+                "applies TITO in the session server. Set use_session_server=True "
+                "or tito_model='default'."
+            )
+        return self
+
     # ── Container → miles flag converters ────────────────────────────────────
 
     @classmethod

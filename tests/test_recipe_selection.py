@@ -25,6 +25,9 @@ from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 from modal_dojo.train_recipes.miles_recipe.gemma4_26b_a4b import (
     Gemma4_26B_A4B_Recipe,
 )
+from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash_lora import (
+    GLM_5_3_Flash_LoRA_Recipe,
+)
 from modal_dojo.train_recipes.miles_recipe.inkling import Inkling_Small_Recipe
 from modal_dojo.train_recipes.miles_recipe.moonlight_16b_a3b import (
     Moonlight_16B_A3B_Recipe,
@@ -354,3 +357,27 @@ def test_sft_extra_config_forced_override(recipe_cls, colocate, expectation) -> 
     recipe = recipe_cls(loss_type="sft_loss", extra_config={"colocate": colocate})
     with expectation:
         recipe.cli_args(dataset=_dataset())
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"use_session_server": False},
+        {"extra_config": {"use_session_server": False}},
+    ],
+)
+def test_glm53_tito_without_session_server_raises(kwargs: dict[str, Any]) -> None:
+    with pytest.raises(ValueError, match="requires use_session_server"):
+        GLM_5_3_Flash_LoRA_Recipe(loss_type="sft_loss", **kwargs)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"use_session_server": False, "tito_model": "default"},
+        {"extra_config": {"use_session_server": False, "tito_model": "default"}},
+    ],
+)
+def test_glm53_tito_session_server_valid_combinations(kwargs: dict[str, Any]) -> None:
+    GLM_5_3_Flash_LoRA_Recipe(loss_type="sft_loss", **kwargs)
