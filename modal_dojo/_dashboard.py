@@ -84,13 +84,21 @@ from modal_dojo.common.run_summary import (
     build_run_summary,
     build_run_summaries,
 )
+from modal_dojo.common.derived_metrics import (
+    RunPricing,
+    billing_rates,
+    changed_points,
+    derived_points,
+    driver_step_seconds,
+)
 from modal_dojo.common.metric_series import (
     MAX_POINTS_PER_KEY,
-    MetricPointsBatch,
-    RunMetrics,
     metric_series,
     metric_series_store,
     metric_step_keys,
+    MetricPoint,
+    MetricPointsBatch,
+    RunMetrics,
 )
 from modal_dojo.common.step_timing import (
     RoleTimingRecord,
@@ -703,6 +711,8 @@ def fastapi_app():
             self.dirty: set[str] = set()
             self.loaded_at: float | None = None
             self.lock = asyncio.Lock()
+            # How this run's steps are priced; resolved from its record once.
+            self.pricing: RunPricing | None = None
 
     metric_cache: dict[str, MetricEntry] = {}
 
@@ -736,6 +746,52 @@ def fastapi_app():
                 is_async=True,
             )
             entry.dirty.clear()
+
+    # ── Derived metrics ──────────────────────────────────────────────────
+    # Every run's tokens, throughput and cost per step (``dojo/*``), computed
+    # from what the framework logged plus the driver's step timing and the
+    # workspace's GPU rates, and written into the same chunks.
+    BILLING_RATES_TTL_S = 3600.0
+    billing_rates_at: float | None = None
+    billing_rates_cache: JsonDict = {}
+
+    async def _billing_rates() -> JsonDict:
+        nonlocal billing_rates_at, billing_rates_cache
+        at = billing_rates_at
+        if at is None or time.monotonic() - at > BILLING_RATES_TTL_S:
+            try:
+                billing_rates_cache = dict(await asyncio.to_thread(billing_rates))
+            except Exception as exc:
+                print(f"[dashboard] billing rates unavailable: {exc}", flush=True)
+            billing_rates_at = time.monotonic()
+        return billing_rates_cache
+
+    async def _pricing_for(training_run_id: str, entry: MetricEntry) -> RunPricing:
+        if entry.pricing is None:
+            try:
+                run = await TrainingRun.from_id(training_run_id, is_async=True)
+                recipe = (run.config or {}).get("recipe") or {}
+            except Exception:
+                recipe = {}
+            entry.pricing = RunPricing.from_recipe(recipe, await _billing_rates())
+        return entry.pricing
+
+    async def _refresh_derived_metrics(
+        training_run_id: str, entry: MetricEntry
+    ) -> None:
+        """Recompute the run's ``dojo/*`` points; caller holds ``entry.lock``."""
+        pricing = await _pricing_for(training_run_id, entry)
+        timing = timing_cache.get(training_run_id)
+        seconds = driver_step_seconds(timing.lanes) if timing else {}
+        points = changed_points(
+            entry.metrics.table,
+            derived_points(entry.metrics.table, seconds, pricing),
+        )
+        if points:
+            entry.dirty |= entry.metrics.merge_points(
+                MetricPoint(step=row, metrics=metrics)
+                for row, metrics in points.items()
+            )
 
     async def _flush_dirty_metrics() -> None:
         for training_run_id, entry in list(metric_cache.items()):
@@ -1477,6 +1533,7 @@ def fastapi_app():
         authorization: str | None = Header(default=None),
     ):
         await _require_framework_status_token(batch.training_run_id, authorization)
+        await _ensure_timing_loaded(batch.training_run_id)
         entry = await _metric_entry_for(batch.training_run_id)
         async with entry.lock:
             if entry.loaded_at is None:
@@ -1487,6 +1544,10 @@ def fastapi_app():
                         status_code=503, detail="Metric store unavailable"
                     )
             entry.dirty |= entry.metrics.merge_points(batch.points)
+            try:
+                await _refresh_derived_metrics(batch.training_run_id, entry)
+            except Exception as exc:
+                print(f"[dashboard] derived metrics failed: {exc}", flush=True)
             if batch.final:
                 await _flush_metrics(batch.training_run_id, entry)
         return JSONResponse({"status": "ok", "accepted": len(batch.points)})
@@ -1494,6 +1555,7 @@ def fastapi_app():
     @web.get("/api/runs/{training_run_id}/metrics")
     async def get_run_metrics(training_run_id: str = FastAPIPath()):
         run = await _get_run_or_404(training_run_id)
+        await _ensure_timing_loaded(training_run_id)
         entry = await _metric_entry_for(training_run_id)
         async with entry.lock:
             stale = False
@@ -1505,6 +1567,12 @@ def fastapi_app():
                     await _load_metrics(training_run_id, entry)
                 except Exception:
                     stale = True
+            # Runs logged before derived metrics existed get them on first
+            # read; the dirty chunks persist with the next flush below.
+            try:
+                await _refresh_derived_metrics(training_run_id, entry)
+            except Exception as exc:
+                print(f"[dashboard] derived metrics failed: {exc}", flush=True)
             if run.status in {
                 TrainingRunStatus.STOPPED,
                 TrainingRunStatus.CANCELLED,
@@ -1655,7 +1723,29 @@ def fastapi_app():
                 f"{record.storage_key}.json",
                 None,
             )
+        # A step's timing can land after its metrics; price it now.
+        if metric_entry := metric_cache.get(record.training_run_id):
+            async with metric_entry.lock:
+                try:
+                    await _refresh_derived_metrics(record.training_run_id, metric_entry)
+                except Exception as exc:
+                    print(f"[dashboard] derived metrics failed: {exc}", flush=True)
         return JSONResponse({"status": "ok"})
+
+    async def _ensure_timing_loaded(training_run_id: str) -> None:
+        """Have the run's timing lanes in memory, as the timings route would."""
+        entry = await _timing_entry_for(training_run_id)
+        if entry.fresh:
+            return
+        async with entry.lock:
+            if entry.fresh:
+                return
+            try:
+                _, had_read_failures = await _read_run_timings(training_run_id, entry)
+            except Exception:
+                had_read_failures = True
+            entry.read_at = time.monotonic()
+            entry.stale = had_read_failures
 
     async def _read_run_timings(
         training_run_id: str,
