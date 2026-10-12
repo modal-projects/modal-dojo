@@ -331,11 +331,8 @@ def validate_expandable_segments_env(config: Any) -> None:
         if not _alloc_conf_enables_expandable_segments(alloc_conf):
             continue
         raise GpuAllocationError(
-            f"{field_name} enables expandable_segments with colocate=True. "
-            "The task env reaches the colocated SGLang engines too, and "
-            "expandable_segments disables TorchMemorySaver, which they need to "
-            "release GPU memory. Scope it to the training processes via "
-            "train_env_vars, or set colocate=False."
+            f"{field_name} sets expandable_segments with colocate=True; "
+            "scope it to the training processes via train_env_vars."
         )
 
 
