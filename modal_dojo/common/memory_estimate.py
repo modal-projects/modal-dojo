@@ -29,7 +29,10 @@ def _rollout_gen_path(knobs: dict) -> str:
         if isinstance(value, str) and value.strip():
             return value
         if callable(value):
-            return BaseTrainRecipe._callable_path(value)
+            try:
+                return BaseTrainRecipe._callable_path(getattr(value, "func", value))
+            except (AttributeError, TypeError, OSError):
+                return ""
     return ""
 
 

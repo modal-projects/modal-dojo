@@ -272,6 +272,17 @@ def test_rollout_function_string_multi_turn_warns() -> None:
     assert any("lower bound" in str(w.message) for w in caught)
 
 
+def test_partial_rollout_hook_warns_not_raises() -> None:
+    from functools import partial
+
+    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {"rollout_function": partial(print, x=1)}
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_gpu_oom(recipe, model)
+    assert any("lower bound" in str(w.message) for w in caught)
+
+
 def test_single_turn_generate_path_does_not_warn() -> None:
     model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
     recipe.extra_config = {
