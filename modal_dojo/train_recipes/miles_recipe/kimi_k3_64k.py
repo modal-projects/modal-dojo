@@ -42,7 +42,7 @@ def _image_patches() -> list[str]:
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
+class Kimi_K3_LoRA_64k_Recipe(Kimi_K3_LoRA_Recipe):
     """Kimi-K3 rank-32 LoRA recipe for 64k context on 8 B300:8 nodes."""
 
     image_run_commands: list[str] = field(default_factory=_image_patches)
@@ -99,7 +99,7 @@ class Kimi_K3_LoRA_Long_Context_Recipe(Kimi_K3_LoRA_Recipe):
     )
 
     @model_validator(mode="after")
-    def _keep_image_patches(self) -> "Kimi_K3_LoRA_Long_Context_Recipe":
+    def _keep_image_patches(self) -> "Kimi_K3_LoRA_64k_Recipe":
         patches = _image_patches()
         current = list(self.image_run_commands or [])
         if current[: len(patches)] != patches:
