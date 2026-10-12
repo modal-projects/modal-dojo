@@ -3,13 +3,14 @@
   // W&B workspace — one collapsible section per key prefix (`train/`,
   // `rollout/`, ...), a grid of small panels, a search box, and a shared
   // step window per axis so training and rollout counters stay distinct.
+  import { ExternalLink } from "lucide-svelte";
   import ChartSkeleton from "./ChartSkeleton.svelte";
   import GroupSection from "./GroupSection.svelte";
   import LineChart from "./LineChart.svelte";
   import { fetchRunMetrics } from "../lib/api.js";
   import { formatMetricValue, groupMetricKeys, metricAxisLabel } from "../lib/metricSeries.js";
 
-  let { runId, isRunning = false } = $props();
+  let { runId, isRunning = false, link = null } = $props();
 
   const POLL_MS = 5000;
 
@@ -75,6 +76,18 @@
 </script>
 
 <div class="flex flex-col gap-[16px] min-w-0">
+  {#if link}
+    <a
+      class="self-end inline-flex items-center gap-[5px] text-(--muted) hover:text-(--text-bright)"
+      href={link.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Open the metrics dashboard"
+      aria-label="Open the metrics dashboard"
+    >
+      <ExternalLink size={14} strokeWidth={2} />
+    </a>
+  {/if}
   {#if !payload && !error}
     <div class="metric-grid" aria-busy="true" aria-label="Loading metrics">
       {#each [0, 1, 2, 3, 4, 5] as i (i)}

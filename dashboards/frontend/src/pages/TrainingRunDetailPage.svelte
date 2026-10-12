@@ -240,12 +240,6 @@
     if (!embedded) history.replaceState({}, "", urlForTab(DEFAULT_TAB));
   });
 
-  $effect(() => {
-    if (!metricLink || activeTab !== "metrics") return;
-    activeTab = DEFAULT_TAB;
-    if (!embedded) history.replaceState({}, "", urlForTab(DEFAULT_TAB));
-  });
-
   function formatMean(value) {
     if (typeof value !== "number" || !Number.isFinite(value)) return "—";
     return value.toFixed(3);
@@ -1697,7 +1691,7 @@
       onSelect={selectTab}
       tabs={[
         { value: "summary", label: "Summary" },
-        { value: "metrics", label: "Metrics", href: metricLink?.url },
+        { value: "metrics", label: "Metrics" },
         ...(isSftRun
           ? []
           : [{ value: "rollouts", label: "Rollouts", count: rolloutSummaries.length || undefined }]),
@@ -2256,7 +2250,7 @@
       </div>
     {:else if activeTab === "metrics"}
       <div class="tab-panel">
-        <RunMetricsPanel {runId} {isRunning} />
+        <RunMetricsPanel {runId} {isRunning} link={metricLink} />
       </div>
     {:else if activeTab === "logs"}
       <div class="tab-panel">
