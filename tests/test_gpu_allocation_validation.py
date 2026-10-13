@@ -273,3 +273,65 @@ def test_miles_default_expert_parallel_size_divides_any_expert_count() -> None:
         recipe = MilesRecipe()
 
     recipe.validate_model_parallelism(_moe_model(160))
+
+
+def _alloc_conf_recipe(field_name: str, alloc_conf: str, **overrides):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return MilesRecipe(
+            colocate=True,
+            **{field_name: {"PYTORCH_CUDA_ALLOC_CONF": alloc_conf}},
+            **overrides,
+        )
+
+
+@pytest.mark.parametrize("field_name", ["environment", "image_env"])
+def test_colocate_rejects_expandable_segments_in_global_env(
+    field_name: str,
+) -> None:
+    with pytest.raises(ValueError, match=field_name):
+        _alloc_conf_recipe(
+            field_name, "expandable_segments:True,garbage_collection_threshold:0.8"
+        )
+
+
+@pytest.mark.parametrize("field_name", ["environment", "image_env"])
+def test_colocate_rejects_expandable_segments_variants(field_name: str) -> None:
+    for alloc_conf in ("expandable_segments: true", "expandable_segments:1"):
+        with pytest.raises(ValueError, match=field_name):
+            _alloc_conf_recipe(field_name, alloc_conf)
+
+
+def test_non_colocate_allows_expandable_segments() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        MilesRecipe(
+            colocate=False,
+            environment={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
+        )
+
+
+def test_colocate_allows_expandable_segments_disabled() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        MilesRecipe(
+            colocate=True,
+            environment={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False"},
+        )
+
+
+def test_colocate_allows_expandable_segments_in_train_env_vars() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        MilesRecipe(
+            colocate=True,
+            train_env_vars={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
+        )
+
+
+def test_slime_colocate_rejects_expandable_segments_in_global_env() -> None:
+    with pytest.raises(ValueError, match="environment"):
+        SlimeRecipe(
+            **{**_SLIME_KW, "colocate": True},
+            environment={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
+        )
