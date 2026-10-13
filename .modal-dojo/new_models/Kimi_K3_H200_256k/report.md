@@ -11,6 +11,7 @@ Status: **not validated yet**. No training step has finished. Recipe: `Kimi_K3_L
 | [crimson-brass-1832e798c59a](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/crimson-brass-1832e798c59a) | `ap-GyGeQjKO0yA5WcZicYxHvw` | TP4 x CP8 x PP4, EP32, 32768 tok/GPU, routing replay off | FAILED: eight 262,140–262,142-token rollouts, reward 0.125; SiTU activation OOM in first training update |
 | [sharp-syrup-0e7f1f90231e](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/sharp-syrup-0e7f1f90231e) | `ap-27wDbpBbhW5PjKpg09InRN` | TP4 × CP8 × PP4, EP32, unfused SiTU, varied DAPO filler | FAILED: first rollout reward 0.75; SiTU OOM before the first update |
 | [linear-list-7f87c318b9b9](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/linear-list-7f87c318b9b9) | `ap-wr6wEkjAxIxyqTInBvRq2q` | TP4 × CP8 × PP4, EP32, fused SiTU, original filler | FAILED: passed rollout/log probs; OOM in expert FC1 LoRA addition before first update |
+| [wan-offset-e94af3bc2962](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/wan-offset-e94af3bc2962) | `ap-x1jTe0JcmhMB3cwClu0Bkj` | TP4 × CP8 × PP4, EP32, fused SiTU + LoRA delta reuse, varied filler | Submitted 21:25 UTC; waiting for GPUs |
 
 All runs use `validate.py --rollouts 2 --launch` in capacity mode: each sequence is filled to at least 261,120 tokens.
 
@@ -83,9 +84,7 @@ Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't prov
 - Retained phase-boundary peaks: 80.51 GiB allocated, 122.52 GiB reserved, 1,124.55 GiB host use. These are sampled values, not exhaustive peaks; the fatal traceback reports the later allocation state. Run failed at 19:25:35; app confirmed stopped with zero workers at **19:30:09 UTC**. Evidence: `linear_list_result.json`.
 - Next focused test: reuse the disposable expert LoRA delta buffer for the sum, leaving Transformer Engine's autograd output view untouched. Validate nonzero adapter/input gradients and checkpoint recomputation with the actual pinned TE grouped-linear implementation on one H200 before another full run.
 
-## Continuation, 2026-10-13
-
-### Expert LoRA buffer-reuse proof
+## Expert LoRA buffer-reuse proof
 
 - One-H200 app `ap-sv6P2akIjMiS2HkUxANzSU` completed on the same pinned image/PyTorch version. Used actual Transformer Engine `GroupedLinear`, K3's native expert adapter wrapper, 28 experts, latent 3,584, intermediate 3,072, rank 32, and compiled SiTU. Adapter weights were nonzero, so input and all adapter gradients were exercised.
 - Both normal and reentrant-checkpoint backward passed at scales **2.0 and 0.37**, including zero-token experts. Output and input-gradient differences were exactly zero in the retained comparisons; all adapter-gradient comparisons passed (BF16 atol/rtol 0.02). Large-shape output/input-gradient checks sampled first/middle/last rows; adapter gradients were compared in full.
@@ -93,6 +92,14 @@ Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't prov
 - The patch uses a small autograd function to calculate the unchanged `output + scale * delta` into the disposable delta tensor and supplies the ordinary addition gradients. It never mutates TE's output view. It also drops the gate/up temporary references after concatenation. Applied only to routed-expert FC1/FC2 in the 256k H200 recipe; dense/shared-expert adapters are unchanged.
 - Pinned-source golden, idempotence, missing-boundary, and source-drift tests added; **20 local Miles tests passed**, along with Ruff and `git diff --check`.
 - Next distributed proof uses both tested memory patches and the branch's varied DAPO filler, on the unchanged 16×H200:8 layout for two rollouts. This tests the current intended recipe/harness; it is not a one-variable comparison against linear-list, which used repeated filler and different sampled questions.
+
+## wan-offset: both memory fixes, varied filler (pending)
+
+- Source `184d415`, submitted 2026-10-13 21:25 UTC, app `ap-x1jTe0JcmhMB3cwClu0Bkj`, function call `fc-01M4VJMF5JXFYH027D9XPCXW29`.
+- Image build printed both `PATCHED_K3_SITU_COMPILE` and `PATCHED_K3_LORA_DELTA_REUSE`. Reused the converted checkpoint; training call submitted around 21:28 UTC. No optimizer result yet.
+- Unchanged topology, LoRA rank/alpha, optimizer settings, 262,144-token target, and two-rollout horizon. Uses the current varied-filler probe with 4,096 DAPO problems.
+
+## Continuation, 2026-10-13
 
 - Source at takeover: `b5b5e3014aa3973b474187900e42a8dd08c8729e`.
 - `crimson-brass` was queued, not converting: the conversion cache-hit log was already present while the dashboard still showed `Converting model`. Modal function call `fc-01M4TX0203JCE4DHJZGH7QBS8N` was enqueued at 15:09:48.429 UTC and started at 15:58:45.632 UTC (48m57s queue time). No replacement run was launched.
