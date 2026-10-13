@@ -24,3 +24,4 @@ class DeepSeek_V4_1_Flash(HFModelConfiguration):
     """DeepSeek-V4.1-Flash sparse-attention MoE model, 40 layers and 384 routed experts."""
 
     model_name = "deepseek-ai/DeepSeek-V4.1-Flash"
+    revision = "5254448103b6254fc646dacbca1cbbf20e9216c1"

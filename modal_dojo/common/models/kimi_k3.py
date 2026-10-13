@@ -13,3 +13,4 @@ class Kimi_K3(HFModelConfiguration):
     """Moonshot Kimi-K3 hybrid KDA/MLA MoE model, 93 layers and 896 routed experts."""
 
     model_name = "moonshotai/Kimi-K3"
+    revision = "f831ab66814297da540d832a5235f8e904f29d06"

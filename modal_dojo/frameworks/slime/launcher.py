@@ -623,7 +623,9 @@ def build_slime_app(
 
         from huggingface_hub import snapshot_download
 
-        return snapshot_download(model.model_name, local_files_only=True)
+        return snapshot_download(
+            model.model_name, revision=model.revision, local_files_only=True
+        )
 
     @app.function(
         image=image,

@@ -30,6 +30,7 @@ class Inkling_Small(HFModelConfiguration):
     """Thinking Machines Lab Inkling-Small MoE model with 276B total and 12B active parameters."""
 
     model_name = "thinkingmachines/Inkling-Small"
+    revision = "8cc5877b44d343f88b92086aa1fb72897950f06a"
     response_parser = staticmethod(parse_inkling_response)
 
 

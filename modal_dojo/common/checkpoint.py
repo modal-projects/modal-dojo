@@ -262,6 +262,7 @@ def convert_megatron_checkpoint_to_hf(
         input_dir: str,
         output_dir: str,
         model_ref: str,
+        revision: str | None,
     ) -> str:
         import importlib.util
         import shlex
@@ -275,7 +276,9 @@ def convert_megatron_checkpoint_to_hf(
         if os.path.isabs(model_ref) and os.path.isdir(model_ref):
             hf_path = model_ref
         else:
-            hf_path = snapshot_download(model_ref, local_files_only=True)
+            hf_path = snapshot_download(
+                model_ref, revision=revision, local_files_only=True
+            )
 
         spec = importlib.util.find_spec(
             "modal_dojo.frameworks.slime.modal_helpers.convert_torch_dist_to_hf"
@@ -305,6 +308,7 @@ def convert_megatron_checkpoint_to_hf(
                 input_dir=checkpoint.path,
                 output_dir=output_path,
                 model_ref=model_ref,
+                revision=model.revision,
             )
 
     return Checkpoint(

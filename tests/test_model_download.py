@@ -54,3 +54,37 @@ def test_model_path_equal_to_snapshot_dir_is_left_alone(snapshot):
     _Model(model_path=str(snapshot)).download()
 
     assert (snapshot / "model.safetensors").read_text() == "base weights"
+
+
+def test_download_pins_the_configured_revision(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    seen: dict = {}
+
+    def fake_snapshot_download(**kwargs):
+        seen.update(kwargs)
+        return str(tmp_path)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
+
+    class _Pinned(_Model):
+        revision = "0" * 40
+
+    _Pinned().download()
+
+    assert seen == {"repo_id": "org/base-model", "revision": "0" * 40}
+
+
+def test_every_bundled_model_pins_a_hub_commit():
+    import inspect
+    import re
+
+    from modal_dojo.common import models
+
+    for name in models.__all__:
+        cls = getattr(models, name)
+        if not (inspect.isclass(cls) and issubclass(cls, HFModelConfiguration)):
+            continue
+        if cls is HFModelConfiguration:
+            continue
+        assert re.fullmatch(r"[0-9a-f]{40}", cls.revision or ""), name

@@ -9,6 +9,7 @@ class Gemma4_26B_A4B(HFModelConfiguration):
     """Google Gemma-4-26B-A4B-it multimodal MoE model with 26B total and 4B active parameters."""
 
     model_name = "google/gemma-4-26B-A4B-it"
+    revision = "4d7ae4984b7db7de8f8457170b3f1a419ee76d52"
     response_parser = staticmethod(parse_gemma4_response)
 
     architecture = ModelArchitecture(
