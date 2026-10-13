@@ -125,7 +125,7 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     sglang_ep_size: int = 8
     sglang_dp_size: int | None = 1
     sglang_context_length: int = 32768
-    sglang_mem_fraction_static: float = 0.5
+    sglang_mem_fraction_static: float = 0.65
     sglang_lora_backend: str | None = "triton"
     sglang_max_lora_rank: int = 16
     sglang_max_loras_per_batch: int = 1
