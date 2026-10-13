@@ -8,7 +8,7 @@ Status: **not validated yet**. No training step has finished. Recipe: `Kimi_K3_L
 | --- | --- | --- | --- |
 | [fixed-fathom-65c285afb988](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/fixed-fathom-65c285afb988) | `ap-J7DSUkrFG6SgG0tfvKAgWH` | TP8 x CP4 x PP4, EP32, 65536 tok/GPU, routing replay on | Cancelled after SGLang engine init crash |
 | [stable-plaster-5f9920d29d31](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/stable-plaster-5f9920d29d31) | `ap-sqrCXIKbt2SE5qaJrFiYEg` | TP8 x CP4 x PP4, EP32, 65536 tok/GPU, routing replay off | FAILED at Optimizer step, step 1/2: CUDA OOM in trainer forward |
-| [crimson-brass-1832e798c59a](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/crimson-brass-1832e798c59a) | `ap-GyGeQjKO0yA5WcZicYxHvw` | TP4 x CP8 x PP4, EP32, 32768 tok/GPU, routing replay off | Running (startup) |
+| [crimson-brass-1832e798c59a](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/crimson-brass-1832e798c59a) | `ap-GyGeQjKO0yA5WcZicYxHvw` | TP4 x CP8 x PP4, EP32, 32768 tok/GPU, routing replay off | Running: checkpoint loaded around 16:18:40 UTC; CP8 kernel warmup started |
 
 All runs use `validate.py --rollouts 2 --launch` in capacity mode: each sequence is filled to at least 261,120 tokens.
 
@@ -36,6 +36,18 @@ All runs use `validate.py --rollouts 2 --launch` in capacity mode: each sequence
 ## 8 nodes
 
 Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't proven to fail. Inference (not measured): stable-plaster OOMed on 16 nodes at 64k tokens/rank, and 8 nodes would need either 2x the tokens/rank or 2x the model shard per GPU.
+
+## Continuation, 2026-10-13
+
+- Source at takeover: `b5b5e3014aa3973b474187900e42a8dd08c8729e`.
+- `crimson-brass` was queued, not converting: the conversion cache-hit log was already present while the dashboard still showed `Converting model`. Modal function call `fc-01M4TX0203JCE4DHJZGH7QBS8N` was enqueued at 15:09:48.429 UTC and started at 15:58:45.632 UTC (48m57s queue time). No replacement run was launched.
+- Runtime resources verified through `modal function info`: 16-node RDMA cluster, 8 H200/node, 1,966,080 MiB host memory limit, no region/cloud restriction, no retries, 86,400s execution timeout.
+- Trainer initialization reached rank-32 LoRA construction on all 128 ranks and began loading `/checkpoints/Kimi-K3_torch_dist` at 16:03:45 UTC. TP/PP reshards from the conversion layout `(32, 1)` to `(4, 4)`; the RNG-state warning is expected for that layout change. SGLang is gated while trainer initialization completes.
+- Checkpoint loading succeeded around 16:18:40 UTC and KDA warmup began with `(32768, 24, 128, 8, -5.0, torch.bfloat16)`. Roughly 20 minutes from worker start is close to the previous attempt's 18m18s checkpoint-loading baseline. At 16:09 UTC the head-node GPUs each used 53,533 MiB; this is a loading snapshot, not a training peak.
+- Corrected stale TP8/CP4 comments and the validation helper's 64k default; the running experiment's configuration is unchanged.
+- Fixed the optional `--concurrency-per-engine` argument, which previously passed an unknown recipe field. It now sets the SGLang request limit, server concurrency, and five KDA cache slots per request. Only the default concurrency of one is under GPU validation; larger overrides have only been checked for local configuration validity.
+- Added `preflight.py` and `preflight.json`: real cached K3 tokenizer and four DAPO rows, mocked HTTP generation. Five message-boundary cases each produced 261,128 total tokens, with only real generated tokens unmasked. Checked finite logprobs, length alignment, original-problem rendering, and reward-wrapper isolation from the observation/prompt. This is **not** GPU validation or validation of the upstream math scorer.
+- Local checks: recipe/config instantiation (128 GPUs), Ruff, and 18 tests across `test_miles_recipe_hooks.py`, `test_miles_runtime_env.py`, and `test_miles_patches.py` passed.
 
 ## Still open
 

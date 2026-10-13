@@ -1,7 +1,6 @@
-"""Exercise the full K3 long-context configuration on 64 B300 or H200 GPUs.
+"""Exercise K3 LoRA at 256k context on 16 nodes with 8 H200 GPUs each.
 
-Use the hardware-specific validate_kimi_k3_b300 or validate_kimi_k3_h200 entry point.
-Defaults to two updates at 64k context; pass ``--launch`` to allocate GPUs.
+Defaults to two updates at 262,144-token context; pass ``--launch`` to allocate GPUs.
 Capacity mode uses a large masked observation between two real generations.
 It tests long-sequence training, not long autonomous assistant generation.
 Decode mode generates a long assistant response from a short task prompt; the
@@ -273,7 +272,7 @@ def before_train_step(args, rollout_id, step_id, model, optimizer, opt_param_sch
 def build_config(
     build_recipe,
     mode="capacity",
-    context_length=65536,
+    context_length=262144,
     rollouts=2,
     decode_tokens=57344,
     concurrency_per_engine=None,
@@ -283,7 +282,11 @@ def build_config(
     concurrency = (
         {}
         if concurrency_per_engine is None
-        else {"concurrency_per_engine": concurrency_per_engine}
+        else {
+            "sglang_server_concurrency": concurrency_per_engine,
+            "sglang_max_running_requests": concurrency_per_engine,
+            "sglang_max_mamba_cache_size": 5 * concurrency_per_engine,
+        }
     )
     recipe = build_recipe(
         **concurrency,

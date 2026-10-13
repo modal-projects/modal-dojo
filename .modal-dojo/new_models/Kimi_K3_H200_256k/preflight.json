@@ -1,0 +1,82 @@
+{
+  "status": "passed",
+  "real_dataset_rows": 4,
+  "scope": "Offline real-tokenizer, mocked-generation contract check; no GPU or math-reward validation",
+  "cases": [
+    {
+      "ending": "",
+      "total_tokens": 261128,
+      "generated_tokens": 14,
+      "requests": [
+        {
+          "input_tokens": 270,
+          "budget": 256
+        },
+        {
+          "input_tokens": 261120,
+          "budget": 1023
+        }
+      ]
+    },
+    {
+      "ending": "<|close|>think",
+      "total_tokens": 261128,
+      "generated_tokens": 16,
+      "requests": [
+        {
+          "input_tokens": 218,
+          "budget": 256
+        },
+        {
+          "input_tokens": 261120,
+          "budget": 1023
+        }
+      ]
+    },
+    {
+      "ending": "<|close|>response",
+      "total_tokens": 261128,
+      "generated_tokens": 16,
+      "requests": [
+        {
+          "input_tokens": 233,
+          "budget": 256
+        },
+        {
+          "input_tokens": 261120,
+          "budget": 1023
+        }
+      ]
+    },
+    {
+      "ending": "<|close|>message",
+      "total_tokens": 261128,
+      "generated_tokens": 16,
+      "requests": [
+        {
+          "input_tokens": 284,
+          "budget": 256
+        },
+        {
+          "input_tokens": 261120,
+          "budget": 1023
+        }
+      ]
+    },
+    {
+      "ending": "<|end_of_msg|>",
+      "total_tokens": 261128,
+      "generated_tokens": 15,
+      "requests": [
+        {
+          "input_tokens": 270,
+          "budget": 256
+        },
+        {
+          "input_tokens": 261120,
+          "budget": 1023
+        }
+      ]
+    }
+  ]
+}
