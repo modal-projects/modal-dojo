@@ -1,0 +1,363 @@
+{
+  "run_id": "crimson-brass-1832e798c59a",
+  "status": "failed",
+  "failure": "Trainer SiTU FP32 activation OOM during first update; no checkpoint or second rollout",
+  "rollout_seconds": 144.60505366325378,
+  "samples": [
+    {
+      "sample_index": 0,
+      "score": 0.0,
+      "k3_validation_mode": "capacity",
+      "k3_total_tokens": 262142,
+      "k3_generated_tokens": 1278,
+      "k3_observation_tokens": 260631,
+      "k3_turns": [
+        {
+          "generated_tokens": 256,
+          "finish_reason": {
+            "type": "length",
+            "length": 256
+          },
+          "input_tokens": 233,
+          "seconds": 14.282816147000176
+        },
+        {
+          "generated_tokens": 1022,
+          "finish_reason": {
+            "type": "length",
+            "length": 1022
+          },
+          "input_tokens": 261120,
+          "seconds": 125.52077248900014
+        }
+      ],
+      "k3_episode_seconds": 139.9492244889998,
+      "k3_generated_tokens_per_second": 9.131829337250622,
+      "response_tail": "ary with sum -1, sum always -3. Good answer likely -3. Need verify no other cases (s real cube root of 1 only s=1; complex cube roots not real). Since s real, yes s=1. But check derivation r=s^2 used C; let's verify: C: s^2+s+a=0, a=-(r+s) from A divided by r (r nonzero because A constant 1). Then s"
+    },
+    {
+      "sample_index": 1,
+      "score": 0.0,
+      "k3_validation_mode": "capacity",
+      "k3_total_tokens": 262142,
+      "k3_generated_tokens": 1278,
+      "k3_observation_tokens": 260631,
+      "k3_turns": [
+        {
+          "generated_tokens": 256,
+          "finish_reason": {
+            "type": "length",
+            "length": 256
+          },
+          "input_tokens": 233,
+          "seconds": 14.46217423600001
+        },
+        {
+          "generated_tokens": 1022,
+          "finish_reason": {
+            "type": "length",
+            "length": 1022
+          },
+          "input_tokens": 261120,
+          "seconds": 126.39818375699997
+        }
+      ],
+      "k3_episode_seconds": 140.979373958,
+      "k3_generated_tokens_per_second": 9.065116856640024,
+      "response_tail": "\\implies (c-1)q=a-b. \\tag{2}\n\\]\n\nSince \\(a,b,c\\) are distinct, \\(a\\ne b\\). From (1) and (2),\n\\[\np=\\frac{c-1}{a-b},\\qquad q=\\frac{a-b}{c-1},\n\\]\nso \\(pq=1\\), i.e. \\(q=1/p\\).\n\nNow use the two equations involving \\(a\\). From \\(p^2+ap+1=0\\):\n\\[\na=-p-\\frac1p.\n\\]\nFrom \\(q^2+q+a=0\\) with \\(q=1/p\\):\n\\[\n\\frac"
+    },
+    {
+      "sample_index": 2,
+      "score": 1.0,
+      "k3_validation_mode": "capacity",
+      "k3_total_tokens": 262140,
+      "k3_generated_tokens": 1276,
+      "k3_observation_tokens": 260631,
+      "k3_turns": [
+        {
+          "generated_tokens": 256,
+          "finish_reason": {
+            "type": "length",
+            "length": 256
+          },
+          "input_tokens": 233,
+          "seconds": 14.568753777999973
+        },
+        {
+          "generated_tokens": 1020,
+          "finish_reason": {
+            "type": "stop",
+            "matched": 163586
+          },
+          "input_tokens": 261120,
+          "seconds": 127.42652859400005
+        }
+      ],
+      "k3_episode_seconds": 142.10899606099974,
+      "k3_generated_tokens_per_second": 8.97896541873837,
+      "response_tail": "root, impossible. Thus \\(s=1\\), so \\(r=1\\).\n\nSubstitute \\(r=1\\) into \\(r^2+ar+1=0\\):\n\\[\n1+a+1=0 \\implies a=-2.\n\\]\nSubstitute \\(s=1\\) into \\(s^2+cs+b=0\\):\n\\[\n1+c+b=0 \\implies b+c=-1.\n\\]\nTherefore\n\\[\na+b+c=-2-1=-3.\n\\]\n\nAnswer: \\(\\boxed{-3}\\)<|close|>response<|sep|><|close|>message<|sep|><|end_of_msg|>"
+    },
+    {
+      "sample_index": 3,
+      "score": 0.0,
+      "k3_validation_mode": "capacity",
+      "k3_total_tokens": 262142,
+      "k3_generated_tokens": 1278,
+      "k3_observation_tokens": 260631,
+      "k3_turns": [
+        {
+          "generated_tokens": 256,
+          "finish_reason": {
+            "type": "length",
+            "length": 256
+          },
+          "input_tokens": 233,
+          "seconds": 15.051386546999765
+        },
+        {
+          "generated_tokens": 1022,
+          "finish_reason": {
+            "type": "length",
+            "length": 1022
+          },
+          "input_tokens": 261120,
+          "seconds": 127.34295761500016
+        }
+      ],
+      "k3_episode_seconds": 142.51965499900007,
+      "k3_generated_tokens_per_second": 8.96713044582818,
+      "response_tail": "pulation signs.\n\nLet's plan final:\n- Let \u03b1 common root first pair, \u03b2 common root second.\n- Subtract equations:\n  (a-b)\u03b1 = c-1. Since a\u2260b, \u03b1=(c-1)/(a-b); also c\u22601 (otherwise \u03b1=0 contradiction), so \u03b2=(a-b)/(c-1)=1/\u03b1.\nDetailed for \u03b2: subtract second pair: (1-c)\u03b2 + (a-b)=0, so (c-1)\u03b2 = a-b.\n- From x^2+a"
+    },
+    {
+      "sample_index": 4,
+      "score": 0.0,
+      "k3_validation_mode": "capacity",
+      "k3_total_tokens": 262142,
+      "k3_generated_tokens": 1278,
+      "k3_observation_tokens": 260646,
+      "k3_turns": [
+        {
+          "generated_tokens": 256,
+          "finish_reason": {
+            "type": "length",
+            "length": 256
+          },
+          "input_tokens": 218,
+          "seconds": 14.692946578000374
+        },
+        {
+          "generated_tokens": 1022,
+          "finish_reason": {
+            "type": "length",
+            "length": 1022
+          },
+          "input_tokens": 261120,
+          "seconds": 127.84588402200006
+        }
+      ],
+      "k3_episode_seconds": 142.65419447500017,
+      "k3_generated_tokens_per_second": 8.95868558192956,
+      "response_tail": "nd conditioned on a side its position is uniform on that side.\n\nThe area of \\(\\triangle AXY\\) is\n\\[\n\\frac12|\\det(X,Y)|.\n\\]\n\nLabel the sides:\n\n- Bottom: \\((u,0)\\)\n- Right: \\((1,u)\\)\n- Top: \\((u,1)\\)\n- Left: \\((0,u)\\)\n\nwhere \\(u\\sim U[0,1]\\). There are \\(16\\) equally likely ordered side-pairs. Compute"
+    },
+    {
+      "sample_index": 5,
+      "score": 0.0,
+      "k3_validation_mode": "capacity",
+      "k3_total_tokens": 262142,
+      "k3_generated_tokens": 1278,
+      "k3_observation_tokens": 260646,
+      "k3_turns": [
+        {
+          "generated_tokens": 256,
+          "finish_reason": {
+            "type": "length",
+            "length": 256
+          },
+          "input_tokens": 218,
+          "seconds": 14.290741792000063
+        },
+        {
+          "generated_tokens": 1022,
+          "finish_reason": {
+            "type": "length",
+            "length": 1022
+          },
+          "input_tokens": 261120,
+          "seconds": 125.66881897799976
+        }
+      ],
+      "k3_episode_seconds": 140.07596493600022,
+      "k3_generated_tokens_per_second": 9.123565688003074,
+      "response_tail": ",0),(1,v): det = u*v -0 = uv mean1/4. B with T: (u,0),(v,1): det = u*1 = u mean1/2. B with B=0; B with L=uv mean1/4.\n\nL with R: (0,u),(1,v): det=0*v - u*1 = -u abs mean1/2. L with T: (0,u),(v,1): det=0*1 - u*v = -uv mean1/4. L with B=uv 1/4; L with L=0.\n\nR with R: (1,u),(1,v): det = v-u, abs mean E|"
+    },
+    {
+      "sample_index": 6,
+      "score": 0.0,
+      "k3_validation_mode": "capacity",
+      "k3_total_tokens": 262142,
+      "k3_generated_tokens": 1278,
+      "k3_observation_tokens": 260646,
+      "k3_turns": [
+        {
+          "generated_tokens": 256,
+          "finish_reason": {
+            "type": "length",
+            "length": 256
+          },
+          "input_tokens": 218,
+          "seconds": 14.4852726539998
+        },
+        {
+          "generated_tokens": 1022,
+          "finish_reason": {
+            "type": "length",
+            "length": 1022
+          },
+          "input_tokens": 261120,
+          "seconds": 128.17434336600036
+        }
+      ],
+      "k3_episode_seconds": 142.7975209049996,
+      "k3_generated_tokens_per_second": 8.949693549446492,
+      "response_tail": "h=1/3.\n\nAdjacent sides etc:\nB-R: P=(u,0), Q=(1,v): det=u*v -0*1=uv >=0 h=E[uv]=1/4.\nB-T: P=(u,0),Q=(v,1): det=u*1 -0 = u >=0 h=1/2. (X bottom, Y top area depends only X x; yep)\nB-L: P=(u,0),Q=(0,v): det=u*v -0 = uv h=1/4.\n\nR-B symmetric h=1/4; T-B 1/2; L-B 1/4.\n\nR-T: P=(1,u),Q=(v,1): det=1*1 - u*v ="
+    },
+    {
+      "sample_index": 7,
+      "score": 0.0,
+      "k3_validation_mode": "capacity",
+      "k3_total_tokens": 262142,
+      "k3_generated_tokens": 1278,
+      "k3_observation_tokens": 260646,
+      "k3_turns": [
+        {
+          "generated_tokens": 256,
+          "finish_reason": {
+            "type": "length",
+            "length": 256
+          },
+          "input_tokens": 218,
+          "seconds": 14.660445301999971
+        },
+        {
+          "generated_tokens": 1022,
+          "finish_reason": {
+            "type": "length",
+            "length": 1022
+          },
+          "input_tokens": 261120,
+          "seconds": 128.7094295400002
+        }
+      ],
+      "k3_episode_seconds": 143.49670655499995,
+      "k3_generated_tokens_per_second": 8.906078999686672,
+      "response_tail": "16, E area = S/32.\n\nUse sides \u03b2,\u03c1,\u03c4,\u03bb (bottom,right,top,left). Need J matrix (symmetric).\n\nCoordinates and det formulas (X first, Y second):\nJ(X,Y)=E|x_X y_Y - y_X x_Y|.\n\n1) \u03b2\u03b2: X=(p,0),Y=(q,0): det=0. J=0. Same for \u03bb\u03bb=0 (collinear with A on same axis).\n2) \u03c1\u03c1: X=(1,p),Y=(1,q): det= q - p. E|q-p|=1/3"
+    }
+  ],
+  "memory_snapshots": [
+    {
+      "stage": "before_log_prob:",
+      "rank": 120,
+      "allocated_gib": 48.09313917160034,
+      "reserved_gib": 48.138671875,
+      "peak_allocated_gib": 74.23620414733887,
+      "peak_reserved_gib": 74.33984375,
+      "device_free_gib": 79.9605712890625,
+      "device_total_gib": 139.7930908203125,
+      "process_rss_gib": 14.807914733886719,
+      "host_used_gib": 1253.8643493652344,
+      "host_limit_gib": 1920.0
+    },
+    {
+      "stage": "before_log_prob:",
+      "rank": 89,
+      "allocated_gib": 51.98882436752319,
+      "reserved_gib": 52.0390625,
+      "peak_allocated_gib": 80.51128387451172,
+      "peak_reserved_gib": 80.599609375,
+      "device_free_gib": 76.0230712890625,
+      "device_total_gib": 139.7930908203125,
+      "process_rss_gib": 14.947227478027344,
+      "host_used_gib": 1298.2153587341309,
+      "host_limit_gib": 1920.0
+    },
+    {
+      "stage": "before_log_prob:",
+      "rank": 63,
+      "allocated_gib": 51.98882436752319,
+      "reserved_gib": 52.0390625,
+      "peak_allocated_gib": 80.51128387451172,
+      "peak_reserved_gib": 80.599609375,
+      "device_free_gib": 76.0191650390625,
+      "device_total_gib": 139.7930908203125,
+      "process_rss_gib": 14.572151184082031,
+      "host_used_gib": 1291.1387405395508,
+      "host_limit_gib": 1920.0
+    },
+    {
+      "stage": "before_train:0:0",
+      "rank": 28,
+      "allocated_gib": 50.94266986846924,
+      "reserved_gib": 112.384765625,
+      "peak_allocated_gib": 82.73771810531616,
+      "peak_reserved_gib": 112.384765625,
+      "device_free_gib": 11.65185546875,
+      "device_total_gib": 139.7930908203125,
+      "process_rss_gib": 15.5140380859375,
+      "host_used_gib": 986.376766204834,
+      "host_limit_gib": 1920.0
+    },
+    {
+      "stage": "before_train:0:0",
+      "rank": 38,
+      "allocated_gib": 54.638328552246094,
+      "reserved_gib": 110.47265625,
+      "peak_allocated_gib": 94.49319362640381,
+      "peak_reserved_gib": 117.859375,
+      "device_free_gib": 13.50933837890625,
+      "device_total_gib": 139.7930908203125,
+      "process_rss_gib": 15.368896484375,
+      "host_used_gib": 985.4750556945801,
+      "host_limit_gib": 1920.0
+    },
+    {
+      "stage": "before_train:0:0",
+      "rank": 65,
+      "allocated_gib": 54.85881423950195,
+      "reserved_gib": 116.14453125,
+      "peak_allocated_gib": 82.47739124298096,
+      "peak_reserved_gib": 116.14453125,
+      "device_free_gib": 11.80621337890625,
+      "device_total_gib": 139.7930908203125,
+      "process_rss_gib": 15.402206420898438,
+      "host_used_gib": 984.6349716186523,
+      "host_limit_gib": 1920.0
+    },
+    {
+      "stage": "before_train:0:0",
+      "rank": 95,
+      "allocated_gib": 54.85802459716797,
+      "reserved_gib": 119.275390625,
+      "peak_allocated_gib": 90.18702173233032,
+      "peak_reserved_gib": 119.275390625,
+      "device_free_gib": 4.94482421875,
+      "device_total_gib": 139.7930908203125,
+      "process_rss_gib": 15.333450317382812,
+      "host_used_gib": 985.4958076477051,
+      "host_limit_gib": 1920.0
+    },
+    {
+      "stage": "before_train:0:0",
+      "rank": 119,
+      "allocated_gib": 51.00608825683594,
+      "reserved_gib": 95.73828125,
+      "peak_allocated_gib": 82.55628442764282,
+      "peak_reserved_gib": 115.58203125,
+      "device_free_gib": 28.35302734375,
+      "device_total_gib": 139.7930908203125,
+      "process_rss_gib": 15.30825424194336,
+      "host_used_gib": 985.7649459838867,
+      "host_limit_gib": 1920.0
+    }
+  ],
+  "memory_scope": "Snapshots from Ray-deduplicated logs; not an exhaustive per-rank final peak measurement."
+}
