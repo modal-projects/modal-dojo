@@ -234,3 +234,11 @@ Nonfatal startup diagnostic: SGLang's optional post-warmup `/freeze_gc` request
 logged connection-refused tracebacks before the server was listening. The servers
 subsequently passed health checks, rollout, and both weight updates. No training
 exception or OOM occurred. This startup warning is separate from the memory fixes.
+
+### 10-step smoke test (running)
+
+[muffled-pug-2f97a0d4d1e2](https://modal.com/apps/modal-labs/helena-dev/ap-TE0E0n8eGVKM2a0wm8tzKS),
+created 2026-10-13 18:31:46 UTC, detached training invocation 18:33:13 UTC.
+Same recipe and 8x H200:8 topology as proof 13, with `num_rollout=10` and 20
+distinct question rows (two per rollout, four samples per question).
+The final adapter is scheduled to save at the end of the smoke test.
