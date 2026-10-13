@@ -8,7 +8,7 @@ Status: **not validated yet**. No training step has finished. Recipe: `Kimi_K3_L
 | --- | --- | --- | --- |
 | [fixed-fathom-65c285afb988](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/fixed-fathom-65c285afb988) | `ap-J7DSUkrFG6SgG0tfvKAgWH` | TP8 x CP4 x PP4, EP32, 65536 tok/GPU, routing replay on | Cancelled after SGLang engine init crash |
 | [stable-plaster-5f9920d29d31](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/stable-plaster-5f9920d29d31) | `ap-sqrCXIKbt2SE5qaJrFiYEg` | TP8 x CP4 x PP4, EP32, 65536 tok/GPU, routing replay off | FAILED at Optimizer step, step 1/2: CUDA OOM in trainer forward |
-| [crimson-brass-1832e798c59a](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/crimson-brass-1832e798c59a) | `ap-GyGeQjKO0yA5WcZicYxHvw` | TP4 x CP8 x PP4, EP32, 32768 tok/GPU, routing replay off | Running: checkpoint loaded around 16:18:40 UTC; CP8 kernel warmup started |
+| [crimson-brass-1832e798c59a](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/crimson-brass-1832e798c59a) | `ap-GyGeQjKO0yA5WcZicYxHvw` | TP4 x CP8 x PP4, EP32, 32768 tok/GPU, routing replay off | FAILED at Optimizer step, step 1/2 (reward 0.125): same trainer OOM site |
 
 All runs use `validate.py --rollouts 2 --launch` in capacity mode: each sequence is filled to at least 261,120 tokens.
 
@@ -32,6 +32,16 @@ All runs use `validate.py --rollouts 2 --launch` in capacity mode: each sequence
 - TP8 x CP4 put 65,536 tokens on each rank. radiant-tom at 64k on B300 used 32,768 (`max_tokens_per_gpu=32768`, CP2).
 - TP4 x CP8 x PP4 brings it back to 32,768 tokens/rank. EP32 and PP4 stay the same, so expert weights per GPU don't change. Miles' K3 attention only needs `num_attention_heads % tp_size == 0` (96 / 4 works). KDA CP goes through `fla` `build_cp_context` (`miles_plugins/models/cp_utils.py`), which has no CP-size limit (checked against radixark/miles HEAD af2b2d0, not the exact image commit).
 - crimson-brass reused the converted checkpoint: `Found existing torch_dist checkpoint at /checkpoints/Kimi-K3_torch_dist; skipping conversion.`
+
+## crimson-brass: 256k rollout and log probs pass, train forward still OOMs
+
+- Got its 16 x H200 gang at about 16:01 UTC, after roughly 50 min queued (`Function 'train' ... is waiting to be scheduled on a GPU_H200 worker`). Trainer checkpoint reads took 390-850 s per rank (`DOJO_CKPT_READ`).
+- Rollout 0 (`perf 0`): `episode_total_response_length/mean` 261,916.25, `episode_raw_reward` 0.125, `truncated_ratio` 0.875, generated response length 1,276-1,278.
+- `K3_CONTEXT_MEMORY`: `before_log_prob` peak allocated up to 80.5 GiB; `before_train:0:0` peak allocated up to 94.5 GiB, reserved up to 119.3 GiB; host up to 1,253.9 of 1,920 GiB.
+- The train forward OOMed in `situ_and_mul` again (`ops.py:49`, which upcasts the fc1 output to fp32): `Tried to allocate 4.93 GiB ... 6.46 GiB is free ... 106.54 GiB is allocated by PyTorch`, and on another rank `Tried to allocate 2.71 GiB ... 4.39 GiB is free ... 111.63 GiB`. Only 2 trainer actors (10.100.0.13 and 10.100.0.15) raised `OutOfMemoryError`.
+- Many ranks also logged non-fatal `TorchMemorySaver::malloc return OOM` warnings for 2.9-11.1 GB requests.
+
+Suspected cause (not measured): the capacity probe filled ~260k tokens by repeating `"Diagnostic record: all checks completed.\n"`. Repeated filler concentrates MoE routing on a few experts, so the EP ranks that host them get far more tokens than average. That happened in GLM-5.3 long-context validation, and it fits only 2 of 128 ranks failing. Next run: the filler is built from 4,096 varied dapo-math problems (`filler_tokens` in `validate.py`).
 
 ## 8 nodes
 

@@ -46,6 +46,25 @@ def observation_prefix(rendered_suffix, generated_text):
     return closing + user_start + user
 
 
+_FILLER_TOKENS = []
+
+
+def filler_tokens(args, tok, count):
+    """Varied real problems; one repeated sentence routes to a few MoE experts."""
+    if not _FILLER_TOKENS:
+        with open(args.prompt_data) as f:
+            for line in f:
+                value = json.loads(line)[args.input_key]
+                if isinstance(value, list):
+                    value = "\n".join(
+                        m["content"] for m in value if isinstance(m.get("content"), str)
+                    )
+                _FILLER_TOKENS.extend(
+                    tok.encode(f"Record: {value}\n", add_special_tokens=False)
+                )
+    return (_FILLER_TOKENS * math.ceil(count / len(_FILLER_TOKENS)))[:count]
+
+
 async def generate_probe(input):
     import time
 
@@ -158,10 +177,7 @@ async def generate_probe(input):
         fill_count = limit - 1024 - len(sample.tokens) - len(prefix) - len(tail)
         if fill_count < 0:
             raise ValueError("Prompt leaves insufficient capacity-probe space")
-        unit = tok.encode(
-            "Diagnostic record: all checks completed.\n", add_special_tokens=False
-        )
-        filler = (unit * ((fill_count + len(unit) - 1) // len(unit)))[:fill_count]
+        filler = filler_tokens(args, tok, fill_count)
         observation = prefix + filler + tail
         append_tokens(sample, observation, [0.0] * len(observation), generated=False)
         final_response = await generate_turn(1023)
@@ -319,7 +335,7 @@ def build_config(
         recipe=recipe,
         dataset=HuggingFaceDataset(
             "zhuzilin/dapo-math-17k",
-            hf_split=f"train[:{2 * rollouts}]",
+            hf_split=f"train[:{max(2 * rollouts, 4096)}]",
             input_column="prompt",
             output_column="label",
             input_format="messages",
