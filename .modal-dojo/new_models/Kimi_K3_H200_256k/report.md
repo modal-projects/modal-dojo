@@ -9,6 +9,7 @@ Status: **not validated yet**. No training step has finished. Recipe: `Kimi_K3_L
 | [fixed-fathom-65c285afb988](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/fixed-fathom-65c285afb988) | `ap-J7DSUkrFG6SgG0tfvKAgWH` | TP8 x CP4 x PP4, EP32, 65536 tok/GPU, routing replay on | Cancelled after SGLang engine init crash |
 | [stable-plaster-5f9920d29d31](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/stable-plaster-5f9920d29d31) | `ap-sqrCXIKbt2SE5qaJrFiYEg` | TP8 x CP4 x PP4, EP32, 65536 tok/GPU, routing replay off | FAILED at Optimizer step, step 1/2: CUDA OOM in trainer forward |
 | [crimson-brass-1832e798c59a](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/crimson-brass-1832e798c59a) | `ap-GyGeQjKO0yA5WcZicYxHvw` | TP4 x CP8 x PP4, EP32, 32768 tok/GPU, routing replay off | FAILED: eight 262,140–262,142-token rollouts, reward 0.125; SiTU activation OOM in first training update |
+| [sharp-syrup-0e7f1f90231e](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/sharp-syrup-0e7f1f90231e) | `ap-27wDbpBbhW5PjKpg09InRN` | TP4 × CP8 × PP4, EP32, unfused SiTU, varied DAPO filler | FAILED: first rollout reward 0.75; SiTU OOM before the first update |
 | [linear-list-7f87c318b9b9](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/linear-list-7f87c318b9b9) | `ap-wr6wEkjAxIxyqTInBvRq2q` | TP4 × CP8 × PP4, EP32, fused SiTU, original filler | Submitted; no training result yet |
 
 All runs use `validate.py --rollouts 2 --launch` in capacity mode: each sequence is filled to at least 261,120 tokens.
@@ -56,6 +57,17 @@ Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't prov
 - At `[368640, 7168]` BF16 input (4.92 GiB per FP32 half), extra peak allocated memory for forward+backward dropped from **46.76 GiB to 7.44 GiB**; forward live intermediates dropped from **31.99 GiB to 2.46 GiB**. Baseline input/gradient allocation was 7.38 GiB in both cases. At 131,072 rows, forward+backward extra peak fell from 16.63 GiB to 2.63 GiB.
 - The large compiled case includes first-shape compilation (~2.67s forward and 0.52s backward); these are not steady-state training timings or a speedup claim. Full results: `situ_benchmark.json`.
 - Added `patch_k3_situ_compile` only to `Kimi_K3_LoRA_256k_H200_Recipe`, plus pinned input/output fixtures, idempotence/drift tests, and the snapshot refresh hook. **19 local Miles tests passed**, along with Ruff and recipe instantiation. Full 128-GPU validation remains required.
+- Both benchmark apps were confirmed stopped with zero workers (17:21:56 and 17:23:48 UTC respectively).
+
+## sharp-syrup: varied filler alone still OOMs
+
+- Separately launched at 17:15 UTC during concurrent branch work. Read-only container inspection confirmed the original, **unfused** `situ_and_mul`; rollout traces confirm the varied DAPO filler introduced by `d56e28d`.
+- Trainer checkpoint loading completed around 17:37:38, KDA warmup passed, and inference loading started around 17:40:10. Weight loading took roughly 959–1,145 seconds; graph capture took about 229–237 seconds. The adapter-transfer subphase took 126.5 seconds.
+- Runtime difference: SGLang allocated **524,288 KV tokens / 13.5 GiB** with about 24.4 GiB free after loading, versus roughly 402k tokens and some ranks having only 20.6 GiB free in crimson-brass. Recorded cache settings match (`mem_fraction_static=0.95`, max tokens 524,288, five Mamba slots). Do not attribute this difference to filler, which is consumed later.
+- Rollout 0 completed at 18:09:32: **144.09 seconds**, eight samples with **261,302–262,142 total tokens**, **438–1,278 generated tokens**, and mean reward **0.75**. Traces show coherent final answers: samples 1/3 solve the complex-root problem with `-7`, and samples 4–7 find coefficient `672`. Samples 0/2 exhaust the final generation window. The sampled questions changed with the larger dataset split, so the reward change is not a controlled quality comparison.
+- Rank-0 log probabilities took **157.9 seconds** (18:14:56–18:17:34). Fatal OOM at 18:18:55 on rank 110, `ops.py:49`: `linear_beta * torch.tanh(linear / linear_beta)`, requesting **4.12 GiB**, **5.81 GiB free**, **114.85 GiB allocated**, **6.75 GiB reserved but unallocated**. TorchMemorySaver reported its 4 GiB allocation margin. Earlier allocator retries recovered; this exception did not.
+- Retained phase-boundary measurements reached 96.14 GiB peak allocated, 121.46 GiB peak reserved, and 1,270.37 GiB host use; these are sampled values, not exhaustive training peaks. No completed optimizer update, checkpoint, or second rollout. Run marked failed at 18:21:24 UTC; app cleanup is still being monitored. Compact evidence: `sharp_syrup_result.json`.
+- Conclusion: more varied filler does **not** by itself fix this 128-H200 capacity failure. Expert-routing imbalance remains unmeasured; the active fusion experiment still needs a distributed result.
 
 ## linear-list: fused SiTU, original filler (running)
 
