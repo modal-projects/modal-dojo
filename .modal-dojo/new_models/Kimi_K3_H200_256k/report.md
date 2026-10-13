@@ -91,6 +91,7 @@ Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't prov
 - At **413,504 routed rows**, corresponding to a **4.73 GiB FC1 output**, extra forward peak fell **19.03 → 14.30 GiB**, and forward/backward peak **19.03 → 14.65 GiB** (same 9.24 GiB baseline). Small first-call memory includes compiler/workspace warmup and should not be treated as a clean memory comparison. Full results: `lora_benchmark.json`; reproducible harness: `benchmark_lora.py`.
 - The patch uses a small autograd function to calculate the unchanged `output + scale * delta` into the disposable delta tensor and supplies the ordinary addition gradients. It never mutates TE's output view. It also drops the gate/up temporary references after concatenation. Applied only to routed-expert FC1/FC2 in the 256k H200 recipe; dense/shared-expert adapters are unchanged.
 - Pinned-source golden, idempotence, missing-boundary, and source-drift tests added; **20 local Miles tests passed**, along with Ruff and `git diff --check`.
+- Benchmark app confirmed stopped with zero workers at **20:28:42 UTC**.
 - Next distributed proof uses both tested memory patches and the branch's varied DAPO filler, on the unchanged 16×H200:8 layout for two rollouts. This tests the current intended recipe/harness; it is not a one-variable comparison against linear-list, which used repeated filler and different sampled questions.
 
 ## wan-offset: both memory fixes, varied filler (pending)
