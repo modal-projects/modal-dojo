@@ -4,6 +4,9 @@ file: megatron/core/transformer/transformer_layer.py (image Megatron-LM)
 
 Release the mHC MLP norm manager after its last use, matching TransformerLayer,
 so it does not retain restored checkpoint inputs and their gradients.
+
+TODO: Remove once this merges and we bump the Miles image to include it:
+https://github.com/NVIDIA/Megatron-LM/pull/6338
 """
 
 from pathlib import Path
