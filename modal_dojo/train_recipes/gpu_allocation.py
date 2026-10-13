@@ -316,3 +316,31 @@ def _optional_positive_int_field(config: Any, field_name: str) -> int | None:
     if value is None:
         return None
     return _positive_int_field(config, field_name)
+
+
+def validate_expandable_segments_env(config: Any) -> None:
+    if not getattr(config, "colocate", False):
+        return
+    for field_name in ("environment", "image_env"):
+        env = getattr(config, field_name, None)
+        if not isinstance(env, dict):
+            continue
+        alloc_conf = env.get("PYTORCH_CUDA_ALLOC_CONF")
+        if not isinstance(alloc_conf, str):
+            continue
+        if not _alloc_conf_enables_expandable_segments(alloc_conf):
+            continue
+        raise GpuAllocationError(
+            f"{field_name} sets expandable_segments with colocate=True; "
+            "scope it to the training processes via "
+            'train_env_vars={"PYTORCH_CUDA_ALLOC_CONF": '
+            '"expandable_segments:True"}.'
+        )
+
+
+def _alloc_conf_enables_expandable_segments(alloc_conf: str) -> bool:
+    for item in alloc_conf.split(","):
+        key, _, value = item.partition(":")
+        if key.strip() == "expandable_segments":
+            return value.strip().lower() in ("true", "1", "yes", "on")
+    return False
