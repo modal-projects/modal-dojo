@@ -1,8 +1,10 @@
 # GLM-5.3-Flash bridge LoRA @ 256k context on 8x H200:8: experiment report
 
-Status: **not yet validated.** At 256k, rollout, weight sync and log-prob work. The training
-step still OOMs in the backward pass on the hottest expert-parallel rank. The ~10-step smoke
-run has not been launched.
+Status: **not yet validated.** At 256k, rollout, weight sync and log-prob work.
+Proof 12 reduced backward memory by ~45 GiB but still OOMed due to per-layer retention.
+Proof 13 tests CPU checkpoint offload plus mHC manager cleanup on 8x H200:8.
+The cleanup passed a gradient/memory regression; the full proof is running.
+The ~10-step smoke run has not been launched.
 
 All runs: workspace `modal-labs`, environment `helena-dev`, 1-step proofs launched with
 `validate_256k.py --steps 1 --launch`. Detailed notes: `model_setup.md`.
@@ -31,6 +33,8 @@ sequence, and the extra nodes only add DP and expert sharding.
 | `patch_glm_5_3_flash_kpool_row_chunk.py` | `megatron/bridge/models/glm5_next/kpool_indexer.py` | Computes DSA indexer logits 8192 query rows at a time (2 GiB fp32 per chunk instead of 64 GiB); per-row top-k is unchanged. Falls back to the original path when indexer replay is on. |
 | `patch_glm_5_3_flash_moe_row_chunk.py` | `megatron/core/transformer/moe/experts.py` | Runs grouped-expert forward over 262144-row chunks with per-chunk expert splits, writing into a preallocated output. |
 | `patch_glm_5_3_flash_moe_seq_chunk.py` | `megatron/core/transformer/moe/moe_layer.py` | Routes once over the full sequence (routing replay order and shapes unchanged), then runs preprocess/dispatch/experts/combine over a fixed 8 token chunks. When grad is enabled, each chunk is wrapped in `tensor_parallel.checkpoint`. Supports allgather and alltoall dispatchers. Logs `GLM256K_MOE_SEQ_CHUNK` once per layer. |
+| `patch_glm_5_3_flash_checkpoint_cpu.py` | `megatron/core/transformer/transformer_block.py` | Saves outer full-layer checkpoint inputs in pinned host memory; nested recomputation stays on GPU. |
+| `patch_glm_5_3_flash_mhc_release.py` | `megatron/core/transformer/transformer_layer.py` | Clears the mHC MLP norm manager after its last use, matching the ordinary transformer layer, to release its retained input graph. |
 
 Local checks (CPU glue tests against the unchunked path with fake dispatchers): forward and
 gradients match to float rounding (max diff <= 3.1e-5 expert chunking; <= 1.3e-6 MoE-layer
@@ -51,6 +55,8 @@ chunking). Each patch applies to the image's real source file, is idempotent and
 | 9 | [warped-darter-c4cdea978db2](https://modal.com/apps/modal-labs/helena-dev/ap-qmk5PXtKCUHKzCwSky4Upx) | seq chunk supports alltoall, fixed 8 chunks | -0.25 | pass, 179.1s, peak alloc ~48 GiB (was 62-79) | train forward passes; backward OOM (708 MiB, 120.37 GiB allocated) in full-recompute re-forward |
 | 10 | [polite-plugin-2333a8f16b0e](https://modal.com/apps/modal-labs/helena-dev/ap-AdijxrI5xDE8Ju4emlXhRm) | per-chunk checkpoint under grad | -0.75 | pass, 169.0s | backward OOM inside a single chunk's recompute (976 MiB, 120.93 GiB allocated) |
 | 11 | [presto-control-1be7107093e8](https://modal.com/apps/modal-labs/helena-dev/ap-5In4xIMiynodpShT6mDo0l) | diagnostics only (backward memory per MoE layer/chunk, allocation summary on OOM) | -0.75 | pass, 139.5s | backward OOM (836 MiB) on rank 13 at the 3rd layer of backward; allocation breakdown below |
+| 12 | [saucy-muscat-8124df5b55c1](https://modal.com/apps/modal-labs/helena-dev/ap-aS49sdjPArQuFoitFCJGW4) | outer checkpoint CPU offload | -1.0 | pass, 138.6s | backward starts ~45 GiB lower, then grows ~2 GiB/layer; OOM at layer 23 |
+| 13 | [sad-distortion-822db0bf29c9](https://modal.com/apps/modal-labs/helena-dev/ap-bAy3MA0xjIynU1GeGlDbdJ) | release mHC MLP norm manager | pending | pending | running |
 
 Measured across proofs 3-10: rollout 190-194s for 8 samples with ~254k-token prompts, weight
 update 39-49s, 1-3 of 8 responses truncated at the 8k response budget, coherent math reasoning
