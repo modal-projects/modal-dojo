@@ -68,3 +68,38 @@
 (MegatronTrainRayActor pid=26375) [2026-10-13 18:19:43.953 actor_cell0_rank0] timer.py:42 - Timer train end (elapsed: 395.4s)
 (MegatronTrainRayActor pid=26375) [2026-10-13 18:19:43.953 actor_cell0_rank0] timer.py:31 - Timer train_wait start
 (MegatronTrainRayActor pid=26375) [2026-10-13 18:19:43.974 actor_cell0_rank0] timer.py:31 - Timer save_model start
+(RolloutManager pid=7118) [2026-10-13 18:12:43.939 rollout_manager] metrics.py:89 - perf 0: {'rollout/num_training_samples': 8, 'rollout/episode_raw_reward': -0.25, 'rollout/episode_response_length/mean': 4218.25, 'rollout/episode_response_length/median': 3966.0, 'rollout/episode_response_length/max': 8295, 'rollout/episode_response_length/min': 964, 'rollout/episode_total_response_length/mean': 4218.25, 'rollout/response_len/mean': 4218.25, 'rollout/response_len/median': 3966.0, 'rollout/response_len/max': 8295, 'rollout/response_len/min': 964, 'rollout/zero_std/all_zero_percentage': 0.0, 'rollout/zero_std/all_one_percentage': 0.0, 'rollout/prefix_cache_hit_rate': 0.0, 'rollout/avg_cached_tokens_per_sample': 0.0, 'rollout/repetition_frac': 0.0, 'rollout/truncated_ratio': 0.25, 'rollout/weight_version/mean': 1.0, 'rollout/weight_version/median': 1.0, 'rollout/weight_version/max': 1, 'rollout/weight_version/min': 1, 'rollout/weight_version/mixed_version_ratio': 0.0, 'perf/rollout_time': 186.1998152732849, 'perf/tokens_per_gpu_per_sec': 2.8318032927482277, 'perf/longest_sample_tokens_per_sec': 44.54891637687961, 'perf/effective_tokens_per_gpu_per_sec': 2.8318032927482277, 'perf/longest_effective_sample_tokens_per_sec': 44.54891637687961}
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=33 allocated_gib=50.32 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=32 allocated_gib=45.71 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=31 allocated_gib=50.33 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=30 allocated_gib=50.33 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=29 allocated_gib=50.34 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=28 allocated_gib=45.72 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=27 allocated_gib=50.35 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=26 allocated_gib=50.35 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=25 allocated_gib=50.35 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=24 allocated_gib=45.74 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=23 allocated_gib=50.36 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=22 allocated_gib=50.37 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=21 allocated_gib=50.37 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=20 allocated_gib=45.76 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=19 allocated_gib=50.38 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=18 allocated_gib=50.39 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=17 allocated_gib=50.39 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=16 allocated_gib=45.78 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=15 allocated_gib=50.40 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=14 allocated_gib=50.40 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=13 allocated_gib=50.41 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=12 allocated_gib=45.79 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=11 allocated_gib=50.42 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=10 allocated_gib=50.42 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=9 allocated_gib=50.42 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=8 allocated_gib=45.81 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=7 allocated_gib=50.43 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=6 allocated_gib=50.44 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=5 allocated_gib=50.44 peak_gib=70.44
+(MegatronTrainRayActor pid=10159, ip=10.100.0.3) GLM256K_BWD_MOE rank=17 layer=4 allocated_gib=45.83 peak_gib=70.44
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:19:43.954 actor_cell0_rank0] train_metric_utils.py:56 - perf 0: {'perf/sleep_time': 11.108246564865112, 'perf/update_weights_implementation_time': 14.52047324180603, 'perf/finalize_and_resume_engines_time': 25.645833730697632, 'perf/update_weights_time': 41.689613580703735, 'perf/wake_up_time': 5.411516189575195, 'perf/data_preprocess_time': 0.020694255828857422, 'perf/train_wait_time': 264.03336095809937, 'perf/log_probs_time': 139.37826943397522, 'perf/actor_train_time': 255.98351907730103, 'perf/train_time': 395.38677167892456, 'perf/log_probs_tflops': 94.40478616071164, 'perf/actor_train_tflops': 154.20495548454917, 'perf/actor_train_tok_per_s': 8065.870832006571, 'perf/mfu_peak_tflops': 989.0, 'perf/actor_train_mfu': 0.15592007632411442, 'perf/step_time': 659.4201326370239, 'perf/wait_time_ratio': 0.40040233515805596}
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:21:27.583 actor_cell0_rank0] lora_utils.py:548 - Saved HF PEFT adapter to /checkpoints/sad-distortion-822db0bf29c9/iter_0000000/adapter with 73568 tensors
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:21:27.660 actor_cell0_rank0] timer.py:42 - Timer save_model end (elapsed: 103.7s)
+Final Ray job status: SUCCEEDED

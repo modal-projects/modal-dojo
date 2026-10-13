@@ -3,7 +3,8 @@
 Status: **one full 256k optimizer step passed on 8x H200:8.** Proof 13 completed
 forward/backward with finite, nonzero gradients using CPU checkpoint offload plus
 mHC manager cleanup. Backward memory stays bounded; the largest reported allocated
-peak is 70.44 GiB. Checkpoint export is finishing. The ~10-step smoke test remains
+peak is 70.44 GiB. The one-step run completed, including checkpoint export and
+post-update weight sync. The ~10-step smoke test remains
 required before calling the recipe fully validated.
 
 All runs: workspace `modal-labs`, environment `helena-dev`, 1-step proofs launched with
@@ -56,7 +57,7 @@ chunking). Each patch applies to the image's real source file, is idempotent and
 | 10 | [polite-plugin-2333a8f16b0e](https://modal.com/apps/modal-labs/helena-dev/ap-AdijxrI5xDE8Ju4emlXhRm) | per-chunk checkpoint under grad | -0.75 | pass, 169.0s | backward OOM inside a single chunk's recompute (976 MiB, 120.93 GiB allocated) |
 | 11 | [presto-control-1be7107093e8](https://modal.com/apps/modal-labs/helena-dev/ap-5In4xIMiynodpShT6mDo0l) | diagnostics only (backward memory per MoE layer/chunk, allocation summary on OOM) | -0.75 | pass, 139.5s | backward OOM (836 MiB) on rank 13 at the 3rd layer of backward; allocation breakdown below |
 | 12 | [saucy-muscat-8124df5b55c1](https://modal.com/apps/modal-labs/helena-dev/ap-aS49sdjPArQuFoitFCJGW4) | outer checkpoint CPU offload | -1.0 | pass, 138.6s | backward starts ~45 GiB lower, then grows ~2 GiB/layer; OOM at layer 23 |
-| 13 | [sad-distortion-822db0bf29c9](https://modal.com/apps/modal-labs/helena-dev/ap-bAy3MA0xjIynU1GeGlDbdJ) | release mHC MLP norm manager | -0.25 | pass, 139.4s | optimizer step passed, grad norm 0.2822; checkpoint export pending |
+| 13 | [sad-distortion-822db0bf29c9](https://modal.com/apps/modal-labs/helena-dev/ap-bAy3MA0xjIynU1GeGlDbdJ) | release mHC MLP norm manager | -0.25 | pass, 139.4s | completed with checkpoint and post-update weight sync; grad norm 0.2822 |
 
 Measured across proofs 3-10: rollout 190-194s for 8 samples with ~254k-token prompts, weight
 update 39-49s, 1-3 of 8 responses truncated at the 8k response budget, coherent math reasoning
@@ -205,7 +206,7 @@ Full-model one-step validation is the next gate; the small test alone does not
 establish that 256k fits or that training completes.
 
 Full-model run: [sad-distortion-822db0bf29c9](https://modal.com/apps/modal-labs/helena-dev/ap-bAy3MA0xjIynU1GeGlDbdJ),
-created 2026-10-13 17:45:36 UTC from `6bfbec1` on 8x H200:8. Validation in progress.
+created 2026-10-13 17:45:36 UTC from `6bfbec1` on 8x H200:8. Completed 18:23:01 UTC.
 
 Optimizer step completed at 18:19:43 UTC. Loss 0.1539692, gradient norm 0.2822192,
 train/rollout log-prob absolute difference 0.0223803, KL 0.00148993; all finite.
@@ -223,4 +224,13 @@ step 0 samples 0–7 and final questions in both prompt groups: formatting and r
 extraction are sound, but some reasoning is wrong even when the final numeric answer
 matches. This is a capacity/workflow test, not evidence of improved model quality.
 Native adapter shards were written under
-`/checkpoints/sad-distortion-822db0bf29c9/iter_0000000/adapter`; export is still running.
+`/checkpoints/sad-distortion-822db0bf29c9/iter_0000000/adapter`.
+HF PEFT export completed at 18:21:27 UTC with 73568 tensors; native adapter shards
+and optimizer/scheduler states also saved. Save time 103.7s. Post-update sync
+completed and Ray reported `SUCCEEDED` at 18:22:51 UTC.
+The app stopped at 18:23:55 UTC before the smoke launch.
+
+Nonfatal startup diagnostic: SGLang's optional post-warmup `/freeze_gc` request
+logged connection-refused tracebacks before the server was listening. The servers
+subsequently passed health checks, rollout, and both weight updates. No training
+exception or OOM occurred. This startup warning is separate from the memory fixes.
