@@ -46,6 +46,7 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [Training multi-turn coding agents](https://dojo.modal.dev/tutorials/coding_agent)
 - [Efficient inference using on-policy distillation](https://dojo.modal.dev/tutorials/on_policy_distillation)
 - [On-policy distillation across model families](https://dojo.modal.dev/tutorials/cross_tok_distill)
+- [Use fewer tokens without lobotomizing your model](https://dojo.modal.dev/tutorials/fewer_tokens)
 - [Long chain-of-thought reasoning for large-scale RL](https://dojo.modal.dev/tutorials/dapo)
 - [Speech transcription that's better, faster, and cheaper](https://dojo.modal.dev/tutorials/audio_asr)
 - [Fighting LLMs in Street Fighter III](https://dojo.modal.dev/tutorials/street_fighter)
