@@ -1,10 +1,10 @@
 # GLM-5.3-Flash bridge LoRA @ 256k context on 8x H200:8: experiment report
 
-Status: **not yet validated.** At 256k, rollout, weight sync and log-prob work.
-Proof 12 reduced backward memory by ~45 GiB but still OOMed due to per-layer retention.
-Proof 13 tests CPU checkpoint offload plus mHC manager cleanup on 8x H200:8.
-The cleanup passed a gradient/memory regression; the full proof is running.
-The ~10-step smoke run has not been launched.
+Status: **one full 256k optimizer step passed on 8x H200:8.** Proof 13 completed
+forward/backward with finite, nonzero gradients using CPU checkpoint offload plus
+mHC manager cleanup. Backward memory stays bounded; the largest reported allocated
+peak is 70.44 GiB. Checkpoint export is finishing. The ~10-step smoke test remains
+required before calling the recipe fully validated.
 
 All runs: workspace `modal-labs`, environment `helena-dev`, 1-step proofs launched with
 `validate_256k.py --steps 1 --launch`. Detailed notes: `model_setup.md`.
@@ -56,7 +56,7 @@ chunking). Each patch applies to the image's real source file, is idempotent and
 | 10 | [polite-plugin-2333a8f16b0e](https://modal.com/apps/modal-labs/helena-dev/ap-AdijxrI5xDE8Ju4emlXhRm) | per-chunk checkpoint under grad | -0.75 | pass, 169.0s | backward OOM inside a single chunk's recompute (976 MiB, 120.93 GiB allocated) |
 | 11 | [presto-control-1be7107093e8](https://modal.com/apps/modal-labs/helena-dev/ap-5In4xIMiynodpShT6mDo0l) | diagnostics only (backward memory per MoE layer/chunk, allocation summary on OOM) | -0.75 | pass, 139.5s | backward OOM (836 MiB) on rank 13 at the 3rd layer of backward; allocation breakdown below |
 | 12 | [saucy-muscat-8124df5b55c1](https://modal.com/apps/modal-labs/helena-dev/ap-aS49sdjPArQuFoitFCJGW4) | outer checkpoint CPU offload | -1.0 | pass, 138.6s | backward starts ~45 GiB lower, then grows ~2 GiB/layer; OOM at layer 23 |
-| 13 | [sad-distortion-822db0bf29c9](https://modal.com/apps/modal-labs/helena-dev/ap-bAy3MA0xjIynU1GeGlDbdJ) | release mHC MLP norm manager | pending | pending | running |
+| 13 | [sad-distortion-822db0bf29c9](https://modal.com/apps/modal-labs/helena-dev/ap-bAy3MA0xjIynU1GeGlDbdJ) | release mHC MLP norm manager | -0.25 | pass, 139.4s | optimizer step passed, grad norm 0.2822; checkpoint export pending |
 
 Measured across proofs 3-10: rollout 190-194s for 8 samples with ~254k-token prompts, weight
 update 39-49s, 1-3 of 8 responses truncated at the 8k response budget, coherent math reasoning
@@ -206,3 +206,21 @@ establish that 256k fits or that training completes.
 
 Full-model run: [sad-distortion-822db0bf29c9](https://modal.com/apps/modal-labs/helena-dev/ap-bAy3MA0xjIynU1GeGlDbdJ),
 created 2026-10-13 17:45:36 UTC from `6bfbec1` on 8x H200:8. Validation in progress.
+
+Optimizer step completed at 18:19:43 UTC. Loss 0.1539692, gradient norm 0.2822192,
+train/rollout log-prob absolute difference 0.0223803, KL 0.00148993; all finite.
+Before-train allocation was 23.40 GiB, versus ~34.4 GiB in proof 12. On rank 47,
+backward MoE entry stayed between 45.27 and 49.98 GiB from layers 45 through 4,
+instead of increasing ~2 GiB/layer. Maximum reported backward peak across the
+64 ranks was 70.44 GiB (probe measurements, not a post-save whole-run peak).
+Exact diagnostic lines: `proof13_memory.log`.
+
+Rollout 186.2s, weight sync 41.7s, log-prob 139.4s, actor training 256.0s,
+reported step wall time 659.4s. Actor training throughput: 8065.9 total tokens/s.
+Mean total sequence length 258091.25, maximum 262142; mean response 4218.25 tokens.
+Three of eight final answers scored correctly; two responses truncated. Inspected
+step 0 samples 0–7 and final questions in both prompt groups: formatting and reward
+extraction are sound, but some reasoning is wrong even when the final numeric answer
+matches. This is a capacity/workflow test, not evidence of improved model quality.
+Native adapter shards were written under
+`/checkpoints/sad-distortion-822db0bf29c9/iter_0000000/adapter`; export is still running.

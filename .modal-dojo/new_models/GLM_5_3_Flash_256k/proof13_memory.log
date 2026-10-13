@@ -1,0 +1,70 @@
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:08:33.425 actor_cell0_rank0] timer.py:31 - Timer sleep start
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:08:44.533 actor_cell0_rank0] timer.py:42 - Timer sleep end (elapsed: 11.1s)
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:08:44.533 actor_cell0_rank0] timer.py:31 - Timer train_wait start
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:08:55.430 actor_cell0_rank0] timer.py:31 - Timer update_weights start
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:08:55.515 actor_cell0_rank0] timer.py:31 - Timer update_weights_implementation start
+[miles-colocate] Update weights: 7it [00:14,  1.50s/it][2026-10-13 18:09:10.036 actor_cell0_rank0] timer.py:42 - Timer update_weights_implementation end (elapsed: 14.5s)
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:09:10.036 actor_cell0_rank0] timer.py:31 - Timer finalize_and_resume_engines start
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:09:35.682 actor_cell0_rank0] timer.py:42 - Timer finalize_and_resume_engines end (elapsed: 25.6s)
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:09:37.119 actor_cell0_rank0] timer.py:42 - Timer update_weights end (elapsed: 41.7s)
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:13:02.887 actor_cell0_rank0] timer.py:31 - Timer wake_up start
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:13:08.299 actor_cell0_rank0] timer.py:42 - Timer wake_up end (elapsed: 5.4s)
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:13:08.299 actor_cell0_rank0] timer.py:31 - Timer data_preprocess start
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:13:08.319 actor_cell0_rank0] timer.py:42 - Timer data_preprocess end (elapsed: 0.0s)
+(MegatronTrainRayActor pid=10138, ip=10.100.0.4) GLM256K_MEMORY {"stage": "before_log_prob:", "rank": 24, "allocated_gib": 27.835212230682373, "peak_allocated_gib": 32.35187244415283, "peak_reserved_gib": 33.236328125, "device_free_gib": 101.4468994140625, "device_total_gib": 139.7930908203125}
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:13:08.566 actor_cell0_rank0] timer.py:42 - Timer train_wait end (elapsed: 264.0s)
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:13:08.567 actor_cell0_rank0] timer.py:31 - Timer train start
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:13:08.567 actor_cell0_rank0] timer.py:31 - Timer log_probs start
+(MegatronTrainRayActor pid=10162, ip=10.100.0.3) GLM256K_MEMORY {"stage": "before_log_prob:", "rank": 23, "allocated_gib": 27.835216999053955, "peak_allocated_gib": 32.35187244415283, "peak_reserved_gib": 33.236328125, "device_free_gib": 101.8140869140625, "device_total_gib": 139.7930908203125} [repeated 63x across cluster]
+(MegatronTrainRayActor pid=10113, ip=10.100.0.7) GLM256K_MEMORY {"stage": "before_train:0:0", "rank": 51, "allocated_gib": 23.3991641998291, "peak_allocated_gib": 37.258244037628174, "peak_reserved_gib": 59.505859375, "device_free_gib": 64.8629150390625, "device_total_gib": 139.7930908203125}
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:15:27.945 actor_cell0_rank0] timer.py:42 - Timer log_probs end (elapsed: 139.4s)
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:15:27.970 actor_cell0_rank0] timer.py:31 - Timer actor_train start
+(MegatronTrainRayActor pid=10120, ip=10.100.0.7) GLM256K_MEMORY {"stage": "before_train:0:0", "rank": 48, "allocated_gib": 23.399133682250977, "peak_allocated_gib": 37.2587628364563, "peak_reserved_gib": 59.505859375, "device_free_gib": 65.1207275390625, "device_total_gib": 139.7930908203125} [repeated 63x across cluster]
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=45 allocated_gib=49.81 peak_gib=54.70
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=44 allocated_gib=45.27 peak_gib=59.60
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=43 allocated_gib=49.82 peak_gib=59.60
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=42 allocated_gib=49.82 peak_gib=59.60
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=41 allocated_gib=49.83 peak_gib=60.72
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=40 allocated_gib=45.29 peak_gib=60.72
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=39 allocated_gib=49.83 peak_gib=60.72
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=38 allocated_gib=49.84 peak_gib=60.72
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=37 allocated_gib=49.84 peak_gib=60.72
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=36 allocated_gib=45.30 peak_gib=63.39
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=35 allocated_gib=49.85 peak_gib=63.39
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=34 allocated_gib=49.86 peak_gib=63.39
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=33 allocated_gib=49.86 peak_gib=63.39
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=32 allocated_gib=45.32 peak_gib=63.39
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=31 allocated_gib=49.87 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=30 allocated_gib=49.87 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=29 allocated_gib=49.88 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=28 allocated_gib=45.33 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=27 allocated_gib=49.88 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=26 allocated_gib=49.89 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=25 allocated_gib=49.89 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=24 allocated_gib=45.35 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=23 allocated_gib=49.90 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=22 allocated_gib=49.91 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=21 allocated_gib=49.91 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=20 allocated_gib=45.37 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=19 allocated_gib=49.92 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=18 allocated_gib=49.92 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=17 allocated_gib=49.93 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=16 allocated_gib=45.39 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=15 allocated_gib=49.93 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=14 allocated_gib=49.94 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=13 allocated_gib=49.94 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=12 allocated_gib=45.40 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=11 allocated_gib=49.95 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=10 allocated_gib=49.96 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=9 allocated_gib=49.96 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=8 allocated_gib=45.42 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=7 allocated_gib=49.97 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=6 allocated_gib=49.97 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=5 allocated_gib=49.98 peak_gib=68.51
+(MegatronTrainRayActor pid=10123, ip=10.100.0.6) GLM256K_BWD_MOE rank=47 layer=4 allocated_gib=45.44 peak_gib=68.51
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:19:43.953 actor_cell0_rank0] log_utils.py:557 - step 0: {'train/loss': 0.15396923200157056, 'train/pg_loss': 0.15396923200157056, 'train/entropy_loss': 0.0, 'train/pg_clipfrac': 0.0, 'train/ppo_kl': 0.0, 'train/ess_ratio': 1.0, 'train/train_rollout_logprob_abs_diff': 0.022380278345489096, 'train/train_rollout_kl': 0.001489929911832143, 'train/grad_norm': 0.28221917152404785, 'train/lr-pg_0': 1e-05, 'train/lr-pg_1': 1e-05, 'train/step': 0}
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:19:43.953 actor_cell0_rank0] model.py:873 - step 0: {'train/loss': 0.15396923200157056, 'train/pg_loss': 0.15396923200157056, 'train/entropy_loss': 0.0, 'train/pg_clipfrac': 0.0, 'train/ppo_kl': 0.0, 'train/ess_ratio': 1.0, 'train/train_rollout_logprob_abs_diff': 0.022380278345489096, 'train/train_rollout_kl': 0.001489929911832143, 'train/grad_norm': 0.28221917152404785, 'train/lr-pg_0': 1e-05, 'train/lr-pg_1': 1e-05, 'train/step': 0}
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:19:43.953 actor_cell0_rank0] timer.py:42 - Timer actor_train end (elapsed: 256.0s)
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:19:43.953 actor_cell0_rank0] timer.py:42 - Timer train end (elapsed: 395.4s)
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:19:43.953 actor_cell0_rank0] timer.py:31 - Timer train_wait start
+(MegatronTrainRayActor pid=26375) [2026-10-13 18:19:43.974 actor_cell0_rank0] timer.py:31 - Timer save_model start
