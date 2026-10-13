@@ -24,6 +24,8 @@ _BASE_PATCH_OVERRIDES = {
 _PATCHES = (
     *_64K_PATCHES,
     "patch_k3_marlin_padding",
+    # Eager SiTU retains several full-sized FP32 expert activations at 256k.
+    "patch_k3_situ_compile",
 )
 
 

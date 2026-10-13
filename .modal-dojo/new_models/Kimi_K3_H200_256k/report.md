@@ -48,6 +48,14 @@ Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't prov
 - Compact trace and memory evidence: `crimson_brass_result.json`. Raw downloaded trace: eight samples, 12,561,645 bytes; retained locally outside git.
 - Next experiment: benchmark the same SiTU math under `torch.compile` on **one H200**, including output/gradient comparisons and peak allocation at a shape matching the failed ~4.93 GiB FP32 half-tensor. Only use it in the full recipe if the focused test passes and demonstrates a memory reduction. Keep topology, dataset, and two-rollout horizon fixed.
 
+## SiTU fusion proof (one H200)
+
+- `ap-EJSzhXNieClMpp6LHx2olU`, completed 2026-10-13 17:23 UTC, image `radixark/miles:dev-202609251434`, PyTorch `2.13.0+cu130`. An earlier benchmark (`ap-hTejvGf4HbCT8vDvn1DQmR`) completed its GPU checks but failed to deserialize `torch.__version__` locally; converting that value to plain `str` fixed the result transport.
+- `torch.compile(fullgraph=True, dynamic=True)` wraps the **unchanged upstream SiTU formula**. Small FP32/BF16 output and gradient comparisons passed at input scales 0.01, 1, 10, and 100; large-shape first/middle/last-row comparisons also passed. BF16 maximum observed differences were 0.03125 in output and 0.0078125 in gradient (within the stated tolerances); this is numerical agreement, not bitwise identity.
+- At `[368640, 7168]` BF16 input (4.92 GiB per FP32 half), extra peak allocated memory for forward+backward dropped from **46.76 GiB to 7.44 GiB**; forward live intermediates dropped from **31.99 GiB to 2.46 GiB**. Baseline input/gradient allocation was 7.38 GiB in both cases. At 131,072 rows, forward+backward extra peak fell from 16.63 GiB to 2.63 GiB.
+- The large compiled case includes first-shape compilation (~2.67s forward and 0.52s backward); these are not steady-state training timings or a speedup claim. Full results: `situ_benchmark.json`.
+- Added `patch_k3_situ_compile` only to `Kimi_K3_LoRA_256k_H200_Recipe`, plus pinned input/output fixtures, idempotence/drift tests, and the snapshot refresh hook. **19 local Miles tests passed**, along with Ruff and recipe instantiation. Full 128-GPU validation remains required.
+
 ## Continuation, 2026-10-13
 
 - Source at takeover: `b5b5e3014aa3973b474187900e42a8dd08c8729e`.

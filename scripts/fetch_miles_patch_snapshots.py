@@ -11,6 +11,7 @@ from pathlib import Path
 import modal
 
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
+from modal_dojo.train_recipes.miles_recipe.kimi_k3 import Kimi_K3_LoRA_Recipe
 
 MILES_IMAGE = MilesRecipe().docker_image
 
@@ -29,6 +30,7 @@ MILES_SOURCE_PATHS = {
 
 app = modal.App("fetch-miles-snapshots")
 image = modal.Image.from_registry(MILES_IMAGE).entrypoint([])
+k3_image = modal.Image.from_registry(Kimi_K3_LoRA_Recipe().docker_image).entrypoint([])
 
 
 @app.function(image=image, serialized=True)
@@ -36,8 +38,17 @@ def read_sources() -> dict[str, str]:
     return {name: Path(path).read_text() for name, path in MILES_SOURCE_PATHS.items()}
 
 
+@app.function(image=k3_image, serialized=True)
+def read_k3_sources() -> dict[str, str]:
+    return {
+        "k3_ops.py": Path("/root/miles/miles_plugins/models/kimi_k3/ops.py").read_text()
+    }
+
+
 @app.local_entrypoint()
 def main() -> None:
     TESTDATA_DIR.mkdir(parents=True, exist_ok=True)
     for name, source in read_sources.remote().items():
+        (TESTDATA_DIR / f"{name}.input").write_text(source)
+    for name, source in read_k3_sources.remote().items():
         (TESTDATA_DIR / f"{name}.input").write_text(source)

@@ -59,6 +59,7 @@ def benchmark():
         for name, fn in (("eager", situ_and_mul), ("compiled", compiled)):
             gc.collect()
             torch.cuda.empty_cache()
+            torch.manual_seed(17)
             x = torch.randn(
                 rows, 7168, device="cuda", dtype=torch.bfloat16
             ).requires_grad_()
@@ -92,10 +93,21 @@ def benchmark():
                 }
             )
             print(json.dumps(results[-1]), flush=True)
+            indices = [0, rows // 2, rows - 1]
+            if name == "eager":
+                reference_y = y[indices].detach().cpu()
+                reference_dx = dx[indices].detach().cpu()
+            else:
+                torch.testing.assert_close(
+                    y[indices].detach().cpu(), reference_y, atol=0.008, rtol=0.008
+                )
+                torch.testing.assert_close(
+                    dx[indices].detach().cpu(), reference_dx, atol=0.02, rtol=0.02
+                )
             del x, grad, y, dx
     return {
         "gpu": torch.cuda.get_device_name(),
-        "torch": torch.__version__,
+        "torch": str(torch.__version__),
         "correctness": correctness,
         "memory": results,
     }

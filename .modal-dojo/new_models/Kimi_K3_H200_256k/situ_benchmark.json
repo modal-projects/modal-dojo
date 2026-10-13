@@ -1,0 +1,100 @@
+{
+  "gpu": "NVIDIA H200",
+  "torch": "2.13.0+cu130",
+  "correctness": [
+    {
+      "dtype": "torch.float32",
+      "scale": 0.01,
+      "output_max_abs": 8.731149137020111e-11,
+      "grad_max_abs": 1.1175870895385742e-08
+    },
+    {
+      "dtype": "torch.float32",
+      "scale": 1.0,
+      "output_max_abs": 1.430511474609375e-06,
+      "grad_max_abs": 1.430511474609375e-06
+    },
+    {
+      "dtype": "torch.float32",
+      "scale": 10.0,
+      "output_max_abs": 1.52587890625e-05,
+      "grad_max_abs": 2.47955322265625e-05
+    },
+    {
+      "dtype": "torch.float32",
+      "scale": 100.0,
+      "output_max_abs": 2.288818359375e-05,
+      "grad_max_abs": 2.47955322265625e-05
+    },
+    {
+      "dtype": "torch.bfloat16",
+      "scale": 0.01,
+      "output_max_abs": 7.450580596923828e-09,
+      "grad_max_abs": 3.0517578125e-05
+    },
+    {
+      "dtype": "torch.bfloat16",
+      "scale": 1.0,
+      "output_max_abs": 0.001953125,
+      "grad_max_abs": 0.00390625
+    },
+    {
+      "dtype": "torch.bfloat16",
+      "scale": 10.0,
+      "output_max_abs": 0.0078125,
+      "grad_max_abs": 0.0078125
+    },
+    {
+      "dtype": "torch.bfloat16",
+      "scale": 100.0,
+      "output_max_abs": 0.03125,
+      "grad_max_abs": 0.0078125
+    }
+  ],
+  "memory": [
+    {
+      "mode": "eager",
+      "rows": 131072,
+      "baseline_gib": 2.625,
+      "forward_peak_extra_gib": 14.0,
+      "forward_live_extra_gib": 11.375,
+      "forward_backward_peak_extra_gib": 16.625,
+      "forward_seconds": 0.014145226000003674,
+      "backward_seconds": 0.018707031999994683,
+      "finite": true
+    },
+    {
+      "mode": "compiled",
+      "rows": 131072,
+      "baseline_gib": 2.625,
+      "forward_peak_extra_gib": 0.875,
+      "forward_live_extra_gib": 0.875,
+      "forward_backward_peak_extra_gib": 2.625,
+      "forward_seconds": 0.007037299000003827,
+      "backward_seconds": 0.013092139999997698,
+      "finite": true
+    },
+    {
+      "mode": "eager",
+      "rows": 368640,
+      "baseline_gib": 7.3828125,
+      "forward_peak_extra_gib": 39.375,
+      "forward_live_extra_gib": 31.9921875,
+      "forward_backward_peak_extra_gib": 46.7578125,
+      "forward_seconds": 0.03950750800000691,
+      "backward_seconds": 0.05407866099999836,
+      "finite": true
+    },
+    {
+      "mode": "compiled",
+      "rows": 368640,
+      "baseline_gib": 7.3828125,
+      "forward_peak_extra_gib": 2.51953125,
+      "forward_live_extra_gib": 2.4609375,
+      "forward_backward_peak_extra_gib": 7.44140625,
+      "forward_seconds": 2.668122113999999,
+      "backward_seconds": 0.5201454779999963,
+      "finite": true
+    }
+  ]
+}
