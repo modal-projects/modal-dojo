@@ -197,3 +197,6 @@ Reproducer: `validate_mhc_release.py`. The patch also passes pinned-source
 application, idempotence, compilation, and local Ruff checks.
 Full-model one-step validation is the next gate; the small test alone does not
 establish that 256k fits or that training completes.
+
+Full-model run: [sad-distortion-822db0bf29c9](https://modal.com/apps/modal-labs/helena-dev/ap-bAy3MA0xjIynU1GeGlDbdJ),
+created 2026-10-13 17:45:36 UTC from `6bfbec1` on 8x H200:8. Validation in progress.
