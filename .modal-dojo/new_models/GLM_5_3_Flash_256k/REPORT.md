@@ -166,3 +166,34 @@ completed chunk. Autograd retains its own saved tensors, and the next dispatch
 reconstructs the transient metadata. A two-GPU regression checks this hypothesis
 with the real dispatcher, nested checkpointing and differentiable routing before
 launching another eight-node proof.
+
+The dispatcher hypothesis was rejected before a full-model launch. The two-H100
+check (`ap-GO1J1OSVXMDepigrTznmBR`) preserved outputs/gradients exactly, but retained
+memory only fell from 7483392 to 6303744 bytes, failing the expected >20 MiB
+reduction. The dispatcher change was reverted. A prior two-H200 helper waited
+ten minutes for placement and was cancelled without executing.
+
+### Proof 13: release the mHC MLP offload manager
+
+Pinned `HyperConnectionTransformerLayer._forward_post_mlp_with_fused_hyper_connection`
+does not clear `self.mlp_norm_manager` after `group_offload`. The manager owns
+`self.tensor` even when offloading is disabled. This retains each layer's
+aggregated hidden state, its graph, the restored checkpoint input, and its gradient.
+The ordinary `TransformerLayer` already clears the manager after its last use.
+`patch_glm_5_3_flash_mhc_release.py` adds the same cleanup to the mHC path.
+CPU checkpoint offload and all topology/workload settings remain as in proof 12.
+
+The [single-H100 regression](https://modal.com/apps/modal-labs/helena-dev/ap-gSYSWeeI0Gm0LCxlTSfFwE)
+used the pinned mHC MLP and post-processing methods, real hyper-connection math,
+12 layers, outer CPU checkpoints and a nested MLP checkpoint. It completed with:
+
+- Bit-exact outputs and input/trainable-weight gradients (`rtol=atol=0`).
+- Retained GPU bytes: 319393792 -> 92901376 (216 MiB released).
+- Backward entry memory before: 88.59 -> 288.60 MiB, increasing 16 MiB/layer
+  after the first layer; after: 96.59 -> 96.60 MiB, essentially flat.
+- Retained module managers: 12 -> 0. Helper completed and stopped.
+
+Reproducer: `validate_mhc_release.py`. The patch also passes pinned-source
+application, idempotence, compilation, and local Ruff checks.
+Full-model one-step validation is the next gate; the small test alone does not
+establish that 256k fits or that training completes.
