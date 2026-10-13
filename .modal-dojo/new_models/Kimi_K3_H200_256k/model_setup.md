@@ -2,7 +2,7 @@
 
 Base: `Kimi_K3_LoRA_64k_Recipe` (modal-dojo#618), image `radixark/miles:dev-202609251434` (K3 support in Miles/Megatron/SGLang; unchanged).
 
-The running `crimson-brass` image reports Miles commit `41c5e38b94ea23677de93b01a4a77d55677a8f09`. Its `miles_plugins/models/cp_utils.py` accepts arbitrary CP group sizes provided padded sequence lengths divide CP, relayouts Megatron zigzag shards via all-gather, and calls FLA `build_cp_context`. This removes the earlier uncertainty about using upstream HEAD for the source inspection; it does not prove CP8 execution or memory capacity. The full-sequence relayout buffers mean that doubling CP does not halve every activation allocation.
+The `crimson-brass` image reports Miles commit `41c5e38b94ea23677de93b01a4a77d55677a8f09`. Its `miles_plugins/models/cp_utils.py` accepts arbitrary CP group sizes provided padded sequence lengths divide CP, relayouts Megatron zigzag shards via all-gather, and calls FLA `build_cp_context`. CP8 warmup and the 256k log-probability pass completed, but the first training update OOMed in the expert activation. The full-sequence relayout buffers mean that doubling CP does not halve every activation allocation; halving TP simultaneously also doubles local heads.
 
 ## Evidence driving topology
 - radiant-tom-b8a5302e43ee (64k, 8x B300:8, TP4/PP8/CP2/EP8): host used 2.20-2.34 TiB/node of 3 TiB; GPU resident ~82-107 GiB, peak allocated 146.6 GiB.
@@ -17,7 +17,7 @@ The running `crimson-brass` image reports Miles commit `41c5e38b94ea23677de93b01
 - Trainer TP4 x CP8 x PP4 (23/24/24/22 layers), EP32, DP1, `max_tokens_per_gpu=32768` (32k tokens/rank, same as radiant-tom at 64k). First tried TP8 x CP4 (64k tokens/rank), which OOMed; see `report.md`.
 - Inference: 8 TP16 engines, one 256k request each, `sglang_max_total_tokens=524288` (fixed-fathom allocated 402,497 tokens / 10.36 GB per rank), mem fraction 0.95.
 - Batch: 2 prompts x 4 samples = 8 sequences = one per engine.
-- Patches: 64k set + compact TP16 Marlin padding + bounded PP adapter broadcast.
+- Patches: 64k set + compact TP16 Marlin padding + bounded PP adapter broadcast + compiled SiTU activation. The SiTU patch passed focused H200 output/gradient checks and reduced extra peak allocation from 46.76 to 7.44 GiB at the failing tensor size; distributed validation is pending (`linear-list`).
 
 ## Validation
 `validate.py --context-length 262144 --rollouts {2,10} --launch` (capacity mode: masked observation fills each sequence to >= 261120 tokens).
