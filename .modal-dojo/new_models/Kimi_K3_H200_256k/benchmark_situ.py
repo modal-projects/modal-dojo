@@ -53,8 +53,9 @@ def benchmark():
             )
             del x, grad, y, expected_grad, actual, actual_grad
     results = []
-    # Half-width matches K3's routed experts; large FP32 halves are 4.92 GiB,
-    # close to the 4.93 GiB allocation that failed in crimson-brass.
+    # Synthetic width: large FP32 halves are 4.92 GiB, close to the failed
+    # 4.93 GiB allocation. K3's actual expert intermediate width is 3072;
+    # this test matches allocation size, not the exact matrix aspect ratio.
     for rows in (131072, 368640):
         for name, fn in (("eager", situ_and_mul), ("compiled", compiled)):
             gc.collect()

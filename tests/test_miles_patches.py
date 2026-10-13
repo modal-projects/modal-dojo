@@ -10,6 +10,7 @@ from modal_dojo.frameworks.miles.modal_helpers.patches import (
     patch_advantage_distribution as advantage_patcher,
     patch_qkvr_cpu_merge as qkvr_patcher,
     patch_k3_situ_compile as k3_situ_patcher,
+    patch_k3_lora_delta_reuse as k3_lora_patcher,
     patch_rollout_status_reporting as rollout_patcher,
 )
 
@@ -41,6 +42,32 @@ def test_k3_situ_compile_patch_matches_pinned_source(tmp_path):
     target.write_text("import torch\n")
     with pytest.raises(RuntimeError, match="expected one SiTU"):
         k3_situ_patcher.apply(target)
+
+
+def test_k3_lora_delta_reuse_patch_matches_pinned_source(tmp_path):
+    target = tmp_path / "lora.py"
+    original = (TESTDATA / "k3_lora.py.input").read_text()
+    target.write_text(original)
+    k3_lora_patcher.apply(target)
+    expected = (TESTDATA / "k3_lora.py.delta_reuse.output").read_text()
+    assert target.read_text() == expected
+    k3_lora_patcher.apply(target)
+    assert target.read_text() == expected
+    # Dense/shared-expert adapters are outside this intervention.
+    assert (
+        expected.split("# " + k3_lora_patcher.MARKER)[0]
+        == original.split("def _apply_expert_lora(")[0]
+    )
+    target.write_text(
+        original.replace(
+            "delta = torch.cat((w1_delta, w3_delta), dim=-1)", "delta = changed()"
+        )
+    )
+    with pytest.raises(RuntimeError, match="source drift"):
+        k3_lora_patcher.apply(target)
+    target.write_text("import torch\n")
+    with pytest.raises(RuntimeError, match="missing expert LoRA"):
+        k3_lora_patcher.apply(target)
 
 
 def _apply_patcher(name: str, work: Path) -> None:

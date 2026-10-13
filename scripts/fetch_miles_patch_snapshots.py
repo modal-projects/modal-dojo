@@ -41,7 +41,12 @@ def read_sources() -> dict[str, str]:
 @app.function(image=k3_image, serialized=True)
 def read_k3_sources() -> dict[str, str]:
     return {
-        "k3_ops.py": Path("/root/miles/miles_plugins/models/kimi_k3/ops.py").read_text()
+        "k3_ops.py": Path(
+            "/root/miles/miles_plugins/models/kimi_k3/ops.py"
+        ).read_text(),
+        "k3_lora.py": Path(
+            "/root/miles/miles_plugins/models/kimi_k3/lora.py"
+        ).read_text(),
     }
 
 

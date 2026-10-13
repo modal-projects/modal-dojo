@@ -1,0 +1,91 @@
+{
+  "gpu": "NVIDIA H200",
+  "torch": "2.13.0+cu130",
+  "results": [
+    {
+      "scale": 2.0,
+      "rows": 848,
+      "recompute": false,
+      "eager": {
+        "baseline_gib": 3.543365478515625,
+        "forward_peak_extra_gib": 0.2308645248413086,
+        "forward_backward_peak_extra_gib": 0.2825460433959961
+      },
+      "reuse": {
+        "baseline_gib": 3.7308692932128906,
+        "forward_peak_extra_gib": 0.03055286407470703,
+        "forward_backward_peak_extra_gib": 0.0437774658203125
+      },
+      "max_output_abs": 0.0,
+      "max_input_grad_abs": 0.0
+    },
+    {
+      "scale": 2.0,
+      "rows": 848,
+      "recompute": true,
+      "eager": {
+        "baseline_gib": 3.7308692932128906,
+        "forward_peak_extra_gib": 0.0739593505859375,
+        "forward_backward_peak_extra_gib": 0.0739593505859375
+      },
+      "reuse": {
+        "baseline_gib": 3.7308692932128906,
+        "forward_peak_extra_gib": 0.030023574829101562,
+        "forward_backward_peak_extra_gib": 0.0494384765625
+      },
+      "max_output_abs": 0.0,
+      "max_input_grad_abs": 0.0
+    },
+    {
+      "scale": 2.0,
+      "rows": 413504,
+      "recompute": false,
+      "eager": {
+        "baseline_gib": 9.240421295166016,
+        "forward_peak_extra_gib": 19.029202461242676,
+        "forward_backward_peak_extra_gib": 19.029202461242676
+      },
+      "reuse": {
+        "baseline_gib": 9.240421295166016,
+        "forward_peak_extra_gib": 14.296780586242676,
+        "forward_backward_peak_extra_gib": 14.647175788879395
+      },
+      "max_output_abs": 0.0,
+      "max_input_grad_abs": 0.0
+    },
+    {
+      "scale": 0.37,
+      "rows": 848,
+      "recompute": false,
+      "eager": {
+        "baseline_gib": 3.7298927307128906,
+        "forward_peak_extra_gib": 0.04037952423095703,
+        "forward_backward_peak_extra_gib": 0.043243408203125
+      },
+      "reuse": {
+        "baseline_gib": 3.7298927307128906,
+        "forward_peak_extra_gib": 0.03067493438720703,
+        "forward_backward_peak_extra_gib": 0.043243408203125
+      },
+      "max_output_abs": 0.0,
+      "max_input_grad_abs": 0.0
+    },
+    {
+      "scale": 0.37,
+      "rows": 848,
+      "recompute": true,
+      "eager": {
+        "baseline_gib": 3.7298927307128906,
+        "forward_peak_extra_gib": 0.03985023498535156,
+        "forward_backward_peak_extra_gib": 0.0489044189453125
+      },
+      "reuse": {
+        "baseline_gib": 3.7298927307128906,
+        "forward_peak_extra_gib": 0.030145645141601562,
+        "forward_backward_peak_extra_gib": 0.0489044189453125
+      },
+      "max_output_abs": 0.0,
+      "max_input_grad_abs": 0.0
+    }
+  ]
+}
