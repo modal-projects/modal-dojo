@@ -619,7 +619,7 @@ class TrainConfig:
             return launch.result(stop_app_on_success=True)
         except BaseException:
             if not self.detach and launch.modal_app_id:
-                stop_app(launch.modal_app_id)
+                stop_app(launch.modal_app_id, best_effort=True)
             raise
 
     def launch(
@@ -759,7 +759,7 @@ class TrainConfig:
             if function_call is None:
                 app_id = run_record.modal_app_id or (app.app_id if app else "")
                 if app_id:
-                    stop_app(app_id)
+                    stop_app(app_id, best_effort=True)
                 if isinstance(exc, KeyboardInterrupt) or app is None:
                     _terminalize_launch(run_record, exc)
                     raise

@@ -6,6 +6,7 @@
   import GroupSection from "../components/GroupSection.svelte";
   import MinimalTableSkeleton from "../components/MinimalTableSkeleton.svelte";
   import ResizableTable from "../components/ResizableTable.svelte";
+  import RunStopButton from "../components/RunStopButton.svelte";
   import RunSummary from "../components/RunSummary.svelte";
   import StatusPill from "../components/StatusPill.svelte";
   import TimeAgo from "../components/TimeAgo.svelte";
@@ -70,6 +71,7 @@
   // The list payload carries only the fields the table renders, so the drawer
   // fetches the run's full record (config and all) when it opens.
   let drawerDetail = $state(null);
+  let drawerDetailGen = 0;
   // Set only when the server says the run is gone. The list holds one page, so
   // a run being absent from it means nothing — the drawer renders from the
   // detail fetch for runs deep-linked or scrolled past.
@@ -81,8 +83,10 @@
     drawerRunMissing = false;
     if (!runId) return;
     const controller = new AbortController();
+    const gen = ++drawerDetailGen;
     fetchRun(runId, { signal: controller.signal })
       .then((detail) => {
+        if (gen !== drawerDetailGen) return;
         if (detail) drawerDetail = detail;
         else drawerRunMissing = true;
       })
@@ -525,6 +529,18 @@
           <h2 class="text-(--text-bright) text-[16px] font-medium [font-family:var(--font-mono)] leading-[24px] whitespace-nowrap overflow-hidden text-ellipsis" title={selectedRun.run_id}>{selectedRun.run_id}</h2>
         </div>
         <div class="flex items-center gap-[8px] shrink-0">
+          {#key selectedRun.run_id}
+            <RunStopButton
+              run={selectedRun}
+              compact
+              onStopped={(updated) => {
+                if (updated?.run_id === drawerRunId) {
+                  drawerDetailGen++;
+                  drawerDetail = updated;
+                }
+              }}
+            />
+          {/key}
           <button
             class="inline-flex items-center gap-[6px] [border:1px_solid_var(--color-c-gray-10,#2f2f2f)] rounded-[6px] p-[4px_8px] [font:inherit] text-[12px] font-medium leading-[16px] text-(--muted) bg-transparent cursor-pointer ghost-hover"
             onclick={(event) => selectRun(selectedRun.run_id, event)}
