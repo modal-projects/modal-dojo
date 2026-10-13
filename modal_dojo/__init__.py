@@ -99,6 +99,10 @@ _EXPORTS = {
         "modal_dojo.train_recipes.miles_recipe",
         "Kimi_K3_LoRA_64k_Recipe",
     ),
+    "Kimi_K3_LoRA_256k_H200_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "Kimi_K3_LoRA_256k_H200_Recipe",
+    ),
     "Moonlight_16B_A3B_Instruct": (
         "modal_dojo.common.models",
         "Moonlight_16B_A3B_Instruct",
@@ -246,6 +250,7 @@ __all__ = [
     "Kimi_K3",
     "Kimi_K3_LoRA_Recipe",
     "Kimi_K3_LoRA_64k_Recipe",
+    "Kimi_K3_LoRA_256k_H200_Recipe",
     "Moonlight_16B_A3B_Instruct",
     "Moonlight_16B_A3B_Recipe",
     "MilesRecipe",
