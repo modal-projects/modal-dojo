@@ -104,7 +104,7 @@ sequence length 258990.9; mean response 5117.9; four of eight responses
 truncated, one scored correctly. Exact memory diagnostic lines are saved
 in `proof11_memory.log`.
 
-### Proof 12: CPU offload of outer recompute checkpoints (running)
+### Proof 12: CPU offload of outer recompute checkpoints (failed)
 
 `patch_glm_5_3_flash_checkpoint_cpu.py` wraps only the BF16 full-layer
 `tensor_parallel.checkpoint` call in `torch.autograd.graph.save_on_cpu(pin_memory=True)`.
@@ -113,7 +113,7 @@ memory. The scope exits before backward; inner MoE checkpoint recomputation rema
 on GPU. This targets ~44–45 GiB/rank of residual streams without changing sequence
 length, routing, batch size, parallelism, or model math. Expect roughly 360 GiB/node
 of additional host checkpoint storage at eight GPUs/node; the recipe already allows
-2 TiB host RAM/node. Actual full-model memory and timing remain to be measured.
+2 TiB host RAM/node. Full-model measurements are recorded below.
 
 Validation before launch:
 - Patch applies to `transformer_block.py` read from the pinned image, is idempotent,
@@ -138,3 +138,31 @@ No full-model success is claimed yet.
 Local preflight passed after installing the missing `jinja2` dependency in the
 isolated virtualenv. Recipe import, dataset construction, patch compile/idempotence,
 ruff lint/format and 18 recipe-hook/runtime/patch tests passed.
+
+Proof 12 outcome: failed at 16:55:41 UTC during backward at layer 23/rank 47,
+versus layer 43/rank 13 in proof 11. Rollout 185.7s, weight sync 42.2s,
+log-prob 138.6s; all eight rewards -1, two truncated. Traces show incorrect
+answers/unfinished reasoning for the intended final question, not the prior
+trailing-token reward bug. No optimizer step completed.
+
+Offload engaged: first backward MoE entry was 60.55 GiB (proof 11: 105.50 GiB).
+However, same-rank memory increased from 60.55 GiB at layer 45 to 102.64 GiB
+at layer 23, about 2 GiB per layer. OOM requested 1.95 GiB with 107.67 GiB
+allocated and 15.39 GiB reserved but unused. Snapshot evidence:
+
+| GiB | count | allocation |
+|---:|---:|---|
+| 22.46 | 23 | restored checkpoint inputs, `CheckpointFunction.backward` |
+| 21.48 | 22 | mHC residual gradients, `native_fused_add_3` |
+| 21.24 | 2409 | pre-history model/optimizer tensors |
+| 13.79 | 9 | sequence-parallel gathers |
+| 11.23 | 46 | aggregated hidden states (forward and recompute) |
+
+Exact lines: `proof12_memory.log`. This suggests per-layer autograd graph
+retention, rather than a single oversized expert chunk. The all-to-all dispatcher
+keeps `self.probs` after combine, including its graph during recompute. Candidate
+13 invokes the pinned dispatcher's `reset_transient_forward_state()` after each
+completed chunk. Autograd retains its own saved tensors, and the next dispatch
+reconstructs the transient metadata. A two-GPU regression checks this hypothesis
+with the real dispatcher, nested checkpointing and differentiable routing before
+launching another eight-node proof.
