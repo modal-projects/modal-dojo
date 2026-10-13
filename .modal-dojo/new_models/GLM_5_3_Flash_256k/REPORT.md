@@ -243,7 +243,7 @@ Same recipe and 8x H200:8 topology as proof 13, with `num_rollout=10` and 20
 distinct question rows (two per rollout, four samples per question).
 The final adapter is scheduled to save at the end of the smoke test.
 
-Progress at 19:19 UTC: three optimizer steps completed without OOM. Before-train
+Progress at 19:31 UTC: five optimizer steps completed without OOM. Before-train
 allocation is stable at 23.4–23.8 GiB; backward entries remain around 45–51 GiB.
 
 | step (1-based) | mean reward | loss | grad norm | rollout s | log-prob s | actor train s |
@@ -251,6 +251,8 @@ allocation is stable at 23.4–23.8 GiB; backward entries remain around 45–51 
 | 1 | 0.25 | 0.293932 | 0.281908 | 187.8 | 138.8 | 255.2 |
 | 2 | -0.50 | -0.372217 | 0.668310 | 44.7 | 49.3 | 212.4 |
 | 3 | -1.00 | 0 | 0 | 151.4 | 43.3 | 211.5 |
+| 4 | 0.25 | -0.014325 | 0.342685 | 68.1 | 41.7 | 185.0 |
+| 5 | 0.25 | -0.228694 | 0.583998 | 64.7 | 41.6 | 184.4 |
 
 Step 3's zero gradient is expected: all samples in each GRPO group have the same
 reward. Each step uses different questions, so these rewards are not a controlled
