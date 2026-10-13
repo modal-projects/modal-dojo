@@ -166,3 +166,14 @@ allocated by PyTorch, 138.12 GiB in use, 1.58 GiB free (10.100.0.5 GPU 1).
 Per-chunk checkpointing engaged, yet the rank was already at ~121 GiB while only one
 chunk's expert activations should be live; what holds the other ~86 GiB above the
 before_train baseline is NOT yet measured (needs per-chunk memory logging / snapshot).
+
+proof11 presto-control-1be7107093e8 (ap-5In4xIMiynodpShT6mDo0l): proof10 + diagnostics only.
+Rollout reward -0.75 (response mean 5118); update_weights 43.7s; log_probs PASSED (139.5s);
+before_train allocated ~34.4 GiB. Backward OOM on rank 13 (10.100.0.2 GPU 5): 836 MiB requested,
+1.11 GiB free. GLM256K_BWD_MOE rank 13: 105.5 GiB allocated at backward re-run of layer 45, OOM in
+layer 43 (chunks 99k-107k rows, 114.6 GiB). GLM256K_OOM live allocations by call site:
+44.00 GiB/44 hyper_connection.py:144 native_h_post_bda; 21.24 GiB before history; 14.12 GiB/9
+mappings.py:145 _gather_along_first_dim (SP gather); 10.50 GiB/42 hyper_connection.py:71
+native_h_aggregate; 4.00 GiB/2 _projection_and_get_norm; MoE chunk allocations each <= 0.82 GiB.
+Inference: 1 GiB = 32768 x 4096 x hc4 x 2B -> per-layer mHC residual checkpoints from full recompute.
+The MoE is no longer the dominant cost; next target is per-layer mHC state.

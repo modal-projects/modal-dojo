@@ -50,7 +50,7 @@ chunking). Each patch applies to the image's real source file, is idempotent and
 | 8 | [blocky-number-be6798191273](https://modal.com/apps/modal-labs/helena-dev/ap-dbgCgv97eY6sMLokp3azBU) | MoE-layer seq chunk (allgather only) | -0.5 | pass, 159.6s | patch never engaged: Bridge LoRA forces the alltoall dispatcher; same OOM as proof 7 |
 | 9 | [warped-darter-c4cdea978db2](https://modal.com/apps/modal-labs/helena-dev/ap-qmk5PXtKCUHKzCwSky4Upx) | seq chunk supports alltoall, fixed 8 chunks | -0.25 | pass, 179.1s, peak alloc ~48 GiB (was 62-79) | train forward passes; backward OOM (708 MiB, 120.37 GiB allocated) in full-recompute re-forward |
 | 10 | [polite-plugin-2333a8f16b0e](https://modal.com/apps/modal-labs/helena-dev/ap-AdijxrI5xDE8Ju4emlXhRm) | per-chunk checkpoint under grad | -0.75 | pass, 169.0s | backward OOM inside a single chunk's recompute (976 MiB, 120.93 GiB allocated) |
-| 11 | [presto-control-1be7107093e8](https://modal.com/apps/modal-labs/helena-dev/ap-5In4xIMiynodpShT6mDo0l) | diagnostics only (backward memory per MoE layer/chunk, allocation summary on OOM) | | | running |
+| 11 | [presto-control-1be7107093e8](https://modal.com/apps/modal-labs/helena-dev/ap-5In4xIMiynodpShT6mDo0l) | diagnostics only (backward memory per MoE layer/chunk, allocation summary on OOM) | -0.75 | pass, 139.5s | backward OOM (836 MiB) on rank 13 at the 3rd layer of backward; allocation breakdown below |
 
 Measured across proofs 3-10: rollout 190-194s for 8 samples with ~254k-token prompts, weight
 update 39-49s, 1-3 of 8 responses truncated at the 8k response budget, coherent math reasoning
@@ -65,9 +65,28 @@ Proven:
   At that point the rank already had ~121 GiB allocated, against a 34.7 GiB baseline before the
   training step.
 
-Open (not measured yet): what holds the ~86 GiB above the baseline during backward. Proof 11
-logs per-layer and per-chunk backward memory and, on OOM, a summary of live allocations by
-call site. The next fix will be chosen from that data.
+Proof 11: what holds memory in backward (rank 13, the OOM rank). Live allocations at the OOM,
+grouped by allocating call site, from `GLM256K_OOM` (117.2 GiB listed of ~119 GiB allocated):
+
+| GiB | allocations | call site |
+|---|---|---|
+| 44.00 | 44 | `megatron/core/transformer/hyper_connection.py:144 native_h_post_bda` (inductor kernel), 1 GiB each |
+| 21.24 | 2417 | allocated before history recording started (weights, LoRA/optimizer state, etc.) |
+| 14.12 | 9 | `tensor_parallel/mappings.py:145 _gather_along_first_dim` via `gather_from_sequence_parallel_region` |
+| 10.50 | 42 | `hyper_connection.py:71 native_h_aggregate` (inductor kernel), 0.25 GiB each |
+| 4.00 | 2 | `hyper_connection.py:332 _projection_and_get_norm` |
+| <= 2.00 each | | everything else; every MoE chunk allocation is <= 0.82 GiB |
+
+`GLM256K_BWD_MOE`: rank 13 already had 105.5 GiB allocated when backward re-ran the last MoE
+layer, and it ran out of memory two layers later. Its chunks there had 99k-107k rows (the average
+is ~32k), at 114.6 GiB allocated.
+
+So the MoE layer is no longer what fills memory. Inference, not proven: 1 GiB =
+32768 local tokens x 4096 hidden x hc_mult 4 x 2 B. The 44 x 1 GiB group is most likely the mHC
+(hyper-connection) residual stream that full recompute saves at each layer boundary. The
+0.25 GiB-per-layer group matches one 32768 x 4096 bf16 aggregated hidden state per layer. Together
+they are ~55 GiB of per-layer state that grows linearly with sequence length. The 14 GiB of
+sequence-parallel all-gathers are not attributed to a specific module yet.
 
 ## Harness
 
