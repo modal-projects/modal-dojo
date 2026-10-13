@@ -63,6 +63,7 @@ class Kimi_K3_LoRA_256k_H200_Recipe(Kimi_K3_LoRA_64k_Recipe):
 
     # ── Optimizer ────────────────────────────────────────────────────────────
     optimizer_offload_fraction: float = 1.0
+    use_rollout_routing_replay: bool = False
 
     # ── Rollout and sampling ─────────────────────────────────────────────────
     rollout_max_response_len: int = 262144
