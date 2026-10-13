@@ -1,11 +1,11 @@
 # GLM-5.3-Flash bridge LoRA @ 256k context on 8x H200:8: experiment report
 
-Status: **one full 256k optimizer step passed on 8x H200:8.** Proof 13 completed
-forward/backward with finite, nonzero gradients using CPU checkpoint offload plus
-mHC manager cleanup. Backward memory stays bounded; the largest reported allocated
-peak is 70.44 GiB. The one-step run completed, including checkpoint export and
-post-update weight sync. The ~10-step smoke test remains
-required before calling the recipe fully validated.
+Status: **validated at 256k on 8x H200:8 (64 GPUs): one-step proof and
+10-step smoke both completed, including adapter export and post-update weight sync.**
+CPU checkpoint offload plus mHC manager cleanup resolved backward OOM. The smoke
+run's largest reported backward allocated peak was 70.40 GiB/rank; before-train
+allocation stayed at 23.40–23.84 GiB. These are probe measurements, not a whole-run
+post-save peak. All validation apps have stopped.
 
 All runs: workspace `modal-labs`, environment `helena-dev`, 1-step proofs launched with
 `validate_256k.py --steps 1 --launch`. Detailed notes: `model_setup.md`.
@@ -66,11 +66,25 @@ ending in `Answer: \boxed{N}`.
 ## What is proven vs open
 
 Proven:
-- At 256k, SGLang rollout, LoRA weight sync and Megatron log-prob all complete on 8x H200:8.
-- After whole-MoE chunking, the training forward completes (proof 9).
-- In proof 10 the backward OOM happens while only one chunk's expert activations should be live.
-  At that point the rank already had ~121 GiB allocated, against a 34.7 GiB baseline before the
-  training step.
+
+- SGLang rollout, LoRA weight sync, Megatron log-prob, training forward/backward,
+  optimizer steps and native/HF adapter checkpoint export complete on 8x H200:8.
+- The 10-step smoke used 80 samples with mean total length 257000.3 tokens and
+  observed full-budget samples of 262142 tokens against the 262144-token limit.
+- Seven steps had finite nonzero gradients. Three had zero gradients because each
+  GRPO question group had constant rewards. All ten steps completed without OOM.
+- GPU regression tests for both new fixes matched outputs and gradients exactly;
+  18 local recipe-hook/runtime/patch tests passed, as did Ruff and patch checks.
+
+Open limits:
+
+- This establishes capacity and workflow for the tested workload, not improved
+  model quality, arbitrary routing distributions, or a long-duration training run.
+- Host RAM peak was not captured before teardown. Retain the configured 2 TiB/node
+  host-memory cap; CPU checkpoint storage makes host memory material to this recipe.
+- Context parallelism remains unsupported by the pinned DSA selector.
+
+### Historical diagnosis before the fixes
 
 Proof 11: what holds memory in backward (rank 13, the OOM rank). Live allocations at the OOM,
 grouped by allocating call site, from `GLM256K_OOM` (117.2 GiB listed of ~119 GiB allocated):
@@ -140,7 +154,7 @@ Full-model one-step proof: [saucy-muscat-8124df5b55c1](https://modal.com/apps/mo
 created 2026-10-13 16:20 UTC. Same 8x H200:8 / TP8 / EP32 / PP1 / CP1
 and workload as proof 11. Build log confirms `PATCHED_MODAL_DOJO_GLM53_CHECKPOINT_CPU`
 applied to `/root/Megatron-LM/megatron/core/transformer/transformer_block.py`.
-No full-model success is claimed yet.
+At this point in the experiment, full-model success had not yet been established.
 
 Local preflight passed after installing the missing `jinja2` dependency in the
 isolated virtualenv. Recipe import, dataset construction, patch compile/idempotence,
@@ -202,8 +216,8 @@ used the pinned mHC MLP and post-processing methods, real hyper-connection math,
 
 Reproducer: `validate_mhc_release.py`. The patch also passes pinned-source
 application, idempotence, compilation, and local Ruff checks.
-Full-model one-step validation is the next gate; the small test alone does not
-establish that 256k fits or that training completes.
+The small test alone did not establish that 256k fits; the following full-model
+one-step run and 10-step smoke provide that evidence.
 
 Full-model run: [sad-distortion-822db0bf29c9](https://modal.com/apps/modal-labs/helena-dev/ap-bAy3MA0xjIynU1GeGlDbdJ),
 created 2026-10-13 17:45:36 UTC from `6bfbec1` on 8x H200:8. Completed 18:23:01 UTC.
@@ -235,25 +249,79 @@ logged connection-refused tracebacks before the server was listening. The server
 subsequently passed health checks, rollout, and both weight updates. No training
 exception or OOM occurred. This startup warning is separate from the memory fixes.
 
-### 10-step smoke test (running)
+### 10-step smoke test (completed)
 
 [muffled-pug-2f97a0d4d1e2](https://modal.com/apps/modal-labs/helena-dev/ap-TE0E0n8eGVKM2a0wm8tzKS),
 created 2026-10-13 18:31:46 UTC, detached training invocation 18:33:13 UTC.
-Same recipe and 8x H200:8 topology as proof 13, with `num_rollout=10` and 20
-distinct question rows (two per rollout, four samples per question).
-The final adapter is scheduled to save at the end of the smoke test.
+Completed 20:10:40 UTC; app stopped at 20:11:19 UTC. Same recipe and 8x H200:8
+as proof 13, with `num_rollout=10` and 20 distinct questions (two per rollout,
+four samples per question). All ten steps completed without a training failure
+or OOM. All recorded training scalars were finite.
 
-Progress at 19:31 UTC: five optimizer steps completed without OOM. Before-train
-allocation is stable at 23.4–23.8 GiB; backward entries remain around 45–51 GiB.
-
-| step (1-based) | mean reward | loss | grad norm | rollout s | log-prob s | actor train s |
+| step (1-based) | mean raw reward | loss | grad norm | rollout s | log-prob s | actor train s |
 |---:|---:|---:|---:|---:|---:|---:|
 | 1 | 0.25 | 0.293932 | 0.281908 | 187.8 | 138.8 | 255.2 |
 | 2 | -0.50 | -0.372217 | 0.668310 | 44.7 | 49.3 | 212.4 |
-| 3 | -1.00 | 0 | 0 | 151.4 | 43.3 | 211.5 |
+| 3 | -1.00 | 0.000000 | 0.000000 | 151.4 | 43.3 | 211.5 |
 | 4 | 0.25 | -0.014325 | 0.342685 | 68.1 | 41.7 | 185.0 |
 | 5 | 0.25 | -0.228694 | 0.583998 | 64.7 | 41.6 | 184.4 |
+| 6 | 0.00 | 0.000000 | 0.000000 | 143.8 | 37.5 | 158.1 |
+| 7 | -0.25 | 0.100687 | 0.233949 | 68.0 | 41.9 | 185.9 |
+| 8 | -0.50 | 0.005587 | 0.218753 | 155.7 | 42.0 | 210.6 |
+| 9 | 0.00 | 0.000000 | 0.000000 | 144.2 | 37.8 | 159.0 |
+| 10 | 0.25 | 0.141768 | 0.131535 | 142.9 | 37.1 | 159.4 |
 
-Step 3's zero gradient is expected: all samples in each GRPO group have the same
-reward. Each step uses different questions, so these rewards are not a controlled
-before/after quality comparison. Later steps and final checkpoint remain pending.
+Before-train allocation across sampled ranks/steps remained 23.40–23.84 GiB.
+Largest reported backward allocated peak: 70.40 GiB (not a whole-run post-save
+peak). Actor training averaged 185.1s over steps 2–10; the first step took 255.2s.
+Rollout weight versions advanced from 1 through 10 with zero mixed-version samples;
+the final post-update sync completed at 20:10:24 UTC (version 10 -> 11).
+
+Seven steps had nonzero gradient norms. Step 3 had eight wrong answers, and steps
+6 and 9 each had one all-correct and one all-wrong question group. All three thus
+had zero within-group GRPO advantages and zero gradients, as expected. Mean raw
+reward was -0.125: 35/80 final answers scored correctly (43.75%). Note that the
+training log's `rollout/rewards` is group-normalized; use `rollout/raw_reward` or
+`rollout/episode_raw_reward` for accuracy. There were 21/80 truncated responses.
+Mean total sequence length was 257000.3 tokens. Different questions are used each
+step, so rewards do not measure a controlled before/after quality change.
+
+Downloaded traces for zero-based steps 0, 2 and 9 (24 samples), inspected each
+question group's final prompt and selected responses. The intended final question
+follows the varied filler and its end marker. All eight responses at step 2 were
+inspected: seven exhaust the response budget at total length 262142, and the other
+has a wrong final answer. The reward behavior is explained by the responses;
+there is no recurrence of the trailing-token extraction bug. Final-step responses
+include both truncated reasoning and short correct answers to the actual question.
+
+Final optimizer step completed at 20:07:43 UTC. Native adapter shards and
+optimizer/scheduler states saved under:
+
+`/checkpoints/muffled-pug-2f97a0d4d1e2/iter_0000009/adapter`
+
+HF PEFT export completed at 20:09:22 UTC with 73568 tensors. Save took 100.1s;
+final weight sync took 28.8s. Ray reported `SUCCEEDED` at 20:10:36 UTC. The same
+nonfatal SGLang startup warning described for proof 13 appeared, then the servers
+recovered and completed training. Host peak RAM was not measured before teardown.
+
+Evidence: `smoke_metrics.json` contains all ten steps and memory probes;
+`smoke_evidence.log` preserves metric, checkpoint, success and peak-memory lines.
+These were consolidated from the monitor's overlapping log snapshots because the
+final CLI log window no longer contained the earliest steps.
+
+## Reproduce
+
+From the repository root on this branch, with Modal authenticated to workspace
+`modal-labs` and environment `helena-dev` and the model/data secrets configured:
+
+```sh
+uv sync --locked --group dev
+uv pip install jinja2==3.1.6
+MODAL_ENVIRONMENT=helena-dev uv run python .modal-dojo/new_models/GLM_5_3_Flash_256k/validate_256k.py --steps 1 --launch
+# After a successful one-step proof, run the smoke:
+MODAL_ENVIRONMENT=helena-dev uv run python .modal-dojo/new_models/GLM_5_3_Flash_256k/validate_256k.py --steps 10 --launch
+```
+
+`jinja2` was installed in the isolated local virtualenv for dataset templating.
+The reusable recipe is `GLM_5_3_Flash_LoRA_256k_Recipe`; the harness adds the
+long-context DAPO workload, diagnostics and final-step checkpoint settings.
