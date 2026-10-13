@@ -1,9 +1,9 @@
-"""Release the GLM mHC MLP norm manager after its last forward use.
+"""
+image: radixark/miles:glm53next
+file: megatron/core/transformer/transformer_layer.py (image Megatron-LM)
 
-The pinned HyperConnectionTransformerLayer keeps this manager on the module,
-unlike TransformerLayer. Even with offloading disabled the manager owns its
-input tensor. Under outer checkpoint recompute that retains the restored layer
-input and its gradient across backward. Match the ordinary layer's lifecycle.
+Release the mHC MLP norm manager after its last use, matching TransformerLayer,
+so it does not retain restored checkpoint inputs and their gradients.
 """
 
 from pathlib import Path

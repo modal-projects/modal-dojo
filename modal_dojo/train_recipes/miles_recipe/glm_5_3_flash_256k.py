@@ -40,7 +40,6 @@ class GLM_5_3_Flash_LoRA_256k_Recipe(GLM_5_3_Flash_LoRA_Recipe):
     actor_num_nodes: int = 8
     expert_model_parallel_size: int = 32
 
-    # 2 prompts x 4 samples = 8, one 256k sample per DP rank.
     rollout_batch_size: int = 2
     n_samples_per_prompt: int = 4
     global_batch_size: int = 8
@@ -50,3 +49,4 @@ class GLM_5_3_Flash_LoRA_256k_Recipe(GLM_5_3_Flash_LoRA_Recipe):
     max_tokens_per_gpu: int = 262144
 
     sglang_context_length: int = 262144
+    sglang_mem_fraction_static: float = 0.5

@@ -1,11 +1,13 @@
 # GLM-5.3-Flash bridge LoRA @ 256k context on 8x H200:8: experiment report
 
-Status: **validated at 256k on 8x H200:8 (64 GPUs): one-step proof and
+Status: **capacity and training workflow validated at 256k on 8x H200:8 (64 GPUs): one-step proof and
 10-step smoke both completed, including adapter export and post-update weight sync.**
 CPU checkpoint offload plus mHC manager cleanup resolved backward OOM. The smoke
 run's largest reported backward allocated peak was 70.40 GiB/rank; before-train
 allocation stayed at 23.40–23.84 GiB. These are probe measurements, not a whole-run
-post-save peak. All validation apps have stopped.
+post-save peak. All validation apps have stopped. A subsequent audit found reward
+format sensitivity in six responses; this run does not validate math-learning
+efficacy. See the validity audit below.
 
 All runs: workspace `modal-labs`, environment `helena-dev`, 1-step proofs launched with
 `validate_256k.py --steps 1 --launch`. Detailed notes: `model_setup.md`.
@@ -14,6 +16,8 @@ All runs: workspace `modal-labs`, environment `helena-dev`, 1-step proofs launch
 
 `GLM_5_3_Flash_LoRA_256k_Recipe` (`modal_dojo/train_recipes/miles_recipe/glm_5_3_flash_256k.py`)
 subclasses `GLM_5_3_Flash_LoRA_Recipe`. The image, Miles ref and SGLang ref are unchanged.
+The 256k recipe explicitly retains the validated `sglang_mem_fraction_static=0.5`;
+the parent recipe on main subsequently changed to 0.65.
 
 | | base (#639) | 256k |
 |---|---|---|
@@ -144,7 +148,7 @@ Validation before launch:
   checkpointing, and dropout. Outputs and every input/parameter gradient matched
   exactly (`rtol=atol=0`). Retained forward GPU tensors fell from 100663296 bytes
   (96 MiB) to 16777216 bytes (16 MiB). The helper completed and stopped.
-- Reproducer: `validate_checkpoint_cpu.py`. Image-source inspection used CPU-only
+- Reproducer at validation commit `0604d2d`: `validate_checkpoint_cpu.py`. Image-source inspection used CPU-only
   helpers (`inspect_image.py`); these also completed.
 - Proof 11 trace step 0 downloaded and inspected: final questions remain after the
   filler; responses attempt those questions. Some reasoning is erroneous or
@@ -214,7 +218,7 @@ used the pinned mHC MLP and post-processing methods, real hyper-connection math,
   after the first layer; after: 96.59 -> 96.60 MiB, essentially flat.
 - Retained module managers: 12 -> 0. Helper completed and stopped.
 
-Reproducer: `validate_mhc_release.py`. The patch also passes pinned-source
+Reproducer at validation commit `0604d2d`: `validate_mhc_release.py`. The patch also passes pinned-source
 application, idempotence, compilation, and local Ruff checks.
 The small test alone did not establish that 256k fits; the following full-model
 one-step run and 10-step smoke provide that evidence.
@@ -234,8 +238,8 @@ Rollout 186.2s, weight sync 41.7s, log-prob 139.4s, actor training 256.0s,
 reported step wall time 659.4s. Actor training throughput: 8065.9 total tokens/s.
 Mean total sequence length 258091.25, maximum 262142; mean response 4218.25 tokens.
 Three of eight final answers scored correctly; two responses truncated. Inspected
-step 0 samples 0–7 and final questions in both prompt groups: formatting and reward
-extraction are sound, but some reasoning is wrong even when the final numeric answer
+step 0 samples 0–7 and final questions in both prompt groups: the intended prompt and final-answer extraction
+worked for this selected proof sample, but some reasoning is wrong even when the final numeric answer
 matches. This is a capacity/workflow test, not evidence of improved model quality.
 Native adapter shards were written under
 `/checkpoints/sad-distortion-822db0bf29c9/iter_0000000/adapter`.
@@ -280,7 +284,7 @@ the final post-update sync completed at 20:10:24 UTC (version 10 -> 11).
 Seven steps had nonzero gradient norms. Step 3 had eight wrong answers, and steps
 6 and 9 each had one all-correct and one all-wrong question group. All three thus
 had zero within-group GRPO advantages and zero gradients, as expected. Mean raw
-reward was -0.125: 35/80 final answers scored correctly (43.75%). Note that the
+reward was -0.125: 35/80 responses received positive reward (43.75% strict-verifier acceptance). Note that the
 training log's `rollout/rewards` is group-normalized; use `rollout/raw_reward` or
 `rollout/episode_raw_reward` for accuracy. There were 21/80 truncated responses.
 Mean total sequence length was 257000.3 tokens. Different questions are used each
@@ -309,19 +313,100 @@ Evidence: `smoke_metrics.json` contains all ten steps and memory probes;
 These were consolidated from the monitor's overlapping log snapshots because the
 final CLI log window no longer contained the earliest steps.
 
+## Validity audit (2026-10-13)
+
+Verdict: **valid capacity/training smoke; qualified reward validation; learning
+improvement unproven.** The earlier wording that reward extraction was sound was
+based on a selected sample. The expanded audit finds format-sensitive penalties.
+
+Audited all 80 exported responses across all ten steps against the pinned Miles
+verifier and labels from the cached dataset. Every recorded reward reproduces
+exactly. All prompts end with the intended question after the filler marker;
+20 distinct dataset questions appear in four-response groups, with 80 distinct
+response strings. Prompt lengths are 253708–253822 tokens, with mean total length
+257000.3. Twenty-one responses (26.25%) reach 262142 total tokens. This is a real
+near-256k workload, mostly prompt context with roughly 8k left for generation;
+it does not exercise 256k response tokens or establish useful long-range retrieval.
+The filler contains questions, not reference solutions, and the final question
+can be answered independently of that filler.
+
+**Reward caveat.** Six negative-reward responses end in an answer matching the
+reference, with the following indexing: training step is 1-based, sample is 0-based.
+
+- Step 4/sample 1: `Answer: \(\boxed{15}\)`; parser returns `\(15\)`.
+- Step 5/samples 0 and 1: `Answer: \(\boxed{10}\)`; parser returns `\(10\)`.
+- Step 4/sample 3: final boxed 15, without the required `Answer:` prefix.
+- Step 7/sample 2: final `m+n = 113`, without `Answer:` or a final box.
+- Step 8/sample 1: final boxed -3, without the required `Answer:` prefix.
+
+The first three expose missing normalization of ordinary LaTeX wrappers. The
+latter three violate the explicitly requested answer format, so their negative
+reward is consistent with a strict format objective. Together they mean 43.75%
+is verifier acceptance, not pure mathematical-answer accuracy. Counting these
+six reference-matching endings would give 41/80 (51.25%); this is a manual
+answer-level diagnostic, not a regraded reasoning benchmark or held-out result.
+Some accepted responses also contain faulty intermediate reasoning.
+
+This affects training signal: step 5's first question has four matching final
+answers, but the recorded rewards are [-1, -1, +1, +1] solely because two answers
+use LaTeX wrappers. Thus one of the ten mixed-reward groups trains on this format
+distinction. The run still contains genuine correct/incorrect answer contrast
+in other groups, so the entire training signal is not a formatting artifact.
+
+**Optimizer and metrics.** All ten logged steps report `outcome=NORMAL` and
+`valid_step=true`; the pinned optimizer path asserts update success. Seven have
+nonzero gradient norms (0.131535–0.668310), with LR 1e-5 throughout. Ten of twenty
+question groups have reward contrast; six are all-negative and four all-positive.
+Steps 3, 6 and 9 have no within-group contrast and therefore zero policy gradients.
+Zero gradients do not imply unchanged parameters: Adam momentum and weight decay
+can still act. Adapter parameter deltas were not retained for an independent check.
+Rollout versions advance 1–10 without mixed-version samples; final publication
+advances to 11. Native/HF adapter and optimizer/scheduler saves complete successfully;
+a fresh checkpoint reload was not tested.
+
+The independent trainer–rollout mean absolute log-probability difference ranges
+0.01623–0.03637; the sampled-token KL estimator ranges 0.001105–0.002199. Neither
+shows runaway growth over this short run, although token-level outliers were not
+retained. `use_rollout_logprobs=false`: PPO compares current trainer scores with
+trainer-computed old scores before the sole optimizer update in each rollout.
+Consequently zero PPO KL/clip fraction and ESS ratio 1 are expected; they do not
+prove trainer–rollout identity. `entropy_coef=0` and `observe_training_entropy=false`
+make `train/entropy_loss=0` a placeholder, not evidence of zero model entropy.
+Both rollout entropy and reference-model KL are disabled. Scalar metrics cannot
+independently verify every loss-mask position or token alignment; no per-token
+training dump was saved.
+
+Reward is -0.15 over the first five steps and -0.10 over the last five (42.5% vs
+45% strict-verifier acceptance). Each step has different questions and only eight
+samples, with no fixed held-out evaluation. This is not evidence of improvement
+or deterioration. Before a learning-efficacy run, normalize LaTeX wrappers, decide
+whether format violations should be penalized separately, and validate on fixed
+held-out prompts with explicit entropy and token-alignment diagnostics. No reward
+behavior was changed in the validated recipe or during this audit.
+
+Source definitions: pinned Miles
+[reward verifier](https://github.com/radixark/miles/blob/5a5353d36c9133958f9ddb62c93be463bc849f88/miles/rollout/rm_hub/math_dapo_utils.py),
+[policy loss and metric definitions](https://github.com/radixark/miles/blob/5a5353d36c9133958f9ddb62c93be463bc849f88/miles/backends/training_utils/loss_hub/losses.py),
+and [optimizer execution](https://github.com/radixark/miles/blob/5a5353d36c9133958f9ddb62c93be463bc849f88/miles/backends/megatron_utils/model.py).
+
 ## Reproduce
 
-From the repository root on this branch, with Modal authenticated to workspace
-`modal-labs` and environment `helena-dev` and the model/data secrets configured:
+The validation scripts were removed from the PR as requested. Their exact tested
+versions remain at commit `0604d2d`, including the
+[long-context harness](https://github.com/modal-projects/modal-dojo/blob/0604d2d/.modal-dojo/new_models/GLM_5_3_Flash_256k/validate_256k.py)
+and both focused GPU regression scripts.
+From the repository root, with Modal authenticated to workspace `modal-labs`,
+environment `helena-dev`, and the model/data secrets configured:
 
 ```sh
 uv sync --locked --group dev
 uv pip install jinja2==3.1.6
-MODAL_ENVIRONMENT=helena-dev uv run python .modal-dojo/new_models/GLM_5_3_Flash_256k/validate_256k.py --steps 1 --launch
-# After a successful one-step proof, run the smoke:
-MODAL_ENVIRONMENT=helena-dev uv run python .modal-dojo/new_models/GLM_5_3_Flash_256k/validate_256k.py --steps 10 --launch
+git show 0604d2d:.modal-dojo/new_models/GLM_5_3_Flash_256k/validate_256k.py > /tmp/glm256k_validate.py
+MODAL_ENVIRONMENT=helena-dev uv run python /tmp/glm256k_validate.py --steps 1 --launch
+MODAL_ENVIRONMENT=helena-dev uv run python /tmp/glm256k_validate.py --steps 10 --launch
 ```
 
-`jinja2` was installed in the isolated local virtualenv for dataset templating.
-The reusable recipe is `GLM_5_3_Flash_LoRA_256k_Recipe`; the harness adds the
-long-context DAPO workload, diagnostics and final-step checkpoint settings.
+These reproduce the original strict reward, including the format sensitivity
+identified above. The reusable recipe is `GLM_5_3_Flash_LoRA_256k_Recipe`; the
+archived harness adds the long-context DAPO workload, diagnostics and final-step
+checkpoint settings. `jinja2` was installed only in the isolated local virtualenv.

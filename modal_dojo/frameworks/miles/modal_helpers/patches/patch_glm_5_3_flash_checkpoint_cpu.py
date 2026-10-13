@@ -1,8 +1,9 @@
-"""Offload full-layer recompute checkpoints in the 256k GLM LoRA recipe.
+"""
+image: radixark/miles:glm53next
+file: megatron/core/transformer/transformer_block.py (image Megatron-LM)
 
-The outer checkpoints retain ~45 GiB/rank of mHC residual streams at 256k.
-Scope saved-tensor offload to their initial forward only: backward recompute
-and its nested MoE checkpoints still run normally on the GPU.
+Save outer full-layer checkpoint inputs on CPU. The offload scope exits before
+backward recomputation, so nested MoE checkpoints remain on GPU.
 """
 
 from pathlib import Path
@@ -22,9 +23,6 @@ NEW = OLD.replace("tensor_parallel.checkpoint(", "_modal_dojo_cpu_checkpoint(", 
 APPENDIX = """
 
 def _modal_dojo_cpu_checkpoint(function, distribute_saved_activations, *args):
-    # CheckpointFunction.forward executes the layer under no_grad. Thus these
-    # hooks pack the outer checkpoint inputs, not a layer's internal activations.
-    # The context has exited before backward starts recomputing the layer.
     with torch.autograd.graph.save_on_cpu(pin_memory=True):
         return tensor_parallel.checkpoint(function, distribute_saved_activations, *args)
 """
