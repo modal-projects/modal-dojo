@@ -98,6 +98,7 @@ Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't prov
 
 - Source `184d415`, submitted 2026-10-13 21:25 UTC, app `ap-x1jTe0JcmhMB3cwClu0Bkj`, function call `fc-01M4VJMF5JXFYH027D9XPCXW29`.
 - Image build printed both `PATCHED_K3_SITU_COMPILE` and `PATCHED_K3_LORA_DELTA_REUSE`. Reused the converted checkpoint; training call submitted around 21:28 UTC. No optimizer result yet.
+- Modal call metadata records enqueue at **21:27:57.373 UTC**. At the 22:57 UTC scheduling check it was still pending with no start time or container ID (about 90 minutes queued); the dashboard's `Converting model` label was stale, not evidence of an active conversion.
 - Unchanged topology, LoRA rank/alpha, optimizer settings, 262,144-token target, and two-rollout horizon. Uses the current varied-filler probe with 4,096 DAPO problems.
 
 ## Continuation, 2026-10-13
