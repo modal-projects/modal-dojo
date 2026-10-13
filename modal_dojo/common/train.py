@@ -21,7 +21,10 @@ from modal_dojo.common.errors import (
 from modal_dojo.common.framework import Framework
 from modal_dojo.common.ids import create_hash
 from modal_dojo.common.launcher_helpers import mark_run_failed, mark_run_stopped
-from modal_dojo.common.memory_estimate import maybe_warn_gpu_oom
+from modal_dojo.common.memory_estimate import (
+    maybe_warn_gpu_oom,
+    maybe_warn_host_oom,
+)
 from modal_dojo.common.modal_urls import modal_app_dashboard_url
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.run import TrainingRun, metric_run_id_for_attempt
@@ -648,6 +651,7 @@ class TrainConfig:
         require_migrated_config()
         with warnings.catch_warnings(record=True) as caught:
             maybe_warn_gpu_oom(self.recipe, self.model)
+            maybe_warn_host_oom(self.recipe, self.model)
             _warn_routing_replay_with_custom_rollout(self.recipe)
         _confirm_launch_warnings(caught)
         training_run_id = self._generate_training_run_id()
