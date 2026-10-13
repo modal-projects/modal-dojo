@@ -52,13 +52,13 @@ class Kimi_K3_LoRA_256k_H200_Recipe(Kimi_K3_LoRA_64k_Recipe):
     actor_num_nodes: int = 16
 
     # ── Parallelism: TP8 x CP4 x PP4 = 128 (DP1), EP32 inside each stage ─────
-    tensor_model_parallel_size: int = 8
+    tensor_model_parallel_size: int = 4
     pipeline_model_parallel_size: int = 4
     # 93 = 23 + 24 x 2 + 22 across 4 stages.
     decoder_first_pipeline_num_layers: int | None = 23
     decoder_last_pipeline_num_layers: int | None = 22
     # TP8 x CP4 keeps 8k tokens per rank, matching the 64k recipe.
-    context_parallel_size: int = 4
+    context_parallel_size: int = 8
     expert_model_parallel_size: int = 32
 
     # ── Optimizer ────────────────────────────────────────────────────────────
@@ -73,8 +73,8 @@ class Kimi_K3_LoRA_256k_H200_Recipe(Kimi_K3_LoRA_64k_Recipe):
     seq_length: int = 262144
     max_position_embeddings: int = 262144
     # CP4 splits each 256k sequence across four ranks.
-    max_tokens_per_gpu: int = 65536
-    log_probs_max_tokens_per_gpu: int = 65536
+    max_tokens_per_gpu: int = 32768
+    log_probs_max_tokens_per_gpu: int = 32768
 
     # ── SGLang: one TP16 engine per two nodes ────────────────────────────────
     rollout_num_gpus_per_engine: int = 16
