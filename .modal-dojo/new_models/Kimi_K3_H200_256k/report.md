@@ -9,6 +9,7 @@ Status: **not validated yet**. No training step has finished. Recipe: `Kimi_K3_L
 | [fixed-fathom-65c285afb988](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/fixed-fathom-65c285afb988) | `ap-J7DSUkrFG6SgG0tfvKAgWH` | TP8 x CP4 x PP4, EP32, 65536 tok/GPU, routing replay on | Cancelled after SGLang engine init crash |
 | [stable-plaster-5f9920d29d31](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/stable-plaster-5f9920d29d31) | `ap-sqrCXIKbt2SE5qaJrFiYEg` | TP8 x CP4 x PP4, EP32, 65536 tok/GPU, routing replay off | FAILED at Optimizer step, step 1/2: CUDA OOM in trainer forward |
 | [crimson-brass-1832e798c59a](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/crimson-brass-1832e798c59a) | `ap-GyGeQjKO0yA5WcZicYxHvw` | TP4 x CP8 x PP4, EP32, 32768 tok/GPU, routing replay off | FAILED: eight 262,140–262,142-token rollouts, reward 0.125; SiTU activation OOM in first training update |
+| [linear-list-7f87c318b9b9](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/linear-list-7f87c318b9b9) | `ap-wr6wEkjAxIxyqTInBvRq2q` | TP4 × CP8 × PP4, EP32, fused SiTU, original filler | Submitted; no training result yet |
 
 All runs use `validate.py --rollouts 2 --launch` in capacity mode: each sequence is filled to at least 261,120 tokens.
 
@@ -46,7 +47,7 @@ Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't prov
 - Logged pre-training snapshots had 51–55 GiB allocated but as much as 119.28 GiB reserved; observed host use reached 1,298.22 GiB against a 1,920 GiB limit. These are sampled phase-boundary measurements, not final exhaustive peaks. The OOM traceback gives the later memory state.
 - Run marked failed at 17:06:05 UTC. Modal app confirmed **stopped at 17:11:01 UTC**. No optimizer update, saved checkpoint, or second rollout was validated.
 - Compact trace and memory evidence: `crimson_brass_result.json`. Raw downloaded trace: eight samples, 12,561,645 bytes; retained locally outside git.
-- Next experiment: benchmark the same SiTU math under `torch.compile` on **one H200**, including output/gradient comparisons and peak allocation at a shape matching the failed ~4.93 GiB FP32 half-tensor. Only use it in the full recipe if the focused test passes and demonstrates a memory reduction. Keep topology, dataset, and two-rollout horizon fixed.
+- Follow-up experiment: benchmark the same SiTU math under `torch.compile` on **one H200**, including output/gradient comparisons and peak allocation at a shape matching the failed ~4.93 GiB FP32 half-tensor. Only use it in the full recipe if the focused test passes and demonstrates a memory reduction. Keep topology, dataset, and two-rollout horizon fixed.
 
 ## SiTU fusion proof (one H200)
 
@@ -55,6 +56,13 @@ Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't prov
 - At `[368640, 7168]` BF16 input (4.92 GiB per FP32 half), extra peak allocated memory for forward+backward dropped from **46.76 GiB to 7.44 GiB**; forward live intermediates dropped from **31.99 GiB to 2.46 GiB**. Baseline input/gradient allocation was 7.38 GiB in both cases. At 131,072 rows, forward+backward extra peak fell from 16.63 GiB to 2.63 GiB.
 - The large compiled case includes first-shape compilation (~2.67s forward and 0.52s backward); these are not steady-state training timings or a speedup claim. Full results: `situ_benchmark.json`.
 - Added `patch_k3_situ_compile` only to `Kimi_K3_LoRA_256k_H200_Recipe`, plus pinned input/output fixtures, idempotence/drift tests, and the snapshot refresh hook. **19 local Miles tests passed**, along with Ruff and recipe instantiation. Full 128-GPU validation remains required.
+
+## linear-list: fused SiTU, original filler (running)
+
+- Run [`linear-list-7f87c318b9b9`](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/linear-list-7f87c318b9b9), app `ap-wr6wEkjAxIxyqTInBvRq2q`, call `fc-01M4V4WMST2FGF7AFH7Z21WGAJ`, submitted 2026-10-13 17:25 UTC from `a49431b`.
+- Two-rollout capacity test on the same 16×H200:8 topology, with fused SiTU. The image build printed `PATCHED_K3_SITU_COMPILE`; conversion reused the existing checkpoint. No training result yet.
+- This run deliberately retains the **original repeated diagnostic filler**, to compare against crimson-brass with the activation implementation as the main change.
+- Concurrent commit `d56e28d` changes the default probe to filler drawn from 4,096 varied DAPO problems. Its hypothesis is that repeated filler concentrates MoE routing, consistent with only two trainer actors OOMing; expert-token imbalance has **not been measured**. Both approaches are preserved here, but this running experiment predates the varied-filler change. Many crimson-brass ranks also logged non-fatal TorchMemorySaver allocation warnings for 2.9–11.1 GB requests.
 
 ## Continuation, 2026-10-13
 

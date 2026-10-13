@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import json
 import sys
+import tempfile
 import types
 from pathlib import Path
 
@@ -23,6 +24,8 @@ def main():
     args = parser.parse_args()
     tok = AutoTokenizer.from_pretrained(args.tokenizer, trust_remote_code=True)
     rows = list(Dataset.from_file(args.dataset_arrow).select(range(4)))
+    prompt_data = Path(tempfile.mkdtemp()) / "prompts.jsonl"
+    prompt_data.write_text("".join(json.dumps(row, default=str) + "\n" for row in rows))
     names = (
         "miles",
         "miles.rollout",
@@ -105,6 +108,8 @@ def main():
                 k3_validation_mode="capacity",
                 sglang_router_ip="localhost",
                 sglang_router_port=1,
+                prompt_data=str(prompt_data),
+                input_key="prompt",
             ),
             sample=sample,
             state=types.SimpleNamespace(tokenizer=tok),
