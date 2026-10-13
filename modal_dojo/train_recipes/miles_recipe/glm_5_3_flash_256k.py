@@ -22,6 +22,7 @@ def _image_commands_256k() -> list[str]:
                 "patch_glm_5_3_flash_kpool_row_chunk",
                 "patch_glm_5_3_flash_moe_row_chunk",
                 "patch_glm_5_3_flash_moe_seq_chunk",
+                "patch_glm_5_3_flash_checkpoint_cpu",
             )
         ],
     ]

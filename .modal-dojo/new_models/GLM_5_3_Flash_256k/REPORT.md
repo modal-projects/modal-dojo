@@ -95,3 +95,46 @@ sequence-parallel all-gathers are not attributed to a specific module yet.
 filler text causes artificial MoE routing imbalance and should not be used. Rewards use dapo
 `compute_score(...)["score"]` with the trailing `<|user|>` stripped. Memory hooks print
 `GLM256K_MEMORY` before log-prob and before the training step.
+
+## Continuation (2026-10-13)
+
+Proof 11 failed at 15:45:59 UTC and its app stopped at 15:46:56 UTC.
+Rollout 191.4s, weight publication 44.5s, log-prob 139.5s. Mean total
+sequence length 258990.9; mean response 5117.9; four of eight responses
+truncated, one scored correctly. Exact memory diagnostic lines are saved
+in `proof11_memory.log`.
+
+### Proof 12: CPU offload of outer recompute checkpoints (running)
+
+`patch_glm_5_3_flash_checkpoint_cpu.py` wraps only the BF16 full-layer
+`tensor_parallel.checkpoint` call in `torch.autograd.graph.save_on_cpu(pin_memory=True)`.
+The initial checkpoint forward runs under `no_grad`, so its saved inputs move to host
+memory. The scope exits before backward; inner MoE checkpoint recomputation remains
+on GPU. This targets ~44–45 GiB/rank of residual streams without changing sequence
+length, routing, batch size, parallelism, or model math. Expect roughly 360 GiB/node
+of additional host checkpoint storage at eight GPUs/node; the recipe already allows
+2 TiB host RAM/node. Actual full-model memory and timing remain to be measured.
+
+Validation before launch:
+- Patch applies to `transformer_block.py` read from the pinned image, is idempotent,
+  and the patched source compiles.
+- [Single-H200 check](https://modal.com/apps/modal-labs/helena-dev/ap-bvryTqfNWFRgSv0mBbxAvf)
+  used the image's real Megatron checkpoint function, six outer checkpoints, nested
+  checkpointing, and dropout. Outputs and every input/parameter gradient matched
+  exactly (`rtol=atol=0`). Retained forward GPU tensors fell from 100663296 bytes
+  (96 MiB) to 16777216 bytes (16 MiB). The helper completed and stopped.
+- Reproducer: `validate_checkpoint_cpu.py`. Image-source inspection used CPU-only
+  helpers (`inspect_image.py`); these also completed.
+- Proof 11 trace step 0 downloaded and inspected: final questions remain after the
+  filler; responses attempt those questions. Some reasoning is erroneous or
+  rambling, and four responses truncate. This proves workload shape, not quality.
+
+Full-model one-step proof: [saucy-muscat-8124df5b55c1](https://modal.com/apps/modal-labs/helena-dev/ap-aS49sdjPArQuFoitFCJGW4),
+created 2026-10-13 16:20 UTC. Same 8x H200:8 / TP8 / EP32 / PP1 / CP1
+and workload as proof 11. Build log confirms `PATCHED_MODAL_DOJO_GLM53_CHECKPOINT_CPU`
+applied to `/root/Megatron-LM/megatron/core/transformer/transformer_block.py`.
+No full-model success is claimed yet.
+
+Local preflight passed after installing the missing `jinja2` dependency in the
+isolated virtualenv. Recipe import, dataset construction, patch compile/idempotence,
+ruff lint/format and 18 recipe-hook/runtime/patch tests passed.
