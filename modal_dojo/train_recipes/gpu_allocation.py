@@ -332,7 +332,9 @@ def validate_expandable_segments_env(config: Any) -> None:
             continue
         raise GpuAllocationError(
             f"{field_name} sets expandable_segments with colocate=True; "
-            "scope it to the training processes via train_env_vars."
+            "scope it to the training processes via "
+            'train_env_vars={"PYTORCH_CUDA_ALLOC_CONF": '
+            '"expandable_segments:True"}.'
         )
 
 
