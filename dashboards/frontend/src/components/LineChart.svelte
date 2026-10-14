@@ -29,6 +29,11 @@
     // drawn under the plot.
     xToTime = null,
     timeToX = null,
+    // Called with the nearest row when the plot is double-clicked.
+    onOpen = null,
+    // x value marked with a dashed vertical line (e.g. the rollout open in
+    // the Rollouts tab).
+    highlightX = null,
   } = $props();
 
   let chartEl = $state(null);
@@ -181,10 +186,10 @@
     hiddenKeys = next;
   }
 
-  function updateHoverFromPointer(event) {
-    if (!chartEl || !rows.length) return;
+  function nearestIndexAt(clientX) {
+    if (!chartEl || !rows.length) return null;
     const rect = chartEl.getBoundingClientRect();
-    const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+    const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
     const ratio = rect.width ? x / rect.width : 0;
     const targetX = xMin + ratio * xSpan;
     let nearestIndex = 0;
@@ -196,8 +201,25 @@
         nearestIndex = index;
       }
     });
-    hoveredIndex = nearestIndex;
+    return nearestIndex;
   }
+
+  function updateHoverFromPointer(event) {
+    const index = nearestIndexAt(event.clientX);
+    if (index != null) hoveredIndex = index;
+  }
+
+  function onDblClick(event) {
+    if (typeof onOpen !== "function") return;
+    const index = nearestIndexAt(event.clientX);
+    if (index != null) onOpen(rows[index]);
+  }
+
+  let highlightPx = $derived.by(() => {
+    const x = Number(highlightX);
+    if (!Number.isFinite(x) || x < xMin || x > xMax) return null;
+    return singlePoint ? 2 : ((x - xMin) / xSpan) * 100;
+  });
 
   function onPointerMove(event) {
     pendingEvent = event;
@@ -282,6 +304,7 @@
       aria-label={ariaLabel}
       onpointermove={onPointerMove}
       onpointerleave={onPointerLeave}
+      ondblclick={onDblClick}
       use:brushZoom={{ onChangeDomainX: handleBrush, enabled: zoomable }}
     >
       <svg class="block w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -306,6 +329,19 @@
           />
         {/each}
         <path d={path} fill="none" stroke={color} stroke-width="1.5" vector-effect="non-scaling-stroke" />
+        {#if highlightPx != null}
+          <line
+            x1={highlightPx}
+            x2={highlightPx}
+            y1="0"
+            y2="100"
+            stroke="var(--accent)"
+            stroke-width="1"
+            stroke-dasharray="4 3"
+            stroke-opacity="0.8"
+            vector-effect="non-scaling-stroke"
+          />
+        {/if}
         {#if hoveredPoint}
           <line
             x1={hoveredPoint.x}
@@ -369,6 +405,9 @@
           {/each}
           {#if smoothingOn}
             <div class="text-[rgba(255,255,255,0.5)] text-[10px]">smoothed · last {smoothingWindow}</div>
+          {/if}
+          {#if typeof onOpen === "function"}
+            <div class="text-[rgba(255,255,255,0.5)] text-[10px]">double-click to open in Rollouts</div>
           {/if}
         </div>
       {/if}

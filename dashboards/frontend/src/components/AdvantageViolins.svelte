@@ -30,6 +30,10 @@
     // drawn under the plot.
     xToTime = null,
     timeToX = null,
+    // Called with the nearest step's rollout id on double-click.
+    onOpen = null,
+    // rollout id marked with a dashed vertical line.
+    highlightX = null,
   } = $props();
 
   const W = 640;
@@ -144,6 +148,22 @@
       idx = i + (x - xs[i]) / (xs[i + 1] - xs[i] || 1);
     }
     return (idx + 0.5) / n;
+  }
+
+  let highlightFrac = $derived.by(() => {
+    const x = Number(highlightX);
+    if (!Number.isFinite(x) || !pts.length) return null;
+    const f = columnFraction(x);
+    return f >= 0 && f <= 1 ? f : null;
+  });
+
+  function onDblClick(e) {
+    if (typeof onOpen !== "function" || !pts.length) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (!rect.width) return;
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const i = Math.max(0, Math.min(pts.length - 1, Math.floor(frac * pts.length)));
+    onOpen(pts[i].x);
   }
 
   let timeAxis = $derived.by(() => {
@@ -328,11 +348,25 @@
     <div
       class="relative flex-1 min-w-0 h-[210px] overflow-hidden rounded-[4px]"
       role="presentation"
+      title={typeof onOpen === "function" ? "Double-click a step to open it in Rollouts" : null}
       onpointermove={onPlotMove}
       onpointerleave={onPlotLeave}
+      ondblclick={onDblClick}
       use:brushZoom={{ onChangeDomainX: handleBrush, enabled: zoomable }}
     >
       <svg class="w-full h-[210px] block bg-[#0a0e14] rounded-[4px]" viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
+        {#if highlightFrac != null}
+          <line
+            x1={highlightFrac * W}
+            x2={highlightFrac * W}
+            y1="0"
+            y2={H}
+            stroke="var(--accent)"
+            stroke-width="1"
+            stroke-dasharray="4 3"
+            stroke-opacity="0.8"
+          />
+        {/if}
         {#each model.ticks as t (t.val)}
           <line class="stroke-[#fff] [stroke-opacity:0.08] [stroke-width:0.5]" x1="0" x2={W} y1={t.y} y2={t.y} />
         {/each}
