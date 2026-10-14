@@ -11,7 +11,6 @@
   import TimeAgo from "../components/TimeAgo.svelte";
   import { fetchRun } from "../lib/api.js";
   import { formatTagValue, getGroupTags } from "../lib/format.js";
-  import { normalizeMetricLinks } from "../lib/metricLinks.js";
   import { toggleInSet } from "../lib/set.js";
 
   let {
@@ -179,12 +178,6 @@
       );
     }
     return parts.join(" · ");
-  }
-
-  function metricLinksForRun(run) {
-    return normalizeMetricLinks(
-      run?.metric_links?.length ? run.metric_links : run?.wandb_links,
-    );
   }
 
   $effect(() => {
@@ -456,18 +449,6 @@
                           <ExternalLink class="training-open-modal-link-icon" size={12} strokeWidth={2.1} />
                         </span>
                       {/if}
-                      {#each metricLinksForRun(run) as link (link.url)}
-                        <a
-                          class="training-open-modal-link training-open-metric-link"
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onclick={(event) => event.stopPropagation()}
-                        >
-                          <span class="open-modal-link-label">{link.label}</span>
-                          <ExternalLink class="training-open-modal-link-icon" size={12} strokeWidth={2.1} />
-                        </a>
-                      {/each}
                     </div>
                   </td>
                 </tr>
