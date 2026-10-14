@@ -132,7 +132,6 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     sglang_moe_runner_backend: str | None = "triton"
     sglang_disable_shared_experts_fusion: bool = True
     sglang_chunked_prefill_size: int = 8192
-    sglang_disable_radix_cache: bool = True
     sglang_dsa_prefill_backend: str = "tilelang"
     sglang_dsa_decode_backend: str = "tilelang"
     sglang_kv_cache_dtype: str = "bfloat16"
