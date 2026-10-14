@@ -1,7 +1,6 @@
-"""Experimental bridge-mode GLM-5.3-Flash LoRA from radixark/miles#3098."""
+"""Experimental bridge-mode GLM-5.3-Flash LoRA on the current Miles stack."""
 
 from dataclasses import field
-from pathlib import Path
 from typing import ClassVar
 
 from pydantic import ConfigDict, model_validator
@@ -9,12 +8,10 @@ from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models.base import ModelConfig
 from modal_dojo.common.models.glm_5_3_flash import GLM_5_3_Flash_LoRA
-from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
-_PATCH_DIR = (
-    Path(__file__).resolve().parents[2] / "frameworks/miles/modal_helpers/patches"
-)
+# The current Miles image's Bridge does not include the GLM-5.3 provider.
+# TODO: use the image's Bridge once radixark/Megatron-Bridge#35 lands.
 _BRIDGE_REF = "6527b18e8bb0db994a267e6dfd4db7dafc669df9"
 _TARGETS = (
     "self_attention.linear_q",
@@ -44,21 +41,6 @@ def _image_commands() -> list[str]:
         # Keep the image's CUDA/PyTorch/Megatron stack; replace only Bridge.
         "python3 -m pip install --no-deps --no-build-isolation "
         f"'megatron-bridge @ git+https://github.com/radixark/Megatron-Bridge.git@{_BRIDGE_REF}'",
-        "python3 -m pip install --no-deps sglang-kernel==0.4.6.post1",
-        # Replace best-effort shared timing instrumentation with the adapter
-        # for this pinned driver. Other reporting files remain patched.
-        "cd /root/miles && git checkout HEAD -- train.py "
-        "miles/backends/megatron_utils/actor.py miles/backends/megatron_utils/model.py",
-        *[
-            f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
-            for name in (
-                "patch_glm_5_3_flash_kda",
-                "patch_glm_5_3_flash_lora_kda_backward",
-                "patch_glm_5_3_flash_lora_timing",
-                "patch_glm_5_3_flash_tito",
-                "patch_glm_5_3_flash_session_startup",
-            )
-        ],
     ]
 
 
@@ -68,11 +50,13 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
 
     model_config_class: ClassVar[type[ModelConfig]] = GLM_5_3_Flash_LoRA
     docker_image: str = (
-        "radixark/miles:glm53next@sha256:"
-        "66725f740a6013b00d27e21fdfd480a24b0d3b5c61840342e9405bf1e09e5162"
+        "radixark/miles:dev-202610140350@sha256:"
+        "c53f65d346a6b364cf89d7dbaa416595a2d5638670b5d82c683214183dca10bd"
     )
-    miles_git_ref: str | None = "5a5353d36c9133958f9ddb62c93be463bc849f88"
-    sglang_git_ref: str | None = "94c97e3a7d7ab1dcbba82f4c09046d2c209b1aa7"
+    miles_git_ref: str | None = "d33406f1139f1fa66305b17b9e91dfa110e3c4ce"
+    # TODO: resolve sgl-project/sglang#42795 and the KDA gate LoRA support
+    # from sgl-project/sglang#37753 before promoting this migration.
+    sglang_git_ref: str | None = "f31278164939dd0746037abbb7566de4164e6767"
     image_run_commands: list[str] = field(default_factory=_image_commands)
     miles_model_name: str = "glm5.3-flash"
     model_name: str = "glm5_next"

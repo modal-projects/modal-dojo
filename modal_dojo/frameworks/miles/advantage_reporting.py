@@ -101,9 +101,14 @@ def report_advantage_distribution(
         if cp_size == 1:
             local_masks = loss_masks
         else:
-            from miles.backends.training_utils.cp_utils import (
-                get_local_response_loss_masks,
-            )
+            try:
+                from miles.backends.training_utils.data.context_parallel import (
+                    get_local_response_loss_masks,
+                )
+            except ModuleNotFoundError:
+                from miles.backends.training_utils.cp_utils import (
+                    get_local_response_loss_masks,
+                )
 
             local_masks = get_local_response_loss_masks(
                 total_lengths=list(total_lengths),

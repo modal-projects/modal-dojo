@@ -77,7 +77,9 @@ def _patch_file(path: Path) -> None:
 
 
 def main() -> None:
-    _patch_file(Path("/root/miles/miles/backends/training_utils/log_utils.py"))
+    root = Path("/root/miles/miles/backends/training_utils")
+    path = root / "metrics/log_utils.py"
+    _patch_file(path if path.exists() else root / "log_utils.py")
 
 
 if __name__ == "__main__":
