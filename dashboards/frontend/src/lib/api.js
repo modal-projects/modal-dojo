@@ -132,12 +132,33 @@ export async function fetchRunRollouts(trainingRunId, { signal } = {}) {
     .sort((a, b) => a.rollout_id - b.rollout_id);
 }
 
-export async function fetchRollout(trainingRunId, rolloutId) {
-  const res = await fetch(
-    `${SERVER}/runs/${encodeURIComponent(trainingRunId)}/rollouts/${encodeURIComponent(rolloutId)}`,
-  );
-  if (!res.ok) return null;
-  return await res.json();
+// Rollout detail payloads are large volume reads (~0.5-1s each) and are
+// written once per step, so within a page they are safe to reuse: keep one
+// shared promise per rollout and let hovers warm it before a row is clicked.
+const rolloutDetailCache = new Map();
+const ROLLOUT_DETAIL_CACHE_MAX = 64;
+
+export function fetchRollout(trainingRunId, rolloutId) {
+  const key = `${trainingRunId}/${rolloutId}`;
+  const cached = rolloutDetailCache.get(key);
+  if (cached) return cached;
+  const promise = (async () => {
+    const res = await fetch(
+      `${SERVER}/runs/${encodeURIComponent(trainingRunId)}/rollouts/${encodeURIComponent(rolloutId)}`,
+    );
+    if (!res.ok) return null;
+    return await res.json();
+  })();
+  rolloutDetailCache.set(key, promise);
+  if (rolloutDetailCache.size > ROLLOUT_DETAIL_CACHE_MAX) {
+    rolloutDetailCache.delete(rolloutDetailCache.keys().next().value);
+  }
+  promise.catch(() => rolloutDetailCache.delete(key));
+  return promise;
+}
+
+export function prefetchRollout(trainingRunId, rolloutId) {
+  void fetchRollout(trainingRunId, rolloutId).catch(() => {});
 }
 
 // Historical Modal logs for a run, served from the durable storage.

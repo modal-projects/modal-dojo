@@ -1,5 +1,5 @@
 <script>
-  import { ChevronDown } from "lucide-svelte";
+  import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-svelte";
 
   let { messages = null, response = "", thinking = "", evalReport = null } = $props();
 
@@ -243,6 +243,38 @@
     return [];
   });
 
+  // Group turns into flippable steps: each step is one assistant turn plus
+  // the tool/observation messages that follow it. Leading system/user
+  // context folds into the first step.
+  let steps = $derived.by(() => {
+    const out = [];
+    parsed.forEach((msg, gi) => {
+      const last = out[out.length - 1];
+      if (msg.role === "assistant" && last?.hasAssistant) {
+        out.push({ items: [{ gi, msg }], hasAssistant: true });
+      } else {
+        if (!last) out.push({ items: [], hasAssistant: false });
+        const l = out[out.length - 1];
+        l.items.push({ gi, msg });
+        if (msg.role === "assistant") l.hasAssistant = true;
+      }
+    });
+    return out;
+  });
+
+  let paged = $derived(steps.length > 1);
+  let stepIdx = $state(0);
+  let visible = $derived(
+    paged
+      ? (steps[Math.min(stepIdx, steps.length - 1)]?.items ?? [])
+      : parsed.map((msg, gi) => ({ gi, msg }))
+  );
+  $effect(() => {
+    parsed;
+    stepIdx = 0;
+  });
+
+  let topThinkingOpen = $state(false);
   let thinkingOpen = $state({});
   function toggleThinking(idx) {
     thinkingOpen = { ...thinkingOpen, [idx]: !thinkingOpen[idx] };
@@ -271,15 +303,27 @@
       <div class="turn-header">
         <span class="text-[10px] font-[600] uppercase tracking-[0.05em] p-[2px_6px] rounded-[3px] bg-[rgba(168,139,250,0.12)] text-[#a78bfa]">Thinking</span>
       </div>
-      <pre class="thinking-block">{thinking}</pre>
+      <button class="inline-flex items-center gap-[4px] [background:none] [border:1px_solid_var(--border,#2f2f2f)] rounded-[4px] text-(--muted) text-[11px] p-[2px_8px] cursor-pointer mb-[6px] hover:text-(--text) hover:[border-color:var(--border-strong,#4a4a4a)]" onclick={() => (topThinkingOpen = !topThinkingOpen)}>
+        <ChevronDown size={12} style={topThinkingOpen ? "transform:rotate(180deg)" : ""} />
+        <span>{topThinkingOpen ? "Hide" : "Show"} thinking</span>
+      </button>
+      {#if topThinkingOpen}
+        <pre class="thinking-block">{thinking}</pre>
+      {/if}
     </div>
   {/if}
 
-  {#each parsed as msg, idx (idx)}
+  {#if paged}
+    {@render stepPager()}
+  {/if}
+
+  {#each visible as item (item.gi)}
+    {@const msg = item.msg}
+    {@const idx = item.gi}
     <div class="turn turn-{msg.role}">
       <div class="turn-header">
         <span class="text-[10px] font-[600] uppercase tracking-[0.05em] p-[2px_6px] rounded-[3px] role-{msg.role}">{roleLabel(msg.role)}</span>
-        {#if msg.role === "assistant" && idx > 0}
+        {#if !paged && msg.role === "assistant" && idx > 0}
           <span class="turn-meta">Turn {Math.ceil((idx + 1) / 2)}</span>
         {/if}
         {#if msg.role === "assistant" && msg.toolCalls.length}
@@ -316,6 +360,10 @@
     </div>
   {/each}
 
+  {#if paged}
+    {@render stepPager()}
+  {/if}
+
   {#if checks}
     <div class="mt-[8px] p-[10px_12px] rounded-[6px] bg-[var(--color-c-gray-08,#1c1c1c)] [border:1px_solid_var(--border,#2f2f2f)]">
       <div class="flex items-center gap-[10px] text-[12px] font-[600] text-(--text-bright) mb-[8px]">
@@ -347,3 +395,27 @@
   {/if}
 </div>
 {/if}
+
+{#snippet stepPager()}
+  <div class="step-pager">
+    <button
+      class="sample-nav-btn"
+      onclick={() => (stepIdx -= 1)}
+      disabled={stepIdx === 0}
+      aria-label="Previous step"
+    >
+      <ChevronLeft size={14} />
+    </button>
+    <span class="text-[12px] text-(--text-bright) [font-variant-numeric:tabular-nums]">
+      Step {stepIdx + 1} / {steps.length}
+    </span>
+    <button
+      class="sample-nav-btn"
+      onclick={() => (stepIdx += 1)}
+      disabled={stepIdx === steps.length - 1}
+      aria-label="Next step"
+    >
+      <ChevronRight size={14} />
+    </button>
+  </div>
+{/snippet}

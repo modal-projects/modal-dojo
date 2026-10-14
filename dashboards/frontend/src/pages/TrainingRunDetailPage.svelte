@@ -32,6 +32,7 @@
     fetchRun,
     fetchRunRollouts,
     fetchRollout,
+    prefetchRollout,
     fetchRunTimings,
     fetchRunAdvantages,
     fetchRunAdvantageStep,
@@ -299,11 +300,34 @@
   let expandedRollout = $state(null);
   let expandedRolloutLoading = $state(false);
   const rolloutColumns = [
-    { key: "step", label: "Step", width: 72, minWidth: 56 },
-    { key: "mean", label: "Mean reward", width: 118, minWidth: 96 },
-    { key: "rollouts", label: "Rollouts", width: 80, minWidth: 64 },
-    { key: "when", label: "When", width: 88, minWidth: 64 },
+    { key: "step", label: "Step", width: 72, minWidth: 56, sortable: true },
+    { key: "mean", label: "Mean reward", width: 118, minWidth: 96, sortable: true },
+    { key: "rollouts", label: "Rollouts", width: 80, minWidth: 64, sortable: true },
+    { key: "when", label: "When", width: 88, minWidth: 64, sortable: true },
   ];
+
+  let rolloutSort = $state({ key: "step", dir: "asc" });
+  const ROLLOUT_SORT_VALUES = {
+    step: (r) => r.rollout_id,
+    mean: (r) => r.mean,
+    rollouts: (r) => r.episode_count ?? -1,
+    when: (r) => toEpochSeconds(r.created_at) ?? 0,
+  };
+  let sortedRolloutSummaries = $derived.by(() => {
+    const value = ROLLOUT_SORT_VALUES[rolloutSort.key];
+    if (!value) return rolloutSummaries;
+    const dir = rolloutSort.dir === "asc" ? 1 : -1;
+    return [...rolloutSummaries].sort(
+      (a, b) => ((Number(value(a)) || 0) - (Number(value(b)) || 0)) * dir
+    );
+  });
+
+  function onRolloutSort(key) {
+    rolloutSort =
+      rolloutSort.key === key && rolloutSort.dir === "asc"
+        ? { key, dir: "desc" }
+        : { key, dir: "asc" };
+  }
 
   // Per-step advantage distribution summaries (one row per step, each with the
   // step's overall stats + quantiles) — drives the advantage fan chart.
@@ -345,6 +369,7 @@
       span,
       buckets,
       maxCount,
+      all: rollouts.map((positions, r) => ({ positions, score: scores[r] })),
       total: rollouts.length,
       sampleCount: samples.length,
     };
@@ -371,7 +396,8 @@
   function openBucket(b) {
     const d = sampleDist;
     if (!d || !d.buckets[b]?.length) return;
-    activeBucket = b;
+    // Clicking the active bar again clears the filter back to all rollouts.
+    activeBucket = activeBucket === b ? null : b;
     activeSamplePos = 0;
   }
 
@@ -380,10 +406,16 @@
     activeSamplePos = 0;
   }
 
-  function stepSample(delta) {
+  // The list the sample viewer pages through: every rollout in the step, or
+  // just the ones in the selected reward bucket.
+  let activeSampleList = $derived.by(() => {
     const d = sampleDist;
-    if (!d || activeBucket == null) return;
-    const list = d.buckets[activeBucket] || [];
+    if (!d) return [];
+    return activeBucket == null ? d.all : d.buckets[activeBucket] || [];
+  });
+
+  function stepSample(delta) {
+    const list = activeSampleList;
     if (!list.length) return;
     activeSamplePos = Math.max(0, Math.min(list.length - 1, activeSamplePos + delta));
   }
@@ -405,11 +437,11 @@
     return meta.image ?? (meta.image_ref ? rolloutImages[meta.image_ref] : null) ?? null;
   }
 
-  // The rollout currently shown in the viewer (or null when no bucket is open).
+  // The rollout currently shown in the viewer.
   let activeSample = $derived.by(() => {
     const d = sampleDist;
-    if (!d || activeBucket == null) return null;
-    const list = d.buckets[activeBucket] || [];
+    if (!d) return null;
+    const list = activeSampleList;
     const entry = list[activeSamplePos];
     if (!entry) return null;
     const sample = expandedRollout.samples[entry.positions[0]];
@@ -424,7 +456,7 @@
   });
 
   function onSampleKeydown(e) {
-    if (activeBucket == null) return;
+    if (!activeSample) return;
     const tag = (e.target?.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea") return;
     if (e.key === "ArrowLeft") {
@@ -768,13 +800,16 @@
     expandedRollout = null;
     closeBucket();
     expandedRolloutLoading = true;
+    // Warm the rows either side so flipping through steps is instant too.
+    const ids = rolloutSummaries.map((r) => r.rollout_id);
+    const at = ids.indexOf(rolloutId);
+    for (const neighbor of [ids[at - 1], ids[at + 1]]) {
+      if (neighbor != null) prefetchRollout(runId, neighbor);
+    }
     try {
       const detail = await fetchRollout(runId, rolloutId);
       if (expandedRolloutId === rolloutId) {
         expandedRollout = detail;
-        const d = sampleDist;
-        const first = d ? d.buckets.findIndex((b) => b.length > 0) : -1;
-        if (first >= 0) openBucket(first);
       }
     } finally {
       if (expandedRolloutId === rolloutId) {
@@ -1978,14 +2013,20 @@
         <div class="detail-empty">No rollouts recorded yet.</div>
       {:else}
         <div class="table-wrap">
-        <ResizableTable class="rollout-table" columns={rolloutColumns}>
+        <ResizableTable
+          class="rollout-table"
+          columns={rolloutColumns}
+          sort={rolloutSort}
+          onSort={onRolloutSort}
+        >
           <tbody>
-            {#each rolloutSummaries as r (r.rollout_id)}
+            {#each sortedRolloutSummaries as r (r.rollout_id)}
               <tr
                 class:expanded={expandedRolloutId === r.rollout_id}
                 class:rollout-error={r.error_summary?.verdict === "all_infra_failure"}
                 class:rollout-warn={r.error_summary?.verdict === "partial_infra_failure"}
                 onclick={() => toggleRolloutDetail(r.rollout_id)}
+                onpointerenter={() => prefetchRollout(runId, r.rollout_id)}
               >
                 <td>#{r.rollout_id}</td>
                 <td class="text-(--text-bright)">
@@ -2009,24 +2050,6 @@
                     {:else if !expandedRollout || !sampleDist}
                       <div class="detail-empty">No rollouts recorded.</div>
                     {:else}
-                      {#if runTimings[r.rollout_id]}
-                        <div class="rollout-chart">
-                          <div class="rollout-chart-title">Substep timing</div>
-                          <RunTimeline
-                            timings={{ [r.rollout_id]: runTimings[r.rollout_id] }}
-                            asyncOverride={timelineAsync}
-                            runOrigin={timelineRunOrigin}
-                            showOpenRollout={false}
-                            timelineKey={`${runId}:${r.rollout_id}`}
-                            downloadName={`substep_timing_${runId}_rollout_${r.rollout_id}.json`}
-                            rolloutIds={[r.rollout_id]}
-                            onOpenRollout={(id) => {
-                              selectTab("rollouts");
-                              if (expandedRolloutId !== id) void toggleRolloutDetail(id);
-                            }}
-                          />
-                        </div>
-                      {/if}
                       {#if expandedRollout.metrics && Object.keys(expandedRollout.metrics).length}
                         {@const m = expandedRollout.metrics}
                         {@const remoteErr = Number(m["agent/exit_status/remoteerror_sample_count"]) || 0}
@@ -2104,6 +2127,27 @@
                             <span class="dist-axis-label">reward · {distSummary}</span>
                             <span>{formatMean(sampleDist.hi)}</span>
                           </div>
+                          {#if activeBucket != null}
+                            <div class="dist-filter">
+                              <span>
+                                {plural(sampleDist.buckets[activeBucket]?.length ?? 0, "rollout")}
+                                · reward {bucketRange(activeBucket)}
+                              </span>
+                              <button
+                                type="button"
+                                class="dist-filter-clear"
+                                aria-label="Clear reward filter"
+                                title="Show all rollouts"
+                                onclick={closeBucket}
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          {:else}
+                            <div class="text-[11px] text-(--muted) mt-[4px]">
+                              Click a bar to filter by reward.
+                            </div>
+                          {/if}
                         </div>
                       </div>
 
@@ -2148,8 +2192,9 @@
                               </button>
                               <button
                                 class="sample-nav-btn"
-                                onclick={closeBucket}
-                                aria-label="Close rollout viewer"
+                                onclick={() => toggleRolloutDetail(expandedRolloutId)}
+                                aria-label="Close rollout detail"
+                                title="Collapse step detail"
                               >
                                 <X size={14} />
                               </button>
@@ -2188,7 +2233,7 @@
                             rewardEvents={activeSample.sample.reward_events || []}
                             rollout={expandedRollout}
                             run={run}
-                            position={`${activeBucket}/${activeSample.pos}`}
+                            position={`${activeBucket ?? "all"}/${activeSample.pos}`}
                           />
                           {#if activeSample.sample.metadata?.reference}
                             <div class="rollout-sample-label">reference</div>
@@ -2247,8 +2292,24 @@
                             </div>
                           {/if}
                         </div>
-                      {:else}
-                        <div class="text-[12px] text-(--muted) p-[4px_0]">Click a bar to inspect its rollouts.</div>
+                      {/if}
+                      {#if runTimings[r.rollout_id]}
+                        <details class="rollout-timing">
+                          <summary>Substep timing</summary>
+                          <RunTimeline
+                            timings={{ [r.rollout_id]: runTimings[r.rollout_id] }}
+                            asyncOverride={timelineAsync}
+                            runOrigin={timelineRunOrigin}
+                            showOpenRollout={false}
+                            timelineKey={`${runId}:${r.rollout_id}`}
+                            downloadName={`substep_timing_${runId}_rollout_${r.rollout_id}.json`}
+                            rolloutIds={[r.rollout_id]}
+                            onOpenRollout={(id) => {
+                              selectTab("rollouts");
+                              if (expandedRolloutId !== id) void toggleRolloutDetail(id);
+                            }}
+                          />
+                        </details>
                       {/if}
                     {/if}
                   </td>
