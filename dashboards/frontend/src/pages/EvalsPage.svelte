@@ -235,6 +235,7 @@
   let exampleSearch = $state("");
 
   let expandedExamples = $state(new Set());
+  let expandedThinking = $state(new Set());
 
   function scoreColor(score) {
     if (score >= 0.8) return "var(--color-c-green-80)";
@@ -253,6 +254,7 @@
     exampleSearch = "";
 
     expandedExamples = new Set();
+    expandedThinking = new Set();
     const evalId = run.eval.eval_id;
     if (evalId && fetchEvalDetail) {
       try {
@@ -274,6 +276,10 @@
 
   function toggleExample(index) {
     expandedExamples = toggleInSet(expandedExamples, index);
+  }
+
+  function toggleThinking(index) {
+    expandedThinking = toggleInSet(expandedThinking, index);
   }
 
   let drawerRows = $derived.by(() => {
@@ -729,8 +735,17 @@
                     {:else if row.parsed_response}
                       {#if row.parsed_response.thinking}
                         <div class="example-section">
-                          <span class="example-section-label">Thinking</span>
-                          <pre class="example-section-text text-(--muted)! [border:1px_solid_var(--color-c-gray-10,#2f2f2f)] [border-left:3px_solid_var(--color-c-orange-80,#f0a040)] bg-[rgba(240,160,64,0.06)]!">{row.parsed_response.thinking}</pre>
+                          <button class="inline-flex items-center gap-[4px] self-start [background:none] [border:1px_solid_var(--color-c-gray-10)] rounded-[4px] text-(--muted) text-[11px] p-[2px_8px] cursor-pointer [font:inherit] hover:text-(--text)" onclick={() => toggleThinking(row._index)}>
+                            {#if expandedThinking.has(row._index)}
+                              <ChevronDown size={12} />
+                            {:else}
+                              <ChevronRight size={12} />
+                            {/if}
+                            <span>Thinking</span>
+                          </button>
+                          {#if expandedThinking.has(row._index)}
+                            <pre class="example-section-text text-(--muted)! [border:1px_solid_var(--color-c-gray-10,#2f2f2f)] [border-left:3px_solid_var(--color-c-orange-80,#f0a040)] bg-[rgba(240,160,64,0.06)]!">{row.parsed_response.thinking}</pre>
+                          {/if}
                         </div>
                       {/if}
                       {#if row.parsed_response.content}

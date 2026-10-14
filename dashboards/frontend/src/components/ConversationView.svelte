@@ -248,6 +248,8 @@
     thinkingOpen = { ...thinkingOpen, [idx]: !thinkingOpen[idx] };
   }
 
+  let topThinkingOpen = $state(false);
+
   let checks = $derived.by(() => {
     if (!evalReport || typeof evalReport !== "object") return null;
     const c = evalReport.checks;
@@ -268,10 +270,13 @@
 <div class="flex flex-col gap-[2px]">
   {#if thinking}
     <div class="turn turn-thinking">
-      <div class="turn-header">
-        <span class="text-[10px] font-[600] uppercase tracking-[0.05em] p-[2px_6px] rounded-[3px] bg-[rgba(168,139,250,0.12)] text-[#a78bfa]">Thinking</span>
-      </div>
-      <pre class="thinking-block">{thinking}</pre>
+      <button class="inline-flex items-center gap-[4px] [background:none] [border:1px_solid_var(--border,#2f2f2f)] rounded-[4px] text-(--muted) text-[11px] p-[2px_8px] cursor-pointer hover:text-(--text) hover:[border-color:var(--border-strong,#4a4a4a)]" onclick={() => (topThinkingOpen = !topThinkingOpen)}>
+        <ChevronDown size={12} style={topThinkingOpen ? "transform:rotate(180deg)" : ""} />
+        <span>Thinking</span>
+      </button>
+      {#if topThinkingOpen}
+        <pre class="thinking-block mt-[6px]">{thinking}</pre>
+      {/if}
     </div>
   {/if}
 
