@@ -216,6 +216,7 @@
   }
 
   let highlightPx = $derived.by(() => {
+    if (highlightX == null) return null;
     const x = Number(highlightX);
     if (!Number.isFinite(x) || x < xMin || x > xMax) return null;
     return singlePoint ? 2 : ((x - xMin) / xSpan) * 100;

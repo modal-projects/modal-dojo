@@ -786,11 +786,18 @@
   async function openRollout(rolloutId) {
     if (rolloutId == null) return;
     selectTab("rollouts");
-    if (expandedRolloutId !== rolloutId) await toggleRolloutDetail(rolloutId);
+    if (expandedRolloutId !== rolloutId) void toggleRolloutDetail(rolloutId);
     await tick();
     document
       .getElementById(`rollout-row-${rolloutId}`)
       ?.scrollIntoView({ block: "center" });
+  }
+
+  function openInSummary(rolloutId) {
+    if (chartXDomain && (rolloutId < chartXDomain[0] || rolloutId > chartXDomain[1])) {
+      setChartRange(null);
+    }
+    selectTab("summary");
   }
 
   // ── Live Modal log stream (SSE, pure pass-through) ───────────────────
@@ -2088,7 +2095,7 @@
                           <button
                             type="button"
                             class="inline-flex items-center gap-[5px] [background:none] [border:1px_solid_var(--border,#2f2f2f)] rounded-[4px] text-(--muted) text-[11px] p-[3px_8px] cursor-pointer hover:text-(--text) hover:border-(--border-strong,#4a4a4a)"
-                            onclick={() => selectTab("summary")}
+                            onclick={() => openInSummary(r.rollout_id)}
                           >
                             Open in Summary →
                           </button>

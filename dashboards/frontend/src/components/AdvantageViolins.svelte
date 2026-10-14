@@ -151,6 +151,7 @@
   }
 
   let highlightFrac = $derived.by(() => {
+    if (highlightX == null) return null;
     const x = Number(highlightX);
     if (!Number.isFinite(x) || !pts.length) return null;
     const f = columnFraction(x);

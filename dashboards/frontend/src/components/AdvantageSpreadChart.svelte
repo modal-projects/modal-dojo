@@ -72,6 +72,7 @@
   );
 
   let highlightPx = $derived.by(() => {
+    if (highlightX == null) return null;
     const x = Number(highlightX);
     if (!model || !Number.isFinite(x) || x < model.xMin || x > model.xMax) return null;
     return PAD + ((x - model.xMin) / (model.xMax - model.xMin || 1)) * (W - 2 * PAD);
