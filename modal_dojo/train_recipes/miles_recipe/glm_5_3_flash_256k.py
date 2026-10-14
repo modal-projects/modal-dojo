@@ -42,6 +42,7 @@ class GLM_5_3_Flash_LoRA_256k_Recipe(GLM_5_3_Flash_LoRA_Recipe):
     rollout_batch_size: int = 2
     global_batch_size: int = 8
     rollout_max_context_len: int = 262144
+    rollout_max_response_len: int = 262144
 
     seq_length: int = 262144
     max_tokens_per_gpu: int = 262144
