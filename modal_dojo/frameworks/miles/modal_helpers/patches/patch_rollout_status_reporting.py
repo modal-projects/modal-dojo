@@ -33,8 +33,10 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "initialize_rollouts",
         "None",
         re.compile(
-            r"^(?P<indent>[ \t]*)(?P<line>rollout_manager, num_rollout_per_epoch = "
-            r"create_rollout_manager\(args, pgs\[\"rollout\"\]\))[ \t]*$",
+            r"^(?P<indent>[ \t]*)(?P<line>(?:rollout_manager, num_rollout_per_epoch = "
+            r"create_rollout_manager\(args, pgs\[\"rollout\"\]\)|"
+            r"inference_controller, rollout_executor, num_rollout_per_epoch = "
+            r"await create_rollout_components\(args\)))[ \t]*$",
             re.M,
         ),
     ),
@@ -44,7 +46,8 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "rollout_id",
         re.compile(
             r"^(?P<indent>[ \t]*)(?P<line>rollout_data\w* = await "
-            r"rollout_manager\.generate\.remote\(rollout_id\))[ \t]*$",
+            r"(?:rollout_manager\.generate\.remote|rollout_executor\.get)"
+            r"\(rollout_id\))[ \t]*$",
             re.M,
         ),
     ),
@@ -65,7 +68,8 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "offload_rollout",
         "rollout_id",
         re.compile(
-            r"^(?P<indent>[ \t]*)(?P<line>await rollout_manager\.offload\.remote\("
+            r"^(?P<indent>[ \t]*)(?P<line>await "
+            r"(?:rollout_manager\.offload\.remote|inference_controller\.offload)\("
             r"[^\n]*\))[ \t]*$",
             re.M,
         ),
@@ -84,8 +88,9 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "weight_sync",
         "rollout_id",
         re.compile(
-            r"^(?P<indent>[ \t]*)(?P<line>await actor_model\.update_weights\("
-            r"rollout_id=rollout_id\))[ \t]*$",
+            r"^(?P<indent>[ \t]*)(?P<line>await (?:actor_model\.update_weights\("
+            r"rollout_id=rollout_id\)|update_weights\(args, actor_model, "
+            r"rollout_executor, inference_controller, rollout_id=rollout_id\)))[ \t]*$",
             re.M,
         ),
     ),
