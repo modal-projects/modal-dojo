@@ -21,8 +21,8 @@ from astro_redirects import redirect_status, refresh_map_from_tarball  # noqa: E
 image = (
     modal.Image.debian_slim()
     .pip_install("PyGithub~=2.6.1")
-    .add_local_dir(Path(__file__).resolve().parent / "nginx", NGINX_CONF_DIR)
     .add_local_file(_ASTRO_REDIRECTS, "/root/astro_redirects.py", copy=True)
+    .add_local_dir(Path(__file__).resolve().parent / "nginx", NGINX_CONF_DIR)
 )
 
 with image.imports():
@@ -130,10 +130,11 @@ class PreviewDeployment:
             )
 
         if self.type == "docs":
-            image = image.add_local_file(NGINX_CONF_DIR / "docs.conf", remote_conf)
             inc = Path(tempfile.mkdtemp()) / "astro-refresh.inc"
             inc.write_text(_docs_nginx_refresh_inc(refresh_map_from_tarball(path)))
-            image = image.add_local_file(inc, "/etc/nginx/astro-refresh.inc", copy=True)
+            image = image.add_local_file(
+                inc, "/etc/nginx/astro-refresh.inc", copy=True
+            ).add_local_file(NGINX_CONF_DIR / "docs.conf", remote_conf)
 
         sb_app = modal.App.lookup(SANDBOX_APP_NAME, create_if_missing=True)
         self.expiration = datetime.now() + SANDBOX_TIMEOUT
