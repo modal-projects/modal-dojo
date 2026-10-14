@@ -102,6 +102,7 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [DeepSeek_V4_1_Flash_Recipe](https://dojo.modal.dev/reference/deepseek_v4_1_flash_recipe)
 - [Gemma4_26B_A4B_Recipe](https://dojo.modal.dev/reference/gemma4_26b_a4b_recipe)
 - [GLM_4_7_Recipe](https://dojo.modal.dev/reference/glm_4_7_recipe)
+- [GLM_5_3_Flash_LoRA_256k_Recipe](https://dojo.modal.dev/reference/glm_5_3_flash_lora_256k_recipe)
 - [GLM_5_3_Flash_LoRA_Recipe](https://dojo.modal.dev/reference/glm_5_3_flash_lora_recipe)
 - [Inkling_Small_LoRA_Recipe](https://dojo.modal.dev/reference/inkling_small_lora_recipe)
 - [Inkling_Small_Recipe](https://dojo.modal.dev/reference/inkling_small_recipe)
