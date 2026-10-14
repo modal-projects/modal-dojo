@@ -243,15 +243,16 @@
     return [];
   });
 
-  // Group turns into flippable steps: each step is one assistant turn plus
-  // the tool/observation messages that follow it. Leading system/user
+  // Group turns into flippable steps: each step is one exchange — an
+  // assistant turn plus the tool/observation messages that follow it; a
+  // mid-conversation user prompt leads its own step. Leading system/user
   // context folds into the first step.
   let steps = $derived.by(() => {
     const out = [];
     parsed.forEach((msg, gi) => {
       const last = out[out.length - 1];
-      if (msg.role === "assistant" && last?.hasAssistant) {
-        out.push({ items: [{ gi, msg }], hasAssistant: true });
+      if ((msg.role === "assistant" || msg.role === "user") && last?.hasAssistant) {
+        out.push({ items: [{ gi, msg }], hasAssistant: msg.role === "assistant" });
       } else {
         if (!last) out.push({ items: [], hasAssistant: false });
         const l = out[out.length - 1];

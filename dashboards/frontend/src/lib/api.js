@@ -153,8 +153,24 @@ export function fetchRollout(trainingRunId, rolloutId) {
   if (rolloutDetailCache.size > ROLLOUT_DETAIL_CACHE_MAX) {
     rolloutDetailCache.delete(rolloutDetailCache.keys().next().value);
   }
-  promise.catch(() => rolloutDetailCache.delete(key));
+  promise.then(
+    // Drop misses so a transient failure doesn't hide the rollout for the
+    // rest of the page — the next click/hover refetches.
+    (value) => {
+      if (value === null) rolloutDetailCache.delete(key);
+    },
+    () => rolloutDetailCache.delete(key),
+  );
   return promise;
+}
+
+// Drop cached details for a run whose rollout list changed — a restarted step
+// rewrites its rollout id, so the old detail would go stale.
+export function clearRolloutDetails(trainingRunId) {
+  const prefix = `${trainingRunId}/`;
+  for (const key of rolloutDetailCache.keys()) {
+    if (key.startsWith(prefix)) rolloutDetailCache.delete(key);
+  }
 }
 
 export function prefetchRollout(trainingRunId, rolloutId) {

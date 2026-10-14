@@ -33,6 +33,7 @@
     fetchRunRollouts,
     fetchRollout,
     prefetchRollout,
+    clearRolloutDetails,
     fetchRunTimings,
     fetchRunAdvantages,
     fetchRunAdvantageStep,
@@ -299,6 +300,7 @@
   let expandedRolloutId = $state(null);
   let expandedRollout = $state(null);
   let expandedRolloutLoading = $state(false);
+  let rolloutsSerialized = $state("");
   const rolloutColumns = [
     { key: "step", label: "Step", width: 72, minWidth: 56, sortable: true },
     { key: "mean", label: "Mean reward", width: 118, minWidth: 96, sortable: true },
@@ -548,6 +550,11 @@
       const wasEmpty = untrack(() => rolloutSummaries.length === 0);
       const rows = await fetchRunRollouts(runId, { signal });
       if (signal?.aborted) return;
+      const serialized = JSON.stringify(rows);
+      if (serialized !== rolloutsSerialized) {
+        rolloutsSerialized = serialized;
+        clearRolloutDetails(runId);
+      }
       rolloutSummaries = rows;
       rolloutsError = "";
 
