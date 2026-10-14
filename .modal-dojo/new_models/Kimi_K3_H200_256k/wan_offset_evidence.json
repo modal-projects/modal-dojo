@@ -1,0 +1,112 @@
+{
+  "run_id": "wan-offset-e94af3bc2962",
+  "evidence_kind": "one-time status and log check; monitoring not resumed",
+  "status_snapshot_before_fatal_log": {
+    "run_id": "wan-offset-e94af3bc2962",
+    "modal_app_id": "ap-x1jTe0JcmhMB3cwClu0Bkj",
+    "status": "pending",
+    "stage": "Optimizer step",
+    "current_step": 1,
+    "total_steps": 2,
+    "step_unit": "step",
+    "current_reward": 0.625,
+    "resume_state": null,
+    "model": "moonshotai/Kimi-K3",
+    "dataset": "zhuzilin/dapo-math-17k",
+    "recipe": "miles",
+    "group": null,
+    "created_at": "2026-10-13T21:25:14Z",
+    "last_updated_at": "2026-10-14T14:53:39Z",
+    "reward_over_time": [
+      {
+        "rollout_id": 0,
+        "reward": 0.625,
+        "created_at": "2026-10-14T14:44:02Z"
+      }
+    ],
+    "rollouts": [
+      {
+        "training_run_id": "wan-offset-e94af3bc2962",
+        "rollout_id": 0,
+        "created_at": 1791989042,
+        "total": 8,
+        "episode_count": 8,
+        "mean": 0.625,
+        "reward_stats": {
+          "count": 8,
+          "mean": 0.625,
+          "min": 0.0,
+          "max": 1.0,
+          "p50": 1.0,
+          "p90": 1.0,
+          "p99": 1.0
+        },
+        "export_size_bytes": 8178477,
+        "rollout_time": 147.99079179763794,
+        "tag_stats": {
+          "k3_total_tokens": {
+            "count": 8,
+            "mean": 261803.375,
+            "min": 261445.0,
+            "max": 262142.0,
+            "p50": 261788.0,
+            "p90": 262142.0,
+            "p99": 262142.0
+          },
+          "k3_generated_tokens": {
+            "count": 8,
+            "mean": 938.25,
+            "min": 572.0,
+            "max": 1278.0,
+            "p50": 924.0,
+            "p90": 1278.0,
+            "p99": 1278.0
+          },
+          "k3_observation_tokens": {
+            "count": 8,
+            "mean": 260660.125,
+            "min": 260623.0,
+            "max": 260704.0,
+            "p50": 260659.0,
+            "p90": 260697.7,
+            "p99": 260703.37
+          },
+          "k3_episode_seconds": {
+            "count": 8,
+            "mean": 125.53007513249992,
+            "min": 104.52613276599959,
+            "max": 146.80913666000015,
+            "p50": 125.38615173849985,
+            "p90": 144.89293140610016,
+            "p99": 146.61751613461013
+          },
+          "k3_generated_tokens_per_second": {
+            "count": 8,
+            "mean": 7.256089548860976,
+            "min": 5.472267711463278,
+            "max": 8.892282332758514,
+            "p50": 7.315712923771293,
+            "p90": 8.877055875654161,
+            "p99": 8.890759687048078
+          }
+        }
+      }
+    ]
+  },
+  "fatal_log": {
+    "timestamp_utc": "2026-10-14T14:55:15.938Z",
+    "rank": 82,
+    "phase": "pipeline backward / checkpoint recomputation backward",
+    "operator": "not identified by retained Python traceback",
+    "request_gib": 5.34,
+    "device_free_gib": 8.41,
+    "allocated_gib": 105.76,
+    "reserved_unallocated_gib": 13.25,
+    "process_device_gib": 131.14,
+    "memory_margin_gib": 4,
+    "message": "torch.OutOfMemoryError: CUDA out of memory"
+  },
+  "completed_optimizer_update_observed": false,
+  "final_app_lifecycle_verified": false,
+  "raw_traces_inspected": false
+}

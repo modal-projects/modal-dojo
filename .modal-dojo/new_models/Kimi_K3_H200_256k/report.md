@@ -11,7 +11,7 @@ Status: **not validated yet**. No training step has finished. Recipe: `Kimi_K3_L
 | [crimson-brass-1832e798c59a](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/crimson-brass-1832e798c59a) | `ap-GyGeQjKO0yA5WcZicYxHvw` | TP4 x CP8 x PP4, EP32, 32768 tok/GPU, routing replay off | FAILED: eight 262,140–262,142-token rollouts, reward 0.125; SiTU activation OOM in first training update |
 | [sharp-syrup-0e7f1f90231e](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/sharp-syrup-0e7f1f90231e) | `ap-27wDbpBbhW5PjKpg09InRN` | TP4 × CP8 × PP4, EP32, unfused SiTU, varied DAPO filler | FAILED: first rollout reward 0.75; SiTU OOM before the first update |
 | [linear-list-7f87c318b9b9](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/linear-list-7f87c318b9b9) | `ap-wr6wEkjAxIxyqTInBvRq2q` | TP4 × CP8 × PP4, EP32, fused SiTU, original filler | FAILED: passed rollout/log probs; OOM in expert FC1 LoRA addition before first update |
-| [wan-offset-e94af3bc2962](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/wan-offset-e94af3bc2962) | `ap-x1jTe0JcmhMB3cwClu0Bkj` | TP4 × CP8 × PP4, EP32, fused SiTU + LoRA delta reuse, varied filler | Submitted 21:25 UTC; waiting for GPUs |
+| [wan-offset-e94af3bc2962](https://modal-labs-helena-dev--dojo-dashboard-fastapi-app.modal.run/training/wan-offset-e94af3bc2962) | `ap-x1jTe0JcmhMB3cwClu0Bkj` | TP4 × CP8 × PP4, EP32, fused SiTU + LoRA delta reuse, varied filler | First rollout reward 0.625; OOM in first-step recomputation backward on Oct 14 at 14:55 UTC |
 
 All runs use `validate.py --rollouts 2 --launch` in capacity mode: each sequence is filled to at least 261,120 tokens.
 
@@ -38,7 +38,7 @@ All runs use `validate.py --rollouts 2 --launch` in capacity mode: each sequence
 
 ## 8 nodes
 
-Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't proven to fail. Inference (not measured): stable-plaster OOMed on 16 nodes at 64k tokens/rank, and 8 nodes would need either 2x the tokens/rank or 2x the model shard per GPU.
+Not tried, and not proven impossible. The original estimate in `model_setup.md` assumed PP8 when limiting TP x CP to eight; that is not a general 64-GPU constraint. Reducing PP permits more TP/CP/EP, with a different activation profile, while the average frozen trainer-weight shard still roughly doubles. Keeping TP16 inference yields four engines instead of eight without increasing per-engine concurrency. See the corrected host/GPU accounting in `model_setup.md`; none of these extrapolations is an eight-node validation result.
 
 ## crimson-brass: 256k inference works; CP8 does not fix trainer OOM
 
@@ -94,7 +94,7 @@ Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't prov
 - Benchmark app confirmed stopped with zero workers at **20:28:42 UTC**.
 - Next distributed proof uses both tested memory patches and the branch's varied DAPO filler, on the unchanged 16×H200:8 layout for two rollouts. This tests the current intended recipe/harness; it is not a one-variable comparison against linear-list, which used repeated filler and different sampled questions.
 
-## wan-offset: both memory fixes, varied filler (pending)
+## wan-offset: both memory fixes still OOM in backward
 
 - Source `184d415`, submitted 2026-10-13 21:25 UTC, app `ap-x1jTe0JcmhMB3cwClu0Bkj`, function call `fc-01M4VJMF5JXFYH027D9XPCXW29`.
 - Image build printed both `PATCHED_K3_SITU_COMPILE` and `PATCHED_K3_LORA_DELTA_REUSE`. Reused the converted checkpoint; training call submitted around 21:28 UTC. No optimizer result yet.
@@ -102,6 +102,10 @@ Not tried. It was ruled out by estimate (see `model_setup.md`), so it isn't prov
 - Still queued at **2026-10-14 02:14 UTC** (about 4h46m). Direct function inspection confirms the intended 16-node RDMA cluster, eight H200s/node, 1,966,080 MiB host-memory limit, no region/cloud restriction, no retries, and 86,400s execution timeout. No accidental placement restriction was found.
 - A monitoring interruption around 01:26 UTC was caused by the shared local dashboard URL changing to the `training-team` environment. The app/run were not deleted. The task's read-only monitor now pins the original `helena-dev` dashboard without modifying the shared setting; status/log reads recovered.
 - Unchanged topology, LoRA rank/alpha, optimizer settings, 262,144-token target, and two-rollout horizon. Uses the current varied-filler probe with 4,096 DAPO problems.
+- Monitoring was stopped at the user's request. A **one-time evidence check** on October 14 (not a resumed monitoring loop) found that the run had subsequently started. Rollout 0 completed at **14:44:02 UTC**: eight samples, **261,445–262,142 total tokens**, 572–1,278 generated tokens, **147.99 seconds**, mean reward **0.625**. These are dashboard aggregates; the new raw traces were not inspected in this check.
+- At **14:55:15.938 UTC**, rank 82 / `10.100.0.11` logged a fatal CUDA OOM during pipeline backward, inside Megatron checkpoint recomputation's `torch.autograd.backward`. Request **5.34 GiB**, **8.41 GiB free**, **105.76 GiB allocated**, **13.25 GiB reserved but unallocated**, total process memory **131.14 GiB**. TorchMemorySaver retained its **4 GiB** margin. The Python traceback does not identify the exact failing tensor operator, so this cannot yet be attributed to a specific SiTU or LoRA operation.
+- The pre-error metadata still read `pending` / `Optimizer step`, step 1/2; the fatal worker traceback is the newer evidence. No completed update or checkpoint was observed. This one-time check did not verify the final app lifecycle state or restart monitoring.
+- Conclusion: the focused memory savings do **not** yet establish successful 16-node training, much less eight-node training. Evidence snapshot: `wan_offset_evidence.json`.
 
 ## Continuation, 2026-10-13
 

@@ -9,9 +9,11 @@ The `crimson-brass` image reports Miles commit `41c5e38b94ea23677de93b01a4a77d55
 - H200: 140.4 GiB/GPU, 2 TiB host. Compact TP16 MXFP4 weights measured 111.5 GiB/rank (adagio-hull, #618 history).
 - concave-frisbee-8a15d3a104f0 (H200 64k): OOM in the unbounded PP adapter broadcast.
 
-## 8 nodes ruled out by estimate (not tested)
-- Host: TP16 inference backup ~0.9 TiB/node + 1/8 of the 5.6 TB BF16 trainer ~0.7 TiB/node + overhead (~0.4 TiB in radiant-tom) > 2 TiB.
-- GPU: 256k with TP x CP <= 8 at 64 GPUs is 4x the 64k per-rank sequence on half the memory.
+## 8 nodes: untested, not ruled out
+- The original rejection was an estimate, not an eight-node experiment. Its `TP x CP <= 8` assumption only follows if PP8 is retained. On 64 GPUs, reducing PP permits a larger TP x CP product (for example TP8 x CP8 x PP1, EP64). Such layouts remain unvalidated, including their activation peaks and performance.
+- Keeping inference TP16 gives four engines on eight nodes. Per-engine memory need not increase if concurrency stays at one; the eight-sample batch would require multiple scheduling waves. Existing 16-node runs measured 111.5 GiB inference weights plus 13.5 GiB KV per GPU and successfully generated near 256k tokens.
+- Using the original approximate 5.6 TB BF16 trainer size with consistent units, eight-node host weight backups are roughly 652 GiB trainer + 892 GiB inference = 1,544 GiB/node, before overhead, against the configured 1,920 GiB limit. This is tight but not by itself proof of host OOM. The 16-node phase-boundary samples reached roughly 1,125–1,298 GiB/node; they are not exhaustive startup/training peaks and cannot establish eight-node safety.
+- The main GPU tradeoff is roughly 81.5 GiB of evenly sharded frozen trainer weights per GPU on 64 GPUs versus 40.7 GiB on 128 (same approximate model-size assumption). Fewer pipeline stages and more tensor/context/expert parallelism can change activation peaks, but halving the GPU count does not automatically halve those peaks. Eight-node end-to-end training has not been demonstrated.
 
 ## Chosen layout (16 x H200:8)
 - Trainer TP4 x CP8 x PP4 (23/24/24/22 layers), EP32, DP1, `max_tokens_per_gpu=32768` (32k tokens/rank, same as radiant-tom at 64k). First tried TP8 x CP4 (64k tokens/rank), which OOMed; see `report.md`.
@@ -19,7 +21,7 @@ The `crimson-brass` image reports Miles commit `41c5e38b94ea23677de93b01a4a77d55
 - Batch: 2 prompts x 4 samples = 8 sequences = one per engine.
 - Patches: 64k set + compact TP16 Marlin padding + bounded PP adapter broadcast + compiled SiTU activation + expert LoRA delta-buffer reuse.
 - The SiTU patch passed focused H200 output/gradient checks and reduced extra peak allocation from 46.76 to 7.44 GiB at a synthetic shape matching the failed allocation's byte count. Its half-width was 3,584; the actual expert intermediate width is 3,072. The distributed `linear-list` run moved the fatal OOM to the extra expert FC1 LoRA sum allocation, before its first update.
-- LoRA buffer reuse passed normal/checkpointed backward checks on the pinned Transformer Engine implementation with actual expert dimensions, nonzero adapters, and zero-token experts. At a 4.73 GiB FC1 output, extra forward/backward peak fell 19.03 to 14.65 GiB. Combined distributed validation is active as `wan-offset`; no optimizer step has passed yet. Full evidence is in `report.md`.
+- LoRA buffer reuse passed normal/checkpointed backward checks on the pinned Transformer Engine implementation with actual expert dimensions, nonzero adapters, and zero-token experts. At a 4.73 GiB FC1 output, extra forward/backward peak fell 19.03 to 14.65 GiB. A one-time log check on October 14 found that combined distributed validation (`wan-offset`) also OOMed during first-step recomputation backward; no optimizer step has passed yet. Full evidence is in `report.md`.
 
 ## Validation
 `validate.py --context-length 262144 --rollouts {2,10} --launch` (capacity mode: masked observation fills each sequence to >= 261120 tokens). Current observations contain varied filler drawn from 4,096 DAPO prompts. Complete a healthy two-rollout proof before the ten-rollout smoke test. This tests near-256k training capacity, not 256k autonomous generation or long-context task quality.
