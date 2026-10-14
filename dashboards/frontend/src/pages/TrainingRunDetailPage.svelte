@@ -752,13 +752,13 @@
   let runTimingsSerialized = $state("{}");
   const summarySide = createSidebarCollapsedState(false, "summarySideCollapsed");
   let timingSectionEl = $state(null);
+  let showTimingSection = $derived(shouldShowTimingSection(runTimings));
   let timingCallout = $derived.by(() => {
     if (timingError) return "Substep timing is unavailable for this run.";
-    if (attemptMarkers.length)
+    if (showTimingSection && attemptMarkers.length)
       return `This run restarted ${attemptMarkers.length === 1 ? "once" : `${attemptMarkers.length} times`} — see Substep Timing for infra details.`;
     return null;
   });
-  let showTimingSection = $derived(shouldShowTimingSection(runTimings));
   let timelineAsync = $derived(timingIsAsync(runTimings));
   let timelineRunOrigin = $derived(timingRunStart(runTimings));
   let stepTimingIds = $derived(

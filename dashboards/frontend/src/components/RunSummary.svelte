@@ -45,9 +45,13 @@
   let copiedRecipeJson = $state(false);
   let copyFailed = $state(false);
   let copyResetTimer = null;
+  let lastRunId;
 
+  // `run` is replaced by every poll, so only reset when the id actually changed.
   $effect(() => {
-    run?.run_id;
+    const id = run?.run_id;
+    if (id === lastRunId) return;
+    lastRunId = id;
     paramFilter = "";
     paramsCollapsed = String(run?.framework || "").toLowerCase() === "slime";
     copiedRecipeJson = false;
