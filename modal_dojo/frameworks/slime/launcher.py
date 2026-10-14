@@ -26,6 +26,7 @@ from modal import App, Image, Secret
 from modal_dojo.common import hf_secrets, proxy_auth_secrets
 
 
+from modal_dojo.common.cluster_preflight import run_cluster_preflight
 from modal_dojo.common.dataset import DatasetConfig, HarborDataset, _SftDataset
 from modal_dojo.common.framework import (
     mount_tools_dir,
@@ -910,6 +911,11 @@ def build_slime_app(
             print(f"Runtime environment variables: {sorted(runtime_env['env_vars'])}")
 
             await set_status(SlimeStatus.ROLLOUT_INITIALIZING)
+            await run_cluster_preflight(
+                cluster,
+                slime.gpu_allocation,
+                env=runtime_env.get("env_vars", {}),
+            )
             async with cluster.forward_dashboard() as tunnel:
                 print(f"Ray dashboard: {tunnel.url}")
                 result = await cluster.submit_and_tail(cmd, runtime_env=runtime_env)
