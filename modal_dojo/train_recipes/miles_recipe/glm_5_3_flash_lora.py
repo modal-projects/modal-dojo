@@ -48,6 +48,7 @@ def _image_commands() -> list[str]:
         f"'megatron-bridge @ git+https://github.com/radixark/Megatron-Bridge.git@{_BRIDGE_REF}'",
         f"echo {encode_patch('patch_glm_5_3_flash_lora', _PATCH_DIR)} | base64 -d | python3",
         f"echo {encode_patch('patch_sglang_offload_health', _PATCH_DIR)} | base64 -d | python3",
+        f"echo {encode_patch('patch_checkpoint_local_dirs', _PATCH_DIR)} | base64 -d | python3",
     ]
 
 
