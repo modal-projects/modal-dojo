@@ -33,6 +33,7 @@ from modal_dojo.common.status import (
 from modal_dojo.frameworks.miles import build_miles_app
 from modal_dojo.frameworks.slime import build_slime_app
 from modal_dojo.train_recipes.base import BaseTrainRecipe
+from modal_dojo.train_recipes.gpu_allocation import validate_microbatch_schedule
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 from modal_dojo.utils.metadata import MetadataStore, vol_put
@@ -649,6 +650,7 @@ class TrainConfig:
         with warnings.catch_warnings(record=True) as caught:
             maybe_warn_gpu_oom(self.recipe, self.model)
             _warn_routing_replay_with_custom_rollout(self.recipe)
+            validate_microbatch_schedule(self.recipe)
         _confirm_launch_warnings(caught)
         training_run_id = self._generate_training_run_id()
         ensure_dashboard_deployed()
