@@ -40,7 +40,6 @@ class GLM_5_3_Flash_LoRA_256k_Recipe(GLM_5_3_Flash_LoRA_Recipe):
     expert_model_parallel_size: int = 32
 
     rollout_batch_size: int = 2
-    n_samples_per_prompt: int = 4
     global_batch_size: int = 8
     rollout_max_context_len: int = 262144
 
