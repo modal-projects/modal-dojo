@@ -52,6 +52,7 @@ def _image_commands() -> list[str]:
         *[
             f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
             for name in (
+                "patch_train_rollout_metrics",
                 "patch_glm_5_3_flash_kda",
                 "patch_glm_5_3_flash_lora_kda_backward",
                 "patch_glm_5_3_flash_lora_timing",
