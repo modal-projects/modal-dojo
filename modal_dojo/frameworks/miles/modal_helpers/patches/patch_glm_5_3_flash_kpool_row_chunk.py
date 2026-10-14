@@ -4,6 +4,10 @@ file: megatron/bridge/models/glm5_next/kpool_indexer.py (Megatron-Bridge 6527b18
 
 Score kpool indexer logits in query-row chunks so long sequences do not
 materialize a full fp32 [tokens, pools] logits tensor.
+
+TODO: Remove once this merges and Bridge uses its chunked native KPool
+selection instead of this local indexer; an image bump alone is insufficient:
+https://github.com/NVIDIA/Megatron-LM/pull/7522
 """
 
 from pathlib import Path

@@ -8,6 +8,10 @@ on a hot EP rank are bounded by the chunk instead of the full long-context
 sequence. The chunk count is fixed so every rank issues the same collectives.
 With grad enabled each chunk is checkpointed, so backward holds one chunk's
 expert activations at a time.
+
+TODO: Revisit upstream chunked EP once it supports BF16 Bridge LoRA and full
+recompute; the current MXFP8/flex implementation rejects full recompute:
+https://github.com/NVIDIA/Megatron-LM/pull/7331
 """
 
 from pathlib import Path

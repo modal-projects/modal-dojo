@@ -20,7 +20,6 @@ def _image_commands_256k() -> list[str]:
             f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
             for name in (
                 "patch_glm_5_3_flash_kpool_row_chunk",
-                "patch_glm_5_3_flash_moe_row_chunk",
                 "patch_glm_5_3_flash_moe_seq_chunk",
                 "patch_glm_5_3_flash_checkpoint_cpu",
                 "patch_glm_5_3_flash_mhc_release",

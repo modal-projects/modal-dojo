@@ -4,6 +4,10 @@ file: megatron/core/transformer/transformer_block.py (image Megatron-LM)
 
 Save outer full-layer checkpoint inputs on CPU. The offload scope exits before
 backward recomputation, so nested MoE checkpoints remain on GPU.
+
+TODO: Remove once this merges, the Miles image includes it, and the recipe
+enables fine-grained activation offloading with offload_modules=["layer_input"]:
+https://github.com/NVIDIA/Megatron-LM/pull/5218
 """
 
 from pathlib import Path
