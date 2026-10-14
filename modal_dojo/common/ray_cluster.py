@@ -422,15 +422,19 @@ class ModalRayCluster:
 
         Every NCCL process exposes a RAS thread answering ``STATUS`` on its
         node's RAS port (bound to ``0.0.0.0`` via ``NCCL_RAS_ADDR``). A process
-        the job considers dead or unresponsive, or a node whose socket stops
-        answering after being reachable, points at a stuck node or a
-        networking issue.
+        the job considers dead or unresponsive, or a node whose socket is
+        unreachable, points at a stuck node or a networking issue. Findings
+        are logged once per state change.
         """
-        reachable: dict[str, bool] = {}
-        seen: dict[str, set[str]] = {}
+        port = nccl_ras.ras_port_from_env()
+        unreachable_reported: set[str] = set()
+        last_problems: dict[str, set[str]] = {}
         while True:
             await asyncio.sleep(interval_seconds)
-            probes = (self._ras_probe(ip, reachable, seen) for ip in self.node_ips)
+            probes = (
+                self._ras_probe(ip, port, unreachable_reported, last_problems)
+                for ip in self.node_ips
+            )
             try:
                 results = await asyncio.gather(*probes)
             except Exception as exc:  # noqa: BLE001 — keep the sweep alive
@@ -441,23 +445,23 @@ class ModalRayCluster:
                     print(f"[nccl-ras] {line}", flush=True)
 
     async def _ras_probe(
-        self, ip: str, reachable: dict[str, bool], seen: dict[str, set[str]]
+        self,
+        ip: str,
+        port: int,
+        unreachable_reported: set[str],
+        last_problems: dict[str, set[str]],
     ) -> list[str]:
-        was_reachable = reachable.get(ip, False)
         try:
-            status = await asyncio.to_thread(nccl_ras.query_status, ip)
+            status = await asyncio.to_thread(nccl_ras.query_status, ip, port)
         except OSError as exc:
-            reachable[ip] = False
-            if was_reachable:
-                return [f"{ip}: RAS socket unreachable ({exc})"]
-            return []
-        reachable[ip] = True
-        reported = seen.setdefault(ip, set())
-        findings = []
-        for line in nccl_ras.problem_lines(status):
-            if line not in reported:
-                reported.add(line)
-                findings.append(f"{ip}: {line}")
+            if ip in unreachable_reported:
+                return []
+            unreachable_reported.add(ip)
+            return [f"{ip}: RAS socket unreachable ({exc})"]
+        unreachable_reported.discard(ip)
+        problems = set(nccl_ras.problem_lines(status))
+        findings = [f"{ip}: {line}" for line in problems - last_problems.get(ip, set())]
+        last_problems[ip] = problems
         return findings
 
     async def wait_forever(self, poll_seconds: float = 10) -> None:
