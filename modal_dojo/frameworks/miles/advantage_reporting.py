@@ -167,7 +167,10 @@ def report_advantage_distribution(
     if cp_rank != 0:
         return
 
-    raw_rewards = list(rollout_data.get("raw_reward") or [])
+    raw_rewards = list(
+        rollout_data.get("_modal_dojo_raw_rewards", rollout_data.get("raw_reward"))
+        or []
+    )
     sample_indices = list(rollout_data.get("sample_indices") or range(n))
     n_per = _positive_int(_arg_value(args, "n_samples_per_prompt")) or 1
 
