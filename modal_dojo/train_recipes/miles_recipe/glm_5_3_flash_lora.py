@@ -68,6 +68,7 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
 
     use_session_server: bool | str = True
     tito_model: str = "glm53"
+    pause_generation_mode: str = "in_place"
 
     gpu_type: str = "H200"
     memory: tuple[int, int] = (1024, 2 * 1024 * 1024)
