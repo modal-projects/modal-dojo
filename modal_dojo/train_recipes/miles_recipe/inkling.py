@@ -168,7 +168,6 @@ class Inkling_Small_Recipe(_InklingSmallRecipe):
             # deviate.
             "NCCL_MNNVL_ENABLE": "1",
             "NCCL_NVLS_ENABLE": "0",
-            "NCCL_RAS_ENABLE": "0",
         }
     )
 

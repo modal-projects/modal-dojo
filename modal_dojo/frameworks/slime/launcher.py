@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 from modal import App, Image, Secret
 
-from modal_dojo.common import hf_secrets, proxy_auth_secrets
+from modal_dojo.common import hf_secrets, nccl_ras, proxy_auth_secrets
 
 
 from modal_dojo.common.dataset import DatasetConfig, HarborDataset, _SftDataset
@@ -205,6 +205,7 @@ def _build_slime_base_image(*, apply_root_patches: bool = True) -> "Image":
     return (
         Image.from_registry(SLIME_IMAGE)
         .entrypoint([])
+        .env(nccl_ras.NCCL_RAS_IMAGE_ENV)
         .run_commands("rm -rf /root/.cache/huggingface", *_patch_commands(patches))
     )
 

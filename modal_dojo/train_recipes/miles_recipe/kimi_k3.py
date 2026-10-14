@@ -71,7 +71,6 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
             # Multi-node B300 on Modal has no MNNVL fabric.
             "NCCL_MNNVL_ENABLE": "0",
             "NCCL_NVLS_ENABLE": "0",
-            "NCCL_RAS_ENABLE": "0",
             # Cross-node Gloo/TCP must use eth1, not the hostname's loopback.
             "GLOO_SOCKET_IFNAME": "eth1",
             "TP_SOCKET_IFNAME": "eth1",
