@@ -1,6 +1,6 @@
 <script>
   import { onDestroy } from "svelte";
-  import { Search } from "lucide-svelte";
+  import { ChevronDown, Search } from "lucide-svelte";
   import StatusPill from "./StatusPill.svelte";
   import FrameworkStageProgress from "./FrameworkStageProgress.svelte";
   import TimeAgo from "./TimeAgo.svelte";
@@ -41,6 +41,7 @@
     recipeEntries.length ? JSON.stringify(Object.fromEntries(recipeEntries), null, 2) : "",
   );
   let paramFilter = $state("");
+  let paramsCollapsed = $state(true);
   let copiedRecipeJson = $state(false);
   let copyFailed = $state(false);
   let copyResetTimer = null;
@@ -48,6 +49,7 @@
   $effect(() => {
     run?.run_id;
     paramFilter = "";
+    paramsCollapsed = String(run?.framework || "").toLowerCase() === "slime";
     copiedRecipeJson = false;
     copyFailed = false;
     if (copyResetTimer) {
@@ -311,59 +313,72 @@
 
     <section class="summary-section">
       <div class="recipe-params-header">
-        <h3 class="summary-section-title recipe-params-title">{recipeSectionTitle}</h3>
-        {#if recipeParams.length}
-          <span class="recipe-params-count">{recipeParams.length}</span>
-          {#if recipeJson}
-            <button
-              type="button"
-              class="recipe-params-copy"
-              onclick={copyRecipeJson}
-              title="Copy recipe JSON"
-              aria-label="Copy recipe JSON"
-            >
-              {#if copiedRecipeJson}
-                Copied
-              {:else if copyFailed}
-                Copy failed
-              {:else}
-                Copy JSON
-              {/if}
-            </button>
+        <button
+          type="button"
+          class="recipe-params-toggle"
+          onclick={() => (paramsCollapsed = !paramsCollapsed)}
+          aria-expanded={!paramsCollapsed}
+        >
+          <span class="summary-section-title recipe-params-title">{recipeSectionTitle}</span>
+          {#if recipeParams.length}
+            <span class="recipe-params-count">{recipeParams.length}</span>
           {/if}
+          <ChevronDown
+            size={14}
+            style={`color: var(--muted); flex-shrink: 0; transform: ${paramsCollapsed ? "rotate(0deg)" : "rotate(180deg)"};`}
+          />
+        </button>
+        {#if recipeJson && !paramsCollapsed}
+          <button
+            type="button"
+            class="recipe-params-copy"
+            onclick={copyRecipeJson}
+            title="Copy recipe JSON"
+            aria-label="Copy recipe JSON"
+          >
+            {#if copiedRecipeJson}
+              Copied
+            {:else if copyFailed}
+              Copy failed
+            {:else}
+              Copy JSON
+            {/if}
+          </button>
         {/if}
       </div>
-      {#if recipeParams.length}
-        {#if showParamFilter}
-          <label
-            class="recipe-params-search"
-            aria-label="Filter recipe parameters"
-          >
-            <span class="search-icon">
-              <Search size={13} />
-            </span>
-            <input
-              type="search"
-              class="search-input"
-              placeholder="Filter parameters"
-              bind:value={paramFilter}
-            />
-          </label>
-        {/if}
-        {#if filteredRecipeParams.length}
-          <div class="recipe-params-list">
-            {#each filteredRecipeParams as row (row.key)}
-              <div class="kv">
-                <span class="kv-key" title={row.key}>{row.label}</span>
-                <span class="kv-value kv-value-mono" title={row.fullValue}>{row.displayValue}</span>
-              </div>
-            {/each}
-          </div>
+      {#if !paramsCollapsed}
+        {#if recipeParams.length}
+          {#if showParamFilter}
+            <label
+              class="recipe-params-search"
+              aria-label="Filter recipe parameters"
+            >
+              <span class="search-icon">
+                <Search size={13} />
+              </span>
+              <input
+                type="search"
+                class="search-input"
+                placeholder="Filter parameters"
+                bind:value={paramFilter}
+              />
+            </label>
+          {/if}
+          {#if filteredRecipeParams.length}
+            <div class="recipe-params-list">
+              {#each filteredRecipeParams as row (row.key)}
+                <div class="kv">
+                  <span class="kv-key" title={row.key}>{row.label}</span>
+                  <span class="kv-value kv-value-mono" title={row.fullValue}>{row.displayValue}</span>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <div class="text-(--muted) text-[12px] leading-[16px]">No parameters match "{paramFilter.trim()}".</div>
+          {/if}
         {:else}
-          <div class="text-(--muted) text-[12px] leading-[16px]">No parameters match "{paramFilter.trim()}".</div>
+          <div class="text-(--muted) text-[12px] leading-[16px]">No recipe values found for this run.</div>
         {/if}
-      {:else}
-        <div class="text-(--muted) text-[12px] leading-[16px]">No recipe values found for this run.</div>
       {/if}
     </section>
   </div>

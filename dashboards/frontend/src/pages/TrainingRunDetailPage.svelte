@@ -1,6 +1,6 @@
 <script>
   import { onMount, tick, untrack } from "svelte";
-  import { ArrowLeft, ChevronLeft, ChevronRight, Download, ExternalLink, Minimize2, X } from "lucide-svelte";
+  import { ArrowLeft, ChevronLeft, ChevronRight, Download, ExternalLink, Minimize2, PanelRightClose, PanelRightOpen, TriangleAlert, X } from "lucide-svelte";
   import Tabs from "../components/Tabs.svelte";
   import RunSummary from "../components/RunSummary.svelte";
   import RunTimeline from "../components/RunTimeline.svelte";
@@ -55,6 +55,7 @@
     timingIsAsync,
     timingRunStart,
   } from "../lib/timing.js";
+  import { createSidebarCollapsedState } from "../lib/sidebarCollapsed.svelte.js";
 
   // Number of historical log lines requested per page.
   const HIST_PAGE = 500;
@@ -749,6 +750,14 @@
 
   let runTimings = $state({});
   let runTimingsSerialized = $state("{}");
+  const summarySide = createSidebarCollapsedState(false, "summarySideCollapsed");
+  let timingSectionEl = $state(null);
+  let timingCallout = $derived.by(() => {
+    if (timingError) return "Substep timing is unavailable for this run.";
+    if (attemptMarkers.length)
+      return `This run restarted ${attemptMarkers.length === 1 ? "once" : `${attemptMarkers.length} times`} — see Substep Timing for infra details.`;
+    return null;
+  });
   let showTimingSection = $derived(shouldShowTimingSection(runTimings));
   let timelineAsync = $derived(timingIsAsync(runTimings));
   let timelineRunOrigin = $derived(timingRunStart(runTimings));
@@ -1712,13 +1721,19 @@
     />
 
     {#if activeTab === "summary"}
-      <div class="summary-tab">
+      <div class="summary-tab" class:side-collapsed={summarySide.collapsed}>
         <div class="summary-tab-main">
           {#if run?.error_message}
             <div class="mb-[20px]">
               <div class="text-(--red,#f87171) text-[12px] font-[600] tracking-[0.02em] mb-[6px] uppercase">Error</div>
               <pre class="[border:1px_solid_color-mix(in_srgb,var(--red,#f87171)_45%,transparent)] rounded-[8px] bg-[color-mix(in_srgb,var(--red,#f87171)_12%,transparent)] text-(--red,#f87171) [font-family:var(--font-mono)] text-[12px] leading-[17px] m-0 max-h-[320px] overflow-auto p-[12px_14px] whitespace-pre-wrap [word-break:break-word]">{run.error_message}</pre>
             </div>
+          {/if}
+          {#if timingCallout}
+            <button class="timing-callout" onclick={() => timingSectionEl?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+              <TriangleAlert size={13} />
+              <span>{timingCallout}</span>
+            </button>
           {/if}
           {#if showTimingSection || (isSftRun ? lossPoints?.length : rolloutSummaries.length)}
             <div class="chart-range-bar">
@@ -1748,38 +1763,6 @@
               />
             </div>
           {/if}
-          {#if timingError || showTimingSection}
-            <div class="rollout-chart">
-              {#if timingError}
-                <div class="text-(--text-muted) text-[12px] mb-[8px]">
-                  {timingError}
-                </div>
-              {/if}
-              {#if showTimingSection}
-              <div class="rollout-chart-title">
-                Substep Timing{#if stepTimingIds.length}{" "}({stepTimingIds.length}
-                  {stepTimingIds.length === 1 ? "step" : "steps"}){/if}
-              </div>
-              <RunTimeline
-                timings={runTimings}
-                asyncOverride={timelineAsync}
-                runOrigin={timelineRunOrigin}
-                timelineKey={runId}
-                downloadName={`substep_timing_${runId}.json`}
-                rolloutIds={rolloutSummaries.map((r) => r.rollout_id)}
-                {attemptMarkers}
-                timeRange={chartRange.entireRun ? null : chartRange}
-                onChangeTimeRange={setChartRange}
-                showOpenRollout={!isSftRun}
-                trainingType={run?.training_type}
-                onOpenRollout={(id) => {
-                  selectTab("rollouts");
-                  if (expandedRolloutId !== id) void toggleRolloutDetail(id);
-                }}
-              />
-              {/if}
-            </div>
-          {/if}
           {#if !isSftRun}
           {#if rolloutsLoading && !rolloutSummaries.length}
             <div class="rollout-chart">
@@ -1791,7 +1774,7 @@
             </div>
             <div class="chart-grid">
               <div class="rollout-chart">
-                <div class="rollout-chart-title">Advantage spread over time</div>
+                <div class="rollout-chart-title">Zero-advantage share over time</div>
                 <ChartSkeleton variant="line" height={200} />
               </div>
               <div class="rollout-chart">
@@ -1811,7 +1794,9 @@
                   data={rewardChartData}
                   lines={PERCENTILE_LINES}
                   smoothable
-                  formatX={(row) => `rollout ${row.rollout_id}`}
+                  axes
+                  dots
+                  formatX={(row) => `step ${row.rollout_id}`}
                   formatY={(value) => formatMean(value)}
                   ariaLabel="Reward chart"
                   xDomain={chartXDomain}
@@ -1856,7 +1841,7 @@
             {#if hasAdvantages}
               <div class="chart-grid">
                 <div class="rollout-chart">
-                  <div class="rollout-chart-title">Advantage spread over time</div>
+                  <div class="rollout-chart-title">Zero-advantage share over time</div>
                   <AdvantageSpreadChart
                     steps={advantageSteps}
                     xDomain={chartXDomain}
@@ -1876,7 +1861,7 @@
                   />
                 </div>
                 <div class="rollout-chart">
-                  <div class="rollout-chart-title">Advantage distribution: rollout {firstRolloutId} vs latest</div>
+                  <div class="rollout-chart-title">Advantage distribution: step {firstRolloutId} vs latest</div>
                   {#if advantageDist}
                     <ComparativeBarChart
                       categories={distCategories(advantageDist)}
@@ -1907,7 +1892,9 @@
                       data={tagChartData(tag)}
                       lines={PERCENTILE_LINES}
                       smoothable
-                      formatX={(row) => `rollout ${row.rollout_id}`}
+                      axes
+                      dots
+                      formatX={(row) => `step ${row.rollout_id}`}
                       formatY={(value) => formatMean(value)}
                       ariaLabel={`${tag} chart`}
                       xDomain={chartXDomain}
@@ -1942,6 +1929,8 @@
                   title="Loss"
                   data={lossInRange}
                   label="loss"
+                  axes
+                  dots
                   formatX={(row) => `step ${row.x}`}
                   formatY={formatMetricValue}
                   ariaLabel="Loss chart"
@@ -1956,16 +1945,71 @@
               {/if}
             </div>
           {/if}
+          {#if timingError || showTimingSection}
+            <div class="rollout-chart" bind:this={timingSectionEl}>
+              {#if timingError}
+                <div class="text-(--text-muted) text-[12px] mb-[8px]">
+                  {timingError}
+                </div>
+              {/if}
+              {#if showTimingSection}
+              <div class="rollout-chart-title">
+                Substep Timing{#if stepTimingIds.length}{" "}({stepTimingIds.length}
+                  {stepTimingIds.length === 1 ? "step" : "steps"}){/if}
+              </div>
+              <RunTimeline
+                timings={runTimings}
+                asyncOverride={timelineAsync}
+                runOrigin={timelineRunOrigin}
+                timelineKey={runId}
+                downloadName={`substep_timing_${runId}.json`}
+                rolloutIds={rolloutSummaries.map((r) => r.rollout_id)}
+                {attemptMarkers}
+                timeRange={chartRange.entireRun ? null : chartRange}
+                onChangeTimeRange={setChartRange}
+                showOpenRollout={!isSftRun}
+                trainingType={run?.training_type}
+                onOpenRollout={(id) => {
+                  selectTab("rollouts");
+                  if (expandedRolloutId !== id) void toggleRolloutDetail(id);
+                }}
+              />
+              {/if}
+            </div>
+          {/if}
         </div>
-        <aside class="summary-tab-side">
-          <RunSummary
-            {run}
-            {getStatus}
-            {showFrameworkStatus}
-            {getFrameworkStatus}
-            {modelName}
-            {fmtDuration}
-          />
+        <aside class="summary-tab-side" class:collapsed={summarySide.collapsed}>
+          {#if summarySide.collapsed}
+            <button
+              type="button"
+              class="summary-side-toggle"
+              onclick={() => summarySide.toggle()}
+              title="Show run details"
+              aria-label="Show run details"
+            >
+              <PanelRightOpen size={15} />
+            </button>
+          {:else}
+            <div class="summary-side-toolbar">
+              <button
+                type="button"
+                class="summary-side-toggle"
+                onclick={() => summarySide.toggle()}
+                title="Collapse run details"
+                aria-label="Collapse run details"
+              >
+                <PanelRightClose size={15} />
+              </button>
+            </div>
+            <RunSummary
+              {run}
+              {getStatus}
+              {showFrameworkStatus}
+              {getFrameworkStatus}
+              {modelName}
+              {fmtDuration}
+            />
+          {/if}
         </aside>
       </div>
     {:else if activeTab === "rollouts"}
