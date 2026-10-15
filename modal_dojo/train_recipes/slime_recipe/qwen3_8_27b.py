@@ -49,10 +49,6 @@ class Qwen3_8_27B_Recipe(SlimeRecipe):
     use_dynamic_batch_size: bool = False
     calculate_per_token_loss: bool = True
     balance_data: bool = True
-    use_kl_loss: bool = True
-    kl_loss_type: str = "k3"
-    kl_loss_coef: float = 0.02
-    weight_decay: float = 0.0
     use_distributed_optimizer: bool = True
     optimizer_cpu_offload: bool = True
     overlap_cpu_optimizer_d2h_h2d: bool = True
