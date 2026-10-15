@@ -2,6 +2,11 @@
 image: radixark/miles:dev-202609251434
 commit: https://github.com/radixark/miles/commit/41c5e38b94ea23677de93b01a4a77d55677a8f09
 file: miles/miles/backends/training_utils/checkpoint_io.py::write_checkpoint_dir
+
+image: radixark/miles:dev-202610140350
+commit: https://github.com/radixark/miles/commit/d33406f1139f1fa66305b17b9e91dfa110e3c4ce
+file: miles/backends/training_utils/checkpoint/io.py::write_checkpoint_dir
+TODO: remove when upstream creates checkpoint directories on every writer mount.
 """
 
 from pathlib import Path
@@ -29,4 +34,4 @@ def apply(target: Path = TARGET) -> None:
 
 
 if __name__ == "__main__":
-    apply()
+    apply(TARGET if TARGET.exists() else TARGET.parent / "checkpoint/io.py")
