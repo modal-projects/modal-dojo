@@ -22,6 +22,7 @@ class Qwen3_VL_8B(HFModelConfiguration):
     response_parser = staticmethod(parse_qwen3_response)
 
     model_name = "Qwen/Qwen3-VL-8B-Instruct"
+    revision = "0c351dd01ed87e9c1b53cbc748cba10e6187ff3b"
 
     requires_bshd = True
 

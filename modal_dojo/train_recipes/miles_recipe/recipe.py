@@ -960,14 +960,14 @@ class MilesRecipe(BaseTrainRecipe):
             return Inkling_Small_Recipe()
         return None
 
-    def download_model(self) -> None:
+    def download_model(self, revision: str | None = None) -> None:
         from modal_dojo.frameworks.miles.modal_helpers.utils import (
             resolve_checkpoint_ref,
         )
 
         ref = self.source_hf_checkpoint or self.hf_checkpoint
         if ref:
-            resolve_checkpoint_ref(ref, local_files_only=False)
+            resolve_checkpoint_ref(ref, revision=revision, local_files_only=False)
 
     def post_process_model(self) -> None:
         pass

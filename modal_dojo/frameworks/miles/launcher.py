@@ -26,6 +26,7 @@ from modal_dojo.common.framework import (
 from modal_dojo.common.launcher_utils import (
     is_local_checkpoint_ref,
     materialize_remote_code,
+    model_revision,
     prewarm_remote_code,
     timing_debug_env,
 )
@@ -536,13 +537,19 @@ def build_miles_app(
         # Rewrite remote-code symlinks before the head commits the cache Volume.
         if model and model.model_name and not is_local_checkpoint_ref(model.model_name):
             materialize_remote_code(
-                resolve_checkpoint_ref(model.model_path or model.model_name)
+                resolve_checkpoint_ref(
+                    model.model_path or model.model_name, revision=model.revision
+                )
             )
 
     def download_inputs() -> None:
         model.download()
         materialize_model_remote_code()
-        miles.download_model()
+        miles.download_model(
+            revision=model_revision(
+                model, miles.source_hf_checkpoint or miles.hf_checkpoint
+            )
+        )
         miles.post_process_model()
 
     register_recipe_functions(
@@ -659,7 +666,10 @@ def build_miles_app(
                 or model.model_path
                 or model.model_name
             )
-            return resolve_checkpoint_ref(conversion_hf_checkpoint)
+            return resolve_checkpoint_ref(
+                conversion_hf_checkpoint,
+                revision=model_revision(model, conversion_hf_checkpoint),
+            )
         except BaseException:
             _release_convert_lock(training_run_id, checkpoints_volume_name, save_path)
             raise
@@ -883,7 +893,11 @@ def build_miles_app(
                 if hasattr(model, "prepare_runtime_cache"):
                     model.prepare_runtime_cache()
 
-            miles.download_model()
+            miles.download_model(
+                revision=model_revision(
+                    model, miles.source_hf_checkpoint or miles.hf_checkpoint
+                )
+            )
             materialize_model_remote_code()
             await set_status(MilesStatus.CONVERT_MODEL)
             miles.post_process_model()

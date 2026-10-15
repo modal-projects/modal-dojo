@@ -30,6 +30,7 @@ def build_sglang_serve_app(
     app_name: str,
     model_path: str,
     served_model_name: str,
+    revision: str | None = None,
     checkpoints_volume: "Volume | str | None" = None,
     checkpoints_mount_path: str | None = None,
     unauthenticated: bool = True,
@@ -98,6 +99,8 @@ def build_sglang_serve_app(
     app = App(app_name, tags=tags)
 
     server_args = recipe.server_args(served_model_name=served_model_name)
+    if revision:
+        server_args["--revision"] = revision
     _tp = recipe.tp
     _dp = recipe.dp
 
