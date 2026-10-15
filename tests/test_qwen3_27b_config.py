@@ -13,15 +13,25 @@ from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 @pytest.mark.parametrize(
-    ("model_cls", "recipe_cls", "ref_load"),
+    ("model_cls", "recipe_cls", "ref_load", "conversion_tp"),
     [
-        (Qwen3_6_27B, Qwen3_6_27B_Recipe, "/checkpoints/Qwen3.6-27B_torch_dist_tp1pp1"),
-        (Qwen3_8_27B, Qwen3_8_27B_Recipe, "/checkpoints/Qwen3.8-27B_torch_dist_tp1pp1"),
+        (
+            Qwen3_6_27B,
+            Qwen3_6_27B_Recipe,
+            "/checkpoints/Qwen3.6-27B_torch_dist_tp1pp1",
+            1,
+        ),
+        (
+            Qwen3_8_27B,
+            Qwen3_8_27B_Recipe,
+            "/checkpoints/Qwen3.8-27B_torch_dist_tp2pp1",
+            2,
+        ),
     ],
     ids=["qwen3.6-27b", "qwen3.8-27b"],
 )
 def test_qwen3_27b_adapts_current_slime_qwen3_5_recipe(
-    model_cls, recipe_cls, ref_load
+    model_cls, recipe_cls, ref_load, conversion_tp
 ) -> None:
     model = model_cls()
     recipe = recipe_cls()
@@ -47,6 +57,11 @@ def test_qwen3_27b_adapts_current_slime_qwen3_5_recipe(
     nodes, processes, conversion_args = get_checkpoint_conversion_policy(
         recipe, model=model
     )
-    assert (nodes, processes) == (1, 1)
-    assert all("tensor-model-parallel-size" not in arg for arg in conversion_args)
-    assert all("pipeline-model-parallel-size" not in arg for arg in conversion_args)
+    assert (nodes, processes) == (1, conversion_tp)
+    tp_args = [arg for arg in conversion_args if "tensor-model-parallel-size" in arg]
+    pp_args = [arg for arg in conversion_args if "pipeline-model-parallel-size" in arg]
+    if conversion_tp == 1:
+        assert not tp_args and not pp_args
+    else:
+        assert tp_args == [f"--tensor-model-parallel-size {conversion_tp}"]
+        assert pp_args == ["--pipeline-model-parallel-size 1"]
