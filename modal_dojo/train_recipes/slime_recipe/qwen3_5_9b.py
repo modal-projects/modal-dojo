@@ -12,10 +12,16 @@ class Qwen3_5_9B_Recipe(SlimeRecipe):
     """Qwen3.5-9B recipe."""
 
     loss_mask_type: SlimeLossMaskType = "qwen3_5"
+    actor_num_gpus_per_node: int = 4
+    rollout_num_gpus_per_engine: int = 2
+    tensor_model_parallel_size: int = 2
+    rollout_batch_size: int = 32
+    global_batch_size: int = 64
+    use_distributed_optimizer: bool = True
     optimizer_cpu_offload: bool = True
     overlap_cpu_optimizer_d2h_h2d: bool = True
     use_precision_aware_optimizer: bool = True
     sglang_mem_fraction_static: float = 0.6
     attention_backend: str = "flash"
-    max_tokens_per_gpu: int = 6144
+    max_tokens_per_gpu: int = 12288
     lr: float = 5e-7
