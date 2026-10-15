@@ -12,7 +12,10 @@ class Qwen3_5_9B_Recipe(SlimeRecipe):
     """Qwen3.5-9B recipe."""
 
     loss_mask_type: SlimeLossMaskType = "qwen3_5"
-    actor_num_gpus_per_node: int = 4
+    colocate: bool = False
+    async_mode: bool = True
+    actor_num_gpus_per_node: int = 2
+    rollout_num_gpus: int | None = 2
     rollout_num_gpus_per_engine: int = 2
     tensor_model_parallel_size: int = 2
     rollout_batch_size: int = 32
