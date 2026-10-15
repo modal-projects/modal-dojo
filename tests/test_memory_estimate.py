@@ -10,6 +10,7 @@ from modal_dojo.common.memory_estimate import (
     _arch_from_hf,
     _peak_gib,
     maybe_warn_gpu_oom,
+    maybe_warn_host_oom,
 )
 from modal_dojo.common.models.base import ModelArchitecture
 from modal_dojo.common.models.qwen3_4b import Qwen3_4B
@@ -161,3 +162,63 @@ def test_offload_fraction_retains_opt_state_on_gpu() -> None:
     )
     zero, _ = _peak_gib(_QWEN3_5_4B, _qwen3_5_knobs(optimizer_offload_fraction=0), 79.2)
     assert zero == no_offload
+
+
+def _host_warns(recipe, model) -> list[str]:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        maybe_warn_host_oom(recipe, model)
+    return [str(w.message) for w in caught if "host RAM" in str(w.message)]
+
+
+_BIG_MOE = ModelArchitecture(
+    num_layers=40,
+    hidden_size=4096,
+    ffn_hidden_size=10240,
+    num_attention_heads=32,
+    num_experts=160,
+    moe_ffn_hidden_size=1408,
+    vocab_size=160000,
+)
+
+
+def _big_moe_model() -> Qwen3_4B:
+    model = Qwen3_4B()
+    model.architecture = _BIG_MOE
+    return model
+
+
+def _miles_recipe(**overrides) -> MilesRecipe:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return MilesRecipe(**overrides)
+
+
+def test_host_oom_warns_for_colocate_cpu_offload() -> None:
+    recipe = _miles_recipe(
+        gpu_type="H200",
+        colocate=True,
+        extra_config={"offload_train_target": "cpu"},
+        rollout_num_gpus_per_engine=8,
+        actor_num_gpus_per_node=8,
+    )
+    msgs = _host_warns(recipe, _big_moe_model())
+    assert msgs and "offload_train_target='disk'" in msgs[0]
+
+
+def test_host_oom_quiet_with_disk_offload() -> None:
+    recipe = _miles_recipe(
+        gpu_type="H200",
+        colocate=True,
+        extra_config={"offload_train_target": "disk"},
+        no_offload_rollout=True,
+    )
+    assert not _host_warns(recipe, _big_moe_model())
+
+
+def test_host_oom_quiet_without_colocate() -> None:
+    recipe = _miles_recipe(
+        gpu_type="H200",
+        colocate=False,
+    )
+    assert not _host_warns(recipe, _big_moe_model())

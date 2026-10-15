@@ -84,21 +84,8 @@ def _arch_from_hf(model_name: str, cfg: dict | None = None) -> ModelArchitecture
     )
 
 
-def _peak_gib(
-    arch: ModelArchitecture, knobs: dict[str, object], gpu_gib: float
-) -> tuple[float, dict[str, object]]:
-    get = knobs.get
-    raised: dict[str, object] = {}
-
-    def raise_(name: str, value: object, when: bool = True) -> None:
-        if when:
-            raised[name] = value
-
-    def parallel(name: str, *, applicable: bool = True) -> int:
-        value = int(get(name) or 1)
-        raise_(name, value, applicable and value == 1)
-        return value
-
+def _param_counts(arch: ModelArchitecture) -> tuple[int, int]:
+    """Scalar parameter counts as (dense, experts) element totals."""
     h, heads = arch.hidden_size, max(1, arch.num_attention_heads)
     kv, nqg = arch.kv_channels or h // heads, arch.num_query_groups or heads
     if arch.multi_latent_attention:
@@ -137,6 +124,26 @@ def _peak_gib(
         attn + gates * h * (arch.moe_shared_expert_intermediate_size or 0)
     )
     experts = moe_n * arch.num_experts * gates * h * (arch.moe_ffn_hidden_size or 0)
+    return dense, experts
+
+
+def _peak_gib(
+    arch: ModelArchitecture, knobs: dict[str, object], gpu_gib: float
+) -> tuple[float, dict[str, object]]:
+    get = knobs.get
+    raised: dict[str, object] = {}
+
+    def raise_(name: str, value: object, when: bool = True) -> None:
+        if when:
+            raised[name] = value
+
+    def parallel(name: str, *, applicable: bool = True) -> int:
+        value = int(get(name) or 1)
+        raise_(name, value, applicable and value == 1)
+        return value
+
+    dense, experts = _param_counts(arch)
+    h = arch.hidden_size
 
     gpus_per_node = int(get("actor_num_gpus_per_node") or 1)
     world = int(get("actor_num_nodes") or 1) * gpus_per_node
@@ -266,6 +273,103 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
         f"Estimated peak ~{peak:.1f} GiB per GPU exceeds "
         f"{recipe.gpu_type} capacity ({gpu_gib:g} GiB). Some relevant settings: {shape}. {settings}. "
         f"Set gpu_type on the recipe to use a larger GPU; see https://modal.com/docs/guide/gpu.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
+# Usable host RAM per GPU type (GiB), just under what the instance families
+# admit; Ray kills workers once node usage crosses ~95% of it. Mirrors the
+# per-type container caps in the deepseek_v41 recipe.
+_HOST_RAM_GIB_BY_GPU = {
+    "H100": 1900.0,
+    "H200": 1900.0,
+    "B300": 2800.0,
+}
+
+# Measured on a 3x8xH200 GLM-5.3 colocated run that host-OOMed: each sglang
+# scheduler rank held ~150 GiB RSS (weight staging, engine structures, host
+# KV offload). Used as the per-engine-GPU host estimate.
+_SGLANG_HOST_GIB_PER_ENGINE_GPU = 150.0
+
+# Ray object store, driver, and per-node overhead seen on the same run.
+_HOST_RUNTIME_GIB = 100.0
+
+
+def _host_gib(arch: ModelArchitecture, knobs: dict[str, object]) -> float:
+    """Per-node host-RAM demand in GiB; every term is a lower bound."""
+    get = knobs.get
+    dense, experts = _param_counts(arch)
+    params_gib = (dense + experts) * 2 / GIB  # one bf16 replica per node
+
+    need = _HOST_RUNTIME_GIB
+    colocate = bool(get("colocate"))
+    if not colocate:
+        return need
+
+    # Training state spilled to host RAM while the rollout engine holds GPUs.
+    # Recipes spell the toggle two ways: `offload_train` (glm_5_3) or the
+    # inverted `no_offload_train` base flag; offload is on by default.
+    target = str(get("offload_train_target") or "cpu").lower()
+    train_offloaded = bool(get("offload_train")) or not get("no_offload_train")
+    if train_offloaded and target != "disk":
+        # bf16 weights (+ grads/optimizer for full FT); LoRA spills the base.
+        need += params_gib if get("lora_rank") else params_gib * 8
+    if get("optimizer_cpu_offload"):
+        fraction = get("optimizer_offload_fraction")
+        fraction = 1.0 if fraction is None else min(1.0, max(0.0, float(fraction)))
+        need += (dense + experts) * 12 * fraction / GIB
+    if get("lora_base_cpu_backup"):
+        need += params_gib
+    # Engine weights offloaded to host during the training step.
+    rollout_offloaded = bool(get("offload_rollout")) or not get("no_offload_rollout")
+    if rollout_offloaded:
+        need += params_gib
+
+    # Co-located engines: host RSS scales with the ranks resident on the node.
+    engine_gpus = int(get("rollout_num_gpus_per_engine") or 1)
+    gpus_per_node = int(get("actor_num_gpus_per_node") or engine_gpus)
+    engines = max(1, gpus_per_node // max(1, engine_gpus))
+    need += engines * engine_gpus * _SGLANG_HOST_GIB_PER_ENGINE_GPU
+    return need
+
+
+def maybe_warn_host_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
+    """Warn when a colocated run's host-RAM estimate exceeds the node's RAM.
+
+    GPU-side checks miss this: Ray kills workers once *host* usage crosses
+    ~95% (OutOfMemoryError: "node running low on memory"), and the top
+    consumers are host-side — sglang scheduler RSS, train/rollout offload,
+    and the object store.
+    """
+    if hasattr(recipe, "train_backend") and recipe.train_backend != "megatron":
+        return
+    gpu = recipe.gpu_type.split(":")[0].rstrip("!").upper()
+    host_gib = _HOST_RAM_GIB_BY_GPU.get(gpu)
+    if host_gib is None:
+        return
+    arch = model.architecture
+    if arch is None:
+        cfg = _hf_cfg(model.model_name)
+        if cfg is None:
+            return
+        arch = _arch_from_hf(model.model_name, cfg)
+        if arch is None:
+            return
+    knobs = recipe._field_values() | recipe._escape_hatch_values()
+    need = _host_gib(arch, knobs)
+    if need <= host_gib:
+        return
+    shape = ", ".join(
+        f"{name}={getattr(recipe, name)}"
+        for name in ("gpu_type", "actor_num_nodes", "actor_num_gpus_per_node")
+    )
+    warnings.warn(
+        f"Estimated host RAM ~{need:.0f} GiB per node exceeds the ~{host_gib:.0f} GiB "
+        f"usable on {recipe.gpu_type} hosts; Ray kills workers at ~95% node usage. "
+        f"Some relevant settings: {shape}. "
+        "Set offload_train_target='disk' (as the deepseek_v41 recipe does) or use "
+        "more nodes; the estimate is a lower bound.",
         UserWarning,
         stacklevel=3,
     )
