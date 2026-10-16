@@ -32,6 +32,7 @@ class Qwen3_ASR_1_7B(HFModelConfiguration):
     """Alibaba Qwen3-ASR-1.7B speech recognition model."""
 
     model_name = "Qwen/Qwen3-ASR-1.7B"
+    revision = "7278e1e70fe206f11671096ffdd38061171dd6e5"
 
     # Qwen3 dense backbone, same ``<|im_start|>``/``<|im_end|>`` delimiters as the
     # rest of the family. ASR output is plain transcription (no tool calls), so
@@ -70,7 +71,9 @@ class Qwen3_ASR_1_7B(HFModelConfiguration):
 
         from huggingface_hub import snapshot_download
 
-        snapshot_dir = snapshot_download(repo_id=self.model_name, local_files_only=True)
+        snapshot_dir = snapshot_download(
+            repo_id=self.model_name, revision=self.revision, local_files_only=True
+        )
         target = os.path.join(snapshot_dir, "tokenizer.json")
         if os.path.exists(target):
             return

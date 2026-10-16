@@ -14,7 +14,13 @@ from collections.abc import Awaitable, Callable, Sequence
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal, overload
 
-from modal.exception import NotFoundError
+from modal.exception import ConnectionError as ModalConnectionError
+from modal.exception import (
+    InternalError,
+    NotFoundError,
+    ResourceExhaustedError,
+    ServiceError,
+)
 from pydantic import (
     BaseModel,
     Field,
@@ -45,6 +51,12 @@ if TYPE_CHECKING:
 
 TRAINING_RUNS_STORE_NAME = MetadataStore.TRAINING_RUNS.value
 CHECKPOINT_LOCATION_METADATA_KEY = "checkpoint_location"
+_TRANSIENT_MODAL_ERRORS = (
+    ModalConnectionError,
+    InternalError,
+    ResourceExhaustedError,
+    ServiceError,
+)
 
 
 class FrameworkStatusUpdate(BaseModel):
@@ -206,7 +218,7 @@ class TrainingRun(BaseModel):
     def _reload(self) -> None:
         try:
             stored = TrainingRun.from_id(self.training_run_id)
-        except (KeyError, NotFoundError):
+        except (KeyError, NotFoundError, *_TRANSIENT_MODAL_ERRORS):
             return
         self.status = stored.status
         self.metadata = stored.metadata
@@ -226,7 +238,7 @@ class TrainingRun(BaseModel):
         try:
             call.get(timeout=0)
             return True, None
-        except TimeoutError:
+        except (TimeoutError, *_TRANSIENT_MODAL_ERRORS):
             return False, None
         except BaseException as exc:
             return True, exc
@@ -243,13 +255,17 @@ class TrainingRun(BaseModel):
         location = checkpoint_location(self)
         if location is None:
             return []
-        directory, volume, mount = location
+        for attempt in range(2):
+            try:
+                return _list_checkpoints(
+                    *location,
+                    training_run_id=self.training_run_id,
+                    app_name=self.app_name,
+                )
+            except _TRANSIENT_MODAL_ERRORS:
+                time.sleep(2**attempt)
         return _list_checkpoints(
-            directory,
-            volume,
-            mount,
-            training_run_id=self.training_run_id,
-            app_name=self.app_name,
+            *location, training_run_id=self.training_run_id, app_name=self.app_name
         )
 
     def latest_checkpoint(self) -> "Checkpoint | None":

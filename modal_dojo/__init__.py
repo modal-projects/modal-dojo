@@ -66,6 +66,10 @@ _EXPORTS = {
         "modal_dojo.train_recipes.miles_recipe",
         "GLM_5_3_Flash_LoRA_Recipe",
     ),
+    "GLM_5_3_Flash_LoRA_256k_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "GLM_5_3_Flash_LoRA_256k_Recipe",
+    ),
     "HFModelConfiguration": (
         "modal_dojo.common.models",
         "HFModelConfiguration",
@@ -219,6 +223,7 @@ __all__ = [
     "GLM_5_3_Flash",
     "GLM_5_3_Flash_LoRA",
     "GLM_5_3_Flash_LoRA_Recipe",
+    "GLM_5_3_Flash_LoRA_256k_Recipe",
     "HarborDataset",
     "EvalConfig",
     "EvalConfigDurable",

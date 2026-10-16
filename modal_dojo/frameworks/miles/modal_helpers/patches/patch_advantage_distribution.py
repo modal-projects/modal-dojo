@@ -77,7 +77,36 @@ def _patch_file(path: Path) -> None:
 
 
 def main() -> None:
-    _patch_file(Path("/root/miles/miles/backends/training_utils/log_utils.py"))
+    root = Path("/root/miles/miles/backends/training_utils")
+    path = root / "metrics/log_utils.py"
+    _patch_file(path if path.exists() else root / "log_utils.py")
+    _patch_reward_shard(Path("/root/miles/miles/ray/rollout/train_data_conversion.py"))
+
+
+def _patch_reward_shard(path: Path) -> None:
+    # dev-202610140350, Miles d33406f: raw_reward remains batch-global while
+    # advantages and sample_indices follow the balanced DP partition.
+    # TODO: remove when upstream exposes shard-local raw rewards for reporting.
+    if not path.exists():
+        return
+    source = path.read_text()
+    marker = "_modal_dojo_raw_rewards"
+    if marker in source:
+        return
+    anchor = '    partition = rollout_data.pop("partition")\n'
+    if source.count(anchor) != 1:
+        raise RuntimeError(f"Could not find reward-shard anchor in {path}")
+    source = source.replace(
+        anchor,
+        anchor
+        + '    if "raw_reward" in rollout_data:\n'
+        + f'        rollout_data["{marker}"] = [\n'
+        + '            rollout_data["raw_reward"][i] for i in partition\n'
+        + "        ]\n",
+        1,
+    )
+    compile(source, str(path), "exec")
+    path.write_text(source)
 
 
 if __name__ == "__main__":

@@ -240,6 +240,7 @@ class CustomDeployment(BaseModel):
             model_path = checkpoint.path
         else:
             model_path = model.model_path or model.model_name
+        revision = model.revision if model_path == model.model_name else None
         if not model_path:
             raise DojoConfigError(
                 f"{type(model).__name__} has no model path to serve. "
@@ -280,6 +281,7 @@ class CustomDeployment(BaseModel):
                 app_name=app_name,
                 model_path=model_path,
                 served_model_name=served_model_name,
+                revision=revision,
                 checkpoints_volume=checkpoints_volume,
                 checkpoints_mount_path=checkpoints_mount_path,
                 unauthenticated=unauthenticated,
@@ -294,6 +296,7 @@ class CustomDeployment(BaseModel):
                 app_name=app_name,
                 model_path=model_path,
                 served_model_name=served_model_name,
+                revision=revision,
                 checkpoints_volume=checkpoints_volume,
                 checkpoints_mount_path=checkpoints_mount_path,
                 unauthenticated=unauthenticated,

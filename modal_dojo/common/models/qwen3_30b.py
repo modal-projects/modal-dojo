@@ -9,6 +9,7 @@ class Qwen3_30B(HFModelConfiguration):
     response_parser = staticmethod(parse_qwen3_response)
 
     model_name = "Qwen/Qwen3-30B-A3B"
+    revision = "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39"
     architecture = ModelArchitecture(
         num_layers=48,
         hidden_size=2048,

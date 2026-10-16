@@ -64,6 +64,7 @@ def is_local_checkpoint_ref(ref: str | PathLike) -> bool:
 def resolve_checkpoint_ref(
     ref: str | PathLike,
     *,
+    revision: str | None = None,
     local_files_only: bool = True,
 ) -> str:
     """Resolve an absolute path or Hugging Face repo ID to a local path."""
@@ -73,7 +74,16 @@ def resolve_checkpoint_ref(
 
     from huggingface_hub import snapshot_download
 
-    return snapshot_download(ref_str, local_files_only=local_files_only)
+    return snapshot_download(
+        ref_str, revision=revision, local_files_only=local_files_only
+    )
+
+
+def model_revision(model: Any, ref: str | PathLike) -> str | None:
+    """The model's pinned Hub revision when ``ref`` is its own repo id."""
+    if model is not None and str(ref) == getattr(model, "model_name", None):
+        return getattr(model, "revision", None)
+    return None
 
 
 def prewarm_remote_code(
@@ -517,11 +527,17 @@ def prepare_launch_config(
         and model.model_name
         and not str(model.model_name).startswith("/")
     ):
-        model.model_path = resolve_checkpoint_ref(model.model_name)
+        model.model_path = resolve_checkpoint_ref(
+            model.model_name, revision=model.revision
+        )
 
     for attr in ("hf_checkpoint", "load", "ref_load", "critic_load"):
         if val := getattr(cfg, attr, None):
-            object.__setattr__(cfg, attr, resolve_checkpoint_ref(val))
+            object.__setattr__(
+                cfg,
+                attr,
+                resolve_checkpoint_ref(val, revision=model_revision(model, val)),
+            )
 
     escape_hatch = getattr(cfg, "_ESCAPE_HATCH_FIELD", None)
     for field in yaml_config_fields:

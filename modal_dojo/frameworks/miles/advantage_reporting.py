@@ -59,6 +59,10 @@ def report_advantage_distribution(
     """
     if not isinstance(rollout_data, dict):
         return
+    # Consume reporting-only data before Miles enumerates rollout metrics.
+    raw_rewards = rollout_data.pop(
+        "_modal_dojo_raw_rewards", rollout_data.get("raw_reward")
+    )
     try:
         import torch
         import torch.distributed as dist
@@ -101,9 +105,14 @@ def report_advantage_distribution(
         if cp_size == 1:
             local_masks = loss_masks
         else:
-            from miles.backends.training_utils.cp_utils import (
-                get_local_response_loss_masks,
-            )
+            try:
+                from miles.backends.training_utils.data.context_parallel import (
+                    get_local_response_loss_masks,
+                )
+            except ModuleNotFoundError:
+                from miles.backends.training_utils.cp_utils import (
+                    get_local_response_loss_masks,
+                )
 
             local_masks = get_local_response_loss_masks(
                 total_lengths=list(total_lengths),
@@ -162,7 +171,7 @@ def report_advantage_distribution(
     if cp_rank != 0:
         return
 
-    raw_rewards = list(rollout_data.get("raw_reward") or [])
+    raw_rewards = list(raw_rewards or [])
     sample_indices = list(rollout_data.get("sample_indices") or range(n))
     n_per = _positive_int(_arg_value(args, "n_samples_per_prompt")) or 1
 

@@ -16,10 +16,14 @@ GIB = 1024**3
 _UNMODELED_CFG_HINTS = ("engram", "index_", "dspark_", "nextn", "vision")
 
 
-def _hf_cfg(model_name: str) -> dict | None:
+def _hf_cfg(model_name: str, revision: str | None = None) -> dict | None:
     try:
         validate_repo_id(model_name)
-        with open(hf_hub_download(repo_id=model_name, filename="config.json")) as f:
+        with open(
+            hf_hub_download(
+                repo_id=model_name, filename="config.json", revision=revision
+            )
+        ) as f:
             cfg = json.load(f)
     except (
         HFValidationError,
@@ -230,7 +234,7 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     arch = model.architecture
     unmodeled: list[str] = []
     if arch is None:
-        cfg = _hf_cfg(model.model_name)
+        cfg = _hf_cfg(model.model_name, model.revision)
         if cfg is None:
             return
         arch = _arch_from_hf(model.model_name, cfg)
