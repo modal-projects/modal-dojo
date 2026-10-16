@@ -5,6 +5,7 @@ from dataclasses import field
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash_lora import (
     _PATCH_DIR,
@@ -44,7 +45,7 @@ class GLM_5_3_Flash_LoRA_256k_Recipe(GLM_5_3_Flash_LoRA_Recipe):
     rollout_max_context_len: int = 262144
 
     seq_length: int = 262144
-    max_tokens_per_gpu: int = 262144
+    max_tokens_per_gpu: MicroBatchSize = 262144
 
     sglang_context_length: int = 262144
     sglang_mem_fraction_static: float = 0.5
