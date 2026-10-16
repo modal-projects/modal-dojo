@@ -108,13 +108,13 @@
     { key: "dataset", label: "Dataset", width: 180, minWidth: 120 },
     { key: "recipe", label: "Recipe", width: 116, minWidth: 88 },
     { key: "group", label: "Group", width: 280, minWidth: 220 },
-    { key: "tags", label: "Tags", width: 420, minWidth: 240 },
+    { key: "tags", label: "Tags", width: 240, minWidth: 160 },
     { key: "created", label: "Created", width: 150, minWidth: 130 },
     { key: "updated", label: "Last updated", width: 170, minWidth: 150 },
     { key: "actions", label: "", ariaLabel: "Actions", width: 236, minWidth: 180 },
   ];
 
-  const MAX_VISIBLE_TAGS = 3;
+  const MAX_VISIBLE_TAGS = 2;
 
   function tagsTitle(groupTags) {
     return (groupTags?.tags || []).map((tag) => `${tag.key}=${formatTagValue(tag.value)}`).join("\n");
@@ -407,8 +407,8 @@
                       {#if groupTags?.tags.length}
                         <span class="flex items-center gap-[4px] min-w-0 max-w-full overflow-hidden">
                           {#each groupTags.tags.slice(0, MAX_VISIBLE_TAGS) as tag (tag.key)}
-                            <span class="inline-flex items-baseline shrink-0 max-w-[104px] p-[2px_7px] [border:1px_solid_var(--border,#2f2f2f)] rounded-[999px] bg-[color-mix(in_srgb,var(--panel-alt)_70%,transparent)] text-(--text) [font-family:var(--font-mono)] text-[11px] leading-[14px]">
-                              <span class="shrink-0 text-(--muted)">{tag.key.split(".").at(-1)}=</span><span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{formatTagValue(tag.value)}</span>
+                            <span class="block shrink-0 max-w-[80px] overflow-hidden text-ellipsis whitespace-nowrap p-[2px_7px] [border:1px_solid_var(--border,#2f2f2f)] rounded-[999px] bg-[color-mix(in_srgb,var(--panel-alt)_70%,transparent)] text-(--text) [font-family:var(--font-mono)] text-[11px] leading-[14px]">
+                              <span class="text-(--muted)">{tag.key.split(".").at(-1)}=</span>{formatTagValue(tag.value)}
                             </span>
                           {/each}
                           {#if groupTags.tags.length > MAX_VISIBLE_TAGS}
