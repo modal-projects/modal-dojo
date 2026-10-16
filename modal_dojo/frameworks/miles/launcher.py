@@ -943,8 +943,9 @@ def build_miles_app(
 
         if model and model.model_name:
             # Warm each node's cache before Ray imports remote code concurrently.
+            ref = model.model_path or model.model_name
             prewarm_remote_code(
-                resolve_checkpoint_ref(model.model_path or model.model_name),
+                resolve_checkpoint_ref(ref, revision=model_revision(model, ref)),
                 environment,
                 required=miles.model_name == "kimi_k3",
             )
