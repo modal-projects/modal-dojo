@@ -620,6 +620,18 @@ def vol_list_metadata_with_failures(
     return entries_result, failure is not None
 
 
+def vol_list_keys(store: MetadataStore | str, prefix: str = "") -> list[str]:
+    """List matching JSON keys without downloading their payloads."""
+    entries, failure = _list_metadata_entries(store)
+    if failure is not None:
+        raise failure
+    return [
+        key
+        for entry in entries
+        if (key := entry["path"].rsplit("/", 1)[-1][:-5]).startswith(prefix)
+    ]
+
+
 def vol_list_prefix(store: MetadataStore | str, prefix: str) -> list[dict[str, Any]]:
     """Read only the items whose key (file basename) starts with ``prefix``.
 
@@ -939,6 +951,7 @@ __all__ = [
     "bounded_gather_with_retries",
     "vol_get",
     "vol_list",
+    "vol_list_keys",
     "vol_list_prefix",
     "vol_count_items",
     "compact_summary_store",

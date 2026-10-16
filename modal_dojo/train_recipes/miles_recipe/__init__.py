@@ -8,12 +8,18 @@ from modal_dojo.train_recipes.miles_recipe.gemma4_26b_a4b import (
 from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash_lora import (
     GLM_5_3_Flash_LoRA_Recipe,
 )
+from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash_256k import (
+    GLM_5_3_Flash_LoRA_256k_Recipe,
+)
 from modal_dojo.train_recipes.miles_recipe.inkling import (
     Inkling_Small_LoRA_Recipe,
     Inkling_Small_Recipe,
 )
 from modal_dojo.train_recipes.miles_recipe.kimi_k3 import (
     Kimi_K3_LoRA_Recipe,
+)
+from modal_dojo.train_recipes.miles_recipe.kimi_k3_64k import (
+    Kimi_K3_LoRA_64k_Recipe,
 )
 from modal_dojo.train_recipes.miles_recipe.moonlight_16b_a3b import (
     Moonlight_16B_A3B_Recipe,
@@ -27,9 +33,11 @@ __all__ = [
     "DeepSeek_V4_1_Flash_Recipe",
     "Gemma4_26B_A4B_Recipe",
     "GLM_5_3_Flash_LoRA_Recipe",
+    "GLM_5_3_Flash_LoRA_256k_Recipe",
     "Inkling_Small_Recipe",
     "Inkling_Small_LoRA_Recipe",
     "Kimi_K3_LoRA_Recipe",
+    "Kimi_K3_LoRA_64k_Recipe",
     "Moonlight_16B_A3B_Recipe",
     "Qwen3_5_4B_Miles_Recipe",
 ]

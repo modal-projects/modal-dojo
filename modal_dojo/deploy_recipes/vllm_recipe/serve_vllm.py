@@ -33,6 +33,7 @@ def build_vllm_serve_app(
     app_name: str,
     model_path: str,
     served_model_name: str,
+    revision: str | None = None,
     checkpoints_volume: "Volume | str | None" = None,
     checkpoints_mount_path: str | None = None,
     unauthenticated: bool = True,
@@ -82,6 +83,8 @@ def build_vllm_serve_app(
     app = App(app_name, tags=tags)
 
     _extra = list(recipe.extra_vllm_args or [])
+    if revision:
+        _extra = ["--revision", revision, *_extra]
 
     @app.server(
         image=image,

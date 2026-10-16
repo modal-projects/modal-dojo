@@ -85,6 +85,7 @@ class ModelArchitecture:
     no_masked_softmax_fusion: bool = False
     multi_latent_attention: bool = False
     kv_lora_rank: int = 0
+    q_lora_rank: int = 0
     qk_head_dim: int = 0
     qk_pos_emb_head_dim: int = 0
     v_head_dim: int = 0
@@ -158,6 +159,8 @@ class ModelConfig:
 
     Attributes:
         model_name: Hugging Face repo id or other weight identifier.
+        revision: Hub commit pinned for ``model_name``; a new Hub commit then
+            never invalidates the cached snapshot.
         model_path: Local directory of already-downloaded weights, if any.
         architecture: Megatron transformer sizes used for conversion and training.
         response_parser: Turns raw model text into a ``ParsedResponse``.
@@ -167,6 +170,7 @@ class ModelConfig:
     """
 
     model_name: str = ""
+    revision: str | None = None
     model_path: str | None = None
     architecture: ModelArchitecture | None = None
     response_parser: ResponseParser | None = None
@@ -213,7 +217,9 @@ class HFModelConfiguration(ModelConfig):
         # ``snapshot_download(..., local_files_only=True)`` on later runs and
         # forces a re-download. Populating the cache keeps base models
         # reusable across runs.
-        snapshot_dir = snapshot_download(repo_id=self.model_name)
+        snapshot_dir = snapshot_download(
+            repo_id=self.model_name, revision=self.revision
+        )
         if self.model_path and not _is_populated(str(self.model_path)):
             import shutil
 

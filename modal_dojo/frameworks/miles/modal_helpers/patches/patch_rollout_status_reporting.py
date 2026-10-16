@@ -46,7 +46,8 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "rollout_id",
         re.compile(
             r"^(?P<indent>[ \t]*)(?P<line>(?:rollout_data\w* = await "
-            r"rollout_manager\.generate\.remote\(rollout_id\)|"
+            r"(?:rollout_manager\.generate\.remote|rollout_executor\.get)"
+            r"\(rollout_id\)|"
             r"await inference_controller\.prepare_rollout\(rollout_id\)))[ \t]*$",
             re.M,
         ),
@@ -68,7 +69,8 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "offload_rollout",
         "rollout_id",
         re.compile(
-            r"^(?P<indent>[ \t]*)(?P<line>await (?:rollout_manager\.offload\.remote|inference_controller\.offload(?:_kv|_weights)?)\("
+            r"^(?P<indent>[ \t]*)(?P<line>await "
+            r"(?:rollout_manager\.offload\.remote|inference_controller\.offload(?:_kv|_weights)?)\("
             r"[^\n]*\))[ \t]*$",
             re.M,
         ),
@@ -87,8 +89,9 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "weight_sync",
         "rollout_id",
         re.compile(
-            r"^(?P<indent>[ \t]*)(?P<line>await (?:actor_model\.update_weights\(|update_weights\(actor_model, rollout_executor, )"
-            r"rollout_id=rollout_id\))[ \t]*$",
+            r"^(?P<indent>[ \t]*)(?P<line>await (?:actor_model\.update_weights\("
+            r"rollout_id=rollout_id\)|update_weights\((?:args, )?actor_model, "
+            r"rollout_executor, (?:inference_controller, )?rollout_id=rollout_id\)))[ \t]*$",
             re.M,
         ),
     ),

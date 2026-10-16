@@ -135,13 +135,33 @@ def test_rollout_async_save_survives_unmounted_volume(fake_volume):
     ]
     assert json.loads(blob)["rollout_id"] == 0
     summary = fake_volume.files[
-        f"{MetadataStore.TRAINING_ROLLOUTS_SUMMARY.value}/summary.json"
+        f"{TrainingRolloutResult.summary_store('t3')}/summary.json"
     ]
     summary_item = json.loads(summary)["items"][0]
-    assert summary_item["summary_key"] == "t3__00000000"
+    assert summary_item["rollout_id"] == 0
     assert summary_item["export_size_bytes"] == len(
         (json.dumps(json.loads(blob), ensure_ascii=False, indent=2) + "\n").encode()
     )
+
+
+def test_rollout_list_rebuilds_summary_from_canonical(fake_volume):
+    """A missing per-run summary is rebuilt from canonical rollout records."""
+    for rollout_id in (0, 1):
+        TrainingRolloutResult(
+            training_run_id="t4",
+            rollout_id=rollout_id,
+            samples=[{"score": float(rollout_id + 1), "prompt": "p", "response": "r"}],
+        ).save()
+    del fake_volume.files[f"{TrainingRolloutResult.summary_store('t4')}/summary.json"]
+
+    summaries = TrainingRolloutResult.list_summaries_for_run("t4")
+
+    assert [s.rollout_id for s in summaries] == [0, 1]
+    assert [s.mean for s in summaries] == [1.0, 2.0]
+    rebuilt = json.loads(
+        fake_volume.files[f"{TrainingRolloutResult.summary_store('t4')}/summary.json"]
+    )
+    assert [item["rollout_id"] for item in rebuilt["items"]] == [0, 1]
 
 
 @pytest.mark.parametrize("is_async", [False, True])

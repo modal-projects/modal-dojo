@@ -116,9 +116,18 @@ def _list_checkpoints(
     volume = Volume.from_name(checkpoints_volume_name, create_if_missing=False)
 
     try:
-        entries = list(volume.iterdir(rel or "/", recursive=False))
+        entries = list(volume.iterdir(rel or "/", recursive=True))
     except (FileNotFoundError, NotFoundError):
         return []
+    prefix = f"{rel}/" if rel else ""
+    top_level = []
+    child_names: dict[str, set[str]] = {}
+    for entry in entries:
+        parts = entry.path.removeprefix(prefix).split("/")
+        if len(parts) == 1:
+            top_level.append(entry)
+        elif len(parts) == 2:
+            child_names.setdefault(parts[0], set()).add(parts[1])
 
     tracker_rel = f"{rel}/{TORCH_DIST_TRACKER_NAME}" if rel else TORCH_DIST_TRACKER_NAME
     try:
@@ -128,26 +137,18 @@ def _list_checkpoints(
         tracker_iteration = None
     checkpoints: list[Checkpoint] = []
     for entry in sorted(
-        (entry for entry in entries if _is_dir_entry(entry)),
+        (entry for entry in top_level if _is_dir_entry(entry)),
         key=_entry_name,
     ):
         name = _entry_name(entry)
         if not name.startswith("iter_") or name.endswith("_hf"):
             continue
-        child_rel = f"{rel}/{name}" if rel else name
-        try:
-            child_names = {
-                _entry_name(child)
-                for child in volume.iterdir(child_rel, recursive=False)
-            }
-        except (FileNotFoundError, NotFoundError):
-            child_names = set()
         iteration = parse_torch_dist_iteration(name)
         if (
             tracker_iteration is None
             or iteration is None
             or iteration > tracker_iteration
-            or not is_complete_torch_dist_checkpoint(child_names)
+            or not is_complete_torch_dist_checkpoint(child_names.get(name, set()))
         ):
             continue
         checkpoints.append(
@@ -261,6 +262,7 @@ def convert_megatron_checkpoint_to_hf(
         input_dir: str,
         output_dir: str,
         model_ref: str,
+        revision: str | None,
     ) -> str:
         import importlib.util
         import shlex
@@ -274,7 +276,9 @@ def convert_megatron_checkpoint_to_hf(
         if os.path.isabs(model_ref) and os.path.isdir(model_ref):
             hf_path = model_ref
         else:
-            hf_path = snapshot_download(model_ref, local_files_only=True)
+            hf_path = snapshot_download(
+                model_ref, revision=revision, local_files_only=True
+            )
 
         spec = importlib.util.find_spec(
             "modal_dojo.frameworks.slime.modal_helpers.convert_torch_dist_to_hf"
@@ -304,6 +308,7 @@ def convert_megatron_checkpoint_to_hf(
                 input_dir=checkpoint.path,
                 output_dir=output_path,
                 model_ref=model_ref,
+                revision=model.revision,
             )
 
     return Checkpoint(

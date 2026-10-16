@@ -7,11 +7,15 @@ NEW = "str(round(float(g[0].get_reward_value(args)), 1))"
 
 
 def patch_source(source: str) -> str:
-    if NEW in source:
-        return source
-    if source.count(OLD) != 1:
-        raise ValueError("Miles zero-std reward bucket anchor changed")
-    return source.replace(OLD, NEW, 1)
+    for old, new in (
+        (OLD, NEW),
+        ("str(round(reward, 1))", "str(round(float(reward), 1))"),
+    ):
+        if new in source:
+            return source
+        if source.count(old) == 1:
+            return source.replace(old, new, 1)
+    raise ValueError("Miles zero-std reward bucket anchor changed")
 
 
 def main() -> None:

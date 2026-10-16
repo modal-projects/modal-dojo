@@ -931,11 +931,16 @@ def patch_executor_package(root: Path) -> None:
             if PREAMBLE_MARKER in src:
                 continue
             if kind == "rollout":
+                generate = (
+                    "self._generate_rollout_data"
+                    if "def _generate_rollout_data(" in src
+                    else "self._get_rollout_data"
+                )
                 src = _wrap_calls(
                     src,
                     "get",
                     {
-                        "self._get_rollout_data": _phase("generate_samples"),
+                        generate: _phase("generate_samples"),
                         "convert_samples_to_train_data": _phase("reward_post_process"),
                     },
                 )

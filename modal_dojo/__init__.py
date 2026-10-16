@@ -66,6 +66,10 @@ _EXPORTS = {
         "modal_dojo.train_recipes.miles_recipe",
         "GLM_5_3_Flash_LoRA_Recipe",
     ),
+    "GLM_5_3_Flash_LoRA_256k_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "GLM_5_3_Flash_LoRA_256k_Recipe",
+    ),
     "HFModelConfiguration": (
         "modal_dojo.common.models",
         "HFModelConfiguration",
@@ -94,6 +98,10 @@ _EXPORTS = {
     "Kimi_K3_LoRA_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
         "Kimi_K3_LoRA_Recipe",
+    ),
+    "Kimi_K3_LoRA_64k_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "Kimi_K3_LoRA_64k_Recipe",
     ),
     "Moonlight_16B_A3B_Instruct": (
         "modal_dojo.common.models",
@@ -215,6 +223,7 @@ __all__ = [
     "GLM_5_3_Flash",
     "GLM_5_3_Flash_LoRA",
     "GLM_5_3_Flash_LoRA_Recipe",
+    "GLM_5_3_Flash_LoRA_256k_Recipe",
     "HarborDataset",
     "EvalConfig",
     "EvalConfigDurable",
@@ -241,6 +250,7 @@ __all__ = [
     "Inkling_Small_LoRA_Recipe",
     "Kimi_K3",
     "Kimi_K3_LoRA_Recipe",
+    "Kimi_K3_LoRA_64k_Recipe",
     "Moonlight_16B_A3B_Instruct",
     "Moonlight_16B_A3B_Recipe",
     "MilesRecipe",

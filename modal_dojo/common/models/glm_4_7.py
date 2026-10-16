@@ -18,6 +18,7 @@ class GLM_4_7(HFModelConfiguration):
     response_parser = staticmethod(parse_glm_response)
 
     model_name = "zai-org/GLM-4.7"
+    revision = "602d01efcdd332c5238ca4bcede555defbe83eb7"
     architecture = ModelArchitecture(
         num_layers=92,
         hidden_size=5120,
@@ -51,7 +52,9 @@ class GLM_4_7(HFModelConfiguration):
     def download(self) -> None:
         from huggingface_hub import snapshot_download
 
-        snapshot_dir = snapshot_download(repo_id=self.model_name)
+        snapshot_dir = snapshot_download(
+            repo_id=self.model_name, revision=self.revision
+        )
         subprocess.check_call(
             [
                 "python3",
