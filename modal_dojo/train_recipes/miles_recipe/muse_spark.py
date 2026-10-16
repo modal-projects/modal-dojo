@@ -61,14 +61,17 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     decoder_last_pipeline_num_layers: int | None = 15
     sequence_parallel: bool = True
 
-    # Upstream converts with TP1/CP1 and the training PP/EP split.
+    # Convert on four nodes with the upstream B300 TP1/PP4/EP8 layout.
+    # The pinned tensor headers give <=57 GiB of text weights per rank,
+    # leaving H200 headroom without requiring all eight training nodes.
+    # torch_dist reshards to the H200 trainer's EP16 layout on load.
     megatron_to_hf_mode: str = "raw"
     ref_load: str = "/checkpoints/Muse-Spark-Open-816B-A42B_torch_dist"
     conversion_tensor_model_parallel_size: int = 1
     conversion_pipeline_model_parallel_size: int = 4
-    conversion_expert_model_parallel_size: int = 16
+    conversion_expert_model_parallel_size: int = 8
     conversion_expert_tensor_parallel_size: int = 1
-    convert_ephemeral_disk_mb: int | None = 512 * 1024
+    convert_ephemeral_disk_mb: int | None = 1024 * 1024
     download_timeout_seconds: int | None = 12 * 60 * 60
     convert_timeout_seconds: int | None = 12 * 60 * 60
     # ~1.2 TB/node optimizer storage upstream, plus weight backups/staging.
@@ -176,8 +179,6 @@ class Muse_Spark_Open_64k_B300_Recipe(Muse_Spark_Open_64k_Recipe):
     context_parallel_size: int = 1
     cp_comm_type: str = ""
     expert_model_parallel_size: int = 8
-    conversion_expert_model_parallel_size: int = 8
-    convert_ephemeral_disk_mb: int | None = 1024 * 1024
     # Half as many nodes doubles per-node disk demand. Three TiB is Modal's
     # maximum; ~2.6 TiB is estimated for FP32 Adam state + BF16 actor backup.
     # Confirm measured free space before a live run; checkpoints stay disabled.

@@ -20,10 +20,10 @@ def test_registry_and_conversion_layout():
     assert isinstance(recipe, Muse_Spark_Open_64k_Recipe)
     assert recipe.gpu_allocation.total_gpus == 64
     nodes, ranks, flags = get_checkpoint_conversion_policy(recipe, model)
-    assert (nodes, ranks) == (8, 8)
+    assert (nodes, ranks) == (4, 8)
     assert "--tensor-model-parallel-size 1" in flags
     assert "--pipeline-model-parallel-size 4" in flags
-    assert "--expert-model-parallel-size 16" in flags
+    assert "--expert-model-parallel-size 8" in flags
     assert "--decoder-first-pipeline-num-layers 15" in flags
 
 
@@ -36,6 +36,7 @@ def test_long_context_offload_and_observability_reach_miles():
         "--sglang-context-length 65536",
         "--rollout-max-response-len 61440",
         "--context-parallel-size 4",
+        "--expert-model-parallel-size 16",
         "--offload-train ",
         "--offload-rollout ",
         "--offload-train-target disk",
