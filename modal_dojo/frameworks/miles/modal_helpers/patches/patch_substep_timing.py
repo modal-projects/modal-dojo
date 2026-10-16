@@ -536,6 +536,19 @@ def _patch_package_file(root: Path, target: PackageTarget) -> None:
         return
 
     for phase, block in target.blocks:
+        if (
+            phase == "compute_log_probs"
+            and "                fp32_output=False,\n" in src
+        ):
+            block = block.replace(
+                "                store_prefix=store_prefix,\n",
+                "                store_prefix=store_prefix,\n                fp32_output=False,\n",
+            )
+        if phase == "train_step_finalize" and '        tag="train",\n' in src:
+            block = block.replace(
+                '        op="train_step",\n',
+                '        tag="train",\n        op="train_step",\n',
+            )
         src = replace_once(src, block, wrap_block(block, phase, "_tg_time_phase"), path)
     if target.scope is not None:
         src = wrap_scope(src, target.scope, path)  # last: it reindents the body
@@ -560,6 +573,118 @@ def patch_package_file(root: Path, target: PackageTarget) -> None:
         print(f"WARNING: {target.path} substep timing patch skipped: {exc}")
 
 
+def _patch_component_driver(src: str, path: Path) -> str:
+    """Instrument the controller/executor driver using complete await statements.
+
+    Matching calls, rather than their indentation, handles both memory-transfer
+    branches without changing the branch structure or ordering of those calls.
+    """
+    tree = ast.parse(src)
+    loops = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.For)
+        and isinstance(n.target, ast.Name)
+        and n.target.id == "rollout_id"
+    ]
+    if len(loops) != 1:
+        raise RuntimeError(f"{path}: expected one rollout loop, found {len(loops)}")
+    loop = loops[0]
+    train_line = min(
+        n.lineno
+        for n in ast.walk(loop)
+        if isinstance(n, ast.Call) and ast.unparse(n.func) == "actor_model.train"
+    )
+    phases = {
+        "inference_controller.prepare_rollout": "generate_rollouts",
+        "rollout_executor.get.remote": "generate_rollouts",
+        "inference_controller.prepare_eval": "evaluate_rollouts",
+        "rollout_executor.eval.remote": "evaluate_rollouts",
+        "eval_dispatcher.dispatch": "evaluate_rollouts",
+        "eval_dispatcher.drain": "evaluate_rollouts_end",
+        "inference_controller.offload": "offload_rollout",
+        "inference_controller.offload_kv": "offload_rollout",
+        "inference_controller.offload_weights": "offload_rollout",
+        "actor_model.onload": "offload_rollout",
+        "actor_model.train": "train_models",
+        "critic_model.train": "train_models",
+        "save": "checkpoint_save",
+        "save_training_model": "checkpoint_save",
+        "offload_train": "offload_train",
+        "actor_model.offload": "offload_train",
+        "critic_model.offload": "offload_train",
+        "actor_model.clear_memory": "offload_train",
+        "inference_controller.onload_weights": "weight_sync",
+        "inference_controller.onload_kv": "weight_sync",
+    }
+    lines = src.splitlines(keepends=True)
+    changes = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Expr, ast.Assign)):
+            continue
+        if isinstance(node.value, ast.Await):
+            value = node.value.value
+            call = (
+                ast.unparse(value.func)
+                if isinstance(value, ast.Call)
+                else ast.unparse(value)
+            )
+        elif (
+            isinstance(node, ast.Assign)
+            and ast.unparse(node.targets[0]) == "rollout_data_curr_ref"
+            and isinstance(node.value, ast.IfExp)
+            and isinstance(node.value.body, ast.Await)
+        ):
+            call = "wait_for_next_rollout"
+        else:
+            continue
+        inside = loop.lineno < node.lineno <= loop.end_lineno
+        phase = phases.get(call)
+        if call == "rollout_data_next_future" and inside:
+            phase = "wait_for_rollout"
+        if call == "wait_for_next_rollout" and inside:
+            phase = "wait_for_next_rollout"
+        if call == "update_weights":
+            phase = None if inside else "lane"
+        if phase is None:
+            continue
+        if not inside:
+            if call not in {
+                "update_weights",
+                "inference_controller.prepare_eval",
+                "rollout_executor.eval.remote",
+                "eval_dispatcher.dispatch",
+                "eval_dispatcher.drain",
+            }:
+                continue
+        if inside and phase == "evaluate_rollouts" and node.lineno > train_line:
+            phase = "evaluate_rollouts_end"
+        block = "".join(lines[node.lineno - 1 : node.end_lineno])
+        wrapped = block if phase == "lane" else wrap_block(block, phase)
+        if call == "eval_dispatcher.dispatch":
+            wrapped = wrapped.replace(
+                f"with _tg_rec.phase('{phase}'):",
+                f"with (_tg_rec.phase('{phase}') if not args.eval_uses_snapshots else _tg_nullcontext()):",
+            )
+        if not inside:
+            indent = block[: len(block) - len(block.lstrip(" "))]
+            wrapped = (
+                f"{indent}with _tg_role('driver', None) as _tg_rec:\n"
+                + indent_block(wrapped)
+                + "\n"
+            )
+        changes.append((node.lineno - 1, node.end_lineno, wrapped))
+    for start, end, wrapped in sorted(changes, reverse=True):
+        lines[start:end] = [wrapped]
+    src = _inject_preamble("".join(lines))
+    src = src.replace(
+        PREAMBLE,
+        "from contextlib import nullcontext as _tg_nullcontext\n" + PREAMBLE,
+        1,
+    )
+    return _wrap_driver_loop(src, path)
+
+
 def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
     if not path.exists():
         print(f"WARNING: {path} not found, skipping substep timing patch")
@@ -570,8 +695,23 @@ def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
         print(f"{path.name} already patched for substep timing")
         return
 
-    if path.name == "train.py" and "create_rollout_components" in src:
-        src = _patch_executor_driver(src, path)
+    if "create_rollout_components" in src:
+        if path.name == "train.py":
+            src = _patch_executor_driver(src, path)
+        else:
+            src = _patch_component_driver(src, path)
+            required = {
+                "wait_for_rollout",
+                "wait_for_next_rollout",
+                "train_models",
+                "evaluate_rollouts",
+                "evaluate_rollouts_end",
+            }
+            missing = sorted(
+                phase for phase in required if phase_marker(phase) not in src
+            )
+            if missing:
+                raise RuntimeError(f"{path}: phases not instrumented: {missing}")
         compile(src, str(path), "exec")
         path.write_text(src)
         print(f"Patched {path.name} for executor-based substep timing")

@@ -45,9 +45,10 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "generate_rollouts",
         "rollout_id",
         re.compile(
-            r"^(?P<indent>[ \t]*)(?P<line>rollout_data\w* = await "
+            r"^(?P<indent>[ \t]*)(?P<line>(?:rollout_data\w* = await "
             r"(?:rollout_manager\.generate\.remote|rollout_executor\.get)"
-            r"\(rollout_id\))[ \t]*$",
+            r"\(rollout_id\)|"
+            r"await inference_controller\.prepare_rollout\(rollout_id\)))[ \t]*$",
             re.M,
         ),
     ),
@@ -69,7 +70,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "rollout_id",
         re.compile(
             r"^(?P<indent>[ \t]*)(?P<line>await "
-            r"(?:rollout_manager\.offload\.remote|inference_controller\.offload)\("
+            r"(?:rollout_manager\.offload\.remote|inference_controller\.offload(?:_kv|_weights)?)\("
             r"[^\n]*\))[ \t]*$",
             re.M,
         ),
@@ -89,12 +90,18 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "rollout_id",
         re.compile(
             r"^(?P<indent>[ \t]*)(?P<line>await (?:actor_model\.update_weights\("
-            r"rollout_id=rollout_id\)|update_weights\(args, actor_model, "
-            r"rollout_executor, inference_controller, rollout_id=rollout_id\)))[ \t]*$",
+            r"rollout_id=rollout_id\)|update_weights\((?:args, )?actor_model, "
+            r"rollout_executor, (?:inference_controller, )?rollout_id=rollout_id\)))[ \t]*$",
             re.M,
         ),
     ),
 ]
+
+# Phases a driver legitimately lacks: the async driver keeps the inference
+# engine resident, so it never offloads the rollout side.
+_ABSENT_PHASES: dict[str, frozenset[str]] = {
+    "train_async.py": frozenset({"offload_rollout"}),
+}
 
 CHECKPOINT_SAVE_MARKER = "PATCHED_MODAL_DOJO_CHECKPOINT_SAVE_STATUS"
 _CHECKPOINT_SAVE_PATTERN = re.compile(
@@ -121,6 +128,15 @@ def _patch_file(path: Path) -> None:
     for marker, phase, rollout_id_expr, pattern in _LINE_INJECTIONS:
         if marker in src:
             continue
+        if (
+            "create_rollout_components" in src
+            and phase == "offload_train"
+            and path.name == "train_async.py"
+        ):
+            pattern = re.compile(
+                r"^(?P<indent>[ \t]*)(?P<line>await (?:critic_model|actor_model)\.offload\(\))[ \t]*$",
+                re.M,
+            )
 
         def _replacement(match: re.Match[str]) -> str:
             indent = match.group("indent")
@@ -132,7 +148,7 @@ def _patch_file(path: Path) -> None:
             )
 
         src, count = pattern.subn(_replacement, src)
-        if count == 0:
+        if count == 0 and phase not in _ABSENT_PHASES.get(path.name, frozenset()):
             failed.append(phase)
 
     if CHECKPOINT_SAVE_MARKER not in src:
