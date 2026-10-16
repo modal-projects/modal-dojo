@@ -1,0 +1,9 @@
+{
+  "dojo_tests": "160 passed, 4 subtests passed",
+  "autoconfig_tests": "42 passed after rebase onto latest main",
+  "scope": "Recipe, checkpoint publication/storage, pinned HF revision, HF cache shards, Miles patches, model registry, and autoconfig integration",
+  "ruff": "check and format check passed for changed Python files",
+  "generated_models_table": "up to date (21 models)",
+  "gpu_validation": "Native microprobes only; no completed full-model step",
+  "followup_controller_ordering_tests": "4 passed locally; later live failure showed parent-terminal status does not guarantee retried conversion children are terminal"
+}

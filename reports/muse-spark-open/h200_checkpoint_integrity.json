@@ -1,0 +1,233 @@
+{
+  "ok": false,
+  "root": "/__modal/volumes/vo-Pg4Hrjy1JIa6eo36cMZAXP/Muse-Spark-Open-816B-A42B_torch_dist",
+  "tracker": "1",
+  "tracker_stable": true,
+  "active_checkpoint": "/__modal/volumes/vo-Pg4Hrjy1JIa6eo36cMZAXP/Muse-Spark-Open-816B-A42B_torch_dist/iter_0000001",
+  "metadata_checks": [
+    {
+      "metadata": "iter_0000001/.metadata",
+      "metadata_sha256": "088cd6b915aba4b8d1152e940f52af44192548faa579fb5e8078605d101a7e13",
+      "storage_ranges": 80430,
+      "referenced_shards": 64,
+      "shard_bytes": 1429560273018,
+      "required_bytes": 1640366059810,
+      "error_count": 10344,
+      "errors": [
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_128_256', offset=None, index=None)",
+          "offset": 0,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_129_256', offset=None, index=None)",
+          "offset": 1513,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_130_256', offset=None, index=None)",
+          "offset": 3026,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_131_256', offset=None, index=None)",
+          "offset": 4539,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_132_256', offset=None, index=None)",
+          "offset": 6052,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_133_256', offset=None, index=None)",
+          "offset": 7565,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_134_256', offset=None, index=None)",
+          "offset": 9078,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_135_256', offset=None, index=None)",
+          "offset": 10591,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_136_256', offset=None, index=None)",
+          "offset": 12104,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_137_256', offset=None, index=None)",
+          "offset": 13617,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_138_256', offset=None, index=None)",
+          "offset": 15130,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_139_256', offset=None, index=None)",
+          "offset": 16643,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_140_256', offset=None, index=None)",
+          "offset": 18156,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_141_256', offset=None, index=None)",
+          "offset": 19669,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_142_256', offset=None, index=None)",
+          "offset": 21182,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc1._extra_state/shard_143_256', offset=None, index=None)",
+          "offset": 22695,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_128_256', offset=None, index=None)",
+          "offset": 24208,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_129_256', offset=None, index=None)",
+          "offset": 25721,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_130_256', offset=None, index=None)",
+          "offset": 27234,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_131_256', offset=None, index=None)",
+          "offset": 28747,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_132_256', offset=None, index=None)",
+          "offset": 30260,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_133_256', offset=None, index=None)",
+          "offset": 31773,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_134_256', offset=None, index=None)",
+          "offset": 33286,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_135_256', offset=None, index=None)",
+          "offset": 34799,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_136_256', offset=None, index=None)",
+          "offset": 36312,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_137_256', offset=None, index=None)",
+          "offset": 37825,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_138_256', offset=None, index=None)",
+          "offset": 39338,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_139_256', offset=None, index=None)",
+          "offset": 40851,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_140_256', offset=None, index=None)",
+          "offset": 42364,
+          "length": 1513,
+          "actual_size": null
+        },
+        {
+          "shard": "__40_0.distcp",
+          "key": "MetadataIndex(fqn='decoder.layers.31.mlp.experts.experts.linear_fc2._extra_state/shard_141_256', offset=None, index=None)",
+          "offset": 43877,
+          "length": 1513,
+          "actual_size": null
+        }
+      ],
+      "ok": false
+    }
+  ],
+  "tensor_payloads_read": false,
+  "volume_name": "miles-muse_spark_open_64k_recipe-checkpoints"
+}

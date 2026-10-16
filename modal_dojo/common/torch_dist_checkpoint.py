@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import pickle
 from collections.abc import Collection
 from pathlib import Path
 from typing import Any, Callable
@@ -23,6 +24,54 @@ def is_complete_torch_dist_checkpoint_dir(
     except OSError:
         return False
     return is_complete_torch_dist_checkpoint(names)
+
+
+def is_complete_torch_dist_checkpoint_storage(
+    checkpoint_dir: str | os.PathLike[str],
+) -> bool:
+    """Check every referenced storage range in a trusted torch_dist checkpoint.
+
+    Metadata can become visible before another node commits its shards to a
+    shared Volume. Checking filenames alone cannot establish completeness in
+    that case. This reads metadata (a pickle), but never reads tensor payloads.
+    Only use it on checkpoints produced by the trusted conversion pipeline.
+    """
+    root = Path(checkpoint_dir).resolve()
+    if not is_complete_torch_dist_checkpoint_dir(root):
+        return False
+    try:
+        with (root / ".metadata").open("rb") as handle:
+            metadata = pickle.load(handle)
+        storage = metadata.storage_data
+        if not isinstance(storage, dict) or not storage:
+            return False
+        required_sizes: dict[Path, int] = {}
+        for location in storage.values():
+            relative_path = Path(location.relative_path)
+            if relative_path.is_absolute() or ".." in relative_path.parts:
+                return False
+            shard = (root / relative_path).resolve()
+            if not shard.is_relative_to(root) or shard.suffix != ".distcp":
+                return False
+            offset, length = location.offset, location.length
+            if not isinstance(offset, int) or not isinstance(length, int):
+                return False
+            if offset < 0 or length < 0:
+                return False
+            required_sizes[shard] = max(required_sizes.get(shard, 0), offset + length)
+        return all(
+            shard.is_file() and shard.stat().st_size >= size
+            for shard, size in required_sizes.items()
+        )
+    except (
+        OSError,
+        EOFError,
+        pickle.UnpicklingError,
+        AttributeError,
+        TypeError,
+        ValueError,
+    ):
+        return False
 
 
 def parse_torch_dist_iteration(name: str) -> int | None:

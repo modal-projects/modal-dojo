@@ -15,6 +15,7 @@ from .gemma4_26b_a4b import Gemma4_26B_A4B
 from .glm_4_7 import GLM_4_7
 from .glm_5_3_flash import GLM_5_3_Flash_LoRA
 from .inkling_small import Inkling_Small, Inkling_Small_LoRA
+from .muse_spark import Muse_Spark_Open
 from .kimi_k3 import Kimi_K3
 from .moonlight_16b_a3b_instruct import Moonlight_16B_A3B_Instruct
 from .qwen3_0_6b import Qwen3_0_6B
@@ -84,6 +85,9 @@ class _ValidationConfig:
 
 
 VALIDATION_CONFIGS: set[_ValidationConfig] = {
+    _ValidationConfig(
+        "Muse-Spark-Open", Muse_Spark_Open, Framework.MILES, timeout_s=24 * 60 * 60
+    ),
     _ValidationConfig("GLM-4.7", GLM_4_7, Framework.SLIME, timeout_s=2 * 60 * 60),
     _ValidationConfig(
         "GLM-5.3-Flash-LoRA", GLM_5_3_Flash_LoRA, Framework.MILES, timeout_s=3 * 60 * 60

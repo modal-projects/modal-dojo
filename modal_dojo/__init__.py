@@ -3,6 +3,15 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORTS = {
+    "Muse_Spark_Open": ("modal_dojo.common.models", "Muse_Spark_Open"),
+    "Muse_Spark_Open_64k_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "Muse_Spark_Open_64k_Recipe",
+    ),
+    "Muse_Spark_Open_64k_B300_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "Muse_Spark_Open_64k_B300_Recipe",
+    ),
     "Checkpoint": ("modal_dojo.common.checkpoint", "Checkpoint"),
     "CheckpointType": ("modal_dojo.common.checkpoint", "CheckpointType"),
     "convert_megatron_checkpoint_to_hf": (
@@ -203,6 +212,9 @@ _EXPORTS = {
 }
 
 __all__ = [
+    "Muse_Spark_Open",
+    "Muse_Spark_Open_64k_Recipe",
+    "Muse_Spark_Open_64k_B300_Recipe",
     "CustomDeployment",
     "DASHBOARD_OVERLAY_VOLUME_NAME",
     "DashboardComponent",
