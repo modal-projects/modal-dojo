@@ -7,6 +7,31 @@ GPU probes pass on both architectures after repairing the upstream image. Neithe
 hardware variant has completed a full-model rollout or optimizer step at 64K.
 These are candidate recipes, not production-validated configurations.
 
+## New H200 validation submission (2026-10-16 18:37 UTC)
+
+The H200 fixes are present in pushed recipe commit `1338f57`; 18 focused regression
+tests passed again before submission. One-step validation on 64 H200s at 65,536
+tokens was submitted through
+[controller ap-anbkAWv2xXNAGneelZo3Fk](https://modal.com/apps/modal-labs/training-team/ap-anbkAWv2xXNAGneelZo3Fk),
+call `fc-01M530263XRRYRVG2A83ATA316`. This is a queued dependency controller,
+not yet an allocated H200 training run.
+
+It waits for the actual pending B300 conversion
+`fc-01M52YD50B1DKETS2G22AZ5XY4` and every pending call in its launch tree,
+including retried conversions and training. A failed parent no longer hides
+pending children. It also checks the shared-volume lock and requires two quiet
+observations before invoking H200 preparation. No calls are canceled and no apps
+are stopped. The checkpoint's strict storage checks determine whether it can be
+reused or needs one serialized reconversion. Only the H200 one-step proof is
+submitted by this controller.
+
+`h200_validation_launch.json` records the submission; `launch_h200_validation.py`
+preserves the exact launcher, intended to run from the companion autoconfig
+environment. It contains specific dependency IDs for this attempt, not a general
+fresh-launch example. Nine tests in `test_h200_validation_gate.py` cover failed
+parents with pending children, nested pending training, missing calls, and lock
+ownership/expiry. Full-model H200 validation remains pending.
+
 ## Files and registration
 
 - `modal_dojo/common/models/muse_spark.py`: pinned model config.
@@ -22,7 +47,7 @@ These are candidate recipes, not production-validated configurations.
 
 [Autoconfig dashboard](https://modal-labs-training-team--autoconfig-fastapi-app.modal.run/group/meta-models-muse-spark-open-816b-a42b--dapo-math--65536).
 
-## Current runs
+## Run snapshot before the new H200 submission
 
 Actual Modal call outcomes take precedence over persisted run status: some startup
 failures leave the metadata row marked `running`.
