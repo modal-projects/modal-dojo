@@ -8,6 +8,7 @@ from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.patches import encode_patch
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 _MM_MODEL_PROVIDER = "miles_plugins.models.inkling.model.inkling_mm_model_provider"
@@ -187,7 +188,7 @@ class Inkling_Small_Recipe(_InklingSmallRecipe):
     # on varlen shapes, so upstream pins a fixed micro-batch for full-parameter runs.
     # This overrides MilesRecipe's use_dynamic_batch_size=True default.
     use_dynamic_batch_size: bool = False
-    micro_batch_size: int = 1
+    micro_batch_size: MicroBatchSize = 1
 
     offload_train: bool = True
     offload_train_target: str = "disk"
@@ -241,7 +242,7 @@ class Inkling_Small_LoRA_Recipe(_InklingSmallRecipe):
     sglang_max_loras_per_batch: int = 1
     sglang_max_lora_rank: int = 32
 
-    max_tokens_per_gpu: int = 4096
+    max_tokens_per_gpu: MicroBatchSize = 4096
 
     sglang_mem_fraction_static: float = 0.40
     sglang_max_running_requests: int = 32

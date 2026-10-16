@@ -3,6 +3,7 @@ from dataclasses import field
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.slime_recipe.recipe import (
     SlimeLossMaskType,
     SlimeRecipe,
@@ -45,7 +46,7 @@ class Qwen3_8_27B_Recipe(SlimeRecipe):
     rollout_batch_size: int = 16
     n_samples_per_prompt: int = 4
     global_batch_size: int = 64
-    max_tokens_per_gpu: int = 8192
+    max_tokens_per_gpu: MicroBatchSize = 8192
     use_dynamic_batch_size: bool = False
     calculate_per_token_loss: bool = True
     balance_data: bool = True

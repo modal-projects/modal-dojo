@@ -310,8 +310,12 @@ class ModalRayCluster:
         *,
         runtime_env: dict | None = None,
         max_retries: int = 35,
+        on_log_line: Callable[[str], None] | None = None,
     ) -> ModalRayJobResult:
         """Submit a Ray job and stream its logs.
+
+        Args:
+            on_log_line: Called with each streamed log line (e.g. to sniff for OOMs).
 
         Returns:
             The final Ray job status.
@@ -347,9 +351,13 @@ class ModalRayCluster:
                 if hasattr(log_stream, "__aiter__"):
                     async for line in log_stream:
                         print(line, end="", flush=True)
+                        if on_log_line is not None:
+                            on_log_line(line)
                 else:
                     for line in log_stream:
                         print(line, end="", flush=True)
+                        if on_log_line is not None:
+                            on_log_line(line)
 
             tail_task = asyncio.create_task(_tail_logs())
             try:

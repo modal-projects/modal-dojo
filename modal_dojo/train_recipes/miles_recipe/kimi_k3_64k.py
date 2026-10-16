@@ -7,6 +7,7 @@ from dataclasses import field
 from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.kimi_k3 import (
     Kimi_K3_LoRA_Recipe,
     _PATCH_DIR,
@@ -76,7 +77,7 @@ class Kimi_K3_LoRA_64k_Recipe(Kimi_K3_LoRA_Recipe):
     seq_length: int = 65536
     max_position_embeddings: int = 65536
     # CP2 splits each 64k sequence across two ranks.
-    max_tokens_per_gpu: int = 32768
+    max_tokens_per_gpu: MicroBatchSize = 32768
     log_probs_max_tokens_per_gpu: int = 32768
 
     # ── SGLang: one TP8 engine per node ──────────────────────────────────────
