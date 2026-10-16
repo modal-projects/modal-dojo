@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 import pickle
+import threading
+import time
 from collections.abc import Collection
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -50,19 +53,23 @@ def is_complete_torch_dist_checkpoint_storage(
             relative_path = Path(location.relative_path)
             if relative_path.is_absolute() or ".." in relative_path.parts:
                 return False
-            shard = (root / relative_path).resolve()
-            if not shard.is_relative_to(root) or shard.suffix != ".distcp":
-                return False
             offset, length = location.offset, location.length
             if not isinstance(offset, int) or not isinstance(length, int):
                 return False
             if offset < 0 or length < 0:
                 return False
-            required_sizes[shard] = max(required_sizes.get(shard, 0), offset + length)
-        return all(
-            shard.is_file() and shard.stat().st_size >= size
-            for shard, size in required_sizes.items()
-        )
+            required_sizes[relative_path] = max(
+                required_sizes.get(relative_path, 0), offset + length
+            )
+        # A shard contains thousands of ranges. Resolve and stat each file once
+        # instead of repeating remote filesystem lookups for every tensor.
+        for relative_path, size in required_sizes.items():
+            shard = (root / relative_path).resolve()
+            if not shard.is_relative_to(root) or shard.suffix != ".distcp":
+                return False
+            if not shard.is_file() or shard.stat().st_size < size:
+                return False
+        return True
     except (
         OSError,
         EOFError,
@@ -112,7 +119,29 @@ def _raise_gathered_errors(
 def _commit_volume(volume_name: str) -> None:
     from modal import Volume
 
-    Volume.from_name(volume_name, create_if_missing=False).commit()
+    rank = os.environ.get("RANK", "0")
+    started = time.monotonic()
+    finished = threading.Event()
+
+    def report_progress() -> None:
+        while not finished.wait(30):
+            print(
+                f"[checkpoint-commit] rank={rank} publishing {volume_name}: "
+                f"{time.monotonic() - started:.0f}s elapsed",
+                flush=True,
+            )
+
+    print(f"[checkpoint-commit] rank={rank} publishing {volume_name}", flush=True)
+    threading.Thread(target=report_progress, daemon=True).start()
+    try:
+        Volume.from_name(volume_name, create_if_missing=False).commit()
+        print(
+            f"[checkpoint-commit] rank={rank} published in "
+            f"{time.monotonic() - started:.1f}s",
+            flush=True,
+        )
+    finally:
+        finished.set()
 
 
 def commit_checkpoint_volume_across_ranks(
@@ -151,6 +180,9 @@ def commit_checkpoint_volume_across_ranks(
 
 
 class _TorchDistributed:
+    def __init__(self, group: Any = None):
+        self.group = group
+
     @property
     def is_coordinator(self) -> bool:
         import torch.distributed as dist
@@ -163,17 +195,37 @@ class _TorchDistributed:
         if not dist.is_initialized():
             return [error]
         gathered: list[str | None] = [None] * dist.get_world_size()
-        dist.all_gather_object(gathered, error)
+        dist.all_gather_object(gathered, error, group=self.group)
         return gathered
 
 
 def commit_latest_checkpoint_volume() -> None:
+    volume_name = os.environ.get("MODAL_DOJO_CHECKPOINTS_VOLUME_NAME")
+    if not volume_name:
+        return
+
     import torch.distributed as dist
 
-    volume_name = os.environ.get("MODAL_DOJO_CHECKPOINTS_VOLUME_NAME")
-    barrier = dist.barrier if dist.is_initialized() else lambda: None
-    commit_checkpoint_volume_across_ranks(
-        volume_name,
-        _TorchDistributed(),
-        barrier,
-    )
+    group = None
+    timeout = os.environ.get("MODAL_DOJO_CHECKPOINT_COMMIT_TIMEOUT_SECONDS")
+    if timeout is not None and dist.is_initialized():
+        # Terabyte-scale Volume publication can outlast the GPU collective
+        # timeout. Keep this storage wait off NCCL and bound it independently.
+        seconds = int(timeout)
+        if seconds <= 0:
+            raise ValueError("Checkpoint commit timeout must be positive")
+        group = dist.new_group(backend="gloo", timeout=timedelta(seconds=seconds))
+    try:
+        barrier = (
+            (lambda: dist.barrier(group=group))
+            if dist.is_initialized()
+            else lambda: None
+        )
+        commit_checkpoint_volume_across_ranks(
+            volume_name,
+            _TorchDistributed(group),
+            barrier,
+        )
+    finally:
+        if group is not None:
+            dist.destroy_process_group(group)

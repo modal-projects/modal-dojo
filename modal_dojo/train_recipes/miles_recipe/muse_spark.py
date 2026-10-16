@@ -167,6 +167,8 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
             "NCCL_NVLS_ENABLE": "1",
             "NVTE_ALLOW_NONDETERMINISTIC_ALGO": "1",
             "TORCHINDUCTOR_COMPILE_THREADS": "1",
+            # Publishing ~1.6 TB must not wait on a GPU collective's 10m timer.
+            "MODAL_DOJO_CHECKPOINT_COMMIT_TIMEOUT_SECONDS": "3600",
             # Matches upstream B300 validation; CUTLASS 4.6.2 lacks experimental.
             "SGLANG_ENABLE_BF16_SPLITK_GEMM": "0",
             "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False",
