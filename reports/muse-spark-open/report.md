@@ -1,6 +1,6 @@
 # Muse Spark Open: H200 and B300 64K validation report
 
-Status snapshot: 2026-10-16, approximately 19:11 UTC. Branch: `helena/muse-spark-open`.
+Status snapshot: 2026-10-16, approximately 19:38 UTC. Branch: `helena/muse-spark-open`.
 
 The H200 and B300 recipes are implemented, registered, and locally tested. Native
 GPU probes pass on both architectures after repairing the upstream image. Neither
@@ -9,10 +9,29 @@ These are candidate recipes, not production-validated configurations.
 
 ## Current iteration
 
-The current H200 proof is `stale-trumpet-bc6d2db1f110`, app
-[`ap-N0KtuyOJrNu3iXCeBhnD6C`](https://modal.com/apps/modal-labs/training-team/ap-N0KtuyOJrNu3iXCeBhnD6C).
-It was launched at 19:08 UTC from commit `16e6103`, with a 32-H200 conversion
-and the unchanged 64-H200 training topology. No model step has completed.
+The current H200 proof is `pizzicato-trie-19778f54eedf`, app
+[`ap-HOm1ZSktOihDdKYg7WhhXA`](https://modal.com/apps/modal-labs/training-team/ap-HOm1ZSktOihDdKYg7WhhXA).
+It was launched at 19:37 UTC from commit `efbd2a2`, with a 32-H200 conversion
+and the unchanged 64-H200 training topology. It contains the explicitly installed
+Modal SDK described below. No model step has completed.
+
+Attempt 7 (`stale-trumpet-bc6d2db1f110`, app `ap-N0KtuyOJrNu3iXCeBhnD6C`)
+started conversion at 19:20:25 UTC on all four nodes after about 11 minutes queued.
+All 32 ranks loaded the full text weights, with about 56.6 GiB allocated and
+61.5 GiB total GPU use per rank. Saving reached the new cross-rank commit hook at
+19:33 UTC, which correctly propagated `ModuleNotFoundError: No module named
+'modal'` from each worker node's leader. The upstream interpreter is
+`/opt/sglang/bin/python3`; it did not have the function wrapper's injected SDK.
+The old app is stopped, with zero remaining containers. The fresh Volume view has
+no tracker or published shard files, so that attempt cannot be reused.
+
+Commit `efbd2a2` explicitly installs the launcher's Modal SDK version in the Miles
+image. CPU probe [`ap-WYDSWVMGDMOr2ypn49WMfM`](https://modal.com/apps/modal-labs/training-team/ap-WYDSWVMGDMOr2ypn49WMfM)
+ran an isolated Python subprocess using the same interpreter as torchrun, imported
+Modal 1.6.1 from normal site-packages, and called the actual checkpoint Volume
+commit helper. A fresh client read verified the test file persisted; its scratch
+Volume was deleted afterward. See `checkpoint_sdk_probe.json`. The full local
+suite passes (1,424 tests, one skipped, four subtests), plus six Autoconfig tests.
 
 The preceding proof, `quiet-thinner-c6ecd7dbfbcb` / `ap-jRiZ6TCnh6SNyDzCewGUp7`,
 waited from 18:45 to 19:07 UTC without a single GPU worker. It was deliberately
@@ -33,7 +52,7 @@ relaunches caused by preemption of the earlier remote controller. B300 will reus
 only a complete checkpoint after H200 preparation.
 
 Commit `94856dc` fixes generated documentation and removes redundant recipe
-declarations without changing effective settings. The full local suite passes
+declarations without changing effective settings. The earlier full local suite passed
 (1,415 tests, one skipped, four subtests), all six Autoconfig integration tests
 pass, and GitHub Tests passed on `94856dc`. The four-node conversion change
 passes 100 relevant Dojo tests and all six Autoconfig integration tests; the new
@@ -162,6 +181,12 @@ already tested repaired image, rather than treating the moving tag as verified.
    partial-cleanup, and post-conversion checks now validate every metadata storage
    range against the referenced file's size. This fix is locally tested but has
    not yet completed a fresh multi-node conversion.
+
+6. **Modal SDK missing from trainer Python.** The wrapper's injected SDK is not
+   available to the vendor image's torchrun interpreter. Installing the same
+   Modal version as the launcher makes the checkpoint commit helper importable
+   from worker subprocesses. An isolated subprocess and persisted-file probe pass;
+   the new full multi-node conversion is still pending.
 
 ## Validation evidence and limits
 
