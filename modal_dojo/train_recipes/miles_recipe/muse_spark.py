@@ -9,17 +9,35 @@ from collections.abc import Callable
 from dataclasses import field
 from typing import ClassVar
 
+import modal
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models import ModelConfig, Muse_Spark_Open
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
-from modal_dojo.train_recipes.miles_recipe.muse_spark_image import (
-    build_muse_native_image,
+from modal_dojo.frameworks.miles.modal_helpers.patches.patch_muse_spark_native import (
+    rebuild_te,
+    rebuild_fa2,
+    rebuild_apex,
+    patch_te_fa4_gate,
+)
+from modal_dojo.frameworks.miles.modal_helpers.patches.patch_muse_spark_hf_cache import (
+    patch_muse_hf_cache_shards,
 )
 
 MILES_COMMIT = "753e19d8bd8fe5a27892dd18b787dc131addd269"
 SGLANG_COMMIT = "ad34947129c518641db51816c88c126ca16f786c"
+
+
+def build_muse_native_image(image: modal.Image) -> modal.Image:
+    """Build and cache native wheels separately before starting GPU workers."""
+    return (
+        image.run_function(rebuild_te, cpu=16, memory=65536, timeout=3600)
+        .run_function(rebuild_fa2, cpu=16, memory=98304, timeout=7200)
+        .run_function(rebuild_apex, cpu=16, memory=65536, timeout=3600)
+        .run_function(patch_te_fa4_gate, timeout=60)
+        .run_function(patch_muse_hf_cache_shards, timeout=60)
+    )
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
@@ -33,8 +51,7 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
 
     model_config_class: ClassVar[type[ModelConfig]] = Muse_Spark_Open
     # Both hardware variants reuse the same completed torch_dist conversion.
-    # Preserve the volume of the already submitted B300 preparation. Complete
-    # preparation for one launch before submitting the other.
+    # Complete preparation for one launch before submitting the other.
     name: str = "miles-muse_spark_open_64k_b300_recipe"
     docker_image: str = (
         "radixark/miles:muse-spark-open@sha256:"
