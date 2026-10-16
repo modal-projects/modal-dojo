@@ -57,7 +57,6 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     context_parallel_size: int = 4
     cp_comm_type: str = "a2a"
     expert_model_parallel_size: int = 16
-    expert_tensor_parallel_size: int = 1
     decoder_first_pipeline_num_layers: int = 15
     decoder_last_pipeline_num_layers: int | None = 15
     sequence_parallel: bool = True
@@ -79,10 +78,8 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     no_save_optim: bool = True
     no_load_optim: bool = True
     save: str | None = None
-    save_interval: int | None = None
     max_retries: int = 0
 
-    num_rollout: int = 1
     rollout_batch_size: int = 4
     n_samples_per_prompt: int = 4
     global_batch_size: int = 16
@@ -93,7 +90,6 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     eval_max_response_len: int = 61440
     seq_length: int = 65536
     max_position_embeddings: int = 65536
-    rollout_temperature: float = 1.0
     apply_chat_template_kwargs: str | dict = field(
         default_factory=lambda: {"reasoning_effort": "xhigh"}
     )
@@ -105,17 +101,14 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     use_rollout_routing_replay: bool = True
     calculate_per_token_loss: bool = True
     balance_data: bool = True
-    use_dynamic_batch_size: bool = True
     # Packing budget; a single long sample may exceed it, as in upstream.
     max_tokens_per_gpu: int = 4096
     log_probs_chunk_size: int = 4096
-    qkv_format: str = "thd"
     attention_backend: str = "flash"
     recompute_granularity: str = "full"
     recompute_method: str = "uniform"
     recompute_num_layers: int = 1
     bf16: bool = True
-    lr: float = 1e-6
     min_lr: float = 1e-6
     adam_beta2: float = 0.95
     adam_eps: float = 1e-8
@@ -129,7 +122,6 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     offload_train_disk_chunk_mb: int = 256
 
     # Four two-node engines, with BF16 KV for train/rollout agreement.
-    colocate: bool = True
     offload_train: bool = True
     offload_rollout: bool = True
     rollout_num_gpus_per_engine: int = 16
