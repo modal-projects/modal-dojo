@@ -740,15 +740,110 @@ async def training_run_lifecycle(run_record: TrainingRun, status_token: str = ""
                 print(f"Failed to save run record: {exc}")
 
 
+def _training_error(run_record: TrainingRun, message: str) -> RuntimeError:
+    training_run_id = run_record.training_run_id
+    error = RuntimeError(f"{message} (training_run_id={training_run_id})")
+    error.training_run_id = training_run_id  # pyright: ignore[reportAttributeAccessIssue]
+    run_record.error_message = str(error)
+    return error
+
+
 def check_training_result(result: Any, run_record: TrainingRun) -> None:
     if not result.is_success:
-        training_run_id = run_record.training_run_id
         message = result.message or f"Ray job finished with status: {result.status}"
-        error = RuntimeError(f"{message} (training_run_id={training_run_id})")
-        error.training_run_id = training_run_id  # pyright: ignore[reportAttributeAccessIssue]
-        run_record.error_message = str(error)
-        raise error
+        raise _training_error(run_record, message)
     print(f"Ray job completed: {result.status}")
+
+
+OOM_RETRY_DELAY_SECONDS = 15.0
+
+
+async def run_training_attempts(
+    *,
+    cluster: Any,
+    recipe: Any,
+    run_record: TrainingRun,
+    runtime_env: dict[str, Any],
+    build_cmd: Callable[[], str],
+    retry_delay_seconds: float = OOM_RETRY_DELAY_SECONDS,
+) -> Any:
+    """Submit the training job, re-submitting with a smaller micro-batch on OOM.
+
+    Unless the recipe's micro-batch knob is ``"auto"`` this is a single submit
+    followed by ``check_training_result``. With it, each attempt applies the current
+    ``BatchSizeInference`` value to the recipe before ``build_cmd`` runs, so
+    ``build_cmd`` must re-detect the resume checkpoint and rebuild the command
+    every time (an OOMed attempt may have saved a checkpoint first). Failures
+    that do not look like an OOM are terminal, as is an OOM at the floor.
+    """
+    from modal_dojo.common.batch_size_inference import (
+        BatchSizeInference,
+        OOMDetector,
+        looks_like_oom,
+    )
+
+    inference = BatchSizeInference.start(recipe, run_record)
+    while True:
+        if inference is not None:
+            inference.apply(recipe)
+            inference.begin_attempt()
+            inference.record(run_record)
+            print(
+                f"auto batch size: attempt {len(inference.attempts)} with "
+                f"{inference.knob}={inference.current} (floor {inference.floor})",
+                flush=True,
+            )
+        cmd = build_cmd()
+        await run_record.save(is_async=True)
+        print(f"Command: {cmd}")
+        print(f"Runtime environment variables: {sorted(runtime_env['env_vars'])}")
+
+        detector = OOMDetector()
+        result = await cluster.submit_and_tail(
+            cmd, runtime_env=runtime_env, on_log_line=detector.observe
+        )
+        if inference is None:
+            check_training_result(result, run_record)
+            return result
+        if result.is_success:
+            inference.finish_attempt("succeeded")
+            inference.record(run_record)
+            await run_record.save(is_async=True)
+            print(
+                f"auto batch size: settled on {inference.knob}={inference.current}",
+                flush=True,
+            )
+            check_training_result(result, run_record)
+            return result
+
+        evidence = detector.evidence
+        if evidence is None and looks_like_oom(result.message):
+            evidence = result.message
+        if evidence is None:
+            inference.finish_attempt("failed")
+            inference.record(run_record)
+            await run_record.save(is_async=True)
+            check_training_result(result, run_record)
+            raise AssertionError("unreachable")  # pragma: no cover
+
+        failed_value = inference.current
+        inference.finish_attempt("oom", evidence)
+        next_value = inference.shrink()
+        inference.record(run_record)
+        if next_value is None:
+            await run_record.save(is_async=True)
+            raise _training_error(
+                run_record,
+                f"GPU OOM with {inference.knob}={failed_value}, which is already the "
+                f"floor ({inference.floor}) the auto batch-size search can shrink to; the "
+                "model or sequence length does not fit this cluster shape",
+            )
+        print(
+            f"WARNING: GPU OOM with {inference.knob}={failed_value} ({evidence}); "
+            f"retrying with {inference.knob}={next_value}.",
+            flush=True,
+        )
+        await asyncio.sleep(retry_delay_seconds)
 
 
 def training_reporting_env(
