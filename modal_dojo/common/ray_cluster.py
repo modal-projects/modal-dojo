@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 import modal
 
+from modal_dojo.common import nccl_ras
 from modal_dojo.train_recipes.gpu_allocation import _normalize_gpu_type
 
 RAY_PORT = 6379
@@ -173,6 +174,7 @@ class ModalRayCluster:
         self._client = None
         self._discovered: bool = False
         self._started: bool = False
+        self.node_ips: list[str] = []
 
     def head_extra_start_args(self) -> list[str]:
         """Additional arguments for ``ray start --head``."""
@@ -226,6 +228,7 @@ class ModalRayCluster:
             head_addr = ips[0]
             node_ip = ips[rank]
 
+        self.node_ips = list(ips) if n_nodes > 1 else [node_ip]
         self.n_nodes = n_nodes
         self.rank = rank
         self.head_addr = head_addr
@@ -327,6 +330,7 @@ class ModalRayCluster:
 
         _TERMINAL = {"SUCCEEDED", "FAILED", "STOPPED"}
         retry_count = 0
+        ras_task = asyncio.create_task(self._watch_nccl_ras())
 
         async def _poll_status() -> str | None:
             try:
@@ -338,53 +342,60 @@ class ModalRayCluster:
                 print(f"\n[ray] Status poll failed; retrying: {exc}", flush=True)
                 return None
 
-        while retry_count < max_retries:
+        try:
+            while retry_count < max_retries:
 
-            async def _tail_logs() -> None:
-                log_stream = self._client.tail_job_logs(job_id)
-                if inspect.isawaitable(log_stream):
-                    log_stream = await log_stream
-                if hasattr(log_stream, "__aiter__"):
-                    async for line in log_stream:
-                        print(line, end="", flush=True)
-                else:
-                    for line in log_stream:
-                        print(line, end="", flush=True)
+                async def _tail_logs() -> None:
+                    log_stream = self._client.tail_job_logs(job_id)
+                    if inspect.isawaitable(log_stream):
+                        log_stream = await log_stream
+                    if hasattr(log_stream, "__aiter__"):
+                        async for line in log_stream:
+                            print(line, end="", flush=True)
+                    else:
+                        for line in log_stream:
+                            print(line, end="", flush=True)
 
-            tail_task = asyncio.create_task(_tail_logs())
-            try:
-                while not tail_task.done():
-                    status = await _poll_status()
-                    if status in _TERMINAL:
-                        done, _ = await asyncio.wait({tail_task}, timeout=5)
-                        if done:
-                            await tail_task
-                        break
-                    await asyncio.sleep(2)
-                else:
-                    await tail_task
-                    status = await _poll_status() or "UNKNOWN"
-            finally:
-                if not tail_task.done():
-                    tail_task.cancel()
-                    try:
+                tail_task = asyncio.create_task(_tail_logs())
+                try:
+                    while not tail_task.done():
+                        status = await _poll_status()
+                        if status in _TERMINAL:
+                            done, _ = await asyncio.wait({tail_task}, timeout=5)
+                            if done:
+                                await tail_task
+                            break
+                        await asyncio.sleep(2)
+                    else:
                         await tail_task
-                    except asyncio.CancelledError:
-                        pass
+                        status = await _poll_status() or "UNKNOWN"
+                finally:
+                    if not tail_task.done():
+                        tail_task.cancel()
+                        try:
+                            await tail_task
+                        except asyncio.CancelledError:
+                            pass
 
-            if status in _TERMINAL:
-                break
-            retry_count += 1
-            print(
-                f"\n[ray] Log stream ended but job {job_id} is still {status}; "
-                f"reconnecting in 2s... (retry {retry_count}/{max_retries})"
-            )
-            await asyncio.sleep(2)
-        else:
-            raise RuntimeError(
-                f"Ray job {job_id} log stream disconnected {max_retries} times "
-                f"without reaching terminal status (current: {status})"
-            )
+                if status in _TERMINAL:
+                    break
+                retry_count += 1
+                print(
+                    f"\n[ray] Log stream ended but job {job_id} is still {status}; "
+                    f"reconnecting in 2s... (retry {retry_count}/{max_retries})"
+                )
+                await asyncio.sleep(2)
+            else:
+                raise RuntimeError(
+                    f"Ray job {job_id} log stream disconnected {max_retries} times "
+                    f"without reaching terminal status (current: {status})"
+                )
+        finally:
+            ras_task.cancel()
+            try:
+                await ras_task
+            except asyncio.CancelledError:
+                pass
 
         print(f"\nFinal Ray job status: {status}")
         if status != "SUCCEEDED":
@@ -405,6 +416,53 @@ class ModalRayCluster:
                 status=status, is_success=status == "SUCCEEDED", message=message
             )
         return ModalRayJobResult(status=status, is_success=status == "SUCCEEDED")
+
+    async def _watch_nccl_ras(self, interval_seconds: float = 60.0) -> None:
+        """Poll each node's NCCL RAS socket and log newly detected problems.
+
+        Every NCCL process exposes a RAS thread answering ``STATUS`` on its
+        node's RAS port (bound to ``0.0.0.0`` via ``NCCL_RAS_ADDR``). A process
+        the job considers dead or unresponsive, or a node whose socket is
+        unreachable, points at a stuck node or a networking issue. Findings
+        are logged once per state change.
+        """
+        port = nccl_ras.ras_port_from_env()
+        unreachable_reported: set[str] = set()
+        last_problems: dict[str, set[str]] = {}
+        while True:
+            await asyncio.sleep(interval_seconds)
+            probes = (
+                self._ras_probe(ip, port, unreachable_reported, last_problems)
+                for ip in self.node_ips
+            )
+            try:
+                results = await asyncio.gather(*probes)
+            except Exception as exc:  # noqa: BLE001 — keep the sweep alive
+                print(f"[nccl-ras] sweep failed: {exc}", flush=True)
+                continue
+            for lines in results:
+                for line in lines:
+                    print(f"[nccl-ras] {line}", flush=True)
+
+    async def _ras_probe(
+        self,
+        ip: str,
+        port: int,
+        unreachable_reported: set[str],
+        last_problems: dict[str, set[str]],
+    ) -> list[str]:
+        try:
+            status = await asyncio.to_thread(nccl_ras.query_status, ip, port)
+        except OSError as exc:
+            if ip in unreachable_reported:
+                return []
+            unreachable_reported.add(ip)
+            return [f"{ip}: RAS socket unreachable ({exc})"]
+        unreachable_reported.discard(ip)
+        problems = set(nccl_ras.problem_lines(status))
+        findings = [f"{ip}: {line}" for line in problems - last_problems.get(ip, set())]
+        last_problems[ip] = problems
+        return findings
 
     async def wait_forever(self, poll_seconds: float = 10) -> None:
         """Keep a worker container alive until the head terminates the cluster."""

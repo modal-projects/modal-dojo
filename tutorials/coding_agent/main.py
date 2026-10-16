@@ -88,7 +88,6 @@ config = TrainConfig(
             "PYTHONPATH": "/root/Megatron-LM/:/root/slime",
             "CUDA_DEVICE_MAX_CONNECTIONS": "1",
             "NCCL_NVLS_ENABLE": "1",
-            "NCCL_RAS_ENABLE": "0",
             "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
             "ASYNC_RL_TASK_ROOT": "/data",
             "SLIME_AGENT_SANDBOX_CPU": "2",

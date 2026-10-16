@@ -15,6 +15,7 @@ from modal import App, Dict as ModalDict, Image
 
 from modal_dojo.common import (
     hf_secrets,
+    nccl_ras,
     proxy_auth_secrets,
 )
 from modal_dojo.common.checkpoint import Checkpoint
@@ -343,6 +344,7 @@ def _build_miles_base_image(
         and recipe.environment.get("MILES_REINSTALL_RDMA", "1") != "0"
     ):
         image = image.run_commands(RDMA_RUNTIME_INSTALL_COMMAND)
+    image = image.env(nccl_ras.NCCL_RAS_IMAGE_ENV)
     if recipe.image_env:
         image = image.env(recipe.image_env)
 
