@@ -1,6 +1,7 @@
 """Thin wrapper around miles' convert_hf_to_torch_dist.py for Modal volumes.
 
-The upstream script's shutil.move(iter_0000001 -> release) only sees local shards,
+The upstream script's release publication (inline shutil.move or the newer
+publish_as_release helper) only sees local shards,
 which poisons the volume state for multi-node conversions (the rename propagates a
 deletion of iter_0000001/ that wipes other nodes' committed shards).
 
@@ -93,6 +94,12 @@ def main() -> None:
     _start_memory_monitor()
     src = _load_upstream_source()
     if os.environ.get("SKIP_RELEASE_RENAME"):
+        # Newer Miles moved the rename into checkpoint.publish_as_release.
+        # Suppress its call as well as the older inline shutil.move below.
+        src = src.replace(
+            "publish_as_release(args.save)",
+            "pass  # SKIP_RELEASE_RENAME",
+        )
         src = src.replace(
             "shutil.move(source_dir, target_dir)",
             "pass  # SKIP_RELEASE_RENAME",

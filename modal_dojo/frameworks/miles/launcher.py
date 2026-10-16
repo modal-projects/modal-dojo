@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from modal import App, Dict as ModalDict, Image
+from modal import App, Dict as ModalDict, Image, __version__ as MODAL_VERSION
 
 from modal_dojo.common import (
     hf_secrets,
@@ -63,7 +63,7 @@ from modal_dojo.common.launcher_helpers import (
 from modal_dojo.common.status_reporter import flush as flush_status_reporter
 from modal_dojo.common.status import MilesStatus
 from modal_dojo.common.torch_dist_checkpoint import (
-    is_complete_torch_dist_checkpoint_dir,
+    is_complete_torch_dist_checkpoint_storage,
 )
 from modal_dojo.train_recipes.miles_recipe.recipe import (
     CHECKPOINTS_PATH,
@@ -279,7 +279,7 @@ def _release_convert_lock(run_id: str, volume_name: str, save_path: str) -> None
 def _is_resumable_checkpoint(path: str) -> bool:
     """Whether ``path`` holds a training save that can be resumed from.
 
-    Looser than ``is_complete_torch_dist_checkpoint_dir`` because miles writes
+    Looser than ``is_complete_torch_dist_checkpoint_storage`` because miles writes
     more than one save shape: a LoRA run stores ``adapter/`` with per-rank
     ``.pt`` files and no ``.metadata``/``common.pt``/``.distcp`` at all, so the
     conversion predicate would report every adapter checkpoint as absent and
@@ -382,7 +382,9 @@ def _build_miles_base_image(
 
     image = apply_metric_image(image, recipe.metrics)
     image = image.add_local_python_source("modal_dojo", copy=True)
-    image = image.uv_pip_install("randomname")
+    # torchrun/Ray subprocesses do not inherit the Modal function wrapper's
+    # injected SDK path. The cross-rank checkpoint commit hook imports it.
+    image = image.uv_pip_install("randomname", f"modal=={MODAL_VERSION}")
     image = mount_tools_dir(image)
     image = mount_caller_source(image, caller_script)
 
@@ -607,7 +609,7 @@ def build_miles_app(
 
         save_path = str(miles.ref_load)
         if has_torch_dist_checkpoint(
-            save_path, is_complete=is_complete_torch_dist_checkpoint_dir
+            save_path, is_complete=is_complete_torch_dist_checkpoint_storage
         ):
             print(
                 f"Found existing torch_dist checkpoint at {save_path}; "
@@ -642,7 +644,7 @@ def build_miles_app(
                     for name in sorted(os.listdir(save_path))
                     if (name == "release" or name.startswith("iter_"))
                     and os.path.isdir(os.path.join(save_path, name))
-                    and not is_complete_torch_dist_checkpoint_dir(
+                    and not is_complete_torch_dist_checkpoint_storage(
                         os.path.join(save_path, name)
                     )
                 ]
@@ -758,6 +760,10 @@ def build_miles_app(
             )
 
         env = {**os.environ, **environment}
+        # The patched Megatron save waits for every node to publish its shards
+        # before the coordinator returns. Training already enables this hook;
+        # conversion needs it too, before clustered workers can exit.
+        env["MODAL_DOJO_CHECKPOINTS_VOLUME_NAME"] = checkpoints_volume_name
         if any(arg.startswith("--pipeline-model-parallel-size ") for arg in extra_args):
             env["CONVERT_KEEP_PP1"] = "1"
         if num_nodes > 1:
@@ -784,15 +790,17 @@ def build_miles_app(
                 checkpoints_volume.commit()
 
                 if node_rank == 0:
+                    # Refresh the coordinator's view after all workers committed.
+                    checkpoints_volume.reload()
                     print(f"Saved Megatron torch_dist checkpoint to {save_path}")
                     # Fail loudly here rather than leaving a partial checkpoint for a later
                     # run to mistake for a cache hit.
                     if not has_torch_dist_checkpoint(
-                        save_path, is_complete=is_complete_torch_dist_checkpoint_dir
+                        save_path, is_complete=is_complete_torch_dist_checkpoint_storage
                     ):
                         raise RuntimeError(
                             f"Conversion finished but {save_path} holds no complete "
-                            "torch_dist checkpoint (.metadata or .distcp shards missing)."
+                            "torch_dist checkpoint (metadata or referenced shard data missing)."
                         )
             if node_rank == 0:
                 _release_convert_lock(
@@ -943,8 +951,11 @@ def build_miles_app(
 
         if model and model.model_name:
             # Warm each node's cache before Ray imports remote code concurrently.
+            hf_model_ref = model.model_path or model.model_name
             prewarm_remote_code(
-                resolve_checkpoint_ref(model.model_path or model.model_name),
+                resolve_checkpoint_ref(
+                    hf_model_ref, revision=model_revision(model, hf_model_ref)
+                ),
                 environment,
                 required=miles.model_name == "kimi_k3",
             )
@@ -972,7 +983,9 @@ def build_miles_app(
                 hf_ref = (
                     str(model.model_path)
                     if model.model_path
-                    else snapshot_download(model.model_name, local_files_only=True)
+                    else snapshot_download(
+                        model.model_name, revision=model.revision, local_files_only=True
+                    )
                 )
 
             def build_cmd() -> str:
