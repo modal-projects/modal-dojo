@@ -1,36 +1,52 @@
 # Muse Spark Open: H200 and B300 64K validation report
 
-Status snapshot: 2026-10-16, approximately 18:28 UTC. Branch: `helena/muse-spark-open`.
+Status snapshot: 2026-10-16, approximately 19:11 UTC. Branch: `helena/muse-spark-open`.
 
 The H200 and B300 recipes are implemented, registered, and locally tested. Native
 GPU probes pass on both architectures after repairing the upstream image. Neither
 hardware variant has completed a full-model rollout or optimizer step at 64K.
 These are candidate recipes, not production-validated configurations.
 
-## New H200 validation submission (2026-10-16 18:37 UTC)
+## Current iteration
 
-The H200 fixes are present in pushed recipe commit `1338f57`; 18 focused regression
-tests passed again before submission. One-step validation on 64 H200s at 65,536
-tokens was submitted through
-[controller ap-anbkAWv2xXNAGneelZo3Fk](https://modal.com/apps/modal-labs/training-team/ap-anbkAWv2xXNAGneelZo3Fk),
-call `fc-01M530263XRRYRVG2A83ATA316`. This is a queued dependency controller,
-not yet an allocated H200 training run.
+The current H200 proof is `stale-trumpet-bc6d2db1f110`, app
+[`ap-N0KtuyOJrNu3iXCeBhnD6C`](https://modal.com/apps/modal-labs/training-team/ap-N0KtuyOJrNu3iXCeBhnD6C).
+It was launched at 19:08 UTC from commit `16e6103`, with a 32-H200 conversion
+and the unchanged 64-H200 training topology. No model step has completed.
 
-It waits for the actual pending B300 conversion
-`fc-01M52YD50B1DKETS2G22AZ5XY4` and every pending call in its launch tree,
-including retried conversions and training. A failed parent no longer hides
-pending children. It also checks the shared-volume lock and requires two quiet
-observations before invoking H200 preparation. No calls are canceled and no apps
-are stopped. The checkpoint's strict storage checks determine whether it can be
-reused or needs one serialized reconversion. Only the H200 one-step proof is
-submitted by this controller.
+The preceding proof, `quiet-thinner-c6ecd7dbfbcb` / `ap-jRiZ6TCnh6SNyDzCewGUp7`,
+waited from 18:45 to 19:07 UTC without a single GPU worker. It was deliberately
+stopped; its conversion call was confirmed terminated before releasing its lock.
+The fresh conversion uses TP1/PP4/EP8, matching upstream's B300 conversion layout.
+A CPU inspection of all pinned HF tensor headers estimates at most 56.626 GiB of
+text weights per rank, excluding runtime buffers and frozen omni companions.
+This supports trying four H200 nodes without needing all eight training nodes
+for preparation; it does not prove runtime fit or guarantee faster scheduling.
+The conversion has 1 TiB of node-local disk. See `conversion_footprint.json`.
 
-`h200_validation_launch.json` records the submission; `launch_h200_validation.py`
-preserves the exact launcher, intended to run from the companion autoconfig
-environment. It contains specific dependency IDs for this attempt, not a general
-fresh-launch example. Nine tests in `test_h200_validation_gate.py` cover failed
-parents with pending children, nested pending training, missing calls, and lock
-ownership/expiry. Full-model H200 validation remains pending.
+The user authorized fixes and validation through successful H200 and B300 smokes,
+including Autoconfig registration. Stopped the stale B300 controller and its
+dependent H200 waiter before starting this attempt; all old queued conversion
+calls were confirmed terminated before releasing their checkpoint lock. The
+local launch uses Autoconfig's planner/tags and the current Dojo sources, avoiding
+relaunches caused by preemption of the earlier remote controller. B300 will reuse
+only a complete checkpoint after H200 preparation.
+
+Commit `94856dc` fixes generated documentation and removes redundant recipe
+declarations without changing effective settings. The full local suite passes
+(1,415 tests, one skipped, four subtests), all six Autoconfig integration tests
+pass, and GitHub Tests passed on `94856dc`. The four-node conversion change
+passes 100 relevant Dojo tests and all six Autoconfig integration tests; the new
+GitHub Tests and formatting checks also pass on `16e6103`. The separate Miles patch snapshot workflow
+fails on a pre-existing mismatch: the default image at commit
+`ab48452eaf35ef6beaf9c745e1c923bf261bd235` does not contain the expected
+`miles/ray/rollout/rollout_manager.py`, and several other fixture hashes also differ.
+The default image and snapshot script are unchanged by this branch. GPU CI model
+validation still requires a targeted run after the live recipe proofs succeed.
+
+Earlier submissions and dependency-controller logic are preserved in
+`h200_validation_launch.json`, `launch_h200_validation.py`, and `live_status.json`.
+Those files are historical evidence, not the currently active launcher.
 
 ## Files and registration
 
@@ -59,18 +75,8 @@ failures leave the metadata row marked `running`.
 | `foggy-flask-1432d863d70e` | H200 | Training failed before Ray startup on a missing offline HF `main` reference. Conversion returned success, but subsequent integrity verification found missing shards. | [ap-H4anHKCcZikyPZe8egnBXB](https://modal.com/apps/modal-labs/training-team/ap-H4anHKCcZikyPZe8egnBXB) |
 | `celeste-perimeter-b08ea29fcbe6` | B300 | Prior conversion call is terminated; persisted run status is stopped. The launch graph also contains the newer pending conversion listed above. | [ap-98eIK0yn8Thg7T5OedmCWo](https://modal.com/apps/modal-labs/training-team/ap-98eIK0yn8Thg7T5OedmCWo) |
 
-The serialized follow-up controller
-[`ap-BC5vqYxQYZYYQdjX12y1Ti`](https://modal.com/apps/modal-labs/training-team/ap-BC5vqYxQYZYYQdjX12y1Ti)
-/ `fc-01M52XTR42ZZK7GAHSNWEG8P50` is failed, not still waiting. It observed the
-older launcher as terminal and attempted H200 preparation while the newer B300
-conversion was pending. The conversion lock correctly prevented concurrent writes.
-No existing run was stopped by this branch/push task. The cause of the earlier
-B300 termination was not established by the status inspection.
-
-There are currently no verified running H200 or B300 training steps. The latest
-active work is queued B300 checkpoint conversion. See `live_status.json` for the
-raw metadata and call graph snapshot, including the pending conversion call
-`fc-01M52YD50B1DKETS2G22AZ5XY4`.
+The older run table is historical: the queued B300 conversion and its controllers
+have since been stopped. Only the current attempt described above is active.
 
 ## Recipe settings
 
@@ -79,21 +85,21 @@ raw metadata and call graph snapshot, including the pending conversion call
 | GPUs | 64, eight nodes of eight | 32, four nodes of eight |
 | Training TP / PP / CP | 4 / 4 / 4 | 8 / 4 / 1 |
 | EP / expert TP | 16 / 1 | 8 / 1 |
-| Conversion TP / PP / EP | 1 / 4 / 16 | 1 / 4 / 8 |
+| Conversion TP / PP / EP | 1 / 4 / 8 (32 GPUs) | 1 / 4 / 8 (32 GPUs) |
 | Rollout GPUs per engine | 16 | 8 |
 | Training attention probe | FlashAttention 3 | FlashAttention 2; TE FA4 disabled |
 | Node-local training disk | 2 TiB | 3 TiB |
-| Node-local conversion disk | 512 GiB | 1 TiB |
+| Node-local conversion disk | 1 TiB | 1 TiB |
 
 Both recipes use a 65,536-token context: 4,096 prompt tokens plus up to 61,440
 response tokens. Sequence length, maximum positions, and SGLang context are all
 65,536. They use BF16 weights/KV cache, full recomputation, streamed Adam state on
 local disk, GRPO with four prompts and four samples per prompt, global batch 16,
 and one rollout/update by default. Weight and optimizer checkpoint saving are
-disabled for the proof runs. No 10-step smoke or longer training is authorized or
-claimed as completed.
+disabled for the proof runs. Ten-step smokes are authorized after the one-step
+proofs succeed; no smoke is claimed as completed. Longer training is out of scope.
 
-Both future recipes use `name="miles-muse_spark_open_64k_b300_recipe"`, selecting
+Both candidate recipes use `name="miles-muse_spark_open_64k_b300_recipe"`, selecting
 `miles-muse_spark_open_64k_b300_recipe-checkpoints`, and
 `ref_load="/checkpoints/Muse-Spark-Open-816B-A42B_torch_dist"`.
 Only one conversion may write that shared checkpoint at a time. Training may
@@ -179,13 +185,14 @@ already tested repaired image, rather than treating the moving tag as verified.
 
 ## Next validation steps
 
-Let the existing B300 conversion reach a terminal state without starting another
-writer. Inspect its result and every referenced shard before reuse. Any new
-controller must wait for the actual conversion call, including retried child
-calls, rather than relying only on a parent launch's terminal status. Then run
-the corrected one-step H200 and B300 proofs against the shared complete checkpoint.
-Confirm a sensible rollout, nonempty/nonzero raw reward, an optimizer update, and
-step/substep timing before considering a separately authorized smoke test.
+Monitor the current H200 conversion to a terminal state and verify every
+referenced shard before reuse. Then complete the one-step H200 and B300 proofs
+against that shared checkpoint. Require sensible responses, nonzero raw reward,
+an optimizer update, and step/substep timing. Follow each successful proof with
+a fresh ten-step smoke, inspect early and late traces and rewards, and verify the
+successful runs and metrics in Autoconfig. Check actual sequence lengths before
+claiming empirical long-context fit; configuring a 65,536-token cap alone is not
+that evidence.
 
 The evidence files contain status and probe results only. Authentication tokens,
 secret values, full model weights, and unrelated workspace changes are excluded.
