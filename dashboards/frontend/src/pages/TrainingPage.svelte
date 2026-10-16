@@ -108,11 +108,17 @@
     { key: "dataset", label: "Dataset", width: 180, minWidth: 120 },
     { key: "recipe", label: "Recipe", width: 116, minWidth: 88 },
     { key: "group", label: "Group", width: 280, minWidth: 220 },
-    { key: "tags", label: "Tags", width: 520, minWidth: 360 },
+    { key: "tags", label: "Tags", width: 420, minWidth: 240 },
     { key: "created", label: "Created", width: 150, minWidth: 130 },
     { key: "updated", label: "Last updated", width: 170, minWidth: 150 },
     { key: "actions", label: "", ariaLabel: "Actions", width: 236, minWidth: 180 },
   ];
+
+  const MAX_VISIBLE_TAGS = 3;
+
+  function tagsTitle(groupTags) {
+    return (groupTags?.tags || []).map((tag) => `${tag.key}=${formatTagValue(tag.value)}`).join("\n");
+  }
 
   function trainingRunDetailPath(runId) {
     return `/training/${encodeURIComponent(runId)}`;
@@ -390,25 +396,24 @@
                   <td class="group-cell row-open-cell" title={groupTags?.group_id || run.group_id || ""}>
                     <a href={trainingRunDetailPath(run.run_id)} class="cell-open-button" onclick={(event) => selectRun(run.run_id, event)}>
                       {#if groupTags?.group_id || run.group_id}
-                        <span class="inline-block max-w-full whitespace-normal [overflow-wrap:anywhere] align-bottom p-[2px_8px] rounded-[999px] text-[0.72rem] [font-variant-numeric:tabular-nums] text-(--muted) [border:1px_solid_var(--border,#2f2f2f)] bg-[color-mix(in_srgb,var(--panel-alt)_70%,transparent)]">{groupTags?.group_id || run.group_id}</span>
+                        <span class="inline-block max-w-full overflow-hidden text-ellipsis whitespace-nowrap align-bottom p-[2px_8px] rounded-[999px] text-[0.72rem] [font-variant-numeric:tabular-nums] text-(--muted) [border:1px_solid_var(--border,#2f2f2f)] bg-[color-mix(in_srgb,var(--panel-alt)_70%,transparent)]">{groupTags?.group_id || run.group_id}</span>
                       {:else}
                         <span class="group-empty">—</span>
                       {/if}
                     </a>
                   </td>
-                  <td class="h-auto align-top row-open-cell">
-                    <a
-                      href={trainingRunDetailPath(run.run_id)}
-                      class="cell-open-button overflow-visible! text-clip! whitespace-normal!"
-                      onclick={(event) => selectRun(run.run_id, event)}
-                    >
+                  <td class="min-w-0 row-open-cell" title={tagsTitle(groupTags)}>
+                    <a href={trainingRunDetailPath(run.run_id)} class="cell-open-button" onclick={(event) => selectRun(run.run_id, event)}>
                       {#if groupTags?.tags.length}
-                        <span class="flex flex-wrap gap-[4px] min-w-0 max-w-full">
-                          {#each groupTags.tags as tag (tag.key)}
-                            <span class="inline-flex items-baseline max-w-full min-w-0 overflow-hidden p-[2px_7px] [border:1px_solid_var(--border,#2f2f2f)] rounded-[999px] bg-[color-mix(in_srgb,var(--panel-alt)_70%,transparent)] text-(--text) [font-family:var(--font-mono)] text-[11px] leading-[14px]" title={`${tag.key}=${formatTagValue(tag.value)}`}>
-                              <span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-(--muted)">{tag.key}</span><span>=</span><span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{formatTagValue(tag.value)}</span>
+                        <span class="flex items-center gap-[4px] min-w-0 max-w-full overflow-hidden">
+                          {#each groupTags.tags.slice(0, MAX_VISIBLE_TAGS) as tag (tag.key)}
+                            <span class="inline-flex items-baseline shrink-0 max-w-[104px] p-[2px_7px] [border:1px_solid_var(--border,#2f2f2f)] rounded-[999px] bg-[color-mix(in_srgb,var(--panel-alt)_70%,transparent)] text-(--text) [font-family:var(--font-mono)] text-[11px] leading-[14px]">
+                              <span class="shrink-0 text-(--muted)">{tag.key.split(".").at(-1)}=</span><span class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{formatTagValue(tag.value)}</span>
                             </span>
                           {/each}
+                          {#if groupTags.tags.length > MAX_VISIBLE_TAGS}
+                            <span class="shrink-0 p-[2px_7px] rounded-[999px] text-(--muted) [font-family:var(--font-mono)] text-[11px] leading-[14px] [border:1px_dashed_var(--border,#2f2f2f)]">+{groupTags.tags.length - MAX_VISIBLE_TAGS}</span>
+                          {/if}
                         </span>
                       {:else}
                         <span class="group-empty">—</span>
