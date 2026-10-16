@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from modal import App, Dict as ModalDict, Image
+from modal import App, Dict as ModalDict, Image, __version__ as MODAL_VERSION
 
 from modal_dojo.common import (
     hf_secrets,
@@ -382,7 +382,9 @@ def _build_miles_base_image(
 
     image = apply_metric_image(image, recipe.metrics)
     image = image.add_local_python_source("modal_dojo", copy=True)
-    image = image.uv_pip_install("randomname")
+    # torchrun/Ray subprocesses do not inherit the Modal function wrapper's
+    # injected SDK path. The cross-rank checkpoint commit hook imports it.
+    image = image.uv_pip_install("randomname", f"modal=={MODAL_VERSION}")
     image = mount_tools_dir(image)
     image = mount_caller_source(image, caller_script)
 
