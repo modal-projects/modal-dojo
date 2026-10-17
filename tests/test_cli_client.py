@@ -180,10 +180,14 @@ def test_maps_http_errors(status_code, error, exit_code, mock_transport):
     assert exc_info.value.exit_code == exit_code
 
 
-def test_surfaces_dashboard_detail_for_bad_request(mock_transport):
+@pytest.mark.parametrize(
+    ("status_code", "error"),
+    [(400, "dashboard_request_failed"), (502, "dashboard_server_error")],
+)
+def test_surfaces_dashboard_detail_for_http_errors(status_code, error, mock_transport):
     mock_transport(
         lambda _request: httpx.Response(
-            400,
+            status_code,
             json={
                 "detail": (
                     "since must be epoch seconds, ISO 8601, "
@@ -200,7 +204,7 @@ def test_surfaces_dashboard_detail_for_bad_request(mock_transport):
     assert str(exc_info.value) == (
         "since must be epoch seconds, ISO 8601, or a relative time such as 24h"
     )
-    assert exc_info.value.error == "dashboard_request_failed"
+    assert exc_info.value.error == error
 
 
 def test_uses_command_specific_not_found_error(mock_transport):

@@ -20,6 +20,7 @@
   import ZoomOutButton from "../components/ZoomOutButton.svelte";
   import RunMetricsPanel from "../components/RunMetricsPanel.svelte";
   import { toEpochSeconds } from "../lib/format.js";
+  import RunStopButton from "../components/RunStopButton.svelte";
   import {
     getTimeRangeParams,
     resolveTimeRange,
@@ -105,9 +106,11 @@
   // 5s poll stops instead of refetching the same 404 for as long as the page
   // stays open.
   let runMissing = $state(false);
+  let runGen = 0;
 
   async function loadRun(id, parentSignal) {
     if (parentSignal.aborted) return;
+    const gen = ++runGen;
     const controller = new AbortController();
     let timedOut = false;
     const abortRequest = () => controller.abort();
@@ -120,7 +123,7 @@
     runLoading = true;
     try {
       const nextRun = await fetchRun(id, { signal: controller.signal });
-      if (parentSignal.aborted) return;
+      if (parentSignal.aborted || gen !== runGen) return;
       if (nextRun === null) {
         run = null;
         runMissing = true;
@@ -1654,6 +1657,17 @@
           <span>Collapse</span>
         </button>
       {/if}
+      {#key run?.run_id}
+        <RunStopButton
+          {run}
+          onStopped={(updated) => {
+            if (updated?.run_id === runId) {
+              runGen++;
+              run = updated;
+            }
+          }}
+        />
+      {/key}
       {#each metricLinks as link (link.url)}
         <a
           class="header-link metric-link inline-flex items-center gap-[6px] min-h-[32px] leading-[16px]"

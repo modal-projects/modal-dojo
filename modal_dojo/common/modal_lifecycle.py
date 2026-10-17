@@ -79,8 +79,7 @@ def app_is_live(app_id: str) -> bool:
     return status
 
 
-def stop_app(app_id: str) -> None:
-    """Stop a detached Modal app (best effort). Never raises."""
+def stop_app(app_id: str | None, *, best_effort: bool = False) -> None:
     if not app_id:
         return
     try:
@@ -98,5 +97,7 @@ def stop_app(app_id: str) -> None:
             )
 
         synchronizer.create_blocking(_stop)()
-    except Exception as exc:  # noqa: BLE001 — auto-stop is best-effort
+    except Exception as exc:
+        if not best_effort:
+            raise
         print(f"WARNING: could not auto-stop app {app_id}: {exc!r}")

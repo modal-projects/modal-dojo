@@ -74,6 +74,20 @@ export async function fetchRun(trainingRunId, { signal } = {}) {
   return await readJson(res, "run detail");
 }
 
+export async function stopRun(trainingRunId) {
+  const res = await fetch(
+    `${SERVER}/runs/${encodeURIComponent(trainingRunId)}/stop`,
+    {
+      method: "POST",
+      headers: { "X-Training-Gym-Action": "stop" },
+    },
+  );
+  if (!res.ok) {
+    throw new Error(await getErrorFromResponse(res));
+  }
+  return await readJson(res, "stop run");
+}
+
 export async function fetchEvals({ signal } = {}) {
   const res = await fetch(`${SERVER}/evals`, { signal });
   if (!res.ok) {

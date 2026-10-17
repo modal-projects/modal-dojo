@@ -1554,6 +1554,13 @@ table.resizable-table.sticky-first-column tr.row-selected td:first-child {
   line-height: 16px;
 }
 
+.stop-run-error {
+  color: #f87171;
+  font-size: 12px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
 .recipe-params-header {
   display: flex;
   align-items: center;

@@ -392,7 +392,7 @@ def run_base_training(
     try:
         train_result = launch.result(timeout=timeout)
     except BaseException:
-        stop_app(launch.modal_app_id)
+        stop_app(launch.modal_app_id, best_effort=True)
         raise
     training_run = TrainingRun.from_id(train_result.training_run_id)
     previous = None
