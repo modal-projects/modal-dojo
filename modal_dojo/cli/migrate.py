@@ -251,6 +251,16 @@ def migrate(
             proxy_auth is ProxyAuthMode.REQUIRE
         )
         config._write_config(config._render(settings).encode())
+        if old_exists and new_exists:
+            # setup() rejects the legacy path even when the new config exists.
+            # Archive only after persisting settings, before either deployment.
+            # A failed deployment can then resume using the new config.
+            backup = config.LEGACY_CONFIG_PATH.with_name(
+                config.LEGACY_CONFIG_PATH.name + "." + uuid.uuid4().hex + ".bak"
+            )
+            config.LEGACY_CONFIG_PATH.rename(backup)
+            backup.chmod(0o600)
+            print_note(f"Archived legacy configuration at {backup}")
         stage = "Trackio deployment"
         if trackio:
             print("Deploying Trackio with the migrated data volume...")
@@ -260,14 +270,9 @@ def migrate(
             print("No default Trackio data volume found; skipping Trackio deployment.")
         stage = "dashboard deployment"
         print("Deploying the Modal Dojo dashboard...")
-        url = setup(proxy_auth=proxy_auth)
-        if old_exists and new_exists:
-            backup = config.LEGACY_CONFIG_PATH.with_name(
-                config.LEGACY_CONFIG_PATH.name + "." + uuid.uuid4().hex + ".bak"
-            )
-            config.LEGACY_CONFIG_PATH.rename(backup)
-            backup.chmod(0o600)
-            print_note(f"Archived legacy configuration at {backup}")
+        # Auth was resolved before shutdown. Do not prompt for unrelated
+        # custom-deployment credentials with services already stopped.
+        url = setup(proxy_auth=proxy_auth, interactive=False)
         print("Migration complete!")
         return url
     except Exception as exc:
