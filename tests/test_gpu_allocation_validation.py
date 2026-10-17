@@ -3,11 +3,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from modal_dojo.common.errors import GpuAllocationError
+from modal_dojo.common.errors import DojoConfigError, GpuAllocationError
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 from modal_dojo.train_recipes.gpu_allocation import (
     resolve_gpu_allocation,
     validate_megatron_actor_parallelism,
+    validate_microbatch_schedule,
     validate_num_experts_divisible_by_expert_parallel_size,
 )
 from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
@@ -335,3 +336,114 @@ def test_slime_colocate_rejects_expandable_segments_in_global_env() -> None:
             **{**_SLIME_KW, "colocate": True},
             environment={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
         )
+
+
+_STATIC_BATCH_KW = dict(
+    use_dynamic_batch_size=False,
+    actor_num_nodes=1,
+    actor_num_gpus_per_node=8,
+    tensor_model_parallel_size=1,
+    pipeline_model_parallel_size=1,
+    context_parallel_size=1,
+    global_batch_size=8,
+    n_samples_per_prompt=2,
+    micro_batch_size=1,
+    loss_type="policy_loss",
+)
+
+
+def _static_config(**overrides: object) -> SimpleNamespace:
+    return SimpleNamespace(**(_STATIC_BATCH_KW | overrides))
+
+
+def test_static_batch_schedule_accepts_divisible_layout() -> None:
+    validate_microbatch_schedule(_static_config())
+
+
+def test_static_batch_schedule_rejects_non_divisible_microbatch_count() -> None:
+    config = _static_config(actor_num_gpus_per_node=16, global_batch_size=17)
+
+    with pytest.raises(DojoConfigError, match=r"17 micro-batches.*dp_size=16"):
+        validate_microbatch_schedule(config)
+
+
+def test_static_batch_schedule_skips_dynamic_batching() -> None:
+    config = _static_config(use_dynamic_batch_size=True, global_batch_size=17)
+    validate_microbatch_schedule(config)
+
+
+def test_static_batch_schedule_sft_reads_hatch_rollout_batch_size() -> None:
+    config = _static_config(loss_type="sft_loss")
+    config._escape_hatch_values = lambda: {"rollout_batch_size": 17}
+
+    with pytest.raises(DojoConfigError, match=r"17 micro-batches.*dp_size=8"):
+        validate_microbatch_schedule(config)
+
+
+def test_static_batch_schedule_rejects_zero_samples_per_prompt() -> None:
+    config = _static_config(n_samples_per_prompt=0)
+
+    with pytest.raises(DojoConfigError, match="n_samples_per_prompt"):
+        validate_microbatch_schedule(config)
+
+
+def test_static_batch_schedule_rejects_rollout_smaller_than_step() -> None:
+    config = _static_config(
+        global_batch_size=8, rollout_batch_size=6, n_samples_per_prompt=1
+    )
+
+    with pytest.raises(DojoConfigError, match="6 samples per rollout"):
+        validate_microbatch_schedule(config)
+
+
+def test_static_batch_schedule_warns_on_rollout_remainder() -> None:
+    config = _static_config(
+        global_batch_size=8, rollout_batch_size=12, n_samples_per_prompt=1
+    )
+
+    with pytest.warns(UserWarning, match="12 samples per rollout"):
+        validate_microbatch_schedule(config)
+
+
+def test_static_batch_schedule_gates_rollout_coverage_on_rollouts_or_epochs() -> None:
+    config = _static_config(num_rollout=0, rollout_batch_size=6, n_samples_per_prompt=1)
+
+    validate_microbatch_schedule(config)
+
+    config.num_epoch = 2
+    with pytest.raises(DojoConfigError, match="6 samples per rollout"):
+        validate_microbatch_schedule(config)
+
+    config._escape_hatch_values = lambda: {"num_epoch": None}
+    validate_microbatch_schedule(config)
+
+
+def _eval_config(**overrides: object) -> SimpleNamespace:
+    return _static_config(
+        actor_num_nodes=3,
+        tensor_model_parallel_size=8,
+        global_batch_size=24,
+        **{"eval_interval": 5} | overrides,
+    )
+
+
+def test_eval_batch_schedule_rejects_non_divisible_eval_batch() -> None:
+    config = _eval_config()
+    config.eval_config = {
+        "eval_global_batch_size": 64,
+        "eval_micro_batch_size": 1,
+    }
+
+    with pytest.raises(
+        DojoConfigError,
+        match=r"eval_global_batch_size=64.*eval_micro_batch_size=1.*data_parallel_size=3",
+    ):
+        validate_microbatch_schedule(config)
+
+
+def test_eval_batch_schedule_skips_hatch_disabled_eval() -> None:
+    config = _eval_config()
+    config._escape_hatch_values = lambda: {"eval_interval": None}
+    config.eval_config = {"eval_global_batch_size": 65}
+
+    validate_microbatch_schedule(config)
