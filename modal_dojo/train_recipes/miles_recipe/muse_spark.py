@@ -99,6 +99,9 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     no_load_optim: bool = True
     save: str | None = None
     max_retries: int = 0
+    # Resharding the 1.6 TB checkpoint can leave ranks >10 minutes apart at
+    # Megatron's final load barrier, especially across eight H200 nodes.
+    distributed_timeout_minutes: int = 30
 
     rollout_batch_size: int = 4
     n_samples_per_prompt: int = 4
