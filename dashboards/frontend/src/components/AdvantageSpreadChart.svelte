@@ -1,14 +1,12 @@
 <script>
-  // Spread-over-time: is the advantage distribution widening or collapsing as
-  // training proceeds? Each step's distribution is reduced to scalar spread
-  // measures and plotted vs step, so "increasing?" is a single glance at the
-  // slope rather than something you eyeball off overlapping bands.
+  // Share of samples with exactly zero advantage over time. Under group-
+  // normalized estimators (GRPO) a prompt group whose samples all earn the
+  // same reward produces advantages of 0, so this fraction tracks the portion
+  // of each step's batch that contributes no gradient — a rising share means
+  // prompts are going dead (saturated rewards or a collapsing distribution).
   //
-  //   • std   — standard deviation of the step's advantages (stats.std)
-  //   • IQR   — p75 − p25, the robust middle-50% width
-  //
-  // A least-squares trend line is fitted to std and its net change over the run
-  // is reported with a direction arrow.
+  // A least-squares trend line is fitted and its net change over the run is
+  // reported with a direction arrow.
 
   import { brushZoom } from "../lib/brushZoom.js";
   import ChartZoomButtons from "./ChartZoomButtons.svelte";
@@ -37,7 +35,7 @@
   }
 
   function fmt(v) {
-    return Number.isFinite(v) ? v.toFixed(3) : "—";
+    return Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : "—";
   }
 
   let hasDomain = $derived(
@@ -50,16 +48,8 @@
 
   let allPts = $derived(
     (steps || [])
-      .filter((s) => s && s.stats)
-      .map((s) => {
-        const st = s.stats;
-        const q = st.quantiles || {};
-        return {
-          x: num(s.rollout_id),
-          std: num(st.std),
-          iqr: Math.max(num(q.p75, num(st.max)) - num(q.p25, num(st.min)), 0),
-        };
-      })
+      .filter((s) => s && s.stats && Number.isFinite(Number(s.stats.zero_fraction)))
+      .map((s) => ({ x: num(s.rollout_id), frac: num(s.stats.zero_fraction) }))
       .sort((a, b) => a.x - b.x),
   );
 
@@ -73,25 +63,24 @@
     const xMin = hasDomain ? xDomain[0] : Math.min(...xs);
     const xMax = hasDomain ? xDomain[1] : Math.max(...xs);
     const xSpan = xMax - xMin || 1;
-    const yHi = (pts.length ? Math.max(...pts.map((p) => Math.max(p.std, p.iqr))) : 0) || 1;
+    const yHi = Math.max(pts.length ? Math.max(...pts.map((p) => p.frac)) : 0, 0.05);
     const ySpan = yHi || 1;
 
     const sx = (x) => PAD + ((x - xMin) / xSpan) * (W - 2 * PAD);
     const sy = (v) => H - PAD - (v / ySpan) * (H - 2 * PAD);
 
-    const line = (key) =>
-      pts
-        .map((p, i) => `${i ? "L" : "M"} ${sx(p.x).toFixed(1)} ${sy(p[key]).toFixed(1)}`)
-        .join(" ");
+    const line = pts
+      .map((p, i) => `${i ? "L" : "M"} ${sx(p.x).toFixed(1)} ${sy(p.frac).toFixed(1)}`)
+      .join(" ");
 
-    // Least-squares fit of std vs step index for the trend line + net change.
+    // Least-squares fit of the share vs step index for the trend + net change.
     const n = pts.length;
     const mx = pts.reduce((a, p) => a + p.x, 0) / n;
-    const my = pts.reduce((a, p) => a + p.std, 0) / n;
+    const my = pts.reduce((a, p) => a + p.frac, 0) / n;
     let sxy = 0;
     let sxx = 0;
     for (const p of pts) {
-      sxy += (p.x - mx) * (p.std - my);
+      sxy += (p.x - mx) * (p.frac - my);
       sxx += (p.x - mx) ** 2;
     }
     const slope = sxx ? sxy / sxx : 0;
@@ -102,26 +91,21 @@
     const fitStart = fit(firstX);
     const fitEnd = fit(lastX);
     const delta = fitEnd - fitStart;
-    const pct = fitStart > 1e-9 ? (delta / fitStart) * 100 : null;
     const dir = delta > ySpan * 0.02 ? "up" : delta < -ySpan * 0.02 ? "down" : "flat";
 
     return {
-      std: line("std"),
-      iqr: line("iqr"),
+      line,
       trend:
         pts.length >= 2
           ? `M ${sx(firstX).toFixed(1)} ${sy(fitStart).toFixed(1)} L ${sx(lastX).toFixed(1)} ${sy(fitEnd).toFixed(1)}`
           : "",
-      dots: pts.map((p) => ({ cx: sx(p.x).toFixed(1), cy: sy(p.std).toFixed(1) })),
+      dots: pts.map((p) => ({ cx: sx(p.x).toFixed(1), cy: sy(p.frac).toFixed(1) })),
       yHi,
       xMin,
       xMax,
-      firstX,
-      lastX,
       count: pts.length,
-      latestStd: pts.length ? pts[pts.length - 1].std : NaN,
+      latestFrac: pts.length ? pts[pts.length - 1].frac : NaN,
       delta,
-      pct,
       dir,
     };
   });
@@ -155,17 +139,13 @@
 {#if model}
   <div class="flex flex-wrap items-center justify-between gap-[8px] mb-[8px] text-[11px] text-(--muted)">
     <span class="inline-flex flex-wrap gap-[12px]">
-      <span class="chart-legend-item"><span class="sw std"></span>std</span>
-      <span class="chart-legend-item"><span class="sw iqr"></span>IQR (p25–p75)</span>
+      <span class="chart-legend-item"><span class="sw std"></span>share with advantage = 0</span>
       <span class="chart-legend-item"><span class="sw trend"></span>trend</span>
     </span>
     <span class="inline-flex items-center gap-[10px]">
       <span class="spread-trend trend-{model.dir}">
-        std {ARROW[model.dir]}
+        {ARROW[model.dir]}
         {model.delta >= 0 ? "+" : ""}{fmt(model.delta)}
-        {#if model.pct != null}
-          ({model.pct >= 0 ? "+" : ""}{model.pct.toFixed(0)}%)
-        {/if}
         over run
       </span>
       {#if zoomable}
@@ -178,7 +158,6 @@
     use:brushZoom={{ onChangeDomainX: handleBrush, enabled: zoomable }}
   >
     <svg class="w-full h-[200px] block" viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
-      <path d={model.iqr} fill="none" stroke="var(--muted)" stroke-width="1.25" stroke-opacity="0.7" />
       {#if model.trend}
         <path
           d={model.trend}
@@ -189,7 +168,7 @@
           stroke-dasharray="5 4"
         />
       {/if}
-      <path d={model.std} fill="none" stroke="var(--accent)" stroke-width="1.75" />
+      <path d={model.line} fill="none" stroke="var(--accent)" stroke-width="1.75" />
       {#each model.dots as d}
         <circle cx={d.cx} cy={d.cy} r="2" fill="var(--accent)" />
       {/each}
@@ -205,7 +184,7 @@
   {/if}
   <div class="fan-meta">
     <span>0</span>
-    <span>latest std {fmt(model.latestStd)}</span>
+    <span>latest {fmt(model.latestFrac)}</span>
     <span>max {fmt(model.yHi)}</span>
   </div>
   <div class="fan-axis">
@@ -214,5 +193,5 @@
     <span>step {fmtStep(model.xMax)}</span>
   </div>
 {:else}
-  <div class="plot-empty">Advantage distribution needs ≥2 steps of data.</div>
+  <div class="plot-empty">Zero-advantage share needs ≥2 steps of newly reported data.</div>
 {/if}

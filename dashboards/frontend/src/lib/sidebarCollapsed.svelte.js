@@ -1,10 +1,10 @@
-const STORAGE_KEY = "sidebarCollapsed";
+const DEFAULT_STORAGE_KEY = "sidebarCollapsed";
 
 // Web Storage can be present but throw (storage blocked by browser policy),
 // so a failed read is treated as no stored preference.
-function readStored() {
+function readStored(key) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (raw === "true" || raw === "false") return raw === "true";
   } catch {
     // fall through
@@ -12,18 +12,18 @@ function readStored() {
   return undefined;
 }
 
-function writeStored(value) {
+function writeStored(key, value) {
   try {
-    localStorage.setItem(STORAGE_KEY, String(value));
+    localStorage.setItem(key, String(value));
   } catch {
     // in-memory state still applies for this page load
   }
 }
 
-// Reactive collapsed flag for the primary sidebar, persisted so the layout
-// comes back the way it was left across reloads.
-export function createSidebarCollapsedState(initial = false) {
-  let collapsed = $state(readStored() ?? initial);
+// Reactive collapsed flag for a sidebar, persisted so the layout comes back
+// the way it was left across reloads.
+export function createSidebarCollapsedState(initial = false, key = DEFAULT_STORAGE_KEY) {
+  let collapsed = $state(readStored(key) ?? initial);
 
   return {
     get collapsed() {
@@ -31,7 +31,7 @@ export function createSidebarCollapsedState(initial = false) {
     },
     set collapsed(value) {
       collapsed = value;
-      writeStored(value);
+      writeStored(key, value);
     },
     toggle() {
       this.collapsed = !collapsed;
