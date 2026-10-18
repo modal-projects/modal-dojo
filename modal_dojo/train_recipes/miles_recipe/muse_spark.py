@@ -160,7 +160,9 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     sglang_cuda_graph_bs_decode: list[int] = field(default_factory=lambda: [1, 2, 4])
     sglang_cuda_graph_backend_prefill: str = "disabled"
     sglang_router_policy: str = "round_robin"
-    update_weight_buffer_size: int = 2 * 1024**3
+    # CUDA IPC flattens each bucket into an additional GPU allocation. A 2 GiB
+    # bucket exhausted H200 memory during the initial colocated weight sync.
+    update_weight_buffer_size: int = 1024**3
     rollout_health_check_first_wait: int = 3600
     skip_eval_before_train: bool = True
     environment: dict = field(
@@ -211,4 +213,5 @@ class Muse_Spark_Open_64k_B300_Recipe(Muse_Spark_Open_64k_Recipe):
     rollout_num_gpus_per_engine: int = 8
     sglang_ep_size: int | None = 8
     sglang_mem_fraction_static: float = 0.83
+    update_weight_buffer_size: int = 2 * 1024**3
     pin_rollout_manager_to_head: bool = True
