@@ -244,9 +244,9 @@ class Muse_Spark_Open_64k_B300_Recipe(Muse_Spark_Open_64k_Recipe):
     gpu_type: str = "B300"
     # Budget for the sandbox's disk cache as well as live CPU tensors. Guest
     # memory statistics omit the rootfs cache: ~0.5 TiB reported usage still
-    # led to second-step evictions with a 768 GiB reservation. The FP32 state
-    # and actor backup can occupy ~2.6 TiB of scratch space on each node.
-    memory: int | tuple[int, int] | None = (3072 * 1024, 3072 * 1024)
+    # led to second-step evictions with a 768 GiB reservation. Reserve Modal's
+    # maximum 2.5 TiB per node for state, actor backups, and live CPU tensors.
+    memory: int | tuple[int, int] | None = (2560 * 1024, 3072 * 1024)
     custom_megatron_before_log_prob_hook: Callable | str | None = None
     actor_num_nodes: int = 4
     tensor_model_parallel_size: int = 8
