@@ -47,16 +47,36 @@ def warmup_muse_pipeline(args, model, store_prefix: str) -> None:
 
     if parallel_state.get_pipeline_model_parallel_world_size() <= 1:
         return
-    # Offloading destroys NCCL communicators. The first variable-shape P2P
-    # receive otherwise initializes the PP group while its sender is computing
-    # MoE collectives. Initialize on every PP rank before entering the forward.
-    # PyTorch requires all group ranks on the first batched P2P operation.
+    # Offloading destroys NCCL communicators. A barrier initializes collective
+    # channels, but NCCL still connects P2P channels lazily. Connect both
+    # directions before a receiver can wait on a sender busy with MoE kernels.
     group = parallel_state.get_pipeline_model_parallel_group()
     torch.distributed.barrier(group=group, device_ids=[torch.cuda.current_device()])
+    ranks = torch.distributed.get_process_group_ranks(group)
+    stage = torch.distributed.get_rank(group)
+    ops = []
+    for peer_stage in (stage - 1, stage + 1):
+        if 0 <= peer_stage < len(ranks):
+            send = torch.zeros(1, device=torch.cuda.current_device())
+            recv = torch.empty_like(send)
+            ops.extend(
+                [
+                    torch.distributed.P2POp(
+                        torch.distributed.isend, send, ranks[peer_stage], group
+                    ),
+                    torch.distributed.P2POp(
+                        torch.distributed.irecv, recv, ranks[peer_stage], group
+                    ),
+                ]
+            )
+    for request in torch.distributed.batch_isend_irecv(ops):
+        request.wait()
+    # Keep every PP group out of overlapping MoE work until connections finish.
+    torch.distributed.barrier(device_ids=[torch.cuda.current_device()])
     torch.cuda.synchronize()
     if torch.distributed.get_rank() == 0:
         print(
-            f"[muse] pipeline communicator ready before {store_prefix} log-probs",
+            f"[muse] pipeline P2P connections ready before {store_prefix} log-probs",
             flush=True,
         )
 
