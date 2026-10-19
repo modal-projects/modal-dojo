@@ -204,7 +204,10 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     sglang_pp_size: int = 1
     sglang_dtype: str = "bfloat16"
     sglang_kv_cache_dtype: str = "bfloat16"
-    sglang_mem_fraction_static: float = 0.8
+    # Eager trainer CUDA modules remain resident during colocated rollout.
+    # At 0.8 the loaded weights exhaust SGLang's static budget; 0.83 leaves
+    # about 4 GiB for BF16 KV while retaining over 20 GiB of runtime slack.
+    sglang_mem_fraction_static: float = 0.83
     sglang_context_length: int = 65536
     sglang_chunked_prefill_size: int = 1024
     sglang_max_running_requests: int | None = 4
