@@ -670,6 +670,55 @@ async def build_terminal_run_record(run_record: Any, training_run_id: str) -> An
     return latest_run_record
 
 
+_SCHEDULER_SHAPE_FIELDS = (
+    "num_rollout",
+    "rollout_batch_size",
+    "n_samples_per_prompt",
+    "global_batch_size",
+)
+
+
+def check_resume_scheduler_shape(recipe: Any, checkpoint_path: str) -> None:
+    """Fail fast when a resume would trip Megatron's OptimizerParamScheduler check.
+
+    The LR schedule length is derived from these fields, so changing any of them
+    between the saved run and the resumed one fails ``load_state_dict`` only after
+    the whole cluster has started and loaded weights.
+    """
+    extra = getattr(recipe, "extra_config", None) or {}
+    if extra.get("override_opt_param_scheduler") or extra.get(
+        "use_checkpoint_opt_param_scheduler"
+    ):
+        return
+    common = os.path.join(checkpoint_path, "common.pt")
+    if not os.path.exists(common):
+        return
+    import torch
+
+    state = torch.load(common, map_location="cpu", weights_only=False)
+    saved_args = state.get("args")
+    if saved_args is None:
+        return
+    mismatched = {}
+    for field in _SCHEDULER_SHAPE_FIELDS:
+        saved = getattr(saved_args, field, None)
+        current = extra.get(field, getattr(recipe, field, None))
+        if saved is not None and current is not None and saved != current:
+            mismatched[field] = (saved, current)
+    if mismatched:
+        details = ", ".join(
+            f"{field}: checkpoint={saved} recipe={current}"
+            for field, (saved, current) in mismatched.items()
+        )
+        raise RuntimeError(
+            f"Cannot resume from {checkpoint_path}: the LR schedule changed "
+            f"({details}). "
+            "Restore the original values, or set extra_config "
+            "override_opt_param_scheduler=True to adopt the new schedule or "
+            "use_checkpoint_opt_param_scheduler=True to keep the saved one."
+        )
+
+
 @contextmanager
 def resumed_recipe(recipe: Any, save_root: str, checkpoint: dict[str, Any] | None):
     original = {
@@ -692,6 +741,7 @@ def resumed_recipe(recipe: Any, save_root: str, checkpoint: dict[str, Any] | Non
                         "rollout; the retry will exit without running another rollout.",
                         flush=True,
                     )
+            check_resume_scheduler_shape(recipe, checkpoint["resume_checkpoint_path"])
             print(
                 f"WARNING: detected existing checkpoint in "
                 f"{checkpoint['resume_checkpoint_path']}; "
