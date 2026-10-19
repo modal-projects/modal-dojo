@@ -40,3 +40,6 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/ -v
+
+      - name: Verify package builds
+        run: uv build

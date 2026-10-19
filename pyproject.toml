@@ -2,7 +2,14 @@
 name = "modal-dojo"
 version = "0.1.0"
 description = "Reusable building blocks for Modal multi-node training examples"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [{name = "Modal Labs"}]
 requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+]
 dependencies = [
     "modal==1.6.1",
     "click>=8.2,<9",
@@ -35,6 +42,10 @@ exclude = ["dashboards/frontend/node_modules", "dashboards/frontend/dist"]
 
 [project.scripts]
 modal-dojo = "modal_dojo.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/modal-projects/modal-dojo"
+Documentation = "https://dojo.modal.dev"
 
 [dependency-groups]
 ci = [
