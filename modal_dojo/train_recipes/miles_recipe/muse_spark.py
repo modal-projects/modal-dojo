@@ -115,6 +115,14 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     context_parallel_size: int = 4
     cp_comm_type: str = "a2a"
     expert_model_parallel_size: int = 16
+    # Load trainer CUDA code before MoE collectives can overlap the first
+    # cuBLAS grouped GEMM. Lazy kernel initialization can deadlock that overlap.
+    train_env_vars: dict | str | None = field(
+        default_factory=lambda: {
+            "CUDA_MODULE_LOADING": "EAGER",
+            "CUDA_MODULE_DATA_LOADING": "EAGER",
+        }
+    )
     decoder_first_pipeline_num_layers: int = 15
     decoder_last_pipeline_num_layers: int | None = 15
     sequence_parallel: bool = True
