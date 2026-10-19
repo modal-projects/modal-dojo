@@ -47,7 +47,6 @@ def warmup_muse_pipeline(args, model, store_prefix: str) -> None:
 
     if parallel_state.get_pipeline_model_parallel_world_size() <= 1:
         return
-    _synchronize_muse_expert_gemms(args)
     # Offloading destroys NCCL communicators. A barrier initializes collective
     # channels, but NCCL still connects P2P channels lazily. Connect both
     # directions before a receiver can wait on a sender busy with MoE kernels.
@@ -82,51 +81,12 @@ def warmup_muse_pipeline(args, model, store_prefix: str) -> None:
         )
 
 
-def _synchronize_muse_expert_gemms(args) -> None:
-    """Keep cuBLAS kernel initialization clear of in-flight MoE collectives."""
-    from datetime import timedelta
-    from functools import wraps
-
-    import torch
-    from megatron.core import parallel_state
-    from transformer_engine.pytorch.module import grouped_linear
-
-    original = grouped_linear.general_grouped_gemm
-    if getattr(original, "_muse_synchronized", False):
-        return
-    # cuBLAS loads additional kernels for new expert token counts even with
-    # CUDA_MODULE_LOADING=EAGER. A fast EP peer must not launch the next NCCL
-    # operation while another peer is initializing one of those kernels.
-    # CPU rendezvous leaves the GPUs idle; a NCCL barrier can recreate the race.
-    ranks = torch.distributed.get_process_group_ranks(
-        parallel_state.get_expert_model_parallel_group()
-    )
-    group = torch.distributed.new_group(
-        ranks,
-        backend="gloo",
-        timeout=timedelta(minutes=args.distributed_timeout_minutes),
-        use_local_synchronization=True,
-    )
-
-    @wraps(original)
-    def synchronized(*gemm_args, **gemm_kwargs):
-        torch.cuda.synchronize()
-        torch.distributed.barrier(group=group)
-        result = original(*gemm_args, **gemm_kwargs)
-        torch.cuda.synchronize()
-        torch.distributed.barrier(group=group)
-        return result
-
-    synchronized._muse_synchronized = True
-    grouped_linear.general_grouped_gemm = synchronized
-
-
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     """Full-parameter GRPO, 65,536-token context, 8 nodes × 8 H200 GPUs.
 
-    Uses the upstream-supported TP4/PP4/CP4/EP16 layout to shard long
-    sequences. Defaults to one proof step; increasing the horizon is explicit.
+    Uses upstream's TP8/PP8/CP1/EP8 layout to keep expert communication within
+    each node. Defaults to one proof step; increasing the horizon is explicit.
     Node-local disk holds streamed Adam state; optimizer state is not saved.
     """
 
@@ -150,27 +110,28 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     actor_num_nodes: int = 8
     actor_num_gpus_per_node: int = 8
     memory: int | tuple[int, int] | None = (512 * 1024, 1792 * 1024)
-    tensor_model_parallel_size: int = 4
-    pipeline_model_parallel_size: int = 4
-    context_parallel_size: int = 4
-    cp_comm_type: str = "a2a"
-    expert_model_parallel_size: int = 16
-    # Load trainer CUDA code before MoE collectives can overlap the first
-    # cuBLAS grouped GEMM. Lazy kernel initialization can deadlock that overlap.
+    # EP16 stalled in cross-node routing-probability all-to-all. EP8 keeps
+    # that exchange on NVLink; eight pipeline stages still shard all 62 layers.
+    tensor_model_parallel_size: int = 8
+    pipeline_model_parallel_size: int = 8
+    context_parallel_size: int = 1
+    cp_comm_type: str = ""
+    expert_model_parallel_size: int = 8
+    # Preload trainer CUDA modules before the first colocated training step.
     train_env_vars: dict | str | None = field(
         default_factory=lambda: {
             "CUDA_MODULE_LOADING": "EAGER",
             "CUDA_MODULE_DATA_LOADING": "EAGER",
         }
     )
-    decoder_first_pipeline_num_layers: int = 15
-    decoder_last_pipeline_num_layers: int | None = 15
+    decoder_first_pipeline_num_layers: int = 7
+    decoder_last_pipeline_num_layers: int | None = 7
     sequence_parallel: bool = True
 
     # Convert on four nodes with the upstream B300 TP1/PP4/EP8 layout.
     # The pinned tensor headers give <=57 GiB of text weights per rank,
     # leaving H200 headroom without requiring all eight training nodes.
-    # torch_dist reshards to the H200 trainer's EP16 layout on load.
+    # torch_dist reshards to the H200 trainer's PP8 layout on load.
     megatron_to_hf_mode: str = "raw"
     ref_load: str = "/checkpoints/Muse-Spark-Open-816B-A42B_torch_dist"
     conversion_tensor_model_parallel_size: int = 1
@@ -301,9 +262,12 @@ class Muse_Spark_Open_64k_B300_Recipe(Muse_Spark_Open_64k_Recipe):
     custom_megatron_before_log_prob_hook: Callable | str | None = None
     actor_num_nodes: int = 4
     tensor_model_parallel_size: int = 8
+    pipeline_model_parallel_size: int = 4
     context_parallel_size: int = 1
     cp_comm_type: str = ""
     expert_model_parallel_size: int = 8
+    decoder_first_pipeline_num_layers: int = 15
+    decoder_last_pipeline_num_layers: int | None = 15
     # Half as many nodes doubles per-node disk demand. Three TiB is Modal's
     # maximum; ~2.6 TiB is estimated for FP32 Adam state + BF16 actor backup.
     # Confirm measured free space before a live run; checkpoints stay disabled.
