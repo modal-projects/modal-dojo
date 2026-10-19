@@ -47,6 +47,7 @@ def warmup_muse_pipeline(args, model, store_prefix: str) -> None:
 
     if parallel_state.get_pipeline_model_parallel_world_size() <= 1:
         return
+    _synchronize_muse_expert_gemms(args)
     # Offloading destroys NCCL communicators. A barrier initializes collective
     # channels, but NCCL still connects P2P channels lazily. Connect both
     # directions before a receiver can wait on a sender busy with MoE kernels.
@@ -79,6 +80,45 @@ def warmup_muse_pipeline(args, model, store_prefix: str) -> None:
             f"[muse] pipeline P2P connections ready before {store_prefix} log-probs",
             flush=True,
         )
+
+
+def _synchronize_muse_expert_gemms(args) -> None:
+    """Keep cuBLAS kernel initialization clear of in-flight MoE collectives."""
+    from datetime import timedelta
+    from functools import wraps
+
+    import torch
+    from megatron.core import parallel_state
+    from transformer_engine.pytorch.module import grouped_linear
+
+    original = grouped_linear.general_grouped_gemm
+    if getattr(original, "_muse_synchronized", False):
+        return
+    # cuBLAS loads additional kernels for new expert token counts even with
+    # CUDA_MODULE_LOADING=EAGER. A fast EP peer must not launch the next NCCL
+    # operation while another peer is initializing one of those kernels.
+    # CPU rendezvous leaves the GPUs idle; a NCCL barrier can recreate the race.
+    ranks = torch.distributed.get_process_group_ranks(
+        parallel_state.get_expert_model_parallel_group()
+    )
+    group = torch.distributed.new_group(
+        ranks,
+        backend="gloo",
+        timeout=timedelta(minutes=args.distributed_timeout_minutes),
+        use_local_synchronization=True,
+    )
+
+    @wraps(original)
+    def synchronized(*gemm_args, **gemm_kwargs):
+        torch.cuda.synchronize()
+        torch.distributed.barrier(group=group)
+        result = original(*gemm_args, **gemm_kwargs)
+        torch.cuda.synchronize()
+        torch.distributed.barrier(group=group)
+        return result
+
+    synchronized._muse_synchronized = True
+    grouped_linear.general_grouped_gemm = synchronized
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
