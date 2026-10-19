@@ -242,10 +242,11 @@ class Muse_Spark_Open_64k_B300_Recipe(Muse_Spark_Open_64k_Recipe):
         default_factory=lambda: {"DOJO_MUSE_TE_FA4": "0"}
     )
     gpu_type: str = "B300"
-    # The second optimizer step exceeded the 512 GiB reservation and Modal
-    # evicted a worker. Reserve headroom above the observed ~512 GiB usage;
-    # a higher burst limit alone does not guarantee available host memory.
-    memory: int | tuple[int, int] | None = (768 * 1024, 1792 * 1024)
+    # Budget for the sandbox's disk cache as well as live CPU tensors. Guest
+    # memory statistics omit the rootfs cache: ~0.5 TiB reported usage still
+    # led to second-step evictions with a 768 GiB reservation. The FP32 state
+    # and actor backup can occupy ~2.6 TiB of scratch space on each node.
+    memory: int | tuple[int, int] | None = (3072 * 1024, 3072 * 1024)
     custom_megatron_before_log_prob_hook: Callable | str | None = None
     actor_num_nodes: int = 4
     tensor_model_parallel_size: int = 8
