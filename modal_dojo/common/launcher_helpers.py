@@ -685,7 +685,7 @@ def check_resume_scheduler_shape(recipe: Any, checkpoint_path: str) -> None:
     between the saved run and the resumed one fails ``load_state_dict`` only after
     the whole cluster has started and loaded weights.
     """
-    extra = getattr(recipe, "extra_config", None) or {}
+    extra = recipe._escape_hatch_values()
     if extra.get("override_opt_param_scheduler") or extra.get(
         "use_checkpoint_opt_param_scheduler"
     ):
