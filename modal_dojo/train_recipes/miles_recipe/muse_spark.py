@@ -40,6 +40,27 @@ def build_muse_native_image(image: modal.Image) -> modal.Image:
     )
 
 
+def warmup_muse_pipeline(args, model, store_prefix: str) -> None:
+    """Initialize the pipeline communicator together after trainer wake-up."""
+    import torch
+    from megatron.core import parallel_state
+
+    if parallel_state.get_pipeline_model_parallel_world_size() <= 1:
+        return
+    # Offloading destroys NCCL communicators. The first variable-shape P2P
+    # receive otherwise initializes the PP group while its sender is computing
+    # MoE collectives. Initialize on every PP rank before entering the forward.
+    # PyTorch requires all group ranks on the first batched P2P operation.
+    group = parallel_state.get_pipeline_model_parallel_group()
+    torch.distributed.barrier(group=group, device_ids=[torch.cuda.current_device()])
+    torch.cuda.synchronize()
+    if torch.distributed.get_rank() == 0:
+        print(
+            f"[muse] pipeline communicator ready before {store_prefix} log-probs",
+            flush=True,
+        )
+
+
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     """Full-parameter GRPO, 65,536-token context, 8 nodes × 8 H200 GPUs.
@@ -127,6 +148,9 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     # Packing budget; a single long sample may exceed it, as in upstream.
     max_tokens_per_gpu: int = 4096
     log_probs_chunk_size: int = 4096
+    custom_megatron_before_log_prob_hook: Callable | str | None = field(
+        default_factory=lambda: warmup_muse_pipeline
+    )
     attention_backend: str = "flash"
     recompute_granularity: str = "full"
     recompute_method: str = "uniform"
@@ -198,6 +222,7 @@ class Muse_Spark_Open_64k_B300_Recipe(Muse_Spark_Open_64k_Recipe):
         default_factory=lambda: {"DOJO_MUSE_TE_FA4": "0"}
     )
     gpu_type: str = "B300"
+    custom_megatron_before_log_prob_hook: Callable | str | None = None
     actor_num_nodes: int = 4
     tensor_model_parallel_size: int = 8
     context_parallel_size: int = 1
