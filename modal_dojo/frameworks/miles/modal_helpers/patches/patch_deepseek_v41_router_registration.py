@@ -7,6 +7,9 @@ Only asynchronous registrations need this barrier. Legacy/synchronous router
 responses retain their existing behavior.
 
 Applied only by the DeepSeek V4.1 recipe; other Miles images are unchanged.
+
+TODO: Remove once the pinned Miles includes confirmed worker activation from
+https://github.com/radixark/miles/pull/1804 (and its prerequisite #1801).
 """
 
 import ast

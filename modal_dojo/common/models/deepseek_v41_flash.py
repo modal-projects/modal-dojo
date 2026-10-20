@@ -25,3 +25,10 @@ class DeepSeek_V4_1_Flash(HFModelConfiguration):
 
     model_name = "deepseek-ai/DeepSeek-V4.1-Flash"
     revision = "2cba9e42aa026125f3ed06c6d98c1db82f7ca027"
+
+
+class DeepSeek_V4_1_Flash_LoRA(DeepSeek_V4_1_Flash):
+    """Pinned 1017 release used for the rank-32 native LoRA recipe."""
+
+    model_name = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+    revision = "1bae0e1088993b9b82de08f59de5be5a34e42170"

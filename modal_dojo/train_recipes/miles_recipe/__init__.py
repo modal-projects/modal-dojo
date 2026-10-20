@@ -1,3 +1,6 @@
+from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash_lora import (
+    DeepSeek_V4_1_Flash_LoRA_Recipe,
+)
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash import (
     DeepSeek_V4_1_Flash_Recipe,
@@ -31,6 +34,7 @@ from modal_dojo.train_recipes.miles_recipe.qwen3_5_4b import (
 __all__ = [
     "MilesRecipe",
     "DeepSeek_V4_1_Flash_Recipe",
+    "DeepSeek_V4_1_Flash_LoRA_Recipe",
     "Gemma4_26B_A4B_Recipe",
     "GLM_5_3_Flash_LoRA_Recipe",
     "GLM_5_3_Flash_LoRA_256k_Recipe",

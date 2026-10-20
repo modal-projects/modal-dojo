@@ -758,6 +758,9 @@ def build_miles_app(
             )
 
         env = {**os.environ, **environment}
+        # The patched Megatron save synchronizes all node-leader commits before
+        # returning. Parent-only commits race the clustered function's return.
+        env["MODAL_DOJO_CHECKPOINTS_VOLUME_NAME"] = checkpoints_volume_name
         if any(arg.startswith("--pipeline-model-parallel-size ") for arg in extra_args):
             env["CONVERT_KEEP_PP1"] = "1"
         if num_nodes > 1:
@@ -784,6 +787,7 @@ def build_miles_app(
                 checkpoints_volume.commit()
 
                 if node_rank == 0:
+                    checkpoints_volume.reload()
                     print(f"Saved Megatron torch_dist checkpoint to {save_path}")
                     # Fail loudly here rather than leaving a partial checkpoint for a later
                     # run to mistake for a cache hit.
