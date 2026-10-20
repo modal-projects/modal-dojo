@@ -89,18 +89,28 @@ def _load_upstream_source() -> str:
         return f.read()
 
 
+def keep_iteration_directory(src: str) -> str:
+    """Keep all nodes' shards in one directory across both Miles converter APIs."""
+    rename_calls = (
+        "publish_as_release(args.save)",
+        "shutil.move(source_dir, target_dir)",
+    )
+    matches = [call for call in rename_calls if src.count(call) == 1]
+    tracker = 'f.write("release")'
+    if len(matches) != 1 or src.count(tracker) != 1:
+        raise RuntimeError(
+            "Unknown Miles conversion publication code; refusing a multi-node rename"
+        )
+    return src.replace(matches[0], "pass  # SKIP_RELEASE_RENAME", 1).replace(
+        tracker, 'f.write("1")  # SKIP_RELEASE_RENAME: keep iter_0000001', 1
+    )
+
+
 def main() -> None:
     _start_memory_monitor()
     src = _load_upstream_source()
     if os.environ.get("SKIP_RELEASE_RENAME"):
-        src = src.replace(
-            "shutil.move(source_dir, target_dir)",
-            "pass  # SKIP_RELEASE_RENAME",
-        )
-        src = src.replace(
-            'f.write("release")',
-            'f.write("1")  # SKIP_RELEASE_RENAME: keep iter_0000001',
-        )
+        src = keep_iteration_directory(src)
     if os.environ.get("CONVERT_DEQUANT_HF_WEIGHTS"):
         # torchrun runs this file as a script, so its directory heads sys.path
         # while the package itself may not be importable under PYTHONPATH.

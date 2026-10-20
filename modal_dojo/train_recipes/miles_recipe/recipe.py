@@ -955,6 +955,12 @@ class MilesRecipe(BaseTrainRecipe):
             return Qwen3_5_4B_Miles_Recipe()
         if model_config.model_name == "moonshotai/Moonlight-16B-A3B-Instruct":
             return Moonlight_16B_A3B_Recipe()
+        if model_config.model_name == "deepseek-ai/DeepSeek-V4.1-Flash-1017":
+            from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash_lora import (
+                DeepSeek_V4_1_Flash_LoRA_Recipe,
+            )
+
+            return DeepSeek_V4_1_Flash_LoRA_Recipe()
         if model_config.model_name == "deepseek-ai/DeepSeek-V4.1-Flash":
             return DeepSeek_V4_1_Flash_Recipe()
         if model_config.model_name == "google/gemma-4-26B-A4B-it":

@@ -20,6 +20,10 @@ Executed at image-build time via ``python3 <this file>``.
 
 Image: radixark/miles:dsv41-h200-ea751aac8
 SGLang: 7e74b31b2668934cf89dbe15188a010fda381aba
+
+Also supports the centralized routing implementation at SGLang
+34033fe90b90f1bb64e63337268beada57f21f84 (V4.1 native LoRA). Its MegaMoE
+branch already captures via ``_post_process_topk_ids``.
 """
 
 import pathlib
@@ -68,6 +72,27 @@ NEW_NATIVE_RETURN = """        _zero_topk_weights_padded_region(weights, num_tok
 def patch_source(src: str) -> str:
     if MARKER in src:
         return src
+    if "def _finish_vision_topk(" in src:
+        # SGLang 34033fe (V4.1 LoRA) centralizes both CUDA and native paths.
+        # MegaMoE's _post_process_topk_ids already captures; ordinary EP still
+        # needs the hook after padded tokens have been masked.
+        import_anchor = "    _post_process_topk_ids,\n"
+        return_anchor = "    return weights, indices\n"
+        if src.count(import_anchor) != 1 or src.count(return_anchor) != 1:
+            raise ValueError("Unexpected centralized vision_topk implementation")
+        patched = src.replace(
+            import_anchor,
+            import_anchor + f"    capture_routed_experts_if_allowed,  # {MARKER}\n",
+            1,
+        ).replace(
+            return_anchor,
+            "    if not use_mega_moe:\n"
+            "        capture_routed_experts_if_allowed(config, moe.layer_id, indices)\n"
+            + return_anchor,
+            1,
+        )
+        compile(patched, "vl_routing.py", "exec")
+        return patched
     replacements = (
         (OLD_IMPORT, NEW_IMPORT),
         (OLD_CUDA_RETURN, NEW_CUDA_RETURN),
