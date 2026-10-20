@@ -7,7 +7,7 @@ github: https://github.com/modal-projects/sf3
 
 Instead of collecting prompts to train your model against, you can synthetically generate data using an [environment](https://gym.modal.dev/guides/recipe#environment).
 
-Here, we show how we train [Qwen3-VL-8B](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) to play Street Fighter III. Fights run in a [Modal Sandbox](https://modal.com/docs/guide/sandbox), and the model trains against a curriculum of CPU opponents. To enable this, we use the [OnlineRollout](https://gym.modal.dev/reference/onlinerollout) class and custom rollout, generate, and reward hooks.
+Here, we show how we train [Qwen3-VL-8B](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) to play Street Fighter III. Fights run in a [Modal Sandbox](https://modal.com/docs/guide/sandbox), and the model trains with curriculum learning against increasingly difficult CPU opponents. To enable this, we use the [OnlineRollout](https://gym.modal.dev/reference/onlinerollout) class and custom rollout, generate, and reward hooks.
 
 <video controls autoplay muted loop playsinline width="100%">
   <source src="https://modal-cdn.com/cdnbot/yang_vs_chunli_ckpt5_20_100_d1b99ed9.mp4" type="video/mp4">
@@ -18,7 +18,34 @@ You can find the [full code here](https://github.com/modal-projects/sf3/tree/mai
 
 ## Fighting in Sandboxes
 
-The rollout function exposes a `/move` endpoint on the trainer through a [Modal Tunnel](https://modal.com/docs/guide/tunnels), and each fight runs the emulator in a Sandbox that calls back into it.
+Each fight runs the emulator in a Sandbox. The worker inside it sends the current frame and the model's last four moves to a `/move` endpoint on the trainer, which samples the next move from the policy with SGLang and returns the move's tokens and log probabilities. The worker then converts the move into button presses, waits a fixed reaction delay so the model plays at human speed, and steps the emulator.
+
+```python
+while True:
+    fighters = [
+        player_state(observation, identities[f"player{seat + 1}"], f"P{seat + 1}")
+        for seat in range(2)
+    ]
+    frame = encoder.data_url(observation["frame"])
+    response = client.post(
+        f"{endpoint}/move",
+        json={"sample": sample, "fighters": ..., "frame": frame, "recent": list(recent)},
+    )
+    generated = response.json()
+    bad = generated["name"] not in generated["available"]
+    buttons, move_name = resolve_move_with_fallback(
+        fighters[0].character,
+        generated["name"] if not bad else "No-Move",
+        fighters[0].side,
+    )
+    delay = model_reaction_frames(buttons, inference_latency_ms)
+    observation, hp_diff, terminated, truncated, info = env.step_frames(
+        [{"agent_0": button} for button in [0] * delay + buttons]
+    )
+    ...
+```
+
+Starting a Sandbox that runs this worker is only a few lines of code.
 
 ```python
 async def run_arcade_sandbox(config, endpoint, sample, sampling_params, inference_latency_ms):
@@ -54,36 +81,51 @@ async def run_arcade_sandbox(config, endpoint, sample, sampling_params, inferenc
             await asyncio.shield(sandbox.terminate.aio())
 ```
 
-Inside the Sandbox, the worker sends the current frame and the model's last four moves to the trainer, which samples the next move from the policy with SGLang and returns the move's tokens and log probabilities. The worker then converts the move into button presses, waits a fixed reaction delay so the model plays at human speed, and steps the emulator.
+Finally, the rollout function serves the `/move` endpoint through a [Modal Tunnel](https://modal.com/docs/guide/tunnels), and our custom generate hook passes the tunnel's URL to a new Sandbox for each fight.
 
 ```python
-while True:
-    fighters = [
-        player_state(observation, identities[f"player{seat + 1}"], f"P{seat + 1}")
-        for seat in range(2)
-    ]
-    frame = encoder.data_url(observation["frame"])
-    response = client.post(
-        f"{endpoint}/move",
-        json={"sample": sample, "fighters": ..., "frame": frame, "recent": list(recent)},
+@asynccontextmanager
+async def _inference_endpoint(args):
+    app = web.Application()
+    app.router.add_post("/move", generate)
+    ...
+    async with modal.forward.aio(port) as tunnel:
+        yield tunnel.url
+
+
+def sf3_rollout(args, rollout_id, data_source, evaluation=False):
+    async def collect():
+        async with _inference_endpoint(args) as endpoint:
+            args.sf3_inference_url = endpoint
+            output, aborted = await generate_rollout_async(
+                args, rollout_id, data_source.get_samples
+            )
+            ...
+            return output
+
+    return run(collect())
+
+
+async def sf3_generate(args, sample, sampling_params):
+    config = EnvironmentConfig(
+        characters=random.sample(ROSTER, 2),
+        vs_cpu=True,
+        cpu_difficulty=_sample_cpu_difficulty(),
+        ...
     )
-    generated = response.json()
-    bad = generated["name"] not in generated["available"]
-    buttons, move_name = resolve_move_with_fallback(
-        fighters[0].character,
-        generated["name"] if not bad else "No-Move",
-        fighters[0].side,
-    )
-    delay = model_reaction_frames(buttons, inference_latency_ms)
-    observation, hp_diff, terminated, truncated, info = env.step_frames(
-        [{"agent_0": button} for button in [0] * delay + buttons]
+    result = await run_arcade_sandbox(
+        config,
+        args.sf3_inference_url,
+        {"index": sample.index, "group_index": sample.group_index},
+        sampling_params,
+        INFERENCE_LATENCY_MS,
     )
     ...
 ```
 
 ## Defining rewards
 
-Each move's reward combines the round's outcome, discounted by how long before the end of the round the move was made, with a smaller, clamped term for the net damage from that move onward. Invalid move names are penalized.
+Each move's reward combines the round's outcome, discounted by how long before the end of the round the move was made, with a smaller, clamped term for the net damage (damage dealt minus damage taken) from that move onward. Invalid move names are penalized.
 
 ```python
 DISCOUNT_HALF_LIFE_FRAMES = 60 * 60
@@ -147,7 +189,7 @@ def sf3_reward_post_process(args, samples):
 
 ## Cooking up a recipe
 
-Since the above logic is implemented as custom hooks, we can plug them into the `Qwen3_VL_8B_Recipe` class.
+We can plug the above logic into the `Qwen3_VL_8B_Recipe` class as custom hooks.
 
 ```python
 NUM_ROLLOUTS = 100
@@ -206,10 +248,10 @@ The full run took about 9 hours on 8 H200s. The reward stays constantly positive
 
 ![Training dashboard for the run](https://modal-cdn.com/cdnbot/dash-2c0r6kdph_f3b74fa5.webp)
 
-The win rate rose from 53% for the base model to 76% for the final checkpoint. Most of the gain comes from characters the base model couldn't win a single fight with, such as Yang, Makoto, Q, and Oro.
+The win rate against the level 8 CPU rose from 53% for the base model to 76% for the final checkpoint. Most of the gain comes from characters the base model couldn't win a single fight with, such as Yang, Makoto, Q, and Oro.
 
 ![Win rate against the level 8 CPU by character](https://modal-cdn.com/cdnbot/win_rate_by_character-1aqhhyjj6_b1ab5ddb.webp)
 
-We track how much of each fight consists of a single, spammed move. Early on, that one move makes up over 70% of a fight. With training, it drops to around 20% by rollout 60. Later on, some characters, such as Ibuki, Urien, and Elena, settle back on a single Target combo for over 80% of their moves, potentially a sign of reward hacking.
+A method to track gameplay style is by counting how much of each fight consists of a single, spammed move. Early on, that one move makes up over 70% of a fight. With training, it drops to around 20% by rollout 60. Later on, some characters, such as Ibuki, Urien, and Elena, settle back on a single Target combo for over 80% of their moves. This is akin to the model first exploring the space of possible movesets, then exploiting a strategy that seems to work.
 
 ![Most-used move's share of a fight by character](https://modal-cdn.com/cdnbot/move_diversity_by_charactere9qxmzrt_d4764acb.webp)
