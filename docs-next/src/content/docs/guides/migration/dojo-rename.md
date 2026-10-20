@@ -14,7 +14,7 @@ To replace your existing Training Gym dependency:
 
 ```bash
 uv remove modal-training-gym
-uv add git+https://github.com/modal-projects/modal-dojo.git@main
+uv add modal-dojo
 ```
 
 Once you have the new package, update your imports to use the new name. In addition to the package itself, be sure to update any symbols that have been renamed as well:

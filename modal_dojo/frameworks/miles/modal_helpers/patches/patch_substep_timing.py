@@ -827,6 +827,11 @@ def patch_executor_package(root: Path) -> None:
                     },
                 )
             elif kind == "sync":
+                checksum_logger = (
+                    "_log_inference_engine_weight_checksums"
+                    if "def _log_inference_engine_weight_checksums(" in src
+                    else "_maybe_log_inference_engine_weight_checksums"
+                )
                 src = _wrap_calls(
                     src,
                     "update_weights",
@@ -838,9 +843,7 @@ def patch_executor_package(root: Path) -> None:
                         "inference_controller.end_update_weights": _phase(
                             "finalize_weight_sync"
                         ),
-                        "_maybe_log_inference_engine_weight_checksums": _phase(
-                            "check_weight_sync"
-                        ),
+                        checksum_logger: _phase("check_weight_sync"),
                     },
                 )
             else:

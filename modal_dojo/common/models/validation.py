@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from ..framework import Framework
 from .base import ModelConfig
-from .deepseek_v41_flash import DeepSeek_V4_1_Flash
+from .deepseek_v41_flash import DeepSeek_V4_1_Flash, DeepSeek_V4_1_Flash_LoRA
 from .gemma4_26b_a4b import Gemma4_26B_A4B
 from .glm_4_7 import GLM_4_7
 from .glm_5_3_flash import GLM_5_3_Flash_LoRA
@@ -141,6 +141,12 @@ VALIDATION_CONFIGS: set[_ValidationConfig] = {
         DeepSeek_V4_1_Flash,
         Framework.MILES,
         timeout_s=2 * 60 * 60,
+    ),
+    _ValidationConfig(
+        "DeepSeek-V4.1-Flash-LoRA",
+        DeepSeek_V4_1_Flash_LoRA,
+        Framework.MILES,
+        timeout_s=4 * 60 * 60,
     ),
     _ValidationConfig("Kimi-K3", Kimi_K3, Framework.MILES, timeout_s=3 * 60 * 60),
 }

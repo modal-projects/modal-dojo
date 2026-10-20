@@ -767,9 +767,8 @@ def build_miles_app(
             )
 
         env = {**os.environ, **environment}
-        # The patched Megatron save waits for every node to publish its shards
-        # before the coordinator returns. Training already enables this hook;
-        # conversion needs it too, before clustered workers can exit.
+        # The patched Megatron save synchronizes all node-leader commits before
+        # returning. Parent-only commits race the clustered function's return.
         env["MODAL_DOJO_CHECKPOINTS_VOLUME_NAME"] = checkpoints_volume_name
         if any(arg.startswith("--pipeline-model-parallel-size ") for arg in extra_args):
             env["CONVERT_KEEP_PP1"] = "1"
@@ -797,7 +796,6 @@ def build_miles_app(
                 checkpoints_volume.commit()
 
                 if node_rank == 0:
-                    # Refresh the coordinator's view after all workers committed.
                     checkpoints_volume.reload()
                     print(f"Saved Megatron torch_dist checkpoint to {save_path}")
                     # Fail loudly here rather than leaving a partial checkpoint for a later
@@ -958,11 +956,9 @@ def build_miles_app(
 
         if model and model.model_name:
             # Warm each node's cache before Ray imports remote code concurrently.
-            hf_model_ref = model.model_path or model.model_name
+            ref = model.model_path or model.model_name
             prewarm_remote_code(
-                resolve_checkpoint_ref(
-                    hf_model_ref, revision=model_revision(model, hf_model_ref)
-                ),
+                resolve_checkpoint_ref(ref, revision=model_revision(model, ref)),
                 environment,
                 required=miles.model_name == "kimi_k3",
             )
@@ -995,31 +991,30 @@ def build_miles_app(
                     )
                 )
 
-            resume_checkpoint = torch_dist_resume_checkpoint(
-                save_root, is_complete=_is_resumable_checkpoint
-            )
-            record_resume_checkpoint(run_record, resume_checkpoint)
-            await run_record.save(is_async=True)
-
-            with shared.resumed_recipe(miles, save_root, resume_checkpoint):
-                if resume_checkpoint is None and (
-                    unresumable := _unresumable_save_dirs(save_root)
-                ):
-                    print(
-                        f"WARNING: {save_root} holds saves of interrupted writes that cannot be resumed "
-                        f"({', '.join(unresumable)}). Resuming into one of these would load a partial save."
-                    )
-                if hf_ref:
-                    object.__setattr__(miles, "ref_load", hf_ref)
-                cmd = build_train_cmd(
-                    miles,
-                    MILES_ROOT,
-                    model=model,
-                    dataset=dataset,
-                    eval_dataset=eval_dataset,
-                    dataset_path=dataset_path,
-                    eval_dataset_path=eval_dataset_path,
+            def build_cmd() -> str:
+                resume_checkpoint = torch_dist_resume_checkpoint(
+                    save_root, is_complete=_is_resumable_checkpoint
                 )
+                record_resume_checkpoint(run_record, resume_checkpoint)
+                with shared.resumed_recipe(miles, save_root, resume_checkpoint):
+                    if resume_checkpoint is None and (
+                        unresumable := _unresumable_save_dirs(save_root)
+                    ):
+                        print(
+                            f"WARNING: {save_root} holds saves of interrupted writes that cannot be resumed "
+                            f"({', '.join(unresumable)}). Resuming into one of these would load a partial save."
+                        )
+                    if hf_ref:
+                        object.__setattr__(miles, "ref_load", hf_ref)
+                    return build_train_cmd(
+                        miles,
+                        MILES_ROOT,
+                        model=model,
+                        dataset=dataset,
+                        eval_dataset=eval_dataset,
+                        dataset_path=dataset_path,
+                        eval_dataset_path=eval_dataset_path,
+                    )
 
             runtime_env = build_ray_runtime_env(
                 head_addr=cluster.head_addr,
@@ -1045,12 +1040,15 @@ def build_miles_app(
                 f"Training {app_name} - {miles.total_nodes} node(s) x {gpu_spec} ({mode})"
             )
             print(miles.gpu_allocation.summary())
-            print(f"Command: {cmd}")
-            print(f"Runtime environment variables: {sorted(runtime_env['env_vars'])}")
 
             await set_status(MilesStatus.TRAINING)
-            result = await cluster.submit_and_tail(cmd, runtime_env=runtime_env)
-            shared.check_training_result(result, run_record)
+            result = await shared.run_training_attempts(
+                cluster=cluster,
+                recipe=miles,
+                run_record=run_record,
+                runtime_env=runtime_env,
+                build_cmd=build_cmd,
+            )
             print(f"Ray job message: {result.message}")
 
             return await shared.complete_training_run(

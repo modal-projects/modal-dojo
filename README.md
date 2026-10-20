@@ -17,13 +17,13 @@ Requirements:
 Install the package directly:
 
 ```bash
-uv pip install -q git+https://github.com/modal-projects/modal-dojo.git@main
+uv pip install modal-dojo
 ```
 
-Or pin it in `pyproject.toml`:
+Or add it to your project's dependencies:
 
-```toml
-modal-dojo = { git = "https://github.com/modal-projects/modal-dojo.git", branch = "main" }
+```bash
+uv add modal-dojo
 ```
 
 Set up [Modal](https://modal.com/docs/cli/latest/setup) and the [dashboard](https://dojo.modal.dev/guides/dashboard):
@@ -104,7 +104,7 @@ For a step-by-step walkthrough, see the [Getting started tutorial](https://dojo.
 
 | Family | Models |
 |---|---|
-| DeepSeek | <ul><li>[DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash)</li></ul> |
+| DeepSeek | <ul><li>[DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash)</li><li>[DeepSeek-V4.1-Flash-1017](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017)</li></ul> |
 | GLM | <ul><li>[GLM-4.7](https://huggingface.co/zai-org/GLM-4.7)</li><li>[GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash)</li></ul> |
 | Gemma | <ul><li>[gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it)</li></ul> |
 | Inkling | <ul><li>[Inkling-Small](https://huggingface.co/thinkingmachines/Inkling-Small)</li></ul> |

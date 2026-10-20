@@ -670,6 +670,57 @@ async def build_terminal_run_record(run_record: Any, training_run_id: str) -> An
     return latest_run_record
 
 
+_SCHEDULER_SHAPE_FIELDS = (
+    "num_rollout",
+    "rollout_batch_size",
+    "n_samples_per_prompt",
+    "global_batch_size",
+)
+
+
+def check_resume_scheduler_shape(recipe: Any, checkpoint_path: str) -> None:
+    """Fail fast when a resume would trip Megatron's OptimizerParamScheduler check.
+
+    The LR schedule length is derived from these fields, so changing any of them
+    between the saved run and the resumed one fails ``load_state_dict`` only after
+    the whole cluster has started and loaded weights.
+    """
+    extra = recipe._escape_hatch_values()
+    if (
+        recipe.no_save_optim
+        or extra.get("override_opt_param_scheduler")
+        or extra.get("use_checkpoint_opt_param_scheduler")
+    ):
+        return
+    common = os.path.join(checkpoint_path, "common.pt")
+    if not os.path.exists(common):
+        return
+    import torch
+
+    state = torch.load(common, map_location="cpu", weights_only=False)
+    saved_args = state.get("args")
+    if saved_args is None:
+        return
+    mismatched = {}
+    for field in _SCHEDULER_SHAPE_FIELDS:
+        saved = getattr(saved_args, field, None)
+        current = extra.get(field, getattr(recipe, field, None))
+        if saved is not None and current is not None and saved != current:
+            mismatched[field] = (saved, current)
+    if mismatched:
+        details = ", ".join(
+            f"{field}: checkpoint={saved} recipe={current}"
+            for field, (saved, current) in mismatched.items()
+        )
+        raise RuntimeError(
+            f"Cannot resume from {checkpoint_path}: the LR schedule changed "
+            f"({details}). "
+            "Restore the original values, or set extra_config "
+            "override_opt_param_scheduler=True to adopt the new schedule or "
+            "use_checkpoint_opt_param_scheduler=True to keep the saved one."
+        )
+
+
 @contextmanager
 def resumed_recipe(recipe: Any, save_root: str, checkpoint: dict[str, Any] | None):
     original = {
@@ -692,6 +743,7 @@ def resumed_recipe(recipe: Any, save_root: str, checkpoint: dict[str, Any] | Non
                         "rollout; the retry will exit without running another rollout.",
                         flush=True,
                     )
+            check_resume_scheduler_shape(recipe, checkpoint["resume_checkpoint_path"])
             print(
                 f"WARNING: detected existing checkpoint in "
                 f"{checkpoint['resume_checkpoint_path']}; "
@@ -740,15 +792,110 @@ async def training_run_lifecycle(run_record: TrainingRun, status_token: str = ""
                 print(f"Failed to save run record: {exc}")
 
 
+def _training_error(run_record: TrainingRun, message: str) -> RuntimeError:
+    training_run_id = run_record.training_run_id
+    error = RuntimeError(f"{message} (training_run_id={training_run_id})")
+    error.training_run_id = training_run_id  # pyright: ignore[reportAttributeAccessIssue]
+    run_record.error_message = str(error)
+    return error
+
+
 def check_training_result(result: Any, run_record: TrainingRun) -> None:
     if not result.is_success:
-        training_run_id = run_record.training_run_id
         message = result.message or f"Ray job finished with status: {result.status}"
-        error = RuntimeError(f"{message} (training_run_id={training_run_id})")
-        error.training_run_id = training_run_id  # pyright: ignore[reportAttributeAccessIssue]
-        run_record.error_message = str(error)
-        raise error
+        raise _training_error(run_record, message)
     print(f"Ray job completed: {result.status}")
+
+
+OOM_RETRY_DELAY_SECONDS = 15.0
+
+
+async def run_training_attempts(
+    *,
+    cluster: Any,
+    recipe: Any,
+    run_record: TrainingRun,
+    runtime_env: dict[str, Any],
+    build_cmd: Callable[[], str],
+    retry_delay_seconds: float = OOM_RETRY_DELAY_SECONDS,
+) -> Any:
+    """Submit the training job, re-submitting with a smaller micro-batch on OOM.
+
+    Unless the recipe's micro-batch knob is ``"auto"`` this is a single submit
+    followed by ``check_training_result``. With it, each attempt applies the current
+    ``BatchSizeInference`` value to the recipe before ``build_cmd`` runs, so
+    ``build_cmd`` must re-detect the resume checkpoint and rebuild the command
+    every time (an OOMed attempt may have saved a checkpoint first). Failures
+    that do not look like an OOM are terminal, as is an OOM at the floor.
+    """
+    from modal_dojo.common.batch_size_inference import (
+        BatchSizeInference,
+        OOMDetector,
+        looks_like_oom,
+    )
+
+    inference = BatchSizeInference.start(recipe, run_record)
+    while True:
+        if inference is not None:
+            inference.apply(recipe)
+            inference.begin_attempt()
+            inference.record(run_record)
+            print(
+                f"auto batch size: attempt {len(inference.attempts)} with "
+                f"{inference.knob}={inference.current} (floor {inference.floor})",
+                flush=True,
+            )
+        cmd = build_cmd()
+        await run_record.save(is_async=True)
+        print(f"Command: {cmd}")
+        print(f"Runtime environment variables: {sorted(runtime_env['env_vars'])}")
+
+        detector = OOMDetector()
+        result = await cluster.submit_and_tail(
+            cmd, runtime_env=runtime_env, on_log_line=detector.observe
+        )
+        if inference is None:
+            check_training_result(result, run_record)
+            return result
+        if result.is_success:
+            inference.finish_attempt("succeeded")
+            inference.record(run_record)
+            await run_record.save(is_async=True)
+            print(
+                f"auto batch size: settled on {inference.knob}={inference.current}",
+                flush=True,
+            )
+            check_training_result(result, run_record)
+            return result
+
+        evidence = detector.evidence
+        if evidence is None and looks_like_oom(result.message):
+            evidence = result.message
+        if evidence is None:
+            inference.finish_attempt("failed")
+            inference.record(run_record)
+            await run_record.save(is_async=True)
+            check_training_result(result, run_record)
+            raise AssertionError("unreachable")  # pragma: no cover
+
+        failed_value = inference.current
+        inference.finish_attempt("oom", evidence)
+        next_value = inference.shrink()
+        inference.record(run_record)
+        if next_value is None:
+            await run_record.save(is_async=True)
+            raise _training_error(
+                run_record,
+                f"GPU OOM with {inference.knob}={failed_value}, which is already the "
+                f"floor ({inference.floor}) the auto batch-size search can shrink to; the "
+                "model or sequence length does not fit this cluster shape",
+            )
+        print(
+            f"WARNING: GPU OOM with {inference.knob}={failed_value} ({evidence}); "
+            f"retrying with {inference.knob}={next_value}.",
+            flush=True,
+        )
+        await asyncio.sleep(retry_delay_seconds)
 
 
 def training_reporting_env(

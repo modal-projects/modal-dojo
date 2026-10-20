@@ -13,6 +13,7 @@ from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models import ModelConfig, Muse_Spark_Open
 from modal_dojo.common.patches import encode_patch
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 # The image bundles Miles 002ec9cf35e2, SGLang bc1c2ac7dfc5, and Megatron
@@ -62,7 +63,6 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     memory: int | tuple[int, int] | None = (2560 * 1024, 3072 * 1024)
     tensor_model_parallel_size: int = 8
     pipeline_model_parallel_size: int = 4
-    context_parallel_size: int = 1
     cp_comm_type: str = ""
     expert_model_parallel_size: int = 8
     # Use FA2 for training while keeping SGLang's FA4 available for inference.
@@ -119,7 +119,7 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     calculate_per_token_loss: bool = True
     balance_data: bool = True
     # Packing budget; a single long sample may exceed it, as in upstream.
-    max_tokens_per_gpu: int = 8192
+    max_tokens_per_gpu: MicroBatchSize = 8192
     log_probs_chunk_size: int = 4096
     attention_backend: str = "flash"
     recompute_granularity: str = "full"

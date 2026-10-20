@@ -8,7 +8,7 @@ import uuid
 from abc import ABC
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.train_recipes.gpu_allocation import (
@@ -119,6 +119,11 @@ def _apply_loss_type_fields(
         fields["advantage_estimator"] = "grpo"
     if "num_steps_per_rollout" in fields:
         fields["num_steps_per_rollout"] = 1
+
+
+# Per-GPU micro-batch knobs accept ``"auto"``: the launcher then searches for the
+# largest value that fits (see ``modal_dojo.common.batch_size_inference``).
+MicroBatchSize = int | Literal["auto"]
 
 
 class BaseTrainRecipe(ABC):

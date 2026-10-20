@@ -46,6 +46,14 @@ _EXPORTS = {
         "modal_dojo.common.models",
         "DeepSeek_V4_1_Flash",
     ),
+    "DeepSeek_V4_1_Flash_LoRA": (
+        "modal_dojo.common.models.deepseek_v41_flash",
+        "DeepSeek_V4_1_Flash_LoRA",
+    ),
+    "DeepSeek_V4_1_Flash_LoRA_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash_lora",
+        "DeepSeek_V4_1_Flash_LoRA_Recipe",
+    ),
     "DeepSeek_V4_1_Flash_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
         "DeepSeek_V4_1_Flash_Recipe",
@@ -221,6 +229,8 @@ __all__ = [
     "SandboxResult",
     "DeepSeek_V4_1_Flash",
     "DeepSeek_V4_1_Flash_Recipe",
+    "DeepSeek_V4_1_Flash_LoRA",
+    "DeepSeek_V4_1_Flash_LoRA_Recipe",
     "Gemma4_26B_A4B",
     "Gemma4_26B_A4B_Recipe",
     "GLM_4_7",
