@@ -38,6 +38,7 @@ from modal_dojo.common.metrics import (
 )
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.ray_cluster import (
+    _supports_rdma,
     clustered_if,
 )
 from modal_dojo.common.run import (
@@ -812,6 +813,8 @@ def build_miles_app(
         flush_status_reporter(timeout_seconds=2.0)
 
     _multi_node = miles.total_nodes > 1
+    _full_node = miles.gpu_allocation.gpus_per_node >= 8
+    _use_clustered = _multi_node or (_full_node and _supports_rdma(miles.gpu_type))
 
     train_secrets = [
         *(metric_secrets(miles.metrics) if miles.metrics is not None else []),
@@ -830,7 +833,7 @@ def build_miles_app(
         ),
     )
     @clustered_if(
-        _multi_node,
+        _use_clustered,
         miles.total_nodes,
         gpu_type=miles.gpu_type,
     )
