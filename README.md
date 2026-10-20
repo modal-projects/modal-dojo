@@ -17,7 +17,7 @@ Requirements:
 Install the package directly:
 
 ```bash
-uv pip install -q git+https://github.com/modal-projects/modal-dojo.git@main
+uv pip install modal-dojo
 ```
 
 Or pin it in `pyproject.toml`:
