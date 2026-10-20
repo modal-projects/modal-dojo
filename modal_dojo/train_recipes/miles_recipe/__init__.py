@@ -28,6 +28,7 @@ from modal_dojo.train_recipes.miles_recipe.moonlight_16b_a3b import (
     Moonlight_16B_A3B_Recipe,
 )
 from modal_dojo.train_recipes.miles_recipe.muse_spark import (
+    Muse_Spark_Open_64k_Async_Recipe,
     Muse_Spark_Open_64k_Recipe,
 )
 from modal_dojo.train_recipes.miles_recipe.qwen3_5_4b import (
@@ -47,5 +48,6 @@ __all__ = [
     "Kimi_K3_LoRA_64k_Recipe",
     "Moonlight_16B_A3B_Recipe",
     "Muse_Spark_Open_64k_Recipe",
+    "Muse_Spark_Open_64k_Async_Recipe",
     "Qwen3_5_4B_Miles_Recipe",
 ]
