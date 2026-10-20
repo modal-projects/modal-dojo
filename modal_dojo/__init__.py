@@ -120,6 +120,11 @@ _EXPORTS = {
         "Moonlight_16B_A3B_Recipe",
     ),
     "MilesRecipe": ("modal_dojo.train_recipes.miles_recipe", "MilesRecipe"),
+    "Muse_Spark_Open": ("modal_dojo.common.models", "Muse_Spark_Open"),
+    "Muse_Spark_Open_64k_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "Muse_Spark_Open_64k_Recipe",
+    ),
     "ParsedResponse": ("modal_dojo.common.models", "ParsedResponse"),
     "Qwen3_0_6B": ("modal_dojo.common.models", "Qwen3_0_6B"),
     "Qwen3_0_6B_Recipe": (
@@ -264,6 +269,8 @@ __all__ = [
     "Moonlight_16B_A3B_Instruct",
     "Moonlight_16B_A3B_Recipe",
     "MilesRecipe",
+    "Muse_Spark_Open",
+    "Muse_Spark_Open_64k_Recipe",
     "ParsedResponse",
     "Qwen3_0_6B",
     "Qwen3_0_6B_Recipe",

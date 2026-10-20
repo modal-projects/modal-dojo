@@ -16,6 +16,7 @@ from .glm_5_3_flash import GLM_5_3_Flash, GLM_5_3_Flash_LoRA
 from .inkling_small import Inkling_Small, Inkling_Small_LoRA
 from .kimi_k3 import Kimi_K3
 from .moonlight_16b_a3b_instruct import Moonlight_16B_A3B_Instruct
+from .muse_spark import Muse_Spark_Open
 from .qwen3_0_6b import Qwen3_0_6B
 from .qwen3_1_7b import Qwen3_1_7B
 from .qwen3_4b import Qwen3_4B
@@ -51,6 +52,7 @@ __all__ = [
     "Qwen3_8B",
     "Qwen3_30B",
     "Moonlight_16B_A3B_Instruct",
+    "Muse_Spark_Open",
     "ToolCall",
     "parse_gemma4_response",
     "parse_glm_response",

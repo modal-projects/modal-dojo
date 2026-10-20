@@ -1,12 +1,17 @@
 """Thin wrapper around miles' convert_hf_to_torch_dist.py for Modal volumes.
 
-The upstream script's shutil.move(iter_0000001 -> release) only sees local shards,
-which poisons the volume state for multi-node conversions (the rename propagates a
-deletion of iter_0000001/ that wipes other nodes' committed shards).
+The upstream script's release publication (inline shutil.move or the newer
+publish_as_release helper) only sees local shards. The rename propagates a
+deletion of iter_0000001/ that wipes other nodes' committed shards.
 
 Setting SKIP_RELEASE_RENAME=1 suppresses the rename so all nodes commit
 to iter_0000001/ additively. Megatron loads from iter_0000001/ via the
 tracker file just fine.
+
+TODO: replace the source rewrites with a native upstream option to retain the
+iteration directory when one is available. Miles' publish_as_release still
+renames it; its existing-directory fix does not synchronize Modal Volumes:
+https://github.com/radixark/miles/blob/0cc65167f991ab1f0d228f6c9b648d89bc60a203/miles/backends/megatron_utils/checkpoint.py#L190-L199
 
 Pipeline-parallel auto-inflation is suppressed upstream via CONVERT_KEEP_PP1,
 which the launcher sets when it pins PP/TP explicitly (slime has no such env
