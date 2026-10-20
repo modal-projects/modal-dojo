@@ -252,6 +252,6 @@ The win rate against the level 8 CPU rose from 53% for the base model to 76% for
 
 ![Win rate against the level 8 CPU by character](https://modal-cdn.com/cdnbot/win_rate_by_character-1aqhhyjj6_b1ab5ddb.webp)
 
-A method to track gameplay style is by counting how much of each fight consists of a single, spammed move. Early on, that one move makes up over 70% of a fight. With training, it drops to around 20% by rollout 60. Later on, some characters, such as Ibuki, Urien, and Elena, settle back on a single Target combo for over 80% of their moves. This is akin to the model first exploring the space of possible movesets, then exploiting a strategy that seems to work.
+A method to check for reward hacking is by tracking its gameplay style: specifically, we count how much of each fight consists of a single, spammed move. Early on, that one move makes up over 70% of a fight. With training, it drops to around 20% by rollout 60. Later on, some characters, such as Ibuki, Urien, and Elena, settle back on a single Target combo for over 80% of their moves. This is akin to the model first exploring the space of possible movesets, then exploiting a strategy that seems to work. Depending on who you ask, this may or may not be considered a perfectly legit playstyle.
 
 ![Most-used move's share of a fight by character](https://modal-cdn.com/cdnbot/move_diversity_by_charactere9qxmzrt_d4764acb.webp)
