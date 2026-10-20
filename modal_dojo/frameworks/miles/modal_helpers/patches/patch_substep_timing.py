@@ -570,13 +570,8 @@ def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
         print(f"{path.name} already patched for substep timing")
         return
 
-    if "create_rollout_components" in src:
-        patch_driver = (
-            _patch_executor_async_driver
-            if path.name == "train_async.py"
-            else _patch_executor_driver
-        )
-        src = patch_driver(src, path)
+    if path.name == "train.py" and "create_rollout_components" in src:
+        src = _patch_executor_driver(src, path)
         compile(src, str(path), "exec")
         path.write_text(src)
         print(f"Patched {path.name} for executor-based substep timing")
@@ -772,65 +767,8 @@ def _patch_executor_driver(src: str, path: Path) -> str:
     return _inject_preamble(src)
 
 
-def _patch_executor_async_driver(src: str, path: Path) -> str:
-    """Time trainer waits without charging concurrent generation to the driver."""
-    src = _wrap_calls(
-        src,
-        "train",
-        {
-            "create_rollout_components": _phase("initialize_rollout"),
-            "create_training_models": _phase("initialize_training"),
-            "actor_model.train": _phase("train_models"),
-            "critic_model.train": _phase("train_models"),
-            "save_training_model": _phase("checkpoint_save"),
-            "rollout_executor.save": _phase("checkpoint_save"),
-            "offload_train": _phase("offload_train"),
-            "inference_controller.pause_generation": _phase("pause_generation"),
-            "inference_controller.flush_cache": _phase("flush_rollout_cache"),
-            "inference_controller.offload_kv": _phase("offload_rollout"),
-            "inference_controller.offload_weights": _phase("offload_rollout"),
-            "inference_controller.onload_weights": _phase("onload_rollout_weights"),
-            "inference_controller.onload_kv": _phase("onload_rollout_kv"),
-            "inference_controller.continue_generation": _phase("resume_generation"),
-            "inference_controller.prepare_eval": _phase("prepare_eval"),
-            "eval_dispatcher.dispatch": _phase("evaluate_rollouts"),
-        },
-    )
-    waits = [
-        node
-        for node in ast.walk(_function(src, "train"))
-        if isinstance(node, ast.Assign)
-        and any(
-            isinstance(target, ast.Name) and target.id == "rollout_data_curr_ref"
-            for target in node.targets
-        )
-        and any(isinstance(child, ast.Await) for child in ast.walk(node.value))
-    ]
-    if len(waits) != 2:
-        raise RuntimeError(
-            f"{path}: expected 2 rollout future waits, found {len(waits)}"
-        )
-    for node, phase in reversed(
-        list(
-            zip(
-                sorted(waits, key=lambda node: node.lineno),
-                ("wait_for_rollout", "wait_for_next_rollout"),
-                strict=True,
-            )
-        )
-    ):
-        src = _wrap_span(src, node.lineno, node.end_lineno, _phase(phase))
-    src = _wrap_driver_loop(src, path)
-    body = _function(src, "train").body
-    loop_index = next(i for i, node in enumerate(body) if isinstance(node, ast.For))
-    src = _wrap_span(
-        src, body[0].lineno, body[loop_index - 1].end_lineno, "_tg_role('driver', None)"
-    )
-    return _inject_preamble(src)
-
-
 def patch_executor_package(root: Path) -> None:
-    """Instrument executor layouts, including worker handles."""
+    """Instrument synchronous executor layouts, including worker handles."""
     paths = {
         "rollout": "miles/ray/rollout/rollout_executor.py",
         "actor": "miles/backends/megatron_utils/actor.py",
@@ -862,11 +800,7 @@ def patch_executor_package(root: Path) -> None:
                     src,
                     "get",
                     {
-                        generate: (
-                            "_tg_time_phase('wait_for_buffered_samples' "
-                            "if getattr(self.args, 'fully_async', False) "
-                            "else 'generate_samples')"
-                        ),
+                        generate: _phase("generate_samples"),
                         "convert_samples_to_train_data": _phase("reward_post_process"),
                     },
                 )
