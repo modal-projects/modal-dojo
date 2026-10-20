@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import os
 import pickle
-import threading
-import time
 from collections.abc import Collection
 from datetime import timedelta
 from pathlib import Path
@@ -119,29 +117,7 @@ def _raise_gathered_errors(
 def _commit_volume(volume_name: str) -> None:
     from modal import Volume
 
-    rank = os.environ.get("RANK", "0")
-    started = time.monotonic()
-    finished = threading.Event()
-
-    def report_progress() -> None:
-        while not finished.wait(30):
-            print(
-                f"[checkpoint-commit] rank={rank} publishing {volume_name}: "
-                f"{time.monotonic() - started:.0f}s elapsed",
-                flush=True,
-            )
-
-    print(f"[checkpoint-commit] rank={rank} publishing {volume_name}", flush=True)
-    threading.Thread(target=report_progress, daemon=True).start()
-    try:
-        Volume.from_name(volume_name, create_if_missing=False).commit()
-        print(
-            f"[checkpoint-commit] rank={rank} published in "
-            f"{time.monotonic() - started:.1f}s",
-            flush=True,
-        )
-    finally:
-        finished.set()
+    Volume.from_name(volume_name, create_if_missing=False).commit()
 
 
 def commit_checkpoint_volume_across_ranks(

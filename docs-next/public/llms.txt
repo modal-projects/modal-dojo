@@ -111,7 +111,6 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [Kimi_K3_LoRA_Recipe](https://dojo.modal.dev/reference/kimi_k3_lora_recipe)
 - [MilesRecipe](https://dojo.modal.dev/reference/milesrecipe)
 - [Moonlight_16B_A3B_Recipe](https://dojo.modal.dev/reference/moonlight_16b_a3b_recipe)
-- [Muse_Spark_Open_64k_B300_Recipe](https://dojo.modal.dev/reference/muse_spark_open_64k_b300_recipe)
 - [Muse_Spark_Open_64k_Recipe](https://dojo.modal.dev/reference/muse_spark_open_64k_recipe)
 - [Qwen3_0_6B_Recipe](https://dojo.modal.dev/reference/qwen3_0_6b_recipe)
 - [Qwen3_1_7B_Recipe](https://dojo.modal.dev/reference/qwen3_1_7b_recipe)

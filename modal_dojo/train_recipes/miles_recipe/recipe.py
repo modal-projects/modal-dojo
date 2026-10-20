@@ -938,6 +938,9 @@ class MilesRecipe(BaseTrainRecipe):
         from modal_dojo.train_recipes.miles_recipe.moonlight_16b_a3b import (
             Moonlight_16B_A3B_Recipe,
         )
+        from modal_dojo.train_recipes.miles_recipe.muse_spark import (
+            Muse_Spark_Open_64k_Recipe,
+        )
         from modal_dojo.train_recipes.miles_recipe.qwen3_5_4b import (
             Qwen3_5_4B_Miles_Recipe,
         )
@@ -945,8 +948,6 @@ class MilesRecipe(BaseTrainRecipe):
         if isinstance(model_config, GLM_5_3_Flash_LoRA):
             return GLM_5_3_Flash_LoRA_Recipe()
         if model_config.model_name == "meta-models/Muse-Spark-Open-816B-A42B":
-            from .muse_spark import Muse_Spark_Open_64k_Recipe
-
             return Muse_Spark_Open_64k_Recipe()
         if model_config.model_name == "Qwen/Qwen3.5-4B":
             return Qwen3_5_4B_Miles_Recipe()

@@ -1,13 +1,12 @@
-"""64K Muse Spark recipes derived from radixark/miles PR #4111.
+"""64K Muse Spark B300 recipe derived from radixark/miles PR #4111.
 
-Validated with five-step SWE-bench smokes and a full-context stress completion
-per step on 64 H200s and 32 B300s. These train the text model with frozen omni
-towers and FP32 master weights; Adam moments are stored in BF16 on local disk.
+Validated with a five-step SWE-bench smoke on 32 B300s. Trains the text model
+with frozen omni towers and FP32 master weights; Adam moments use BF16 on disk.
 """
 
 from collections.abc import Callable
 from dataclasses import field
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import modal
 from pydantic import ConfigDict
@@ -40,59 +39,17 @@ def build_muse_native_image(image: modal.Image) -> modal.Image:
     )
 
 
-def warmup_muse_pipeline(args, model, store_prefix: str) -> None:
-    """Initialize the pipeline communicator together after trainer wake-up."""
-    import torch
-    from megatron.core import parallel_state
-
-    if parallel_state.get_pipeline_model_parallel_world_size() <= 1:
-        return
-    # Offloading destroys NCCL communicators. A barrier initializes collective
-    # channels, but NCCL still connects P2P channels lazily. Connect both
-    # directions before a receiver can wait on a sender busy with MoE kernels.
-    group = parallel_state.get_pipeline_model_parallel_group()
-    torch.distributed.barrier(group=group, device_ids=[torch.cuda.current_device()])
-    ranks = torch.distributed.get_process_group_ranks(group)
-    stage = torch.distributed.get_rank(group)
-    ops = []
-    for peer_stage in (stage - 1, stage + 1):
-        if 0 <= peer_stage < len(ranks):
-            send = torch.zeros(1, device=torch.cuda.current_device())
-            recv = torch.empty_like(send)
-            ops.extend(
-                [
-                    torch.distributed.P2POp(
-                        torch.distributed.isend, send, ranks[peer_stage], group
-                    ),
-                    torch.distributed.P2POp(
-                        torch.distributed.irecv, recv, ranks[peer_stage], group
-                    ),
-                ]
-            )
-    for request in torch.distributed.batch_isend_irecv(ops):
-        request.wait()
-    # Keep every PP group out of overlapping MoE work until connections finish.
-    torch.distributed.barrier(device_ids=[torch.cuda.current_device()])
-    torch.cuda.synchronize()
-    if torch.distributed.get_rank() == 0:
-        print(
-            f"[muse] pipeline P2P connections ready before {store_prefix} log-probs",
-            flush=True,
-        )
-
-
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class Muse_Spark_Open_64k_Recipe(MilesRecipe):
-    """Full-parameter GRPO, 65,536-token context, 8 nodes × 8 H200 GPUs.
+    """Full-parameter GRPO, 65,536-token context, 4 nodes × 8 B300 GPUs.
 
-    Uses upstream's TP8/PP8/CP1/EP8 layout to keep expert communication within
+    Uses upstream's TP8/PP4/CP1/EP8 layout to keep expert communication within
     each node. Defaults to one proof step; increasing the horizon is explicit.
     Node-local disk holds streamed Adam state; optimizer state is not saved.
     """
 
     model_config_class: ClassVar[type[ModelConfig]] = Muse_Spark_Open
-    # Both hardware variants reuse the same completed torch_dist conversion.
-    # Complete preparation for one launch before submitting the other.
+    # Preserve the volume name holding the validated torch_dist conversion.
     name: str = "miles-muse_spark_open_64k_b300_recipe"
     docker_image: str = (
         "radixark/miles:muse-spark-open@sha256:"
@@ -106,33 +63,28 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     miles_model_name: str = "muse-spark-full"
     model_name: str = "muse_spark"
 
-    gpu_type: str = "H200"
-    actor_num_nodes: int = 8
+    gpu_type: str = "B300"
+    actor_num_nodes: int = 4
     actor_num_gpus_per_node: int = 8
-    # Reserve host memory for disk-backed optimizer state and actor caches.
-    memory: int | tuple[int, int] | None = (1280 * 1024, 1792 * 1024)
-    # EP16 stalled in cross-node routing-probability all-to-all. EP8 keeps
-    # that exchange on NVLink; eight pipeline stages still shard all 62 layers.
+    # Disk cache counts toward host memory despite not appearing in guest RSS.
+    # A 768 GiB reservation was evicted on step two; 2.5 TiB passed five steps.
+    memory: int | tuple[int, int] | None = (2560 * 1024, 3072 * 1024)
     tensor_model_parallel_size: int = 8
-    pipeline_model_parallel_size: int = 8
+    pipeline_model_parallel_size: int = 4
     context_parallel_size: int = 1
     cp_comm_type: str = ""
     expert_model_parallel_size: int = 8
-    # Preload trainer CUDA modules before the first colocated training step.
-    train_env_vars: dict | str | None = field(
-        default_factory=lambda: {
-            "CUDA_MODULE_LOADING": "EAGER",
-            "CUDA_MODULE_DATA_LOADING": "EAGER",
-        }
+    # TE's FA4 backward is incompatible with pinned quack 0.6.5. Use rebuilt
+    # FA2 for training while keeping SGLang's FA4 available for inference.
+    train_env_vars: dict[str, str] | str | None = field(
+        default_factory=lambda: {"DOJO_MUSE_TE_FA4": "0"}
     )
-    decoder_first_pipeline_num_layers: int = 7
-    decoder_last_pipeline_num_layers: int | None = 7
+    decoder_first_pipeline_num_layers: int = 15
+    decoder_last_pipeline_num_layers: int | None = 15
     sequence_parallel: bool = True
 
-    # Convert on four nodes with the upstream B300 TP1/PP4/EP8 layout.
-    # The pinned tensor headers give <=57 GiB of text weights per rank,
-    # leaving H200 headroom without requiring all eight training nodes.
-    # torch_dist reshards to the H200 trainer's PP8 layout on load.
+    # Convert on four nodes with upstream's TP1/PP4/EP8 layout; torch_dist
+    # reshards to the trainer's TP8 layout on load.
     megatron_to_hf_mode: str = "raw"
     ref_load: str = "/checkpoints/Muse-Spark-Open-816B-A42B_torch_dist"
     conversion_tensor_model_parallel_size: int = 1
@@ -142,16 +94,16 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     convert_ephemeral_disk_mb: int | None = 1024 * 1024
     download_timeout_seconds: int | None = 12 * 60 * 60
     convert_timeout_seconds: int | None = 12 * 60 * 60
-    # Local scratch holds streamed optimizer state and actor backups/staging.
-    train_function_kwargs: dict = field(
-        default_factory=lambda: {"ephemeral_disk": 2048 * 1024}
+    # Leave room for streamed Adam state and BF16 actor backups on each node.
+    train_function_kwargs: dict[str, Any] = field(
+        default_factory=lambda: {"ephemeral_disk": 3 * 1024 * 1024}
     )
     no_save_optim: bool = True
     no_load_optim: bool = True
     save: str | None = None
     max_retries: int = 0
     # Resharding the 1.6 TB checkpoint can leave ranks >10 minutes apart at
-    # Megatron's final load barrier, especially across eight H200 nodes.
+    # Megatron's final load barrier.
     distributed_timeout_minutes: int = 30
 
     rollout_batch_size: int = 4
@@ -176,11 +128,8 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     calculate_per_token_loss: bool = True
     balance_data: bool = True
     # Packing budget; a single long sample may exceed it, as in upstream.
-    max_tokens_per_gpu: int = 4096
+    max_tokens_per_gpu: int = 8192
     log_probs_chunk_size: int = 4096
-    custom_megatron_before_log_prob_hook: Callable | str | None = field(
-        default_factory=lambda: warmup_muse_pipeline
-    )
     attention_backend: str = "flash"
     recompute_granularity: str = "full"
     recompute_method: str = "uniform"
@@ -198,17 +147,16 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     offload_train_disk_dir: str = "/root/muse_spark_optimizer"
     offload_train_disk_chunk_mb: int = 256
 
-    # Four two-node engines, with BF16 KV for train/rollout agreement.
+    # Four single-node engines, with BF16 KV for train/rollout agreement.
+    # The SGLang pin includes 358c17d4b4f5, required for BF16 TRT-LLM expert
+    # updates after colocated pause/resume on B300.
     offload_train: bool = True
     offload_rollout: bool = True
-    rollout_num_gpus_per_engine: int = 16
-    sglang_ep_size: int | None = 16
+    rollout_num_gpus_per_engine: int = 8
+    sglang_ep_size: int | None = 8
     sglang_pp_size: int = 1
     sglang_dtype: str = "bfloat16"
     sglang_kv_cache_dtype: str = "bfloat16"
-    # Eager trainer CUDA modules remain resident during colocated rollout.
-    # At 0.8 the loaded weights exhaust SGLang's static budget; 0.83 leaves
-    # about 4 GiB for BF16 KV while retaining over 20 GiB of runtime slack.
     sglang_mem_fraction_static: float = 0.83
     sglang_context_length: int = 65536
     sglang_chunked_prefill_size: int = 1024
@@ -217,12 +165,11 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     sglang_cuda_graph_bs_decode: list[int] = field(default_factory=lambda: [1, 2, 4])
     sglang_cuda_graph_backend_prefill: str = "disabled"
     sglang_router_policy: str = "round_robin"
-    # CUDA IPC flattens each bucket into an additional GPU allocation. A 2 GiB
-    # bucket exhausted H200 memory during the initial colocated weight sync.
-    update_weight_buffer_size: int = 1024**3
+    update_weight_buffer_size: int = 2 * 1024**3
+    pin_rollout_manager_to_head: bool = True
     rollout_health_check_first_wait: int = 3600
     skip_eval_before_train: bool = True
-    environment: dict = field(
+    environment: dict[str, str] = field(
         default_factory=lambda: {
             "PYTHONPATH": "/root/Megatron-LM/",
             "CUDA_DEVICE_MAX_CONNECTIONS": "1",
@@ -236,46 +183,3 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
             "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False",
         }
     )
-
-
-@dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class Muse_Spark_Open_64k_B300_Recipe(Muse_Spark_Open_64k_Recipe):
-    """65,536-token recipe on 4 nodes × 8 B300 GPUs.
-
-    Keeps the training topology of upstream's validated 8K B300 launcher:
-    TP8/PP4/CP1/EP8 and four single-node rollout engines, with four concurrent
-    requests per engine. The pinned SGLang includes commit 358c17d4b4f5, required
-    for BF16 TRT-LLM expert updates after colocated pause/resume on B300.
-    """
-
-    # Local TE-only switch avoids FA4 backward with pinned quack 0.6.5.
-    # SGLang retains its installed FA4; H200 keeps the default FA3 path.
-    train_env_vars: dict | str | None = field(
-        default_factory=lambda: {"DOJO_MUSE_TE_FA4": "0"}
-    )
-    gpu_type: str = "B300"
-    # Budget for the sandbox's disk cache as well as live CPU tensors. Guest
-    # memory statistics omit the rootfs cache: ~0.5 TiB reported usage still
-    # led to second-step evictions with a 768 GiB reservation. Reserve Modal's
-    # maximum 2.5 TiB per node for state, actor backups, and live CPU tensors.
-    memory: int | tuple[int, int] | None = (2560 * 1024, 3072 * 1024)
-    custom_megatron_before_log_prob_hook: Callable | str | None = None
-    actor_num_nodes: int = 4
-    tensor_model_parallel_size: int = 8
-    pipeline_model_parallel_size: int = 4
-    context_parallel_size: int = 1
-    cp_comm_type: str = ""
-    expert_model_parallel_size: int = 8
-    decoder_first_pipeline_num_layers: int = 15
-    decoder_last_pipeline_num_layers: int | None = 15
-    # Half as many nodes doubles per-node disk demand. Leave room for streamed
-    # optimizer state and BF16 actor backups; checkpoints stay disabled.
-    train_function_kwargs: dict = field(
-        default_factory=lambda: {"ephemeral_disk": 3 * 1024 * 1024}
-    )
-    max_tokens_per_gpu: int = 8192
-    rollout_num_gpus_per_engine: int = 8
-    sglang_ep_size: int | None = 8
-    sglang_mem_fraction_static: float = 0.83
-    update_weight_buffer_size: int = 2 * 1024**3
-    pin_rollout_manager_to_head: bool = True
