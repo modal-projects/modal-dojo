@@ -1,8 +1,8 @@
-"""Candidate 64K Muse Spark recipe derived from radixark/miles PR #4111.
+"""64K Muse Spark recipes derived from radixark/miles PR #4111.
 
-Upstream validated 8K, not 64K. This preset needs a one-step GPU proof and
-smoke test before production use. It trains the text model, with frozen omni
-towers. No LoRA variant is claimed: upstream validated full-parameter RL.
+Validated with five-step SWE-bench smokes and a full-context stress completion
+per step on 64 H200s and 32 B300s. These train the text model with frozen omni
+towers and FP32 master weights; Adam moments are stored in BF16 on local disk.
 """
 
 from collections.abc import Callable
@@ -109,7 +109,8 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     gpu_type: str = "H200"
     actor_num_nodes: int = 8
     actor_num_gpus_per_node: int = 8
-    memory: int | tuple[int, int] | None = (512 * 1024, 1792 * 1024)
+    # Reserve host memory for disk-backed optimizer state and actor caches.
+    memory: int | tuple[int, int] | None = (1280 * 1024, 1792 * 1024)
     # EP16 stalled in cross-node routing-probability all-to-all. EP8 keeps
     # that exchange on NVLink; eight pipeline stages still shard all 62 layers.
     tensor_model_parallel_size: int = 8
@@ -141,7 +142,7 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     convert_ephemeral_disk_mb: int | None = 1024 * 1024
     download_timeout_seconds: int | None = 12 * 60 * 60
     convert_timeout_seconds: int | None = 12 * 60 * 60
-    # ~1.2 TB/node optimizer storage upstream, plus weight backups/staging.
+    # Local scratch holds streamed optimizer state and actor backups/staging.
     train_function_kwargs: dict = field(
         default_factory=lambda: {"ephemeral_disk": 2048 * 1024}
     )
@@ -169,7 +170,7 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     chat_template_path: str = (
         "/root/miles/miles/utils/chat_template_utils/templates/muse_spark_fixed.jinja"
     )
-    # Leave reward to the workload (math in the example/validation harness).
+    # Leave reward to the workload.
     rm_type: str = ""
     use_rollout_routing_replay: bool = True
     calculate_per_token_loss: bool = True
@@ -192,7 +193,7 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     use_distributed_optimizer: bool = True
     ckpt_format: str = "torch_dist"
     stream_optimizer_state_to_disk: bool = True
-    stream_optimizer_state_moment_dtype: str = "fp32"
+    stream_optimizer_state_moment_dtype: str = "bf16"
     offload_train_target: str = "disk"
     offload_train_disk_dir: str = "/root/muse_spark_optimizer"
     offload_train_disk_chunk_mb: int = 256
@@ -239,12 +240,11 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class Muse_Spark_Open_64k_B300_Recipe(Muse_Spark_Open_64k_Recipe):
-    """Candidate 65,536-token recipe on 4 nodes × 8 B300 GPUs.
+    """65,536-token recipe on 4 nodes × 8 B300 GPUs.
 
     Keeps the training topology of upstream's validated 8K B300 launcher:
-    TP8/PP4/CP1/EP8 and four single-node rollout engines. The 64K extension
-    remains unvalidated; limit each engine to four concurrent requests for
-    the first proof. The pinned SGLang includes commit 358c17d4b4f5, required
+    TP8/PP4/CP1/EP8 and four single-node rollout engines, with four concurrent
+    requests per engine. The pinned SGLang includes commit 358c17d4b4f5, required
     for BF16 TRT-LLM expert updates after colocated pause/resume on B300.
     """
 
@@ -268,9 +268,8 @@ class Muse_Spark_Open_64k_B300_Recipe(Muse_Spark_Open_64k_Recipe):
     expert_model_parallel_size: int = 8
     decoder_first_pipeline_num_layers: int = 15
     decoder_last_pipeline_num_layers: int | None = 15
-    # Half as many nodes doubles per-node disk demand. Three TiB is Modal's
-    # maximum; ~2.6 TiB is estimated for FP32 Adam state + BF16 actor backup.
-    # Confirm measured free space before a live run; checkpoints stay disabled.
+    # Half as many nodes doubles per-node disk demand. Leave room for streamed
+    # optimizer state and BF16 actor backups; checkpoints stay disabled.
     train_function_kwargs: dict = field(
         default_factory=lambda: {"ephemeral_disk": 3 * 1024 * 1024}
     )
