@@ -13,7 +13,7 @@ This guide demonstrates how to effectively use agents with the Modal Dojo by get
 First, we'll install `modal-dojo`:
 
 ```bash
-uv add 'modal-dojo @ git+https://github.com/modal-projects/modal-dojo.git@main'
+uv add modal-dojo
 ```
 
 Then, we'll install the provided skills into our current project:
