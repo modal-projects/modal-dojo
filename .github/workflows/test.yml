@@ -5,6 +5,7 @@ on:
   pull_request:
   merge_group:
     types: [checks_requested]
+  workflow_call:
 
 
 jobs:
@@ -43,3 +44,8 @@ jobs:
 
       - name: Verify package builds
         run: uv build
+
+      - name: Smoke-test installed wheel
+        run: |
+          cd $(mktemp -d)
+          uvx --from $OLDPWD/dist/*.whl modal-dojo --help
