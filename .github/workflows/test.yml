@@ -5,6 +5,7 @@ on:
   pull_request:
   merge_group:
     types: [checks_requested]
+  workflow_call:
 
 
 jobs:
@@ -16,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref || github.ref_name }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 
       - uses: actions/setup-python@v5
         with:
@@ -40,3 +41,11 @@ jobs:
 
       - name: Run tests
         run: uv run pytest tests/ -v
+
+      - name: Verify package builds
+        run: uv build
+
+      - name: Smoke-test installed wheel
+        run: |
+          cd $(mktemp -d)
+          uvx --from $OLDPWD/dist/*.whl modal-dojo --help
