@@ -1,10 +1,20 @@
-"""Accept canonical HF cache shard paths in the pinned Muse loader."""
+"""Accept canonical HF cache shard paths in the pinned Muse loader.
+
+image: radixark/miles:muse-spark-open (digest pinned in muse_spark.py)
+commit: https://github.com/radixark/miles/commit/002ec9cf35e20dab56bddc8b55e4364c407a2231
+file: miles_plugins/models/muse_spark/checkpoint.py::SafetensorsCheckpoint
+
+The upstream containment check still rejects snapshot -> blobs symlinks.
+TODO: remove when upstream accepts canonical Hugging Face cache shards while
+retaining its path-traversal checks.
+"""
+
+from pathlib import Path
+
+TARGET = Path("/root/miles/miles_plugins/models/muse_spark/checkpoint.py")
 
 
-def patch_muse_hf_cache_shards(path=None):
-    from pathlib import Path
-
-    target = Path(path or "/root/miles/miles_plugins/models/muse_spark/checkpoint.py")
+def apply(target: Path = TARGET) -> None:
     source = target.read_text()
     marker = "def _dojo_resolve_safetensors_shard(checkpoint_dir, shard_filename):"
     resolved_reader = 'with safe_open(self._shard_paths[self.weight_map[name]], framework="pt", device="cpu") as shard_reader:'
@@ -92,3 +102,7 @@ def patch_muse_hf_cache_shards(path=None):
     compile(source, str(target), "exec")
     target.write_text(source)
     print("Muse HF cache shard patch applied:", target)
+
+
+if __name__ == "__main__":
+    apply()

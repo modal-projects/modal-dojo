@@ -1,42 +1,37 @@
 """64K Muse Spark B300 recipe derived from radixark/miles PR #4111.
 
-Validated with a five-step SWE-bench smoke on 32 B300s. Trains the text model
-with frozen omni towers and FP32 master weights; Adam moments use BF16 on disk.
+Trains the text model with frozen omni towers and FP32 master weights; Adam
+moments use BF16 on disk.
 """
 
-from collections.abc import Callable
 from dataclasses import field
+from pathlib import Path
 from typing import Any, ClassVar
 
-import modal
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models import ModelConfig, Muse_Spark_Open
+from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
-from modal_dojo.frameworks.miles.modal_helpers.patches.patch_muse_spark_native import (
-    rebuild_te,
-    rebuild_fa2,
-    rebuild_apex,
-    patch_te_fa4_gate,
+
+# The image bundles Miles 002ec9cf35e2, SGLang bc1c2ac7dfc5, and Megatron
+# 7cc41d59347e. Keep those sources together instead of overlaying older commits.
+# Miles PR #4125 supplies Torch 2.14 wheels, replacing our TE/FA2/Apex rebuilds:
+# https://github.com/radixark/miles/pull/4125
+_PATCH_DIR = (
+    Path(__file__).resolve().parents[2] / "frameworks/miles/modal_helpers/patches"
 )
-from modal_dojo.frameworks.miles.modal_helpers.patches.patch_muse_spark_hf_cache import (
-    patch_muse_hf_cache_shards,
-)
-
-MILES_COMMIT = "753e19d8bd8fe5a27892dd18b787dc131addd269"
-SGLANG_COMMIT = "ad34947129c518641db51816c88c126ca16f786c"
 
 
-def build_muse_native_image(image: modal.Image) -> modal.Image:
-    """Build and cache native wheels separately before starting GPU workers."""
-    return (
-        image.run_function(rebuild_te, cpu=16, memory=65536, timeout=3600)
-        .run_function(rebuild_fa2, cpu=16, memory=98304, timeout=7200)
-        .run_function(rebuild_apex, cpu=16, memory=65536, timeout=3600)
-        .run_function(patch_te_fa4_gate, timeout=60)
-        .run_function(patch_muse_hf_cache_shards, timeout=60)
-    )
+def _image_patches() -> list[str]:
+    return [
+        f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
+        for name in (
+            "patch_muse_spark_te_attention",
+            "patch_muse_spark_hf_cache",
+        )
+    ]
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
@@ -53,13 +48,9 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     name: str = "miles-muse_spark_open_64k_b300_recipe"
     docker_image: str = (
         "radixark/miles:muse-spark-open@sha256:"
-        "2b46ca326003e347c600145bd60935b42af8032ed6f0a75e7fdc7bf5a8700b15"
+        "88c66b1414aff0f2cd018923b70f7c463391980236171683bdf22f34796b6bf2"
     )
-    image_overlay: Callable | None = field(
-        default_factory=lambda: build_muse_native_image
-    )
-    miles_git_ref: str = MILES_COMMIT
-    sglang_git_ref: str = SGLANG_COMMIT
+    image_run_commands: list[str] = field(default_factory=_image_patches)
     miles_model_name: str = "muse-spark-full"
     model_name: str = "muse_spark"
 
@@ -74,8 +65,8 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     context_parallel_size: int = 1
     cp_comm_type: str = ""
     expert_model_parallel_size: int = 8
-    # TE's FA4 backward is incompatible with pinned quack 0.6.5. Use rebuilt
-    # FA2 for training while keeping SGLang's FA4 available for inference.
+    # Use FA2 for training while keeping SGLang's FA4 available for inference.
+    # See patch_muse_spark_te_attention for the pinned dependency incompatibility.
     train_env_vars: dict[str, str] | str | None = field(
         default_factory=lambda: {"DOJO_MUSE_TE_FA4": "0"}
     )
@@ -148,8 +139,8 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     offload_train_disk_chunk_mb: int = 256
 
     # Four single-node engines, with BF16 KV for train/rollout agreement.
-    # The SGLang pin includes 358c17d4b4f5, required for BF16 TRT-LLM expert
-    # updates after colocated pause/resume on B300.
+    # The bundled SGLang keeps TRT-LLM permutation caches on the CPU so BF16
+    # expert updates survive colocated pause/resume on B300.
     offload_train: bool = True
     offload_rollout: bool = True
     rollout_num_gpus_per_engine: int = 8
