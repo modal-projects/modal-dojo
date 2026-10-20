@@ -5,14 +5,19 @@ commit: https://github.com/radixark/TransformerEngine/commit/ae9d2cc80e2a73ddbae
 file: transformer_engine/pytorch/attention/dot_product_attention/utils.py
 
 FA4 4.0.0b35 with quack 0.6.5 fails the Muse packed-BF16 attention reference
-check on B300. Upstream has no per-version switch; NVTE_FLASH_ATTN=0 would
-disable the working FA2 fallback too.
-TODO: remove when upstream passes Muse attention forward/backward on B300,
-or use an upstream per-version selector when one is available.
+check on B300. The pinned TE fork has no per-version switch;
+NVTE_FLASH_ATTN=0 would disable the working FA2 fallback too.
+
+TODO: remove this patch and set NVTE_FLASH_ATTN_V4=0 in the recipe when the
+Miles image includes NVIDIA/TransformerEngine#3204's native selector:
+https://github.com/NVIDIA/TransformerEngine/pull/3204
+Upstream also fixed FA4 window sentinels in #3540; rerun the Muse attention
+forward/backward checks before enabling FA4 training:
+https://github.com/NVIDIA/TransformerEngine/pull/3540
 """
 
 
-def apply():
+def apply() -> None:
     import importlib.metadata
     import importlib.util
     from pathlib import Path

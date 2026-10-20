@@ -156,7 +156,7 @@ def commit_checkpoint_volume_across_ranks(
 
 
 class _TorchDistributed:
-    def __init__(self, group: Any = None):
+    def __init__(self, group: Any = None) -> None:
         self.group = group
 
     @property
