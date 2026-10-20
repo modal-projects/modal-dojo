@@ -1,7 +1,7 @@
 [project]
 name = "modal-dojo"
 version = "0.1.0"
-description = "Reusable building blocks for Modal multi-node training examples"
+description = "Get started with LLM training on Modal."
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [{name = "Modal Labs"}]

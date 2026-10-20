@@ -20,10 +20,10 @@ Install the package directly:
 uv pip install modal-dojo
 ```
 
-Or pin it in `pyproject.toml`:
+Or add it to your project's dependencies:
 
-```toml
-modal-dojo = { git = "https://github.com/modal-projects/modal-dojo.git", branch = "main" }
+```bash
+uv add modal-dojo
 ```
 
 Set up [Modal](https://modal.com/docs/cli/latest/setup) and the [dashboard](https://dojo.modal.dev/guides/dashboard):
