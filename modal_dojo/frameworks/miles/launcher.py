@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import copy
 import hashlib
 import os
 import shlex
@@ -490,6 +491,9 @@ def build_miles_app(
     name: str | None = None,
     group_id: str | None = None,
 ) -> App:
+    # Image construction consumes build-only fields; preserve the caller's
+    # recipe so it can be used for another launch.
+    miles = copy.copy(miles)
     app_name = name or miles.name or f"miles-{type(miles).__name__.lstrip('_').lower()}"
     volume_prefix = miles.name or f"miles-{type(miles).__name__.lstrip('_').lower()}"
     MilesRecipe._validate_datasets(dataset, eval_dataset, loss_type=miles.loss_type)
@@ -505,6 +509,9 @@ def build_miles_app(
     _caller_module, caller_script = resolve_caller_context()
 
     image = _build_miles_base_image(miles, dataset, eval_dataset, caller_script)
+    # Encoded patch scripts belong in the image, not every worker's closure.
+    # Keeping them here can exceed Modal's 64 KiB serialized-function limit.
+    miles.image_run_commands = []
 
     checkpoints_volume_name, checkpoints_mount_path, all_volumes = (
         shared.create_training_volumes(
