@@ -15,8 +15,8 @@ on Street Fighter III using self-play. To enable this, we use the
 custom generate function.
 
 <video controls autoplay muted loop playsinline width="100%">
-  <source src="https://modal-cdn.com/cdnbot/iter49_vs_cpu1_Gouki_vs_Chun-Li_win_7c06e16b.mp4" type="video/mp4">
-  <a href="https://modal-cdn.com/cdnbot/iter49_vs_cpu1_Gouki_vs_Chun-Li_win_7c06e16b.mp4">Watch a trained Gouki defeat CPU Chun-Li.</a>
+  <source src="https://modal-cdn.com/cdnbot/yang_vs_chunli_ckpt5_20_100_d1b99ed9.mp4" type="video/mp4">
+  <a href="https://modal-cdn.com/cdnbot/yang_vs_chunli_ckpt5_20_100_d1b99ed9.mp4">Watch a trained Yang defeat CPU Chun-Li.</a>
 </video>
 
 You can find the [full code here](https://github.com/modal-projects/sf3/tree/main/src/train).
