@@ -34,37 +34,6 @@ def parse_torch_dist_iteration(name: str) -> int | None:
         return None
 
 
-def is_readable_torch_dist_checkpoint_dir(
-    checkpoint_dir: str | os.PathLike[str],
-) -> bool:
-    """Check every referenced shard before handing converted weights to training.
-
-    Metadata is written last locally, but another node's Volume commit may still
-    be pending. File presence alone therefore cannot establish completeness.
-    Only call this on trusted, locally generated checkpoint metadata.
-    """
-    import pickle
-
-    root = Path(checkpoint_dir)
-    if not is_complete_torch_dist_checkpoint_dir(root):
-        return False
-    try:
-        with (root / ".metadata").open("rb") as stream:
-            metadata = pickle.load(stream)
-        entries = metadata.storage_data.values()
-        required: dict[str, int] = {}
-        for entry in entries:
-            required[entry.relative_path] = max(
-                required.get(entry.relative_path, 0), entry.offset + entry.length
-            )
-        return bool(required) and all(
-            (root / name).stat().st_size >= minimum
-            for name, minimum in required.items()
-        )
-    except (OSError, EOFError, pickle.UnpicklingError, AttributeError):
-        return False
-
-
 def parse_torch_dist_tracker(text: str) -> int | None:
     text = text.strip()
     if text == "release" or not text.isdigit():

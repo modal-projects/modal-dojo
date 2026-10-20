@@ -2,6 +2,10 @@
 
 Miles 65e785ff5e794a7081383e18e70c4555cb1fe0fb saves adapters directly,
 bypassing Megatron's save_checkpoint and its existing Volume commit wrapper.
+
+file: miles/backends/megatron_utils/lora/utils.py
+TODO: Remove when native adapter saves invoke Dojo's checkpoint Volume commit
+hook on every node. Upstream save completion alone does not publish Modal mounts.
 """
 
 from pathlib import Path

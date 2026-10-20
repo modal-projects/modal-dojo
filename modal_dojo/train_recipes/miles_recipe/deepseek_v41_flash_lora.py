@@ -14,6 +14,7 @@ from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash import (
     DeepSeek_V4_1_Flash_Recipe,
 )
 
+# TODO: Use a released image once Miles #4205 and SGLang #45231 are included.
 MILES_LORA_COMMIT = "65e785ff5e794a7081383e18e70c4555cb1fe0fb"
 SGLANG_LORA_COMMIT = "34033fe90b90f1bb64e63337268beada57f21f84"
 
@@ -63,8 +64,8 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
 
     Uses Sierra's four attention targets and GRPO settings. The runtime pins
     include unmerged upstream LoRA support; they are independent of the image
-    used by Sierra's historical run. Workload/reward and forced-length
-    generation belong to the validation example, not this model preset.
+    used by Sierra's historical run. Workload and reward are supplied by the
+    training config; generation uses ordinary stopping.
     """
 
     model_config_class: ClassVar[type[DeepSeek_V4_1_Flash_LoRA]] = (

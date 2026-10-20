@@ -63,7 +63,7 @@ from modal_dojo.common.launcher_helpers import (
 from modal_dojo.common.status_reporter import flush as flush_status_reporter
 from modal_dojo.common.status import MilesStatus
 from modal_dojo.common.torch_dist_checkpoint import (
-    is_readable_torch_dist_checkpoint_dir,
+    is_complete_torch_dist_checkpoint_dir,
 )
 from modal_dojo.train_recipes.miles_recipe.recipe import (
     CHECKPOINTS_PATH,
@@ -607,7 +607,7 @@ def build_miles_app(
 
         save_path = str(miles.ref_load)
         if has_torch_dist_checkpoint(
-            save_path, is_complete=is_readable_torch_dist_checkpoint_dir
+            save_path, is_complete=is_complete_torch_dist_checkpoint_dir
         ):
             print(
                 f"Found existing torch_dist checkpoint at {save_path}; "
@@ -642,7 +642,7 @@ def build_miles_app(
                     for name in sorted(os.listdir(save_path))
                     if (name == "release" or name.startswith("iter_"))
                     and os.path.isdir(os.path.join(save_path, name))
-                    and not is_readable_torch_dist_checkpoint_dir(
+                    and not is_complete_torch_dist_checkpoint_dir(
                         os.path.join(save_path, name)
                     )
                 ]
@@ -792,7 +792,7 @@ def build_miles_app(
                     # Fail loudly here rather than leaving a partial checkpoint for a later
                     # run to mistake for a cache hit.
                     if not has_torch_dist_checkpoint(
-                        save_path, is_complete=is_readable_torch_dist_checkpoint_dir
+                        save_path, is_complete=is_complete_torch_dist_checkpoint_dir
                     ):
                         raise RuntimeError(
                             f"Conversion finished but {save_path} holds no complete "

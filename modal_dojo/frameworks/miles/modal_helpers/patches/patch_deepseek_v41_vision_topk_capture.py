@@ -24,6 +24,10 @@ SGLang: 7e74b31b2668934cf89dbe15188a010fda381aba
 Also supports the centralized routing implementation at SGLang
 34033fe90b90f1bb64e63337268beada57f21f84 (V4.1 native LoRA). Its MegaMoE
 branch already captures via ``_post_process_topk_ids``.
+
+TODO: Remove once the pinned SGLang includes CUDA VL TopK finalization from
+https://github.com/sgl-project/sglang/pull/42189. It restores capture through
+_post_process_topk_ids; the native-LoRA serving PR #45231 does not include it.
 """
 
 import pathlib

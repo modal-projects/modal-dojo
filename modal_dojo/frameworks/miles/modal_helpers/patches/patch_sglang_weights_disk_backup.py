@@ -1,4 +1,12 @@
-"""Expose pinned TMS disk backups for colocated native-LoRA serving weights."""
+"""Expose pinned TMS disk backups for colocated native-LoRA serving weights.
+
+commit: https://github.com/sgl-project/sglang/commit/34033fe90b90f1bb64e63337268beada57f21f84
+file: python/sglang/srt/utils/torch_memory_saver_adapter.py
+
+The trainer and serving CPU backups together exceeded 1792 GiB/node. Keep
+serving backups on local disk while the trainer uses CPU memory.
+TODO: Remove when SGLang exposes TMS disk-backed weight regions directly.
+"""
 
 from pathlib import Path
 

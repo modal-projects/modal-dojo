@@ -5,6 +5,11 @@ Backing up and restoring 112 GiB per GPU on local disk can exceed
 ten minutes; allow the complete transition, including the slowest node. Cancellation leaves weights
 offloaded, so the next generation health check cannot complete initialization.
 This patch is confined to the pinned native-LoRA image.
+
+commit: https://github.com/radixark/miles/commit/65e785ff5e794a7081383e18e70c4555cb1fe0fb
+file: miles/ray/rollout/inference_controller.py
+TODO: Remove when Miles exposes a configurable cell-transition timeout that
+can accommodate full-model disk offload/restore.
 """
 
 from pathlib import Path
