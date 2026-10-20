@@ -8,6 +8,7 @@ from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models.deepseek_v41_flash import DeepSeek_V4_1_Flash_LoRA
 from modal_dojo.common.patches import encode_patch
+from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash import (
     _PATCH_DIR,
     DeepSeek_V4_1_Flash_Recipe,
@@ -101,9 +102,6 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
     # Serving's ~900 GiB backup per node lives on local disk, leaving host RAM
     # for the trainer's frozen Engram tables and faster CPU offload/restore.
     offload_train_target: str = "cpu"
-    optimizer_cpu_offload: bool = False
-    overlap_cpu_optimizer_d2h_h2d: bool = False
-    use_precision_aware_optimizer: bool = False
 
     rollout_batch_size: int = 8
     n_samples_per_prompt: int = 4
@@ -113,14 +111,11 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
     rollout_max_prompt_len: int = 4096
     rollout_max_response_len: int = 28672
     seq_length: int = 32768
-    max_tokens_per_gpu: int = 32768
+    max_tokens_per_gpu: MicroBatchSize = 32768
     lr: float = 1e-4
     weight_decay: float = 0.0
     kl_loss_type: str = "k3"
     calculate_per_token_loss: bool = True
-    use_kl_loss: bool = False
-    kl_loss_coef: float = 0.0
-    kl_coef: float = 0.0
 
     sglang_context_length: int = 32768
     sglang_lora_backend: str = "triton"
