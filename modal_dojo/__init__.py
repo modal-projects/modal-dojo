@@ -117,6 +117,10 @@ _EXPORTS = {
         "modal_dojo.train_recipes.miles_recipe",
         "Muse_Spark_Open_64k_Recipe",
     ),
+    "Muse_Spark_Open_64k_Async_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "Muse_Spark_Open_64k_Async_Recipe",
+    ),
     "ParsedResponse": ("modal_dojo.common.models", "ParsedResponse"),
     "Qwen3_0_6B": ("modal_dojo.common.models", "Qwen3_0_6B"),
     "Qwen3_0_6B_Recipe": (
@@ -261,6 +265,7 @@ __all__ = [
     "MilesRecipe",
     "Muse_Spark_Open",
     "Muse_Spark_Open_64k_Recipe",
+    "Muse_Spark_Open_64k_Async_Recipe",
     "ParsedResponse",
     "Qwen3_0_6B",
     "Qwen3_0_6B_Recipe",
