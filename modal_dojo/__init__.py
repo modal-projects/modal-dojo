@@ -3,6 +3,11 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORTS = {
+    "SpindleRecipe": ("modal_dojo.train_recipes.spindle_recipe", "SpindleRecipe"),
+    "DojoDatasetBuilder": (
+        "modal_dojo.frameworks.spindle.dataset",
+        "DojoDatasetBuilder",
+    ),
     "Checkpoint": ("modal_dojo.common.checkpoint", "Checkpoint"),
     "CheckpointType": ("modal_dojo.common.checkpoint", "CheckpointType"),
     "convert_megatron_checkpoint_to_hf": (
@@ -216,6 +221,8 @@ _EXPORTS = {
 }
 
 __all__ = [
+    "SpindleRecipe",
+    "DojoDatasetBuilder",
     "CustomDeployment",
     "DASHBOARD_OVERLAY_VOLUME_NAME",
     "DashboardComponent",

@@ -10,7 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from enum import Enum
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 import hashlib
 import json
 import random
@@ -19,6 +19,9 @@ import tomllib
 from pathlib import Path
 
 from modal_dojo.common.errors import DojoConfigError
+
+if TYPE_CHECKING:
+    from tinker_cookbook.rl.types import RLDatasetBuilder
 
 DatasetRow = dict[str, Any]
 
@@ -38,6 +41,17 @@ class DatasetConfig(ABC):
     """Dataset fields and materialization behavior shared across training frameworks."""
 
     _type: DatasetType = DatasetType.DEFAULT
+
+    def to_dataset_builder(self, **kwargs: Any) -> RLDatasetBuilder:
+        """Opt in to cookbook RL; generic rows do not define an environment/reward.
+
+        Unsupported sources fail during conversion, before a Spindle deployment.
+        Existing non-cookbook dataset subclasses need not implement this method.
+        """
+        raise DojoConfigError(
+            f"{type(self).__name__} does not support cookbook RL. "
+            "Implement to_dataset_builder() or pass a cookbook RLDatasetBuilder."
+        )
 
     def cache_key(self) -> str | None:
         return None
@@ -230,6 +244,12 @@ class HuggingFaceDataset(DatasetConfig):
         self.prompt_template = prompt_template
         self.always_download = always_download
 
+    def to_dataset_builder(self, **kwargs: Any) -> RLDatasetBuilder:
+        """Build single-turn RL groups; supply reward_fn(response_text, label)."""
+        from modal_dojo.frameworks.spindle.dataset import huggingface_builder
+
+        return huggingface_builder(self, **kwargs)
+
     def cache_key(self) -> str | None:
         if self.always_download:
             return None
@@ -365,6 +385,12 @@ class HarborDataset(DatasetConfig):
         self.shuffle_tasks = shuffle_tasks
         self.shuffle_seed = shuffle_seed
         self.always_download = always_download
+
+    def to_dataset_builder(self, **kwargs: Any) -> RLDatasetBuilder:
+        """Build cookbook Harbor tool environments from the selected task split."""
+        from modal_dojo.frameworks.spindle.dataset import harbor_builder
+
+        return harbor_builder(self, **kwargs)
 
     def cache_key(self) -> str | None:
         if self.always_download:

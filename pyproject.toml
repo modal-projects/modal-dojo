@@ -20,8 +20,23 @@ dependencies = [
     "fastapi",
     "randomname",
     "rich",
-    "transformers>=5.12.1",
+    # Qwen3.5 tokenizers need 5.3+; the optional cookbook supplies its own cap.
+    "transformers>=5.3.0",
 ]
+
+[project.optional-dependencies]
+spindle = [
+    "tinker==0.34.0",
+    "tml-renderers==0.2.0",
+    "modal-spindle==0.1.0; python_version == '3.12'",
+    "tinker-cookbook>=0.5.8.dev15,<0.6",
+]
+
+# Spindle is not yet on PyPI. Keep VCS pins out of published Requires-Dist;
+# use `uv sync --extra spindle` from a checkout for this experimental integration.
+[tool.uv.sources]
+modal-spindle = { git = "https://github.com/modal-projects/spindle.git", rev = "8a00f4576286d08cc5e69d32b7411e21c0334f26" }
+tinker-cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook.git", rev = "ad3b5c541cd383b05d1c301e8ccc2d9cc0c5f774" }
 
 [build-system]
 requires = ["hatchling"]
