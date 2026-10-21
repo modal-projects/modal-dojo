@@ -29,10 +29,6 @@
       "link": "/reference/dojoconfigerror"
     },
     {
-      "label": "DojoDatasetBuilder",
-      "link": "/reference/dojodatasetbuilder"
-    },
-    {
       "label": "DojoError",
       "link": "/reference/dojoerror"
     },
@@ -107,10 +103,6 @@
     {
       "label": "SlimeRecipe",
       "link": "/reference/slimerecipe"
-    },
-    {
-      "label": "SpindleRecipe",
-      "link": "/reference/spindlerecipe"
     },
     {
       "label": "ToolCall",

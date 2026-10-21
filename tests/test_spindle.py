@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import tempfile
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -13,8 +14,10 @@ pytest.importorskip("tinker_cookbook")
 
 import chz
 import tinker
+from spindle.configs.qwen35_2b_lora_32k import Config as Qwen2BConfig
 from tinker_cookbook import tokenizer_utils
 from tinker_cookbook.completers import TokensWithLogprobs
+from tinker_cookbook.recipes.math_rl.arithmetic_env import ArithmeticDatasetBuilder
 from tinker_cookbook.rl import rollouts, train as rl_train
 
 from modal_dojo import (
@@ -26,7 +29,40 @@ from modal_dojo import (
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.frameworks.spindle import dataset_builders, launcher
 from modal_dojo.frameworks.spindle.trajectories import capture_trajectories
-from tutorials.spindle_rl import build_recipe
+
+
+def build_recipe(*, log_path=None, environment=None):
+    deploy_config = Qwen2BConfig(
+        trainer_gpus_per_node=1,
+        trainer_max_clients_per_instance=1,
+        inference_max_replicas=1,
+        overrides={"miles_cfg.max_lora_slots": 1},
+    )
+    deploy_config.platform["modal"]["environment"] = environment
+    deploy_config.platform["secrets"]["sampler_proxy"] = "spindle-proxy"
+    model_name = "Qwen/Qwen3.5-2B"
+    renderer_name = "qwen3_5_disable_thinking"
+    rl_config = rl_train.Config(
+        log_path=log_path or tempfile.mkdtemp(prefix="dojo-spindle-test-"),
+        model_name=model_name,
+        renderer_name=renderer_name,
+        recipe_name="test_spindle_rl",
+        dataset_builder=ArithmeticDatasetBuilder(
+            model_name_for_tokenizer=model_name,
+            renderer_name=renderer_name,
+            batch_size=4,
+            n_batches=20,
+            group_size=4,
+        ),
+        learning_rate=1e-5,
+        max_tokens=64,
+        lora_rank=32,
+        loss_fn="importance_sampling",
+        eval_every=5,
+        save_every=5,
+        max_steps=1,
+    )
+    return SpindleRecipe(rl_config, deploy_config=deploy_config)
 
 
 @pytest.fixture

@@ -52,7 +52,6 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [Fighting LLMs in Street Fighter III](https://dojo.modal.dev/tutorials/street_fighter)
 - [Massively-parallel hyperparameter sweeps](https://dojo.modal.dev/tutorials/param_sweep)
 - [Frontier-scale training](https://dojo.modal.dev/tutorials/multinode)
-- [Cookbook RL on Spindle](https://dojo.modal.dev/tutorials/spindle_rl)
 
 ## Reference
 
@@ -95,7 +94,6 @@ Repo: https://github.com/modal-projects/modal-dojo
 ### Datasets
 
 - [DatasetConfig](https://dojo.modal.dev/reference/datasetconfig)
-- [DojoDatasetBuilder](https://dojo.modal.dev/reference/dojodatasetbuilder)
 - [HarborDataset](https://dojo.modal.dev/reference/harbordataset)
 - [HuggingFaceDataset](https://dojo.modal.dev/reference/huggingfacedataset)
 - [MultimodalDataset](https://dojo.modal.dev/reference/multimodaldataset)
@@ -131,7 +129,6 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [Qwen3_ASR_1_7B_Recipe](https://dojo.modal.dev/reference/qwen3_asr_1_7b_recipe)
 - [Qwen3_VL_8B_Recipe](https://dojo.modal.dev/reference/qwen3_vl_8b_recipe)
 - [SlimeRecipe](https://dojo.modal.dev/reference/slimerecipe)
-- [SpindleRecipe](https://dojo.modal.dev/reference/spindlerecipe)
 
 ### Training
 

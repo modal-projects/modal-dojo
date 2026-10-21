@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.dataset import DatasetConfig
 from modal_dojo.common.errors import DojoConfigError
 
@@ -11,6 +12,7 @@ if TYPE_CHECKING:
     from tinker_cookbook.rl.types import RLDatasetBuilder
 
 
+@exclude_from_api_reference
 class DojoDatasetBuilder:
     """Convert an opted-in Dojo dataset into a Tinker Cookbook RL builder."""
 

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 from synchronicity import Synchronizer
 
+from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.errors import DojoConfigError
 
 if TYPE_CHECKING:
@@ -125,3 +126,5 @@ _synchronizer = Synchronizer()
 SpindleRecipe = _synchronizer.create_blocking(
     _SpindleRecipe, name="SpindleRecipe", target_module=__name__
 )
+# Keep the experimental v0 out of the published API reference.
+exclude_from_api_reference(SpindleRecipe)
