@@ -12,6 +12,7 @@ classifiers = [
 ]
 dependencies = [
     "modal==1.6.1",
+    "synchronicity>=0.12.5,<1",
     "click>=8.2,<9",
     "cloudpickle",
     "datasets",

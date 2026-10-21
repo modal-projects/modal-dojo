@@ -293,6 +293,11 @@ class TrainingRun(BaseModel):
     def model(self) -> "ModelConfig":
         """Build a ``ModelConfig`` whose path targets the latest megatron checkpoint."""
         self._reload()
+        if self.framework is Framework.SPINDLE:
+            raise ValueError(
+                "Spindle saves Tinker checkpoints, not a serving ModelConfig. "
+                "Inspect run.metadata['spindle_checkpoints'] for the saved paths."
+            )
         raw = self.source_model
         if raw is None:
             raise ValueError("No source_model on this TrainingRun.")

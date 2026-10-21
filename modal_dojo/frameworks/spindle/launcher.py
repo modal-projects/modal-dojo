@@ -39,7 +39,7 @@ def _stop_app(name: str, environment: str | None) -> None:
 
 
 @asynccontextmanager
-async def deployment(config, *, metric_tags=None):
+async def deployment(config, *, metric_tags=None, run=None):
     import modal
     from spindle.deployment_cli import deploy
     from spindle.deployments import DeploymentConfig
@@ -111,9 +111,18 @@ async def deployment(config, *, metric_tags=None):
                 **await trainer_app.get_tags.aio(),
                 **COMMON_DOJO_TAGS,
                 "_modal_framework": "spindle",
+                **({"training_run_id": run.training_run_id} if run else {}),
                 **(metric_tags or {}),
             }
         )
+        if run is not None:
+            from modal_dojo.common.modal_urls import modal_app_dashboard_url
+
+            run.modal_app_id = trainer_app.app_id
+            run.modal_app_url = modal_app_dashboard_url(trainer_app.app_id)
+            run.app_name = compiled.trainer_app_name
+            run.metadata["spindle_apps"] = names
+            await run.save(is_async=True)
         logger.info("Spindle deployment %s in %s", run_name, environment or "default")
         server = modal.Function.from_name(
             run_name, "server", environment_name=environment
@@ -146,13 +155,11 @@ async def deployment(config, *, metric_tags=None):
                 raise cleanup_error
 
 
-async def train(config, deploy_config) -> None:
-    import chz
-    import tinker
+async def train(config, deploy_config):
     from tinker_cookbook.rl import train as rl_train
     from tinker_cookbook.tokenizer_utils import get_tokenizer
 
-    from .trajectories import capture_trajectories
+    from .reporting import DojoReporter
 
     if not _active_run.acquire(blocking=False):
         raise DojoConfigError(
@@ -170,42 +177,58 @@ async def train(config, deploy_config) -> None:
                 "_modal_metric_provider": "wandb",
                 "_modal_metric_project": modal_tag_value(config.wandb_project),
             }
-        async with deployment(deploy_config, metric_tags=metric_tags) as (url, api_key):
-            clients = []
-
-            def service_client(**kwargs):
-                client = tinker.ServiceClient(
-                    **{**kwargs, "base_url": url, "api_key": api_key}
-                )
-                clients.append(client)
-                return client
-
-            # Patch only cookbook's module reference, not the SDK or process env.
-            rl_train.tinker = SimpleNamespace(
-                **{
-                    **vars(tinker),
-                    "ServiceClient": service_client,
-                }
-            )
-            status = "errored"
-            try:
-                async with capture_trajectories(config.log_path, tokenizer):
-                    await rl_train.main(chz.replace(config, base_url=url))
-                status = "success"
-            except asyncio.CancelledError:
-                status = "interrupted"
-                raise
-            finally:
-                for client in clients:
-                    try:
-                        await asyncio.wait_for(client.close(status), timeout=30)
-                    except tinker.NotFoundError:
-                        # This Spindle revision lacks the SDK's session-finish
-                        # route. close() still releases local holders in finally;
-                        # the owned deployment is stopped immediately below.
-                        pass
-                    except Exception:
-                        logger.exception("Could not close cookbook's Spindle client")
+        async with DojoReporter(config, deploy_config) as reporter:
+            async with deployment(
+                deploy_config, metric_tags=metric_tags, run=reporter.run
+            ) as (url, api_key):
+                await _run_cookbook(config, url, api_key, tokenizer, reporter)
+        return reporter.run
     finally:
         rl_train.tinker = original_tinker
         _active_run.release()
+
+
+async def _run_cookbook(config, url, api_key, tokenizer, reporter):
+    import chz
+    import tinker
+    from tinker_cookbook.rl import train as rl_train
+    from .trajectories import capture_trajectories
+
+    with reporter.cookbook_hooks(rl_train):
+        clients = []
+
+        def service_client(**kwargs):
+            client = tinker.ServiceClient(
+                **{**kwargs, "base_url": url, "api_key": api_key}
+            )
+            clients.append(client)
+            return client
+
+        # Patch only cookbook's module reference, not the SDK or process env.
+        rl_train.tinker = SimpleNamespace(
+            **{
+                **vars(tinker),
+                "ServiceClient": service_client,
+            }
+        )
+        status = "errored"
+        try:
+            async with capture_trajectories(
+                config.log_path, tokenizer, on_group=reporter.capture_group
+            ):
+                await rl_train.main(chz.replace(config, base_url=url))
+            status = "success"
+        except asyncio.CancelledError:
+            status = "interrupted"
+            raise
+        finally:
+            for client in clients:
+                try:
+                    await asyncio.wait_for(client.close(status), timeout=30)
+                except tinker.NotFoundError:
+                    # This Spindle revision lacks the SDK's session-finish
+                    # route. close() still releases local holders in finally;
+                    # the owned deployment is stopped immediately below.
+                    pass
+                except Exception:
+                    logger.exception("Could not close cookbook's Spindle client")

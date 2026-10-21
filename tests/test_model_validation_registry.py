@@ -33,7 +33,9 @@ ALL_CONFIGS = _ValidationConfig.select()
 
 def test_registry_has_both_frameworks_represented():
     frameworks = {config.framework for config in VALIDATION_CONFIGS}
-    assert frameworks == set(Framework)
+    # Spindle accepts raw cookbook configs and is validated by its own tutorial;
+    # this registry exercises the TrainConfig recipe backends.
+    assert frameworks == {Framework.SLIME, Framework.MILES}
 
 
 @pytest.mark.parametrize(

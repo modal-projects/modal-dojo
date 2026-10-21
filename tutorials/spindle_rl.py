@@ -24,14 +24,20 @@
 # Each raw trajectory group is printed and saved to `dojo-trajectories.jsonl`
 # under the log path, including token IDs, log probabilities, rewards, and
 # decoded prompts/responses. Cookbook retains its normal logs/checkpoints.
-# V0 does not create a Dojo TrainingRun or post trajectories to the dashboard.
+# Dojo records the run, trajectories, rewards, and cookbook scalar metrics in
+# its dashboard. The returned TrainingRun links back to the Spindle trainer.
+# Use `recipe.train()` in a script, or `await recipe.train.aio()` in async code.
+# Spindle checkpoint URIs are in `run.metadata["spindle_checkpoints"]`; converting
+# them into a serving `run.model` is not supported yet. When using the library
+# directly, set `MODAL_ENVIRONMENT` to the deployment's environment so Dojo's
+# metadata and Spindle live together. The CLI below does this for `--environment`.
 # Spindle's LoRA API uses deployed apps: Dojo gives each run unique names and
 # stops them on exit, failure, or cancellation. A hard process kill can leave
 # these apps deployed; use the printed Modal app IDs to stop them. Saved
 # checkpoints and shared model caches remain on their configured volumes.
 
 import argparse
-import asyncio
+import os
 import tempfile
 
 from spindle.configs.qwen35_2b_lora_32k import Config as Qwen2BConfig
@@ -107,9 +113,12 @@ if __name__ == "__main__":
     parser.add_argument("--environment")
     parser.add_argument("--proxy-secret", default="spindle-proxy")
     args = parser.parse_args()
+    if args.environment:
+        os.environ["MODAL_ENVIRONMENT"] = args.environment
     recipe = build_recipe(
         steps=args.steps, log_path=args.log_path,
         environment=args.environment, proxy_secret=args.proxy_secret,
     )
     print(f"Logs and trajectories: {recipe.rl_config.log_path}")
-    asyncio.run(recipe.train())
+    run = recipe.train()
+    print(f"Completed Dojo run: {run.training_run_id}")

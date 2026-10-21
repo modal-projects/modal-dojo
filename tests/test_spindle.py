@@ -29,6 +29,28 @@ from modal_dojo.frameworks.spindle.trajectories import capture_trajectories
 from tutorials.spindle_rl import build_recipe
 
 
+@pytest.fixture
+def dojo_dashboard(fake_volume, monkeypatch, tmp_path):
+    import httpx
+    from modal_dojo import _dashboard
+    from modal_dojo.cli import setup
+
+    static = tmp_path / "static"
+    (static / "assets").mkdir(parents=True)
+    (static / "index.html").write_text("ok")
+    monkeypatch.setattr(_dashboard, "STATIC_DIR", str(static))
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+    monkeypatch.setattr(setup, "ensure_dashboard_deployed", lambda: "https://dojo.test")
+    app = _dashboard.fastapi_app.local()
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: client(transport=httpx.ASGITransport(app=app), **kwargs),
+    )
+    return fake_volume
+
+
 class Tokenizer:
     def decode(self, tokens):
         return "".join(chr(t) for t in tokens)
@@ -241,8 +263,9 @@ def test_capture_cancels_sibling_rollouts_before_closing(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("fail", [False, True])
 @pytest.mark.parametrize("finish_supported", [False, True])
+@pytest.mark.parametrize("async_api", [False, True])
 def test_train_routes_to_owned_server_and_restores_hooks(
-    monkeypatch, tmp_path, fail, finish_supported
+    monkeypatch, tmp_path, fail, finish_supported, async_api, dojo_dashboard
 ):
     recipe = build_recipe(log_path=str(tmp_path))
     lifecycle = []
@@ -282,11 +305,17 @@ def test_train_routes_to_owned_server_and_restores_hooks(
             raise RuntimeError("training failed")
 
     monkeypatch.setattr(rl_train, "main", main)
+
+    def invoke():
+        return asyncio.run(recipe.train.aio()) if async_api else recipe.train()
+
     if fail:
         with pytest.raises(RuntimeError, match="training failed"):
-            asyncio.run(recipe.train())
+            invoke()
     else:
-        asyncio.run(recipe.train())
+        result = invoke()
+        assert result.framework.value == "spindle"
+        assert result.status.value == "completed"
     assert lifecycle == ["deploy", "cleanup"]
     assert recipe.rl_config.base_url is None
     service.assert_called_once_with(
@@ -295,6 +324,151 @@ def test_train_routes_to_owned_server_and_restores_hooks(
     assert rl_train.tinker is original_tinker
     assert rollouts.do_group_rollout is original_rollout
     assert not launcher._active_run.locked()
+    runs = [
+        json.loads(value)
+        for key, value in dojo_dashboard.files.items()
+        if key.startswith("training-runs/")
+    ]
+    assert len(runs) == 1
+    assert runs[0]["status"] == ("failed" if fail else "completed")
+    assert runs[0]["metadata"]["reporting_failures"] == 0
+
+
+def test_cookbook_reports_batches_metrics_and_raw_episodes(
+    monkeypatch, tmp_path, hf_builder, dojo_dashboard
+):
+    from modal_dojo.frameworks.spindle.reporting import DojoReporter
+    from modal_dojo.common.run import TrainingRun
+    from modal_dojo.common.training_rollout import TrainingRolloutResult
+
+    recipe = build_recipe(log_path=str(tmp_path))
+
+    async def policy(*args, **kwargs):
+        return TokensWithLogprobs(tokens=[ord("4")], maybe_logprobs=[-0.3])
+
+    async def native_rollout(_, builder, **kwargs):
+        return await rollouts.do_group_rollout(builder, policy)
+
+    monkeypatch.setattr(
+        rl_train, "do_group_rollout_and_filter_constant_reward", native_rollout
+    )
+    original_log = rl_train.ml_log
+
+    async def check():
+        dataset, _ = await hf_builder()
+        async with DojoReporter(recipe.rl_config, recipe.deploy_config) as reporter:
+            with reporter.cookbook_hooks(rl_train):
+                ml_logger = rl_train.ml_log.setup_logging(
+                    log_dir=str(tmp_path), do_configure_logging_module=False
+                )
+                async with capture_trajectories(
+                    str(tmp_path), Tokenizer(), on_group=reporter.capture_group
+                ):
+                    # Evaluation episodes are still captured locally but must
+                    # never be mixed into the Dojo training batch.
+                    await rollouts.do_group_rollout(dataset.get_batch(0)[0], policy)
+                    for step in range(2):
+                        for builder in dataset.get_batch(0):
+                            await rl_train.do_group_rollout_and_filter_constant_reward(
+                                None, builder
+                            )
+                        ml_logger.log_metrics(
+                            {
+                                "progress/batch": step,
+                                "optim/kl_sample_train_v1": 0.002,
+                                "time/train_step": 1.5,
+                            },
+                            step=step,
+                        )
+                ml_logger.close()
+        assert reporter.failures == 0
+        run = TrainingRun.from_id(reporter.run.training_run_id)
+        assert run.status.value == "completed"
+        with pytest.raises(ValueError, match="Tinker checkpoints"):
+            _ = run.model
+        assert run.framework_status.value == "training"
+        assert run.metadata["framework_progress"]["current"] == 2
+        assert run.metadata["latest_rollout"]["rollout_id"] == 1
+        for step in range(2):
+            record = json.loads(
+                dojo_dashboard.files[
+                    f"training-rollouts/{run.training_run_id}__{step:08d}.json"
+                ]
+            )
+            result = TrainingRolloutResult.model_validate(record)
+            assert result.total == 4
+            assert result.mean == 0.5
+            assert result.samples[0].metadata["spindle_trajectory"]["transitions"][0][
+                "ac"
+            ]["maybe_logprobs"] == [-0.3]
+        chunks = [
+            json.loads(v)
+            for k, v in dojo_dashboard.files.items()
+            if k.startswith(f"metric-series/{run.training_run_id}/")
+        ]
+        assert chunks
+        assert chunks[0]["steps"]["1"]["optim/kl_sample_train_v1"] == 0.002
+        assert chunks[0]["steps"]["0"]["time/train_step"] == 1.5
+        assert rl_train.ml_log is original_log
+        assert rl_train.do_group_rollout_and_filter_constant_reward is native_rollout
+
+    asyncio.run(check())
+
+
+def test_async_caller_cancellation_persists_status_and_cleans_up(
+    monkeypatch, tmp_path, dojo_dashboard
+):
+    import threading
+
+    recipe = build_recipe(log_path=str(tmp_path))
+    started = threading.Event()
+    cleanup = []
+
+    @asynccontextmanager
+    async def deployment(*args, **kwargs):
+        try:
+            yield "https://owned.modal.run", "secret"
+        finally:
+            cleanup.append(True)
+
+    async def main(config):
+        started.set()
+        await asyncio.sleep(60)
+
+    monkeypatch.setattr(launcher, "deployment", deployment)
+    monkeypatch.setattr(tokenizer_utils, "get_tokenizer", lambda _: Tokenizer())
+    monkeypatch.setattr(rl_train, "main", main)
+
+    async def check():
+        task = asyncio.create_task(recipe.train.aio())
+        assert await asyncio.to_thread(started.wait, 5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(check())
+    assert cleanup == [True]
+    runs = [
+        json.loads(v)
+        for k, v in dojo_dashboard.files.items()
+        if k.startswith("training-runs/")
+    ]
+    assert runs[0]["status"] == "cancelled"
+    assert not launcher._active_run.locked()
+
+
+def test_reporting_environment_mismatch_precedes_deployment(monkeypatch):
+    from modal_dojo.frameworks.spindle.reporting import DojoReporter
+
+    monkeypatch.setenv("MODAL_ENVIRONMENT", "other")
+    recipe = build_recipe(environment="helena-dev")
+
+    async def check():
+        async with DojoReporter(recipe.rl_config, recipe.deploy_config):
+            pytest.fail("must reject mismatched metadata environment")
+
+    with pytest.raises(DojoConfigError, match="MODAL_ENVIRONMENT=helena-dev"):
+        asyncio.run(check())
 
 
 @pytest.mark.parametrize("missing_hf", [False, True])

@@ -26,7 +26,7 @@ def _jsonable(value: Any) -> Any:
 
 
 @asynccontextmanager
-async def capture_trajectories(log_path: str, tokenizer):
+async def capture_trajectories(log_path: str, tokenizer, *, on_group=None):
     from tinker_cookbook.rl import rollouts
 
     original = rollouts.do_group_rollout
@@ -61,6 +61,8 @@ async def capture_trajectories(log_path: str, tokenizer):
             output.write(line + "\n")
             output.flush()
             print(line, flush=True)
+            if on_group is not None:
+                await on_group(record)
             return group
 
         rollouts.do_group_rollout = capture

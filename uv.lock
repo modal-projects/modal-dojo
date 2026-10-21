@@ -1501,6 +1501,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "randomname" },
     { name = "rich" },
+    { name = "synchronicity" },
     { name = "transformers" },
 ]
 
@@ -1543,6 +1544,7 @@ requires-dist = [
     { name = "pydantic" },
     { name = "randomname" },
     { name = "rich" },
+    { name = "synchronicity", specifier = ">=0.12.5,<1" },
     { name = "tinker", marker = "extra == 'spindle'", specifier = "==0.34.0" },
     { name = "tinker-cookbook", marker = "extra == 'spindle'", git = "https://github.com/thinking-machines-lab/tinker-cookbook.git?rev=ad3b5c541cd383b05d1c301e8ccc2d9cc0c5f774" },
     { name = "tml-renderers", marker = "extra == 'spindle'", specifier = "==0.2.0" },

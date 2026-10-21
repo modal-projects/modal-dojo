@@ -7,14 +7,17 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from synchronicity import Synchronizer
+
 from modal_dojo.common.errors import DojoConfigError
 
 if TYPE_CHECKING:
     from spindle.configuration import BaseConfig
     from tinker_cookbook.rl.train import Config
+    from modal_dojo.common.run import TrainingRun
 
 
-class SpindleRecipe:
+class _SpindleRecipe:
     """Minimal LoRA RL launcher; the cookbook driver runs in the caller process.
 
     Install from a source checkout with ``uv sync --extra spindle`` and Python
@@ -26,7 +29,9 @@ class SpindleRecipe:
     models; a missing HF secret is omitted.
 
     Raw trajectories are printed and appended to ``log_path/dojo-trajectories.jsonl``.
-    This v0 does not return a Dojo ``TrainingRun`` or ingest dashboard metadata.
+    Returns a Dojo ``TrainingRun`` and reports trajectories and scalar metrics
+    to the Dojo dashboard. Use ``train()`` in scripts or ``await train.aio()``
+    in async code. The Modal environment must match the deployment environment.
     """
 
     def __init__(
@@ -51,8 +56,8 @@ class SpindleRecipe:
             raise DojoConfigError(
                 "deploy_config must be a Spindle BaseConfig or subclass"
             )
-        self.rl_config = rl_config
-        self.deploy_config = copy.deepcopy(deploy_config)
+        self._rl_config = rl_config
+        self._deploy_config = copy.deepcopy(deploy_config)
         if rl_config.model_name != deploy_config.model:
             raise DojoConfigError("RL model_name must match deploy_config.model")
         if deploy_config.parameterization != "lora":
@@ -97,8 +102,26 @@ class SpindleRecipe:
         if not 0 < rl_config.lora_rank <= max_rank:
             raise DojoConfigError(f"lora_rank must be between 1 and {max_rank}")
 
-    async def train(self) -> None:
-        """Deploy Spindle, await cookbook RL, and clean up this run's apps."""
+    @property
+    def rl_config(self) -> Config:
+        return self._rl_config
+
+    @property
+    def deploy_config(self) -> BaseConfig:
+        return self._deploy_config
+
+    async def train(self) -> TrainingRun:
+        """Run cookbook RL on Spindle and return its completed Dojo run.
+
+        The blocking interface is ``recipe.train()``; the asynchronous interface
+        is ``await recipe.train.aio()``. Owned apps are stopped on exit.
+        """
         from modal_dojo.frameworks.spindle.launcher import train
 
-        await train(self.rl_config, self.deploy_config)
+        return await train(self.rl_config, self.deploy_config)
+
+
+_synchronizer = Synchronizer()
+SpindleRecipe = _synchronizer.create_blocking(
+    _SpindleRecipe, name="SpindleRecipe", target_module=__name__
+)
