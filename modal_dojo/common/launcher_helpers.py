@@ -177,10 +177,14 @@ def experimental_options(recipe: Any, *, clustered: bool = True) -> dict[str, An
         (recipe.train_function_kwargs or {}).get("experimental_options") or {}
     )
     if not clustered:
-        options.pop("high_priority", None)
-        if options.get("priority") == "high":
-            options.pop("priority")
+        _drop_high_priority(options)
     return options
+
+
+def _drop_high_priority(options: dict[str, Any]) -> None:
+    options.pop("high_priority", None)
+    if options.get("priority") == "high":
+        options.pop("priority")
 
 
 def training_function_options(
@@ -189,6 +193,7 @@ def training_function_options(
     framework: str,
     secrets: list[Any],
     experimental_options: dict[str, Any],
+    clustered: bool = True,
 ) -> dict[str, Any]:
     overrides = dict(recipe.train_function_kwargs or {})
     user_secrets = overrides.pop("secrets", None) or []
@@ -198,6 +203,12 @@ def training_function_options(
         raise TypeError(
             f"Unsupported {framework}.train_function_kwargs keys: {', '.join(extra)}"
         )
+    options = {
+        **experimental_options,
+        **(overrides.get("experimental_options") or {}),
+    }
+    if not clustered:
+        _drop_high_priority(options)
     return {
         "gpu": f"{recipe.gpu_type}:{recipe.gpu_allocation.gpus_per_node}",
         "memory": recipe.memory,
@@ -209,10 +220,7 @@ def training_function_options(
         "timeout": 24 * 60 * 60,
         "retries": Retries(max_retries=recipe.max_retries, initial_delay=0.0),
         "single_use_containers": True,
-        "experimental_options": {
-            **experimental_options,
-            **(overrides.get("experimental_options") or {}),
-        },
+        "experimental_options": options,
         "serialized": True,
         "name": "train",
     }

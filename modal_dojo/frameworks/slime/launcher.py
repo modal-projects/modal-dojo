@@ -32,7 +32,6 @@ from modal_dojo.common.framework import (
 )
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.ray_cluster import (
-    _supports_rdma,
     clustered_if,
 )
 from modal_dojo.common.run import (
@@ -732,13 +731,7 @@ def build_slime_app(
 
         flush_status_reporter(timeout_seconds=2.0)
 
-    # Use Modal's clustered scheduler with RDMA when using a full node (8+ GPUs)
-    # on RDMA-capable hardware, or for any multi-node run.  The `rdma=True` flag
-    # provides CAP_IPC_LOCK and NVSwitch device access that slime's colocated
-    # weight sync (UpdateWeightFromTensor) needs for fast CUDA IPC transfers.
     _multi_node = slime.total_nodes > 1
-    _full_node = slime.actor_num_gpus_per_node >= 8
-    _use_clustered = _multi_node or (_full_node and _supports_rdma(slime.gpu_type))
 
     train_secrets: list[Secret] = []
     if slime.metrics is not None:
@@ -760,9 +753,10 @@ def build_slime_app(
             framework="slime",
             secrets=train_secrets,
             experimental_options={},
+            clustered=_multi_node,
         ),
     )
-    @clustered_if(_use_clustered, slime.total_nodes, gpu_type=slime.gpu_type)
+    @clustered_if(_multi_node, slime.total_nodes, gpu_type=slime.gpu_type)
     async def train(
         modal_app_id: str = "",
         modal_app_url: str = "",
