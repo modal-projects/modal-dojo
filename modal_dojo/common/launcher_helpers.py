@@ -173,18 +173,24 @@ def create_training_volumes(
 
 
 def experimental_options(recipe: Any, *, clustered: bool = True) -> dict[str, Any]:
-    options = dict(
-        (recipe.train_function_kwargs or {}).get("experimental_options") or {}
+    return _build_experimental_options(
+        (recipe.train_function_kwargs or {}).get("experimental_options"),
+        clustered=clustered,
     )
+
+
+def _build_experimental_options(
+    *sources: dict[str, Any] | None, clustered: bool
+) -> dict[str, Any]:
+    options: dict[str, Any] = {}
+    for source in sources:
+        options.update(source or {})
     if not clustered:
-        _drop_high_priority(options)
+        # High priority is not supported for non-clustered functions.
+        options.pop("high_priority", None)
+        if options.get("priority") == "high":
+            options.pop("priority")
     return options
-
-
-def _drop_high_priority(options: dict[str, Any]) -> None:
-    options.pop("high_priority", None)
-    if options.get("priority") == "high":
-        options.pop("priority")
 
 
 def training_function_options(
@@ -203,12 +209,6 @@ def training_function_options(
         raise TypeError(
             f"Unsupported {framework}.train_function_kwargs keys: {', '.join(extra)}"
         )
-    options = {
-        **experimental_options,
-        **(overrides.get("experimental_options") or {}),
-    }
-    if not clustered:
-        _drop_high_priority(options)
     return {
         "gpu": f"{recipe.gpu_type}:{recipe.gpu_allocation.gpus_per_node}",
         "memory": recipe.memory,
@@ -220,7 +220,11 @@ def training_function_options(
         "timeout": 24 * 60 * 60,
         "retries": Retries(max_retries=recipe.max_retries, initial_delay=0.0),
         "single_use_containers": True,
-        "experimental_options": options,
+        "experimental_options": _build_experimental_options(
+            experimental_options,
+            overrides.get("experimental_options"),
+            clustered=clustered,
+        ),
         "serialized": True,
         "name": "train",
     }
