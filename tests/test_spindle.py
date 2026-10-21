@@ -192,7 +192,7 @@ def test_actual_rollout_is_captured_with_rewards_tokens_and_text(
 
     async def check():
         dataset, _ = await hf_builder()
-        with capture_trajectories(str(tmp_path), Tokenizer()):
+        async with capture_trajectories(str(tmp_path), Tokenizer()):
             group = await rollouts.do_group_rollout(dataset.get_batch(0)[0], policy)
         assert group.get_total_rewards() == [1, 1]
         assert rollouts.do_group_rollout is original
@@ -209,10 +209,34 @@ def test_actual_rollout_is_captured_with_rewards_tokens_and_text(
 
 def test_capture_restored_after_failure(tmp_path):
     original = rollouts.do_group_rollout
-    with pytest.raises(RuntimeError):
-        with capture_trajectories(str(tmp_path), Tokenizer()):
-            raise RuntimeError("rollout failed")
+
+    async def check():
+        with pytest.raises(RuntimeError):
+            async with capture_trajectories(str(tmp_path), Tokenizer()):
+                raise RuntimeError("rollout failed")
+
+    asyncio.run(check())
     assert rollouts.do_group_rollout is original
+
+
+def test_capture_cancels_sibling_rollouts_before_closing(monkeypatch, tmp_path):
+    async def check():
+        entered = asyncio.Event()
+
+        async def blocked(*args):
+            entered.set()
+            await asyncio.Event().wait()
+
+        monkeypatch.setattr(rollouts, "do_group_rollout", blocked)
+        with pytest.raises(RuntimeError):
+            async with capture_trajectories(str(tmp_path), Tokenizer()):
+                sibling = asyncio.create_task(rollouts.do_group_rollout(None))
+                await entered.wait()
+                raise RuntimeError("another group failed")
+        assert sibling.cancelled()
+        assert rollouts.do_group_rollout is blocked
+
+    asyncio.run(check())
 
 
 @pytest.mark.parametrize("fail", [False, True])

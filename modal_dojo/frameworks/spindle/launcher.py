@@ -189,7 +189,7 @@ async def train(config, deploy_config) -> None:
             )
             status = "errored"
             try:
-                with capture_trajectories(config.log_path, tokenizer):
+                async with capture_trajectories(config.log_path, tokenizer):
                     await rl_train.main(chz.replace(config, base_url=url))
                 status = "success"
             except asyncio.CancelledError:

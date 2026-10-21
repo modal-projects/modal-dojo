@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from dataclasses import fields, is_dataclass
 from functools import wraps
 from pathlib import Path
@@ -24,18 +25,24 @@ def _jsonable(value: Any) -> Any:
     return value
 
 
-@contextmanager
-def capture_trajectories(log_path: str, tokenizer):
+@asynccontextmanager
+async def capture_trajectories(log_path: str, tokenizer):
     from tinker_cookbook.rl import rollouts
 
     original = rollouts.do_group_rollout
+    pending = set()
     path = Path(log_path) / "dojo-trajectories.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as output:
 
         @wraps(original)
         async def capture(env_group_builder, *args, **kwargs):
-            group = await original(env_group_builder, *args, **kwargs)
+            task = asyncio.current_task()
+            pending.add(task)
+            try:
+                group = await original(env_group_builder, *args, **kwargs)
+            finally:
+                pending.discard(task)
             record = {
                 "tags": env_group_builder.logging_tags(),
                 "trajectory_group": _jsonable(group),
@@ -61,3 +68,9 @@ def capture_trajectories(log_path: str, tokenizer):
             yield path
         finally:
             rollouts.do_group_rollout = original
+            # Cookbook's gather can raise while sibling rollouts are still
+            # running. Drain them before closing the sink and stopping Spindle.
+            tasks = list(pending)
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
