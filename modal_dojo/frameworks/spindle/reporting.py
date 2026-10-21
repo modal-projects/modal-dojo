@@ -36,7 +36,12 @@ class DojoReporter:
         self.deploy_config = deploy_config
         self.groups = []
         self.next_step = 0
-        self.queue = asyncio.Queue(maxsize=256)
+        # Preserve ordering within each endpoint while allowing a slow rollout
+        # volume write to overlap metrics and progress delivery.
+        self.queues = {
+            endpoint: asyncio.Queue(maxsize=128)
+            for endpoint in ("framework-status", "training-rollouts", "metric-points")
+        }
         self.failures = 0
         self.token = secrets.token_urlsafe(32)
         now = int(time.time())
@@ -97,7 +102,7 @@ class DojoReporter:
                 **modal_proxy_auth_headers(),
                 "Authorization": f"Bearer {self.token}",
             },
-            timeout=10,
+            timeout=30,
         )
         try:
             response = await self.client.post(
@@ -116,7 +121,10 @@ class DojoReporter:
             self.run.ended_at = int(time.time())
             await self.run.save(is_async=True)
             raise
-        self.worker = asyncio.create_task(self._worker())
+        self.workers = [
+            asyncio.create_task(self._worker(endpoint, queue))
+            for endpoint, queue in self.queues.items()
+        ]
         print(
             f"Dojo run: {url.rstrip('/')}/training/{self.run.training_run_id}",
             flush=True,
@@ -125,8 +133,8 @@ class DojoReporter:
 
     def _enqueue(self, endpoint, payload):
         try:
-            self.queue.put_nowait(
-                (endpoint, {"training_run_id": self.run.training_run_id, **payload})
+            self.queues[endpoint].put_nowait(
+                {"training_run_id": self.run.training_run_id, **payload}
             )
         except asyncio.QueueFull:
             self.failures += 1
@@ -141,15 +149,33 @@ class DojoReporter:
         )
         self._enqueue("framework-status", payload)
 
-    async def _worker(self):
-        while (item := await self.queue.get()) is not None:
-            endpoint, payload = item
+    async def _worker(self, endpoint, queue):
+        while True:
+            payload = await queue.get()
             try:
-                response = await self.client.post(f"/api/{endpoint}", json=payload)
-                response.raise_for_status()
+                if payload is None:
+                    return
+                # These ingestion writes are idempotent by run/step. Retrying
+                # a timed-out acknowledgement does not duplicate episodes.
+                for attempt in range(2):
+                    try:
+                        response = await self.client.post(
+                            f"/api/{endpoint}", json=payload
+                        )
+                        response.raise_for_status()
+                        break
+                    except (httpx.TransportError, httpx.HTTPStatusError) as error:
+                        if attempt or (
+                            isinstance(error, httpx.HTTPStatusError)
+                            and error.response.status_code < 500
+                        ):
+                            raise
+                        await asyncio.sleep(0.5)
             except Exception as exc:
                 self.failures += 1
-                logger.warning("Dojo %s reporting failed: %s", endpoint, exc)
+                logger.warning("Dojo %s reporting failed: %r", endpoint, exc)
+            finally:
+                queue.task_done()
 
     async def capture_group(self, record):
         if _training_rollout.get():
@@ -283,14 +309,16 @@ class DojoReporter:
         try:
 
             async def drain():
-                await self.queue.put(None)
-                await self.worker
+                for queue in self.queues.values():
+                    await queue.put(None)
+                await asyncio.gather(*self.workers)
 
-            await asyncio.wait_for(drain(), timeout=30)
+            await asyncio.wait_for(drain(), timeout=90)
         except TimeoutError:
-            self.failures += self.queue.qsize() + 1
-            self.worker.cancel()
-            await asyncio.gather(self.worker, return_exceptions=True)
+            self.failures += sum(q.qsize() for q in self.queues.values()) + 1
+            for worker in self.workers:
+                worker.cancel()
+            await asyncio.gather(*self.workers, return_exceptions=True)
             logger.warning(
                 "Dojo reporting drain timed out; raw data remains in the cookbook log path"
             )

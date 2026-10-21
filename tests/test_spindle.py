@@ -471,6 +471,50 @@ def test_reporting_environment_mismatch_precedes_deployment(monkeypatch):
         asyncio.run(check())
 
 
+def test_slow_rollout_delivery_does_not_block_metrics_and_retries_in_order():
+    import httpx
+    from modal_dojo.frameworks.spindle.reporting import DojoReporter
+
+    recipe = build_recipe()
+
+    async def check():
+        reporter = DojoReporter(recipe.rl_config, recipe.deploy_config)
+        release, metrics_delivered = asyncio.Event(), asyncio.Event()
+        seen = []
+
+        async def post(path, *, json):
+            if path.endswith("training-rollouts"):
+                seen.append(json["rollout_id"])
+                await release.wait()
+                if len(seen) == 1:
+                    raise httpx.ReadTimeout("slow volume acknowledgement")
+            else:
+                metrics_delivered.set()
+            return httpx.Response(
+                200, request=httpx.Request("POST", "https://dojo.test" + path)
+            )
+
+        reporter.client = SimpleNamespace(post=post)
+        tasks = [
+            asyncio.create_task(reporter._worker(endpoint, queue))
+            for endpoint, queue in reporter.queues.items()
+        ]
+        reporter._enqueue("training-rollouts", {"rollout_id": 0})
+        reporter._enqueue("training-rollouts", {"rollout_id": 1})
+        reporter._enqueue("metric-points", {"points": []})
+        await asyncio.wait_for(metrics_delivered.wait(), 1)
+        assert seen == [0]
+        release.set()
+        await asyncio.gather(*(q.join() for q in reporter.queues.values()))
+        for q in reporter.queues.values():
+            await q.put(None)
+        await asyncio.gather(*tasks)
+        assert seen == [0, 0, 1]
+        assert reporter.failures == 0
+
+    asyncio.run(check())
+
+
 @pytest.mark.parametrize("missing_hf", [False, True])
 def test_deployment_cleans_partial_failure(monkeypatch, missing_hf):
     import modal
