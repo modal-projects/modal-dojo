@@ -204,4 +204,10 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
             raise ValueError(
                 "Training and serving must use the same positive LoRA rank"
             )
+        extra = dict(self.extra_config or {})
+        if extra.get("use_tis", self.use_tis):
+            # TIS corrects trainer-scored old-policy probabilities against the
+            # rollout policy; Miles rejects rollout probabilities in both roles.
+            extra["use_rollout_logprobs"] = False
+            object.__setattr__(self, "extra_config", extra)
         return self
