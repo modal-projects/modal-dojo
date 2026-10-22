@@ -20,7 +20,7 @@ Once deployed, open the dashboard any time with:
 modal-dojo open
 ```
 
-The dashboard is password protected. On first deploy, `modal-dojo setup` asks for a password (or generates one); `.train()` generates one and prints it. It's saved to `~/.modal-dojo.toml`, and `modal-dojo open` prints it. To change it, or pass `--password ""` to turn it off:
+The dashboard is password protected. On first deploy, `modal-dojo setup` asks for a password (or generates one); `.train()` generates one and prints it. It's saved to `~/.modal-dojo.toml`, and `modal-dojo open` prints it. To change the password, or turn it off by leaving it empty, run:
 
 ```bash
 modal-dojo set-password

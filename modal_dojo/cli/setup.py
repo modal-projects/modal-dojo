@@ -254,7 +254,10 @@ def ensure_dashboard_password(
     )
     save_dashboard_password(password)
     print(f"\nDashboard password: {password if generated else '(set)'}")
-    print(f"Saved to {CONFIG_PATH}. Change it with `modal-dojo set-password`.\n")
+    print(
+        f"Saved to {CONFIG_PATH}. To change or turn it off, run "
+        "`modal-dojo set-password`.\n"
+    )
     return "created"
 
 
