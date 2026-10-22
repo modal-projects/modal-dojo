@@ -315,7 +315,9 @@ def _unresumable_save_dirs(save_root: str) -> list[str]:
 
 
 @contextlib.contextmanager
-def _resumed_miles_recipe(miles: MilesRecipe, save_root: str, checkpoint):
+def _resumed_miles_recipe(
+    miles: MilesRecipe, save_root: str, checkpoint: dict[str, Any] | None
+):
     adapter_path = getattr(miles, "lora_adapter_path", None)
     try:
         with shared.resumed_recipe(miles, save_root, checkpoint):

@@ -22,7 +22,10 @@ as mbridge reads them (see hf_block_dequant), for checkpoints that ship without
 a bf16 export. CONVERT_DEQUANT_MXFP4=1 does the same for MXFP4
 compressed-tensors experts (see hf_mxfp4_dequant), which Kimi-K3 ships.
 
-When neither variable is set this wrapper is a transparent pass-through, apart
+CONVERT_LOCAL_STAGING=1 writes single-node conversions to local disk, then
+copies shards to the Volume before publishing metadata and the tracker.
+
+Without these options this wrapper is a transparent pass-through, apart
 from local rank 0 logging host/cgroup memory so a SIGKILLed rank can be told
 apart from a Python failure.
 """
