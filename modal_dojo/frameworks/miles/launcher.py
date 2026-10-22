@@ -836,6 +836,7 @@ def build_miles_app(
             framework="miles",
             secrets=train_secrets,
             experimental_options={},
+            clustered=_multi_node,
         ),
     )
     @clustered_if(

@@ -173,10 +173,20 @@ def create_training_volumes(
 
 
 def experimental_options(recipe: Any, *, clustered: bool = True) -> dict[str, Any]:
-    options = dict(
-        (recipe.train_function_kwargs or {}).get("experimental_options") or {}
+    return _build_experimental_options(
+        (recipe.train_function_kwargs or {}).get("experimental_options"),
+        clustered=clustered,
     )
+
+
+def _build_experimental_options(
+    *sources: dict[str, Any] | None, clustered: bool
+) -> dict[str, Any]:
+    options: dict[str, Any] = {}
+    for source in sources:
+        options.update(source or {})
     if not clustered:
+        # High priority is not supported for non-clustered functions.
         options.pop("high_priority", None)
         if options.get("priority") == "high":
             options.pop("priority")
@@ -189,6 +199,7 @@ def training_function_options(
     framework: str,
     secrets: list[Any],
     experimental_options: dict[str, Any],
+    clustered: bool = True,
 ) -> dict[str, Any]:
     overrides = dict(recipe.train_function_kwargs or {})
     user_secrets = overrides.pop("secrets", None) or []
@@ -209,10 +220,11 @@ def training_function_options(
         "timeout": 24 * 60 * 60,
         "retries": Retries(max_retries=recipe.max_retries, initial_delay=0.0),
         "single_use_containers": True,
-        "experimental_options": {
-            **experimental_options,
-            **(overrides.get("experimental_options") or {}),
-        },
+        "experimental_options": _build_experimental_options(
+            experimental_options,
+            overrides.get("experimental_options"),
+            clustered=clustered,
+        ),
         "serialized": True,
         "name": "train",
     }
