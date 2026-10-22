@@ -101,6 +101,7 @@ Repo: https://github.com/modal-projects/modal-dojo
 
 ### Recipes
 
+- [DeepSeek_V4_1_Flash_LoRA_Agentic_Recipe](https://dojo.modal.dev/reference/deepseek_v4_1_flash_lora_agentic_recipe)
 - [DeepSeek_V4_1_Flash_LoRA_Recipe](https://dojo.modal.dev/reference/deepseek_v4_1_flash_lora_recipe)
 - [DeepSeek_V4_1_Flash_Recipe](https://dojo.modal.dev/reference/deepseek_v4_1_flash_recipe)
 - [Gemma4_26B_A4B_Recipe](https://dojo.modal.dev/reference/gemma4_26b_a4b_recipe)
