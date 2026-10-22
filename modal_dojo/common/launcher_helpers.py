@@ -690,35 +690,74 @@ _SCHEDULER_SHAPE_FIELDS = (
 )
 
 
-def check_resume_scheduler_shape(recipe: Any, checkpoint_path: str) -> None:
-    """Fail fast when a resume would trip Megatron's OptimizerParamScheduler check.
+def check_resume_scheduler_shape(
+    recipe: Any, checkpoint_path: str | None = None
+) -> None:
+    """Reject incompatible scheduler state before loading model weights.
 
-    The LR schedule length is derived from these fields, so changing any of them
-    between the saved run and the resumed one fails ``load_state_dict`` only after
-    the whole cluster has started and loaded weights.
+    With no Megatron checkpoint path, check Miles' native LoRA adapter instead.
+    Its scheduler is restored even when optimizer saving/loading is disabled.
     """
     extra = recipe._escape_hatch_values()
-    if (
-        recipe.no_save_optim
-        or extra.get("override_opt_param_scheduler")
-        or extra.get("use_checkpoint_opt_param_scheduler")
+    if extra.get("override_opt_param_scheduler") or extra.get(
+        "use_checkpoint_opt_param_scheduler"
     ):
         return
-    common = os.path.join(checkpoint_path, "common.pt")
-    if not os.path.exists(common):
+    is_adapter = checkpoint_path is None
+    if not is_adapter and recipe.no_save_optim:
+        return
+    expected = {
+        field: extra.get(field, getattr(recipe, field, None))
+        for field in _SCHEDULER_SHAPE_FIELDS
+    }
+    if checkpoint_path is None:
+        if recipe.effective_num_epoch() is not None:
+            return
+        checkpoint_path = _lora_resume_adapter_dir(recipe, extra)
+        if checkpoint_path is None:
+            return
+        num_rollout, rollout_batch_size, n_samples, global_batch_size = (
+            expected[field] for field in _SCHEDULER_SHAPE_FIELDS
+        )
+        if (
+            None in (num_rollout, rollout_batch_size, n_samples)
+            or not global_batch_size
+        ):
+            return
+        train_iters = num_rollout * rollout_batch_size * n_samples // global_batch_size
+        lr_decay_iters = extra.get(
+            "lr_decay_iters", getattr(recipe, "lr_decay_iters", None)
+        )
+        if lr_decay_iters is None:
+            lr_decay_iters = train_iters
+        expected = {
+            "lr_decay_steps": lr_decay_iters * global_batch_size,
+            "wd_incr_steps": train_iters * global_batch_size,
+        }
+    state_path = os.path.join(
+        checkpoint_path, "training_state_rank0.pt" if is_adapter else "common.pt"
+    )
+    if not os.path.exists(state_path):
         return
     import torch
 
-    state = torch.load(common, map_location="cpu", weights_only=False)
-    saved_args = state.get("args")
-    if saved_args is None:
+    state = torch.load(state_path, map_location="cpu", weights_only=False)
+    if not isinstance(state, dict):
         return
-    mismatched = {}
-    for field in _SCHEDULER_SHAPE_FIELDS:
-        saved = getattr(saved_args, field, None)
-        current = extra.get(field, getattr(recipe, field, None))
-        if saved is not None and current is not None and saved != current:
-            mismatched[field] = (saved, current)
+    saved = (
+        state.get("opt_param_scheduler")
+        if is_adapter
+        else {field: getattr(state.get("args"), field, None) for field in expected}
+    )
+    if not isinstance(saved, dict):
+        return
+    mismatched = {
+        field: (saved[field], current)
+        for field, current in expected.items()
+        if saved.get(field) is not None
+        and current is not None
+        and saved[field] != current
+    }
     if mismatched:
         details = ", ".join(
             f"{field}: checkpoint={saved} recipe={current}"
@@ -733,33 +772,8 @@ def check_resume_scheduler_shape(recipe: Any, checkpoint_path: str) -> None:
         )
 
 
-def _expected_scheduler_steps(recipe: Any, extra: dict[str, Any]) -> dict[str, int]:
-    """The OptimizerParamScheduler step counts miles derives from the recipe."""
-    if recipe.effective_num_epoch() is not None:
-        return {}
-    num_rollout, rollout_batch_size, n_samples, global_batch_size = (
-        extra.get(field, getattr(recipe, field, None))
-        for field in _SCHEDULER_SHAPE_FIELDS
-    )
-    if None in (num_rollout, rollout_batch_size, n_samples) or not global_batch_size:
-        return {}
-    train_iters = num_rollout * rollout_batch_size * n_samples // global_batch_size
-    lr_decay_iters = extra.get(
-        "lr_decay_iters", getattr(recipe, "lr_decay_iters", None)
-    )
-    return {
-        "lr_decay_steps": (lr_decay_iters or train_iters) * global_batch_size,
-        "wd_incr_steps": train_iters * global_batch_size,
-    }
-
-
 def _lora_resume_adapter_dir(recipe: Any, extra: dict[str, Any]) -> str | None:
-    """The native LoRA adapter save miles will restore training state from, if any.
-
-    Either an explicit ``lora_adapter_path``, or the latest ``iter_*/adapter`` of
-    a LoRA run's save directory passed as ``load`` (which has no Megatron
-    tracker file, so the base weights come from ``ref_load``).
-    """
+    """Resolve an explicit adapter or the latest native LoRA save under ``load``."""
     explicit = extra.get(
         "lora_adapter_path", getattr(recipe, "lora_adapter_path", None)
     )
@@ -784,53 +798,6 @@ def _lora_resume_adapter_dir(recipe: Any, extra: dict[str, Any]) -> str | None:
         and os.path.isdir(os.path.join(load, name, "adapter"))
     )
     return os.path.join(load, iterations[-1], "adapter") if iterations else None
-
-
-def check_lora_adapter_scheduler_shape(recipe: Any) -> None:
-    """Fail fast when a native LoRA resume would trip the OptimizerParamScheduler check.
-
-    miles restores the adapter's saved LR scheduler regardless of
-    ``no_load_optim``, so a changed LR schedule fails ``load_state_dict`` only
-    after the whole cluster has started and loaded weights.
-    """
-    extra = recipe._escape_hatch_values()
-    if extra.get("override_opt_param_scheduler") or extra.get(
-        "use_checkpoint_opt_param_scheduler"
-    ):
-        return
-    adapter_dir = _lora_resume_adapter_dir(recipe, extra)
-    if adapter_dir is None:
-        return
-    training_state = os.path.join(adapter_dir, "training_state_rank0.pt")
-    if not os.path.exists(training_state):
-        return
-    expected = _expected_scheduler_steps(recipe, extra)
-    if not expected:
-        return
-    import torch
-
-    state = torch.load(training_state, map_location="cpu", weights_only=False)
-    scheduler = state.get("opt_param_scheduler") if isinstance(state, dict) else None
-    if not isinstance(scheduler, dict):
-        return
-    mismatched = {
-        key: (scheduler[key], steps)
-        for key, steps in expected.items()
-        if scheduler.get(key) is not None and scheduler[key] != steps
-    }
-    if mismatched:
-        details = ", ".join(
-            f"{key}: checkpoint={saved} recipe={current}"
-            for key, (saved, current) in mismatched.items()
-        )
-        raise RuntimeError(
-            f"Cannot resume the LoRA adapter at {adapter_dir}: the LR schedule changed "
-            f"({details}; steps are iterations x global_batch_size, from "
-            f"{', '.join(_SCHEDULER_SHAPE_FIELDS)} and lr_decay_iters). "
-            "Restore the original values, or set extra_config "
-            "override_opt_param_scheduler=True to adopt the new schedule or "
-            "use_checkpoint_opt_param_scheduler=True to keep the saved one."
-        )
 
 
 @contextmanager
