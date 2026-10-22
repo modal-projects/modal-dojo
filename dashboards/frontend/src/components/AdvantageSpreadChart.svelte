@@ -25,6 +25,10 @@
     // drawn under the plot.
     xToTime = null,
     timeToX = null,
+    // Called with the nearest step's rollout id on double-click.
+    onOpen = null,
+    // rollout id marked with a dashed vertical line.
+    highlightX = null,
   } = $props();
 
   const W = 640;
@@ -62,6 +66,35 @@
       })
       .sort((a, b) => a.x - b.x),
   );
+
+  let visPts = $derived(
+    hasDomain ? allPts.filter((p) => p.x >= xDomain[0] && p.x <= xDomain[1]) : allPts,
+  );
+
+  let highlightPx = $derived.by(() => {
+    if (highlightX == null) return null;
+    const x = Number(highlightX);
+    if (!model || !Number.isFinite(x) || x < model.xMin || x > model.xMax) return null;
+    return PAD + ((x - model.xMin) / (model.xMax - model.xMin || 1)) * (W - 2 * PAD);
+  });
+
+  function onDblClick(e) {
+    if (typeof onOpen !== "function" || !model || !visPts.length) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (!rect.width) return;
+    const px = ((e.clientX - rect.left) / rect.width) * W;
+    const target = model.xMin + ((px - PAD) / (W - 2 * PAD)) * (model.xMax - model.xMin);
+    let best = null;
+    let dist = Infinity;
+    for (const p of visPts) {
+      const d = Math.abs(p.x - target);
+      if (d < dist) {
+        dist = d;
+        best = p.x;
+      }
+    }
+    if (best != null) onOpen(best);
+  }
 
   let model = $derived.by(() => {
     const pts = hasDomain
@@ -175,9 +208,23 @@
   </div>
   <div
     class="relative overflow-hidden rounded-[4px]"
+    title={typeof onOpen === "function" ? "Double-click a step to open it in Rollouts" : null}
+    ondblclick={onDblClick}
     use:brushZoom={{ onChangeDomainX: handleBrush, enabled: zoomable }}
   >
     <svg class="w-full h-[200px] block" viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
+      {#if highlightPx != null}
+        <line
+          x1={highlightPx}
+          x2={highlightPx}
+          y1="0"
+          y2={H}
+          stroke="var(--accent)"
+          stroke-width="1"
+          stroke-dasharray="4 3"
+          stroke-opacity="0.8"
+        />
+      {/if}
       <path d={model.iqr} fill="none" stroke="var(--muted)" stroke-width="1.25" stroke-opacity="0.7" />
       {#if model.trend}
         <path
