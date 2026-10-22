@@ -1,0 +1,14 @@
+{
+  "repository": "radixark/miles",
+  "revision": "6c8e2378cfe3dc5f99633e9719a80586dac86683",
+  "files": {
+    "server_cell.py": {
+      "path": "ray/rollout/server_cell.py",
+      "sha256": "d635dbac91bc670f7a29b4137c3a932da8ae5874a8ee080365549d240b4067b6"
+    },
+    "rollout.py": {
+      "path": "backends/training_utils/data/rollout.py",
+      "sha256": "be15c90200e67f0073666544d3a01744119cd14bf9ec3f1303ae166264b98e8f"
+    }
+  }
+}
