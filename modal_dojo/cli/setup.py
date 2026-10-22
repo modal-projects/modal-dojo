@@ -418,11 +418,7 @@ def open_dashboard() -> str | None:
     Modal lookup fails. Prints guidance and returns ``None`` when nothing is
     deployed.
     """
-    from modal_dojo.common.config import (
-        get_dashboard_password,
-        get_dashboard_url,
-        save_dashboard_url,
-    )
+    from modal_dojo.common.config import get_dashboard_url, save_dashboard_url
 
     try:
         web_url = deployed_dashboard_url()
@@ -442,9 +438,6 @@ def open_dashboard() -> str | None:
         return None
 
     print(f"Opening dashboard: {web_url}")
-    password = get_dashboard_password()
-    if password:
-        print(f"Dashboard password: {password}")
     webbrowser.open(web_url)
     return web_url
 
