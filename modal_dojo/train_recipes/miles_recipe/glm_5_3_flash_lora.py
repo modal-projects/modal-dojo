@@ -20,8 +20,13 @@ _PATCH_DIR = (
 
 def _image_commands() -> list[str]:
     return [
-        f"echo {encode_patch('patch_glm_5_3_flash_lora_checkpoint', _PATCH_DIR)} "
-        "| base64 -d | python3",
+        f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
+        for name in (
+            "patch_glm_5_3_flash_lora_checkpoint",
+            # Initial serving-weight offload can exceed Miles' 120s tick limit.
+            # Cancellation leaves the engine offloaded before a health retry.
+            "patch_cell_tick_timeout",
+        )
     ]
 
 
