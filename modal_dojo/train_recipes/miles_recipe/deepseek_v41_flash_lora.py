@@ -71,6 +71,13 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
     training config; generation uses ordinary stopping.
     """
 
+    _SKIP_FIELDS: ClassVar[frozenset[str]] = DeepSeek_V4_1_Flash_Recipe._SKIP_FIELDS | {
+        "reuse_frozen_base_backup"
+    }
+    # Experimental immutable snapshot reuse; disabled until explicitly requested.
+    # Isolated allocator correctness is tested; full-model speedup is unvalidated.
+    reuse_frozen_base_backup: bool = False
+
     model_config_class: ClassVar[type[DeepSeek_V4_1_Flash_LoRA]] = (
         DeepSeek_V4_1_Flash_LoRA
     )
@@ -199,5 +206,34 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
         if self.lora_rank <= 0 or self.sglang_max_lora_rank != self.lora_rank:
             raise ValueError(
                 "Training and serving must use the same positive LoRA rank"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _configure_frozen_backup(self):
+        flag = "DOJO_REUSE_FROZEN_BASE_BACKUP"
+        if not self.reuse_frozen_base_backup:
+            if self.environment.get(flag) == "1":
+                raise ValueError(
+                    "Enable snapshot reuse with reuse_frozen_base_backup=True"
+                )
+            return self
+        if (
+            not self.lora_rank
+            or (self.extra_config or {}).get("sglang_device") != "cuda"
+        ):
+            raise ValueError("Frozen-base snapshot reuse requires native CUDA LoRA")
+        if not self.environment.get("DOJO_SGLANG_WEIGHTS_DISK_BACKUP_DIR"):
+            raise ValueError(
+                "Frozen-base snapshot reuse requires disk-backed serving weights"
+            )
+        command = (
+            f"echo {encode_patch('patch_sglang_frozen_weight_backup', _PATCH_DIR)}"
+            " | base64 -d | python3"
+        )
+        object.__setattr__(self, "environment", {**self.environment, flag: "1"})
+        if command not in self.image_run_commands:
+            object.__setattr__(
+                self, "image_run_commands", [*self.image_run_commands, command]
             )
         return self

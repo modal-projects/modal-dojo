@@ -9,7 +9,7 @@ Full DeepSeek serving still needs a later, separately identified canary.
 
 from modal_dojo.frameworks.miles.launcher import _build_miles_base_image
 from pathlib import Path
-from modal_dojo import DeepSeek_V4_1_Flash_LoRA_Agentic_Recipe
+from modal_dojo import DeepSeek_V4_1_Flash_LoRA_Recipe
 
 import modal
 
@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    recipe = DeepSeek_V4_1_Flash_LoRA_Agentic_Recipe(reuse_frozen_base_backup=True)
+    recipe = DeepSeek_V4_1_Flash_LoRA_Recipe(reuse_frozen_base_backup=True)
     image = _build_miles_base_image(recipe).add_local_file(
         ROOT / "tests/testdata/frozen_backup/gpu_probe.py",
         "/tmp/gpu_probe.py",

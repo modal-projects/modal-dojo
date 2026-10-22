@@ -88,3 +88,23 @@ def test_rng_restore_rejects_missing_state_and_changed_topology(monkeypatch):
         state.restore_resume_state(None)
     with pytest.raises(ValueError, match="rank/topology"):
         state.restore_resume_state({"rank_world": [0, 4], "layout": {}})
+
+
+def test_image_patches_have_no_harness_dependency_and_optional_reuse_is_off():
+    import base64
+
+    from modal_dojo import DeepSeek_V4_1_Flash_LoRA_Recipe
+
+    recipe = DeepSeek_V4_1_Flash_LoRA_Recipe()
+    sources = [
+        base64.b64decode(command.split()[1]).decode()
+        for command in recipe.image_run_commands
+    ]
+    assert any("patch_token_normalizer" in source for source in sources)
+    assert any("capture_resume_state" in source for source in sources)
+    assert any("lora_diagnostics" in source for source in sources)
+    assert all(
+        "import tau_quest" not in source and "from tau_quest" not in source
+        for source in sources
+    )
+    assert not any("TMS_ARCHIVE_SHA256" in source for source in sources)

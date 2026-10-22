@@ -155,3 +155,25 @@ def test_opt_in_rejects_unsupported_serving(adapter, monkeypatch, invalid):
     with pytest.raises(RuntimeError):
         instance.pause("weights")
     assert not events
+
+
+def test_reuse_builds_serving_extension_and_is_not_a_miles_cli_flag():
+    import base64
+
+    from modal_dojo import DeepSeek_V4_1_Flash_LoRA_Recipe
+
+    recipe = DeepSeek_V4_1_Flash_LoRA_Recipe(reuse_frozen_base_backup=True)
+    assert recipe.environment["DOJO_REUSE_FROZEN_BASE_BACKUP"] == "1"
+    assert "reuse_frozen_base_backup" in recipe._SKIP_FIELDS
+    assert any(
+        "TMS_ARCHIVE_SHA256" in base64.b64decode(command.split()[1]).decode()
+        for command in recipe.image_run_commands
+    )
+    with pytest.raises(ValueError, match="requires native CUDA LoRA"):
+        DeepSeek_V4_1_Flash_LoRA_Recipe(
+            reuse_frozen_base_backup=True, extra_config=None
+        )
+    with pytest.raises(ValueError, match="Enable snapshot reuse"):
+        DeepSeek_V4_1_Flash_LoRA_Recipe(
+            environment={"DOJO_REUSE_FROZEN_BASE_BACKUP": "1"}
+        )
