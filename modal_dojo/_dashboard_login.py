@@ -18,7 +18,6 @@ LOGOUT_PATH = "/logout"
 SESSION_COOKIE = "modal_dojo_session"
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
 FAILED_LOGIN_DELAY_SECONDS = 1.0
-# Tells the frontend a 401 means "log in again".
 LOGIN_REQUIRED_HEADER = "X-Modal-Dojo-Login"
 LOGIN_PAGE_HEADERS = {
     "Cache-Control": "no-store",
