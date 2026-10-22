@@ -37,8 +37,10 @@ def _lora_image_commands() -> list[str]:
 
 
 def _lora_environment() -> dict[str, str]:
+    environment = DeepSeek_V4_1_Flash_Recipe().environment
+    environment.pop("NCCL_CUMEM_ENABLE", None)
     return {
-        **DeepSeek_V4_1_Flash_Recipe().environment,
+        **environment,
         "SGLANG_OPT_DEEPGEMM_HC_PRENORM": "0",
         # Adapter-only synchronization leaves room for the TP-sharded Engram
         # tables on H200; avoid host-memory lookups on every decode step.
