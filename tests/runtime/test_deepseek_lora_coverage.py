@@ -40,6 +40,7 @@ def native_recipe_model():
     spec = importlib.util.spec_from_file_location("v41_upstream_test", path)
     upstream = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(upstream)
+    upstream.RANK, upstream.ALPHA = recipe.lora_rank, recipe.lora_alpha
     return upstream, targets, upstream._model(targets)
 
 
@@ -55,7 +56,8 @@ def test_every_recipe_target_exports_and_is_recognized_by_serving(native_recipe_
         target.replace("*", "0") for target in targets
     }
     # Read the actual SGLang predicate without importing its GPU-only kernels.
-    path = Path("/root/sglang/python/sglang/srt/models/deepseek_v4.py")
+    package = importlib.util.find_spec("sglang")
+    path = Path(package.submodule_search_locations[0]) / "srt/models/deepseek_v4.py"
     tree = ast.parse(path.read_text())
     cls = next(
         n
@@ -293,6 +295,16 @@ def test_native_microbatch_padding_preserves_tokens_masks_and_replay(monkeypatch
     old, _ = rollout.get_rollout_data(a, None, train_parallel_config=None)
     assert old["max_seq_lens"] == [27136] * 3
     a.micro_batch_size = 1
+    for key, value in (
+        ("pipeline_model_parallel_size", 2),
+        ("lora_rank", 0),
+        ("model_name", "glm5"),
+    ):
+        original = getattr(a, key)
+        setattr(a, key, value)
+        fallback, _ = rollout.get_rollout_data(a, None, train_parallel_config=None)
+        assert fallback["max_seq_lens"] == old["max_seq_lens"]
+        setattr(a, key, original)
     keys = ["tokens", "loss_masks", "total_lengths", "response_lengths", "max_seq_lens"]
     iterator = rollout.DataIterator(data, micro_batch_size=1)
     for i, length in enumerate(lengths):

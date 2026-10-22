@@ -27,6 +27,7 @@ def main():
         import os
         import subprocess
         import sys
+        import xml.etree.ElementTree as ET
 
         results = []
         for cwd, tests in (
@@ -41,22 +42,34 @@ def main():
             ),
         ):
             result = subprocess.run(
-                [sys.executable, "-m", "pytest", "-q", "-rs", *tests],
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "-rs",
+                    "--junitxml=/tmp/coverage-results.xml",
+                    *tests,
+                ],
                 cwd=cwd,
                 env={**os.environ, "PYTHONPATH": "/repo:/root:/root/Megatron-LM"},
                 capture_output=True,
                 text=True,
                 check=False,
             )
-            results.append((result.returncode, result.stdout + result.stderr))
+            skipped = sum(
+                int(suite.attrib.get("skipped", 0))
+                for suite in ET.parse("/tmp/coverage-results.xml").iter("testsuite")
+            )
+            results.append((result.returncode, skipped, result.stdout + result.stderr))
         return results
 
     with modal.enable_output(), app.run():
         results = check.remote()
     failed = False
-    for code, output in results:
+    for code, skipped, output in results:
         print(output)
-        failed |= code != 0 or "skipped" in output.splitlines()[-1]
+        failed |= code != 0 or skipped != 0
     if failed:
         raise SystemExit(1)
 
