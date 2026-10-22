@@ -409,15 +409,15 @@ def _function_secrets() -> list[modal.Secret]:
 def set_dashboard_password(password: str) -> None:
     """Set (or clear) the dashboard password.
 
-    Creates the ``_training-gym-dashboard-password`` Secret on demand. An empty
-    string disables auth. The new value only takes effect once the dashboard app
-    is redeployed, since containers read it from the environment at startup.
+    An empty string disables auth. The new value only takes effect once the
+    dashboard app is redeployed, since containers read it at startup. The
+    Secret is recreated rather than updated: after an in-place update,
+    redeployed containers kept the old value.
     """
-    env_values = {"DASHBOARD_PASSWORD": password}
+    modal.Secret.objects.delete(DASHBOARD_PASSWORD_SECRET_NAME, allow_missing=True)
     modal.Secret.objects.create(
-        DASHBOARD_PASSWORD_SECRET_NAME, env_values, allow_existing=True
+        DASHBOARD_PASSWORD_SECRET_NAME, {"DASHBOARD_PASSWORD": password}
     )
-    modal.Secret.from_name(DASHBOARD_PASSWORD_SECRET_NAME).update(env_values)
 
 
 # Auto-create the creds secret at module-load so `modal deploy

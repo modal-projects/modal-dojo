@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from modal_dojo.common.config import (
+    get_dashboard_password,
     get_dashboard_url,
     modal_proxy_auth_headers,
 )
@@ -71,7 +72,9 @@ class DashboardClient:
             )
 
         dashboard_password = (
-            os.environ.get(DASHBOARD_PASSWORD_ENV, "") if password is None else password
+            os.environ.get(DASHBOARD_PASSWORD_ENV, "") or get_dashboard_password()
+            if password is None
+            else password
         )
         auth = (
             httpx.BasicAuth("modal-dojo", dashboard_password)
