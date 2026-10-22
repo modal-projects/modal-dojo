@@ -77,7 +77,7 @@ from modal_dojo import TrackioConfig
 metrics = TrackioConfig.deploy_to_modal(project="my-rl-project")
 ```
 
-Just like the [main dashboard](https://dojo.modal.dev/guides/dashboard), the Trackio dashboard is unauthenticated unless you set a password:
+The Trackio dashboard uses the [main dashboard](https://dojo.modal.dev/guides/dashboard)'s password, if one is set when it deploys:
 
 ```bash
 modal-dojo set-password

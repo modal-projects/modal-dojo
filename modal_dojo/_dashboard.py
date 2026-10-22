@@ -18,6 +18,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlencode
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -48,6 +49,7 @@ from starlette.requests import Request
 
 # Used as endpoint parameter annotations, so — like ``Request`` above — these
 # must resolve from this module's globals.
+from modal_dojo import _dashboard_login as _login
 from modal_dojo.common.advantage_distribution import AdvantageDistribution
 from modal_dojo.common.config import (
     DASHBOARD_PASSWORD_SECRET_NAME,
@@ -409,15 +411,15 @@ def _function_secrets() -> list[modal.Secret]:
 def set_dashboard_password(password: str) -> None:
     """Set (or clear) the dashboard password.
 
-    Creates the ``_training-gym-dashboard-password`` Secret on demand. An empty
-    string disables auth. The new value only takes effect once the dashboard app
-    is redeployed, since containers read it from the environment at startup.
+    An empty string disables auth. The new value only takes effect once the
+    dashboard app is redeployed, since containers read it at startup. The
+    Secret is recreated rather than updated: after an in-place update,
+    redeployed containers kept the old value.
     """
-    env_values = {"DASHBOARD_PASSWORD": password}
+    modal.Secret.objects.delete(DASHBOARD_PASSWORD_SECRET_NAME, allow_missing=True)
     modal.Secret.objects.create(
-        DASHBOARD_PASSWORD_SECRET_NAME, env_values, allow_existing=True
+        DASHBOARD_PASSWORD_SECRET_NAME, {"DASHBOARD_PASSWORD": password}
     )
-    modal.Secret.from_name(DASHBOARD_PASSWORD_SECRET_NAME).update(env_values)
 
 
 # Auto-create the creds secret at module-load so `modal deploy
@@ -596,9 +598,6 @@ def reconcile() -> None:
 @modal.concurrent(max_inputs=50, target_inputs=20)
 @modal.asgi_app(requires_proxy_auth=dashboard_requires_proxy_auth())
 def fastapi_app():
-    import base64
-    import binascii
-
     from fastapi import (
         FastAPI,
         Header,
@@ -608,7 +607,9 @@ def fastapi_app():
     from fastapi.concurrency import run_in_threadpool
     from fastapi.responses import (
         FileResponse,
+        HTMLResponse,
         JSONResponse,
+        RedirectResponse,
         Response,
         StreamingResponse,
     )
@@ -626,30 +627,81 @@ def fastapi_app():
     web = FastAPI()
 
     # ── Optional password protection ──────────────────────────────────────
-    # When DASHBOARD_PASSWORD is set we gate the whole app behind HTTP Basic
-    # Auth (the username is ignored). An empty value means open access.
+    # When DASHBOARD_PASSWORD is set, browsers log in at /login (session
+    # cookie) and the CLI sends HTTP Basic Auth. An empty value means open.
     dashboard_password = os.environ.get("DASHBOARD_PASSWORD", "")
 
-    def _password_ok(authorization: str | None) -> bool:
-        scheme, _, encoded = (authorization or "").partition(" ")
-        if scheme.lower() != "basic" or not encoded:
-            return False
-        try:
-            decoded = base64.b64decode(encoded).decode("utf-8")
-        except (binascii.Error, ValueError, UnicodeDecodeError):
-            return False
-        _user, _, supplied = decoded.partition(":")
-        return _secrets.compare_digest(supplied, dashboard_password)
+    def _signed_in(request: Request) -> bool:
+        return _login.basic_auth_ok(
+            request.headers.get("Authorization"), dashboard_password
+        ) or _login.session_token_ok(
+            request.cookies.get(_login.SESSION_COOKIE), dashboard_password
+        )
 
     @web.middleware("http")
     async def require_password(request: Request, call_next):
-        if dashboard_password and request.url.path not in PASSWORD_EXEMPT_PATHS:
-            if not _password_ok(request.headers.get("Authorization")):
-                return Response(
-                    status_code=401,
-                    headers={"WWW-Authenticate": 'Basic realm="modal-dojo"'},
-                )
-        return await call_next(request)
+        path = request.url.path
+        if (
+            not dashboard_password
+            or path in PASSWORD_EXEMPT_PATHS
+            or path in _login.LOGIN_PAGE_PATHS
+            or _signed_in(request)
+        ):
+            return await call_next(request)
+        # No WWW-Authenticate header, so browsers never show their own popup.
+        if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+            target = path + (f"?{request.url.query}" if request.url.query else "")
+            return RedirectResponse(
+                f"{_login.LOGIN_PATH}?{urlencode({'next': target})}",
+                status_code=303,
+            )
+        return JSONResponse(
+            {"detail": "Dashboard password required."},
+            status_code=401,
+            headers={_login.LOGIN_REQUIRED_HEADER: _login.LOGIN_PATH},
+        )
+
+    @web.get(_login.LOGIN_PATH, include_in_schema=False)
+    async def login_page(next: str = "/"):
+        next_path = _login.safe_next_path(next)
+        if not dashboard_password:
+            return RedirectResponse(next_path, status_code=303)
+        return HTMLResponse(
+            _login.render_login_page(next_path=next_path),
+            headers=_login.LOGIN_PAGE_HEADERS,
+        )
+
+    @web.post(_login.LOGIN_PATH, include_in_schema=False)
+    async def login_submit(request: Request):
+        form = parse_qs((await request.body()).decode("utf-8", "replace"))
+        next_path = _login.safe_next_path(form.get("next", ["/"])[0])
+        if not _login.password_matches(
+            form.get("password", [""])[0], dashboard_password
+        ):
+            await asyncio.sleep(_login.FAILED_LOGIN_DELAY_SECONDS)
+            return HTMLResponse(
+                _login.render_login_page(next_path=next_path, error=True),
+                status_code=401,
+                headers=_login.LOGIN_PAGE_HEADERS,
+            )
+        response = RedirectResponse(next_path, status_code=303)
+        response.set_cookie(
+            _login.SESSION_COOKIE,
+            _login.make_session_token(dashboard_password),
+            max_age=_login.SESSION_TTL_SECONDS,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+        )
+        return response
+
+    @web.get(_login.LOGOUT_PATH, include_in_schema=False)
+    async def logout():
+        response = RedirectResponse(_login.LOGIN_PATH, status_code=303)
+        response.delete_cookie(
+            _login.SESSION_COOKIE, httponly=True, secure=True, samesite="lax"
+        )
+        return response
 
     @web.get(DASHBOARD_PROXY_AUTH_PATH)
     async def proxy_auth_status() -> bool:

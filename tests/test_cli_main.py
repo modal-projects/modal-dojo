@@ -172,7 +172,9 @@ def test_set_password_warns_about_stale_trackio_password(
     from modal_dojo.cli.setup import set_password
 
     monkeypatch.setattr("modal_dojo._dashboard.set_dashboard_password", Mock())
-    monkeypatch.setattr("modal_dojo.cli.setup.setup", Mock())
+    monkeypatch.setattr("modal_dojo.common.config.save_dashboard_password", Mock())
+    deploy = Mock()
+    monkeypatch.setattr("modal_dojo.cli.setup.setup", deploy)
     monkeypatch.setattr(
         "modal_dojo.common.config.get_dashboard_proxy_auth",
         lambda: False,
@@ -190,6 +192,8 @@ def test_set_password_warns_about_stale_trackio_password(
 
     set_password(password="secret")
 
+    assert deploy.call_args.kwargs["restart_containers"] is True
+    assert deploy.call_args.kwargs["password_protected"] is True
     err = " ".join(capsys.readouterr().err.split())
     if expect_old_password:
         assert "Warning:" in err
