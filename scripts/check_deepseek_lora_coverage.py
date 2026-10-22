@@ -3,6 +3,7 @@
 MODAL_ENVIRONMENT=training-team uv run python scripts/check_deepseek_lora_coverage.py
 """
 
+import argparse
 from pathlib import Path
 
 import modal
@@ -12,6 +13,13 @@ from modal_dojo.frameworks.miles.launcher import _build_miles_base_image
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--runtime-only",
+        action="store_true",
+        help="Only rerun Dojo's runtime contracts; skip the unchanged upstream suite",
+    )
+    runtime_only = parser.parse_args().runtime_only
     root = Path(__file__).resolve().parents[1]
     image = (
         _build_miles_base_image(DeepSeek_V4_1_Flash_LoRA_Recipe())
@@ -41,6 +49,8 @@ def main():
                 ],
             ),
         ):
+            if runtime_only and cwd == "/root/miles":
+                continue
             result = subprocess.run(
                 [
                     sys.executable,

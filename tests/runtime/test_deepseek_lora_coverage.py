@@ -106,6 +106,9 @@ def test_shared_expert_export_preserves_outputs_and_gradients(native_recipe_mode
     )
 
     upstream, _, model = native_recipe_model
+    # Check adapter/export algebra independently of FP32 reassociation error
+    # between (x @ A.T) @ B.T and x @ (B @ A).T at rank 32.
+    model.double()
     exported = dict(export_lora_hf_named([model]))
     shared = model.layers[0].mlp.shared_experts
 
@@ -115,12 +118,12 @@ def test_shared_expert_export_preserves_outputs_and_gradients(native_recipe_mode
             upstream.ALPHA
             / upstream.RANK
             * (
-                exported[prefix + ".lora_B.weight"].float()
-                @ exported[prefix + ".lora_A.weight"].float()
+                exported[prefix + ".lora_B.weight"].double()
+                @ exported[prefix + ".lora_A.weight"].double()
             )
         )
 
-    x = torch.randn(2, 3, upstream.HIDDEN)
+    x = torch.randn(2, 3, upstream.HIDDEN, dtype=torch.float64)
     actual, _ = shared.linear_fc1(x)
     merged = shared.linear_fc1.weight + torch.cat([delta("w1"), delta("w3")])
     torch.testing.assert_close(actual, x @ merged.t())
