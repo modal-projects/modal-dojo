@@ -152,7 +152,6 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
             "normalize_advantages": False,
             "grpo_std_normalization": True,
             "rewards_normalization": True,
-            "use_tis": False,
             "get_mismatch_metrics": True,
             # New Miles requires an explicit metrics implementation. With
             # use_tis=False this preserves the policy loss and response masks.
@@ -166,6 +165,12 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
             "tis_upper_bound": 2.0,
             "rs_lower_bound": 0.5,
             "rs_upper_bound": 2.0,
+            # Explicit defaults also make use_tis=True usable with this helper.
+            # The recipe field controls TIS; extra_config must not shadow it.
+            "tis_level": "token",
+            "tis_mode": "clip",
+            "tis_batch_normalize": False,
+            "use_rs": False,
             "recompute_loss_function": False,
             "use_unbiased_kl": False,
             "log_probs_chunk_size": 128,
