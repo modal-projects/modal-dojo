@@ -321,18 +321,19 @@ def _resumed_miles_recipe(
     adapter_path = getattr(miles, "lora_adapter_path", None)
     try:
         with shared.resumed_recipe(miles, save_root, checkpoint):
-            if (
-                checkpoint is not None
-                and miles.megatron_to_hf_mode == "raw"
+            native_adapter = (
+                miles.megatron_to_hf_mode == "raw"
                 and miles.lora_rank is not None
                 and hasattr(miles, "lora_adapter_path")
-            ):
-                # Native adapters carry optimizer state separately from the
-                # frozen torch_dist base; --load must keep selecting that base.
-                miles.load = ""
+            )
+            if native_adapter and checkpoint is not None:
                 miles.lora_adapter_path = os.path.join(
                     checkpoint["resume_checkpoint_path"], "adapter"
                 )
+            if native_adapter and miles.lora_adapter_path is not None:
+                # An explicit base load avoids Miles' fresh-run fallback,
+                # which disables optimizer restore and resets the rollout ID.
+                miles.load = miles.ref_load
             yield
     finally:
         if hasattr(miles, "lora_adapter_path"):
