@@ -733,6 +733,106 @@ def check_resume_scheduler_shape(recipe: Any, checkpoint_path: str) -> None:
         )
 
 
+def _expected_scheduler_steps(recipe: Any, extra: dict[str, Any]) -> dict[str, int]:
+    """The OptimizerParamScheduler step counts miles derives from the recipe."""
+    if recipe.effective_num_epoch() is not None:
+        return {}
+    num_rollout, rollout_batch_size, n_samples, global_batch_size = (
+        extra.get(field, getattr(recipe, field, None))
+        for field in _SCHEDULER_SHAPE_FIELDS
+    )
+    if None in (num_rollout, rollout_batch_size, n_samples) or not global_batch_size:
+        return {}
+    train_iters = num_rollout * rollout_batch_size * n_samples // global_batch_size
+    lr_decay_iters = extra.get(
+        "lr_decay_iters", getattr(recipe, "lr_decay_iters", None)
+    )
+    return {
+        "lr_decay_steps": (lr_decay_iters or train_iters) * global_batch_size,
+        "wd_incr_steps": train_iters * global_batch_size,
+    }
+
+
+def _lora_resume_adapter_dir(recipe: Any, extra: dict[str, Any]) -> str | None:
+    """The native LoRA adapter save miles will restore training state from, if any.
+
+    Either an explicit ``lora_adapter_path``, or the latest ``iter_*/adapter`` of
+    a LoRA run's save directory passed as ``load`` (which has no Megatron
+    tracker file, so the base weights come from ``ref_load``).
+    """
+    explicit = extra.get(
+        "lora_adapter_path", getattr(recipe, "lora_adapter_path", None)
+    )
+    if explicit:
+        return explicit
+    if not (extra.get("lora_rank", getattr(recipe, "lora_rank", None)) or 0) > 0:
+        return None
+    load = extra.get("load", getattr(recipe, "load", None))
+    if not load or os.path.exists(
+        os.path.join(load, "latest_checkpointed_iteration.txt")
+    ):
+        return None
+    try:
+        names = os.listdir(load)
+    except OSError:
+        return None
+    iterations = sorted(
+        name
+        for name in names
+        if name.startswith("iter_")
+        and name[len("iter_") :].isdigit()
+        and os.path.isdir(os.path.join(load, name, "adapter"))
+    )
+    return os.path.join(load, iterations[-1], "adapter") if iterations else None
+
+
+def check_lora_adapter_scheduler_shape(recipe: Any) -> None:
+    """Fail fast when a native LoRA resume would trip the OptimizerParamScheduler check.
+
+    miles restores the adapter's saved LR scheduler regardless of
+    ``no_load_optim``, so a changed LR schedule fails ``load_state_dict`` only
+    after the whole cluster has started and loaded weights.
+    """
+    extra = recipe._escape_hatch_values()
+    if extra.get("override_opt_param_scheduler") or extra.get(
+        "use_checkpoint_opt_param_scheduler"
+    ):
+        return
+    adapter_dir = _lora_resume_adapter_dir(recipe, extra)
+    if adapter_dir is None:
+        return
+    training_state = os.path.join(adapter_dir, "training_state_rank0.pt")
+    if not os.path.exists(training_state):
+        return
+    expected = _expected_scheduler_steps(recipe, extra)
+    if not expected:
+        return
+    import torch
+
+    state = torch.load(training_state, map_location="cpu", weights_only=False)
+    scheduler = state.get("opt_param_scheduler") if isinstance(state, dict) else None
+    if not isinstance(scheduler, dict):
+        return
+    mismatched = {
+        key: (scheduler[key], steps)
+        for key, steps in expected.items()
+        if scheduler.get(key) is not None and scheduler[key] != steps
+    }
+    if mismatched:
+        details = ", ".join(
+            f"{key}: checkpoint={saved} recipe={current}"
+            for key, (saved, current) in mismatched.items()
+        )
+        raise RuntimeError(
+            f"Cannot resume the LoRA adapter at {adapter_dir}: the LR schedule changed "
+            f"({details}; steps are iterations x global_batch_size, from "
+            f"{', '.join(_SCHEDULER_SHAPE_FIELDS)} and lr_decay_iters). "
+            "Restore the original values, or set extra_config "
+            "override_opt_param_scheduler=True to adopt the new schedule or "
+            "use_checkpoint_opt_param_scheduler=True to keep the saved one."
+        )
+
+
 @contextmanager
 def resumed_recipe(recipe: Any, save_root: str, checkpoint: dict[str, Any] | None):
     original = {

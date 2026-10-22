@@ -1005,6 +1005,7 @@ def build_miles_app(
                             f"WARNING: {save_root} holds saves of interrupted writes that cannot be resumed "
                             f"({', '.join(unresumable)}). Resuming into one of these would load a partial save."
                         )
+                    shared.check_lora_adapter_scheduler_shape(miles)
                     if hf_ref:
                         object.__setattr__(miles, "ref_load", hf_ref)
                     return build_train_cmd(

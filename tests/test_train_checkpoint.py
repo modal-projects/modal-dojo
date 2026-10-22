@@ -261,3 +261,67 @@ def test_auto_resume_drops_extra_config_start_rollout_id(recipe, tmp_path) -> No
     assert recipe._escape_hatch_keys() == ("qkv_format",)
     with open(recipe.extra_config) as f:
         assert yaml.safe_load(f) == {"qkv_format": "bshd"}
+
+
+def _lora_run_save(tmp_path, lr_decay_steps: int) -> str:
+    torch = pytest.importorskip("torch")
+    for iteration in (7, 15):
+        adapter = tmp_path / "run" / f"iter_{iteration:07d}" / "adapter"
+        adapter.mkdir(parents=True)
+        torch.save(
+            {
+                "iteration": iteration,
+                "optimizer": None,
+                "opt_param_scheduler": {
+                    "lr_decay_steps": lr_decay_steps,
+                    "wd_incr_steps": lr_decay_steps,
+                },
+            },
+            adapter / "training_state_rank0.pt",
+        )
+    return str(tmp_path / "run")
+
+
+def _lora_recipe(load: str, **extra_config) -> MilesRecipe:
+    return MilesRecipe(
+        num_rollout=20,
+        rollout_batch_size=8,
+        n_samples_per_prompt=4,
+        global_batch_size=32,
+        lora_rank=32,
+        load=load,
+        no_load_optim=True,
+        no_save_optim=True,
+        extra_config=extra_config,
+    )
+
+
+def test_lora_resume_with_changed_schedule_fails_fast(tmp_path) -> None:
+    from modal_dojo.common.launcher_helpers import check_lora_adapter_scheduler_shape
+
+    run = _lora_run_save(tmp_path, lr_decay_steps=16 * 32)
+
+    with pytest.raises(RuntimeError, match="lr_decay_steps: checkpoint=512 recipe=640"):
+        check_lora_adapter_scheduler_shape(_lora_recipe(run))
+    with pytest.raises(RuntimeError, match="iter_0000015/adapter"):
+        check_lora_adapter_scheduler_shape(
+            _lora_recipe(
+                "/checkpoints/base", lora_adapter_path=f"{run}/iter_0000015/adapter"
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "extra_config",
+    [{}, {"override_opt_param_scheduler": True}],
+    ids=["same-schedule", "override"],
+)
+def test_lora_resume_with_matching_or_overridden_schedule_passes(
+    tmp_path, extra_config
+) -> None:
+    from modal_dojo.common.launcher_helpers import check_lora_adapter_scheduler_shape
+
+    lr_decay_steps = 20 * 32 if not extra_config else 16 * 32
+    run = _lora_run_save(tmp_path, lr_decay_steps=lr_decay_steps)
+
+    check_lora_adapter_scheduler_shape(_lora_recipe(run, **extra_config))
