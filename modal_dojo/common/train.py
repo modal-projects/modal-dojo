@@ -406,6 +406,11 @@ class TrainConfig:
     # not the nested ``app.run()`` the driver opens), so this only decides
     # whether an interrupted ``train()`` stops the app on its way out.
     detach: bool = True
+    # Which cluster runtime to launch on. ``"flyte"`` (default) targets the
+    # configured Flyte cluster (devbox or Union) via the backend in
+    # ``modal_dojo.flyte``; ``"modal"`` keeps the original Modal launcher.
+    # ``MODAL_DOJO_BACKEND`` overrides this at runtime.
+    backend: str = "flyte"
     # Set by TrainingGroup so every run in a sweep shares one id — written into
     # the TrainingRun record so the dashboard can group variants together.
     group_id: str | None = None
@@ -615,12 +620,32 @@ class TrainConfig:
             f"ep={getattr(recipe, 'expert_model_parallel_size', 'n/a')})"
         )
 
-    def train(self, *, show_output: bool = True) -> TrainingRun:
+    def _flyte_backend(self) -> bool:
+        override = os.environ.get("MODAL_DOJO_BACKEND", "")
+        if override:
+            return override == "flyte"
+        return self.backend == "flyte"
+
+    def flyte_launch(self, *, mode: str | None = None) -> Any:
+        """Start one training run on the configured Flyte cluster (non-blocking)."""
+        from modal_dojo.flyte.launch import flyte_launch
+
+        return flyte_launch(self, mode=mode)
+
+    def flyte_train(self, *, mode: str | None = None) -> Any:
+        """Run one training configuration to completion on Flyte (blocking)."""
+        from modal_dojo.flyte.launch import flyte_train
+
+        return flyte_train(self, mode=mode)
+
+    def train(self, *, show_output: bool = True) -> Any:
         """Run one training configuration.
 
         Returns:
             The completed training run.
         """
+        if self._flyte_backend():
+            return self.flyte_train()
         from modal_dojo.common.modal_lifecycle import stop_app
 
         launch = self.launch(show_output=show_output)
@@ -635,12 +660,15 @@ class TrainConfig:
         self,
         *,
         show_output: bool = True,
-    ) -> TrainingRun:
-        """Start one training run in a detached Modal app.
+    ) -> Any:
+        """Start one training run in a detached Modal app (or on Flyte).
 
         Returns:
             The launched training run.
         """
+        if self._flyte_backend():
+            return self.flyte_launch()
+
         import modal
 
         from modal_dojo.cli.setup import ensure_dashboard_deployed
