@@ -128,31 +128,54 @@ def _layers(models, parallel):
             if module.__class__.__name__ in {
                 "LoRALinear",
                 "LoRAUnreducedRowLinear",
+                "LoRAGroupedColumnLinear",
+                "LoRASplitFC1",
             } and hasattr(module, "exports"):
                 exports = list(module.exports())
                 hosts = list(module.weight_deltas())
-                if len(exports) != 1 or len(hosts) != 1:
-                    raise ValueError(
-                        "Native linear diagnostics require one projection and one host"
-                    )
-                projection, (weight, _) = exports[0], hosts[0]
-                a, b = projection.a, projection.b
-                if (b.shape[0], a.shape[1]) != weight.shape or b.shape[1] != a.shape[0]:
-                    raise ValueError(
-                        "Native LoRA factors do not match the local host shard"
-                    )
-                covered.update([id(a), id(b)])
+                if len(hosts) != 1:
+                    raise ValueError("Native linear diagnostics require one host")
+                weight, _ = hosts[0]
                 replicas = parallel.effective_dp.size
                 if not getattr(weight, "tensor_model_parallel", False):
                     replicas *= parallel.tp.size
-                yield (
-                    f"{chunk}:{name}:0",
-                    weight,
-                    a,
-                    b,
-                    float(module.context.lora.scale),
-                    replicas,
-                )
+                if module.__class__.__name__ == "LoRASplitFC1":
+                    # FC1 stores [gate; up]. Use each projection's physical
+                    # slot even when only one branch has an adapter.
+                    width = module.inter_local
+                    if weight.shape[0] != 2 * width:
+                        raise ValueError("Native FC1 host must contain gate/up rows")
+                    slots = {"gate": 0, "up": 1}
+                    weights = [
+                        weight[
+                            slots[p.param_prefix] * width : (slots[p.param_prefix] + 1)
+                            * width
+                        ]
+                        for p in module.projection_specs
+                    ]
+                else:
+                    if len(exports) != 1:
+                        raise ValueError("Native linear requires one projection")
+                    weights = [weight]
+                for index, (projection, base) in enumerate(
+                    zip(exports, weights, strict=True)
+                ):
+                    a, b = projection.a, projection.b
+                    if (b.shape[0], a.shape[1]) != base.shape or b.shape[1] != a.shape[
+                        0
+                    ]:
+                        raise ValueError(
+                            "Native LoRA factors do not match the local host shard"
+                        )
+                    covered.update([id(a), id(b)])
+                    yield (
+                        f"{chunk}:{name}:{index}",
+                        base,
+                        a,
+                        b,
+                        float(module.context.lora.scale),
+                        replicas,
+                    )
                 continue
             adapter, wrapped = (
                 getattr(module, "adapter", None),
@@ -212,8 +235,15 @@ def _layers(models, parallel):
                 yield f"{chunk}:{name}:{expert}", weight, ai, bi, scale, replicas
     expected = {id(p) for m in models for p in m.parameters() if p.requires_grad}
     if expected != covered:
+        missing = [
+            f"{chunk}:{name}"
+            for chunk, model in enumerate(models)
+            for name, p in model.named_parameters()
+            if p.requires_grad and id(p) not in covered
+        ]
         raise ValueError(
-            "Update diagnostics require all trainable parameters to be supported LoRA factors"
+            "Update diagnostics require all trainable parameters to be supported LoRA factors; "
+            f"uncovered={missing}, unexpected_factors={len(covered - expected)}"
         )
 
 
