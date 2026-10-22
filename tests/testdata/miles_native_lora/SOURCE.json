@@ -1,0 +1,15 @@
+{
+  "repository": "radixark/miles",
+  "revision": "65e785ff5e794a7081383e18e70c4555cb1fe0fb",
+  "files": {
+    "backends/megatron_utils/lora/utils.py": "3ac2e14da49161bfc7c79db390d4bce7a417f5b2da5ba9b7ba5c7c8830534813",
+    "backends/megatron_utils/megatron_config.py": "227e332d45eaec91cf7a5e2d33cf6fc0ccc38f3a3b53d8d068827cc50c07b07f",
+    "backends/megatron_utils/model.py": "0b8bab0bb7e2b31d585d8db3c2956d3f3a20b0c7347c107398382cfa806def5b",
+    "backends/megatron_utils/actor.py": "fbf76b87a6b578453e097f35a5308593498e0d581683ae16324c4a6158848a9f",
+    "ray/rollout/rollout_executor.py": "f5c81887a83e501d711c6f99531cdeb64a2c761b4d8f98bb55ce7d5f59e5f042",
+    "ray/placement_group.py": "5f3c7e0163d841025be061de03cbf5eda6f7563181ad7e1d9c89fdb5bf5ebc5c",
+    "ray/rollout/server_cell.py": "bc5c9a2770eb2a5e64e0502dfc2b7150a5c788454ad251808a672ce35a407201",
+    "backends/training_utils/data/rollout.py": "be15c90200e67f0073666544d3a01744119cd14bf9ec3f1303ae166264b98e8f",
+    "backends/training_utils/loss/objective.py": "eae56f2f311ca211b3e9e15c201430d7fb10c4418f6e782a2e64c6c1465b6f3e"
+  }
+}

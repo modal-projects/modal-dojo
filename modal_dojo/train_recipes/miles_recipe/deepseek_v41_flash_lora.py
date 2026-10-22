@@ -32,6 +32,9 @@ def _lora_image_commands() -> list[str]:
             "patch_checkpoint_local_dirs",
             "patch_native_lora_checkpoint_commit",
             "patch_sglang_weights_disk_backup",
+            "patch_native_lora_training",
+            "patch_native_lora_training_state",
+            "patch_native_lora_diagnostics",
         )
     ]
 

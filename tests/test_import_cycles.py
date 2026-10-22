@@ -45,6 +45,7 @@ REMOTE_ONLY = frozenset(
         "modal_dojo.common.megatron_patches.patch_gdn_packed_seq",
         "modal_dojo.common.megatron_patches.patch_torch_load",
         "modal_dojo.common.megatron_patches.patch_validation",
+        "modal_dojo.frameworks.miles.lora_diagnostics",
         "modal_dojo.frameworks.miles.modal_helpers.hf_block_dequant",
         "modal_dojo.frameworks.miles.modal_helpers.hf_mxfp4_dequant",
         "modal_dojo.frameworks.miles.modal_helpers.patches.patch_cell_tick_timeout",

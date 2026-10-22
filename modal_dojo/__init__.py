@@ -54,6 +54,10 @@ _EXPORTS = {
         "modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash_lora",
         "DeepSeek_V4_1_Flash_LoRA_Recipe",
     ),
+    "DeepSeek_V4_1_Flash_LoRA_Agentic_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash_lora_agentic",
+        "DeepSeek_V4_1_Flash_LoRA_Agentic_Recipe",
+    ),
     "DeepSeek_V4_1_Flash_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
         "DeepSeek_V4_1_Flash_Recipe",
@@ -231,6 +235,7 @@ __all__ = [
     "DeepSeek_V4_1_Flash_Recipe",
     "DeepSeek_V4_1_Flash_LoRA",
     "DeepSeek_V4_1_Flash_LoRA_Recipe",
+    "DeepSeek_V4_1_Flash_LoRA_Agentic_Recipe",
     "Gemma4_26B_A4B",
     "Gemma4_26B_A4B_Recipe",
     "GLM_4_7",
