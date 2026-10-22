@@ -921,6 +921,11 @@ def build_config(teacher_deployment):
         dataset=dataset,
         recipe=Qwen3_6_35B_Recipe(
             colocate=False,
+            # Sync settings
+            async_mode=False,
+            use_distributed_optimizer=False,
+            max_tokens_per_gpu=8192,
+            ref_load="/checkpoints/Qwen3.6-35B-A3B_torch_dist_tp1pp1",
             actor_num_nodes=2,
             actor_num_gpus_per_node=8,
             rollout_num_gpus=8,
