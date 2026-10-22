@@ -314,6 +314,29 @@ def _unresumable_save_dirs(save_root: str) -> list[str]:
     )
 
 
+@contextlib.contextmanager
+def _resumed_miles_recipe(miles: MilesRecipe, save_root: str, checkpoint):
+    adapter_path = getattr(miles, "lora_adapter_path", None)
+    try:
+        with shared.resumed_recipe(miles, save_root, checkpoint):
+            if (
+                checkpoint is not None
+                and miles.megatron_to_hf_mode == "raw"
+                and miles.lora_rank is not None
+                and hasattr(miles, "lora_adapter_path")
+            ):
+                # Native adapters carry optimizer state separately from the
+                # frozen torch_dist base; --load must keep selecting that base.
+                miles.load = ""
+                miles.lora_adapter_path = os.path.join(
+                    checkpoint["resume_checkpoint_path"], "adapter"
+                )
+            yield
+    finally:
+        if hasattr(miles, "lora_adapter_path"):
+            miles.lora_adapter_path = adapter_path
+
+
 def _build_miles_base_image(
     recipe: MilesRecipe,
     dataset: DatasetConfig | None = None,
@@ -997,7 +1020,7 @@ def build_miles_app(
                     save_root, is_complete=_is_resumable_checkpoint
                 )
                 record_resume_checkpoint(run_record, resume_checkpoint)
-                with shared.resumed_recipe(miles, save_root, resume_checkpoint):
+                with _resumed_miles_recipe(miles, save_root, resume_checkpoint):
                     if resume_checkpoint is None and (
                         unresumable := _unresumable_save_dirs(save_root)
                     ):

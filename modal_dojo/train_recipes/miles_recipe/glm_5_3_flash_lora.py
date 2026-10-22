@@ -1,4 +1,4 @@
-"""Experimental bridge-mode GLM-5.3-Flash LoRA on the current Miles stack."""
+"""Native GLM-5.3-Flash LoRA from radixark/miles#3098, with 32k context."""
 
 from dataclasses import field
 from pathlib import Path
@@ -13,77 +13,68 @@ from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
-# The current Miles image's Bridge does not include the GLM-5.3 provider.
-# TODO: use the image's Bridge once radixark/Megatron-Bridge#35 lands.
-_BRIDGE_REF = "6527b18e8bb0db994a267e6dfd4db7dafc669df9"
 _PATCH_DIR = (
     Path(__file__).resolve().parents[2] / "frameworks/miles/modal_helpers/patches"
-)
-_TARGETS = (
-    "self_attention.linear_q",
-    "self_attention.linear_k",
-    "self_attention.linear_v",
-    "self_attention.linear_b",
-    "self_attention.linear_f_a",
-    "self_attention.linear_f_b",
-    "self_attention.linear_g_a",
-    "self_attention.linear_g_b",
-    "self_attention.linear_q_down_proj",
-    "self_attention.linear_q_up_proj",
-    "self_attention.linear_kv_down_proj",
-    "self_attention.linear_kv_up_proj",
-    "self_attention.linear_proj",
-    "mlp.linear_fc1",
-    "mlp.linear_fc2",
-    "mlp.shared_experts.linear_fc1",
-    "mlp.shared_experts.linear_fc2",
-    "mlp.experts.linear_fc1",
-    "mlp.experts.linear_fc2",
 )
 
 
 def _image_commands() -> list[str]:
     return [
-        # Keep the image's CUDA/PyTorch/Megatron stack; replace only Bridge.
-        "python3 -m pip install --no-deps --no-build-isolation "
-        f"'megatron-bridge @ git+https://github.com/radixark/Megatron-Bridge.git@{_BRIDGE_REF}'",
-        f"echo {encode_patch('patch_glm_5_3_flash_lora', _PATCH_DIR)} | base64 -d | python3",
-        f"echo {encode_patch('patch_sglang_offload_health', _PATCH_DIR)} | base64 -d | python3",
-        f"echo {encode_patch('patch_checkpoint_local_dirs', _PATCH_DIR)} | base64 -d | python3",
+        f"echo {encode_patch('patch_glm_5_3_flash_lora_checkpoint', _PATCH_DIR)} "
+        "| base64 -d | python3",
     ]
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
-    """GLM-5.3-Flash rank-16 bridge LoRA on three nodes of eight H200 GPUs."""
+    """GLM-5.3-Flash rank-16 native LoRA, 32k context, on 16 H200s.
+
+    Trains attention and dense/shared-expert MLP adapters; routed experts and
+    absorbed DSA ``kv_b_proj`` stay frozen. The first run converts the frozen
+    base on one 8-GPU node. Native adapter checkpoints can be resumed with
+    ``lora_adapter_path`` on the same parallel layout; Bridge adapters are not
+    compatible with this preset.
+    """
 
     model_config_class: ClassVar[type[ModelConfig]] = GLM_5_3_Flash_LoRA
     docker_image: str = (
-        "radixark/miles:dev-202610140350@sha256:"
-        "c53f65d346a6b364cf89d7dbaa416595a2d5638670b5d82c683214183dca10bd"
+        "radixark/miles:dev-202610180955@sha256:"
+        "61ddd6ad0d6991b5aa58028937289f588c35e1fa461f16752de88ba93064203d"
     )
-    miles_git_ref: str | None = "d33406f1139f1fa66305b17b9e91dfa110e3c4ce"
-    sglang_git_ref: str | None = "f31278164939dd0746037abbb7566de4164e6767"
+    miles_git_ref: str | None = "24bd5fb7166a185f309399e52f43b100e4369203"
+    sglang_git_ref: str | None = "3a938213c1b349e1a8df0b5fdc57ef36a41c743b"
     image_run_commands: list[str] = field(default_factory=_image_commands)
     miles_model_name: str = "glm5.3-flash"
     model_name: str = "glm5_next"
+    megatron_to_hf_mode: str = "raw"
+    ref_load: str = "/checkpoints/GLM-5.3-Flash_native_torch_dist"
 
     use_session_server: bool | str = True
     tito_model: str = "glm53"
     pause_generation_mode: str = "in_place"
 
+    # Convert the frozen FP8 base once on one 8-GPU node; training reshards it.
+    conversion_tensor_model_parallel_size: int | None = 2
+    conversion_pipeline_model_parallel_size: int | None = 1
+    conversion_expert_model_parallel_size: int | None = 8
+    conversion_expert_tensor_parallel_size: int | None = 1
+    convert_ephemeral_disk_mb: int | None = 2 * 1024 * 1024
+
     gpu_type: str = "H200"
     memory: tuple[int, int] = (1024, 2 * 1024 * 1024)
-    actor_num_nodes: int = 3
+    actor_num_nodes: int = 2
     actor_num_gpus_per_node: int = 8
     tensor_model_parallel_size: int = 8
-    expert_model_parallel_size: int = 24
+    expert_model_parallel_size: int = 16
     sequence_parallel: bool = True
 
     lora_rank: int | None = 16
     lora_alpha: int | None = 32
     lora_dropout: float | None = 0.0
-    target_modules: str | None = ",".join(f"decoder.layers.*.{t}" for t in _TARGETS)
+    lora_adapter_path: str | None = None
+    target_modules: str | None = "attn,mlp"
+    # Native LoRA has no routed-expert adapters; absorbed DSA kv_b never runs.
+    exclude_modules: str = "*.mlp.experts.*,*.self_attn.kv_b_proj"
     lora_base_cpu_backup: bool = True
     check_lora_weight_equal: bool = True
     no_gradient_accumulation_fusion: bool = True
@@ -93,18 +84,21 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     offload_train_target: str = "cpu"
     update_weight_buffer_size: int = 1024**3
 
-    # 15 prompts x 4 samples = 60, which divides the three DP ranks.
-    rollout_batch_size: int = 15
-    n_samples_per_prompt: int = 4
-    global_batch_size: int = 60
+    # Upstream native-LoRA DAPO batch, divisible by the two DP ranks.
+    rollout_batch_size: int = 4
+    n_samples_per_prompt: int = 8
+    global_batch_size: int = 32
+    # The inference window includes both the prompt and its response.
+    rollout_max_prompt_len: int = 4096
     rollout_max_context_len: int = 32768
-    rollout_max_response_len: int = 32768
+    rollout_max_response_len: int = 28672
     rm_type: str | None = "math"
     balance_data: bool = True
     skip_eval_before_train: bool = True
     use_rollout_routing_replay: bool = True
     lr: float = 1e-5
     calculate_per_token_loss: bool = True
+    use_dynamic_batch_size: bool = False
     micro_batch_size: MicroBatchSize = 1
     seq_length: int = 32768
     max_tokens_per_gpu: MicroBatchSize = 32768
@@ -117,13 +111,14 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
     sglang_ep_size: int = 8
     sglang_dp_size: int | None = 1
     sglang_context_length: int = 32768
-    sglang_mem_fraction_static: float = 0.65
+    sglang_mem_fraction_static: float = 0.5
     sglang_lora_backend: str | None = "triton"
     sglang_max_lora_rank: int = 16
     sglang_max_loras_per_batch: int = 1
     sglang_moe_runner_backend: str | None = "triton"
     sglang_disable_shared_experts_fusion: bool = True
     sglang_chunked_prefill_size: int = 8192
+    sglang_disable_radix_cache: bool = True
     sglang_dsa_prefill_backend: str = "tilelang"
     sglang_dsa_decode_backend: str = "tilelang"
     sglang_kv_cache_dtype: str = "bfloat16"
@@ -137,7 +132,8 @@ class GLM_5_3_Flash_LoRA_Recipe(MilesRecipe):
 
     environment: dict[str, str] = field(
         default_factory=lambda: {
-            "PYTHONPATH": "/root/Megatron-LM/",
+            "PYTHONPATH": "/root:/root/miles:/root/Megatron-LM",
+            "CONVERT_LOCAL_STAGING": "1",
             "CUDA_DEVICE_MAX_CONNECTIONS": "1",
             "NCCL_MNNVL_ENABLE": "0",
             "SGLANG_SKIP_CHECKPOINT_LOAD_CHECK": "1",
