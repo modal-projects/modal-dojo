@@ -746,6 +746,19 @@ class MilesRecipe(BaseTrainRecipe):
         return self
 
     @model_validator(mode="after")
+    def _validate_over_sampling_batch_size(self) -> "MilesRecipe":
+        hatch = self._escape_hatch_values()
+        over = hatch.get("over_sampling_batch_size", self.over_sampling_batch_size)
+        rollout = hatch.get("rollout_batch_size", self.rollout_batch_size)
+        if over is not None and rollout is not None and int(over) < int(rollout):
+            raise DojoConfigError(
+                f"over_sampling_batch_size={over} must be >= rollout_batch_size="
+                f"{rollout}; Miles asserts this at startup. Raise "
+                "over_sampling_batch_size or lower rollout_batch_size."
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_tito_session_server(self) -> "MilesRecipe":
         hatch = self._escape_hatch_values()
         tito_model = hatch.get("tito_model", getattr(self, "tito_model", None))
