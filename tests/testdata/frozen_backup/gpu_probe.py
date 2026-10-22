@@ -76,7 +76,9 @@ def main(mode, mutation):
             del pressure
             assert torch.equal(base, oracle)
             assert torch.equal(tail.cpu(), tail_oracle)
-            assert torch.equal(forward(base), expected), "eager logprobs changed after restore"
+            assert torch.equal(forward(base), expected), (
+                "eager logprobs changed after restore"
+            )
             graph.replay()
             torch.cuda.synchronize()
             torch.testing.assert_close(graph_output, expected, rtol=0, atol=0)
