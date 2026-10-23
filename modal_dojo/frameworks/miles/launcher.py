@@ -997,7 +997,29 @@ def build_miles_app(
                     save_root, is_complete=_is_resumable_checkpoint
                 )
                 record_resume_checkpoint(run_record, resume_checkpoint)
-                with shared.resumed_recipe(miles, save_root, resume_checkpoint):
+                resume_overrides = {}
+                if (
+                    miles.megatron_to_hf_mode == "raw"
+                    and miles.lora_rank is not None
+                    and hasattr(miles, "lora_adapter_path")
+                ):
+                    adapter_path = (
+                        os.path.join(
+                            resume_checkpoint["resume_checkpoint_path"], "adapter"
+                        )
+                        if resume_checkpoint is not None
+                        else miles.lora_adapter_path
+                    )
+                    if adapter_path is not None:
+                        # Native LoRA loads the frozen base separately from the adapter.
+                        # Explicit --load also prevents Miles resetting optimizer/rollout state.
+                        resume_overrides = {
+                            "load": miles.ref_load,
+                            "lora_adapter_path": adapter_path,
+                        }
+                with shared.resumed_recipe(
+                    miles, save_root, resume_checkpoint, overrides=resume_overrides
+                ):
                     if resume_checkpoint is None and (
                         unresumable := _unresumable_save_dirs(save_root)
                     ):

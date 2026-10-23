@@ -801,10 +801,25 @@ def _lora_resume_adapter_dir(recipe: Any, extra: dict[str, Any]) -> str | None:
 
 
 @contextmanager
-def resumed_recipe(recipe: Any, save_root: str, checkpoint: dict[str, Any] | None):
+def resumed_recipe(
+    recipe: Any,
+    save_root: str,
+    checkpoint: dict[str, Any] | None,
+    *,
+    overrides: dict[str, Any] | None = None,
+):
+    """Apply resume defaults, then framework overrides; restore fields on exit."""
+    overrides = overrides or {}
     original = {
         field: getattr(recipe, field)
-        for field in ("save", "load", "start_rollout_id", "ref_load", "no_load_optim")
+        for field in (
+            "save",
+            "load",
+            "start_rollout_id",
+            "ref_load",
+            "no_load_optim",
+            *overrides,
+        )
     }
     try:
         if checkpoint is not None:
@@ -836,6 +851,8 @@ def resumed_recipe(recipe: Any, save_root: str, checkpoint: dict[str, Any] | Non
                     "WARNING: no_save_optim=True — enabling no_load_optim for resume."
                 )
             recipe.no_load_optim = recipe.no_save_optim
+        for field, value in overrides.items():
+            setattr(recipe, field, value)
         yield
     finally:
         for field, value in original.items():
