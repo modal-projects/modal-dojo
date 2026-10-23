@@ -426,6 +426,44 @@ table.resizable-table th {
   white-space: nowrap;
 }
 
+.column-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.column-sort .sort-idle {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.column-sort:hover .sort-idle,
+.column-sort:focus-visible .sort-idle {
+  opacity: 0.6;
+}
+
+.column-sort:hover {
+  color: var(--text-bright);
+}
+
+.column-sort.sort-active {
+  color: var(--text-bright);
+}
+
+.column-sort:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .column-resize-handle {
   position: absolute;
   top: 0;
@@ -2217,6 +2255,28 @@ table.training-runs-table td.row-open-cell {
   margin-bottom: 6px;
 }
 
+.rollout-timing {
+  margin-bottom: 12px;
+}
+
+.rollout-timing > summary {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  user-select: none;
+}
+
+.rollout-timing > summary:hover {
+  color: var(--text-bright);
+}
+
+.rollout-timing[open] > summary {
+  margin-bottom: 6px;
+}
+
 table.rollout-table {
   width: 100%;
   border-collapse: collapse;
@@ -2306,6 +2366,31 @@ table.rollout-table th:nth-child(4) .column-label {
   letter-spacing: 0.04em;
 }
 
+.dist-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-bright);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+
+.dist-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dist-filter-clear:hover,
+.dist-filter-clear:focus-visible {
+  color: var(--text-bright);
+}
+
 /* ── Single-sample viewer (bucket drill-in) ──────────────────────────── */
 .sample-viewer {
   border-left: 2px solid var(--accent);
@@ -2337,6 +2422,13 @@ table.rollout-table th:nth-child(4) .column-label {
 .sample-viewer-hint {
   font-size: 11px;
   color: var(--muted);
+}
+
+.step-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
 }
 
 .sample-nav-btn {

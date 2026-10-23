@@ -1,10 +1,13 @@
 <script>
   import { onDestroy } from "svelte";
+  import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-svelte";
   import MinimalTable from "./MinimalTable.svelte";
 
   let {
     columns = [],
     stickyFirstColumn = false,
+    sort = null,
+    onSort = null,
     class: classOverride = "",
     style: styleOverride = "",
     ...restProps
@@ -87,7 +90,26 @@
     <tr>
       {#each columns as column (column.key)}
         <th class:resizing={resizeState?.key === column.key}>
-          <span class="column-label">{column.label}</span>
+          {#if column.sortable && onSort}
+            <button
+              type="button"
+              class="column-sort"
+              class:sort-active={sort?.key === column.key}
+              aria-label={`Sort by ${column.ariaLabel || column.label || "column"}`}
+              onclick={() => onSort(column.key)}
+            >
+              <span class="column-label">{column.label}</span>
+              {#if sort?.key === column.key && sort.dir === "asc"}
+                <ArrowUp size={11} strokeWidth={2.2} />
+              {:else if sort?.key === column.key}
+                <ArrowDown size={11} strokeWidth={2.2} />
+              {:else}
+                <ArrowUpDown size={11} strokeWidth={2.2} class="sort-idle" />
+              {/if}
+            </button>
+          {:else}
+            <span class="column-label">{column.label}</span>
+          {/if}
           <button
             type="button"
             class="column-resize-handle"
