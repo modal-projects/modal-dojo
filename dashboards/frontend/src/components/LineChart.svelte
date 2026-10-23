@@ -17,6 +17,9 @@
     smoothingWindow = 5,
     // W&B-style panel: y range fit to the data, tick labels + gridlines.
     axes = false,
+    // A dot marker per visible step on the main series (skipped once the
+    // window holds more points than dots can distinguish).
+    dots = false,
     ariaLabel = title || "Line chart",
     formatX = (row) => String(row?.x ?? ""),
     formatY = (value) => String(value),
@@ -128,6 +131,11 @@
       ? [{ key: "y", color }, ...visibleExtraLines]
           .filter((line) => !hiddenKeys.has(line.key) && rows[0][line.key] != null)
           .map((line) => ({ ...line, ...point(rows[0], line.key) }))
+      : [],
+  );
+  let dotPoints = $derived(
+    dots && !hiddenKeys.has("y") && !singlePoint && rows.length <= 200
+      ? rows.map((row, index) => ({ index, ...point(row) }))
       : [],
   );
 
@@ -332,6 +340,18 @@
           style:left={`${p.x}%`}
           style:top={`${p.y}%`}
           style:background={p.color}
+        ></span>
+      {/each}
+
+      {#each dotPoints as p (p.index)}
+        <span
+          class="point-dot"
+          style:width="5px"
+          style:height="5px"
+          style:left={`${p.x}%`}
+          style:top={`${p.y}%`}
+          style:background={color}
+          style:box-shadow="none"
         ></span>
       {/each}
 

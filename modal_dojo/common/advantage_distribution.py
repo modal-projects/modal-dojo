@@ -60,6 +60,7 @@ def distribution_stats(values: list[float]) -> dict[str, Any]:
             "std": 0.0,
             "min": 0.0,
             "max": 0.0,
+            "zero_fraction": 0.0,
             "quantiles": {f"p{int(q * 100)}": 0.0 for q in _QUANTILES},
         }
     mean = sum(values) / n
@@ -72,6 +73,7 @@ def distribution_stats(values: list[float]) -> dict[str, Any]:
         "std": math.sqrt(var),
         "min": ordered[0],
         "max": ordered[-1],
+        "zero_fraction": sum(1 for v in values if v == 0.0) / n,
         "quantiles": {f"p{int(q * 100)}": quantile(ordered, q) for q in _QUANTILES},
     }
 

@@ -1334,9 +1334,6 @@ table.resizable-table.sticky-first-column tr.row-selected td:first-child {
   height: 2px;
   background: var(--accent);
 }
-.sw.iqr {
-  background: var(--muted);
-}
 .sw.trend {
   background: repeating-linear-gradient(
     to right,
@@ -1559,6 +1556,20 @@ table.resizable-table.sticky-first-column tr.row-selected td:first-child {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+.recipe-params-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .recipe-params-title {
@@ -2070,6 +2081,60 @@ table.training-runs-table td.row-open-cell {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+
+.summary-tab.side-collapsed {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.summary-side-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.summary-side-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.summary-side-toggle:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.summary-tab-side.collapsed {
+  padding: 10px 6px;
+}
+
+.timing-callout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--yellow, #fbbf24) 40%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--yellow, #fbbf24) 8%, transparent);
+  color: var(--yellow, #fbbf24);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.timing-callout:hover {
+  border-color: color-mix(in srgb, var(--yellow, #fbbf24) 65%, transparent);
 }
 
 .summary-tab-main {
