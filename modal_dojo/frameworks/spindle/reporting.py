@@ -313,7 +313,8 @@ class DojoReporter:
         def wrap_operation(operation, phase):
             @wraps(operation)
             async def wrapped(*args, **kwargs):
-                reporter._phase(phase, is_active=True)
+                if reporter.run.framework_status != phase:
+                    reporter._phase(phase, is_active=True)
                 token = _training_rollout.set(
                     phase is SpindleStatus.DO_GROUP_ROLLOUT_AND_FILTER_CONSTANT_REWARD
                 )
