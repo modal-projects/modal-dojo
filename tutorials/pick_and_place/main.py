@@ -5,8 +5,7 @@
 #
 # # Pick and place with a vision-language-action model
 #
-# Vision-language-action (VLA) models take in what a robot sees and what it's
-# told to do, and output what it should do next. In this tutorial, we teach
+# Vision-language-action (VLA) models function as policies for robots. They take as input a camera feed and text instructions, and return actions to execute. In this tutorial, we teach
 # [Qwen3-VL-8B](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) to act as one.
 # Given an overhead image of a table and an instruction like "Put the red block
 # in the blue tray", it answers with where to pick and where to place:
