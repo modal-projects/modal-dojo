@@ -16,7 +16,7 @@
 # ```
 #
 # We then carry out that command in a [MuJoCo](https://mujoco.org) physics
-# simulation, and the model only gets full reward if the block actually lands in
+# simulation, and the model only gets the full reward if the block actually lands in
 # the right tray.
 #
 # <video controls autoplay muted loop style="display: block; margin: 0 auto;">
