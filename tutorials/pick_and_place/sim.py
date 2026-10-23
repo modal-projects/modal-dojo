@@ -176,7 +176,7 @@ def execute(seed: int, command) -> dict:
     mujoco.mj_ray(
         model, data, np.array([*pick_xy, 0.5]), np.array([0.0, 0.0, -1.0]),
         None, True, -1, geom,
-    )  # fmt: skip
+    )
     hit = model.body(model.geom_bodyid[geom[0]]).name if geom[0] >= 0 else ""
     picked = hit if hit in COLORS else None
 
