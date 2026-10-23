@@ -20,6 +20,62 @@ TESTDATA = Path(__file__).parent / "testdata"
 FRAMEWORKS = Path(__file__).parents[1] / "modal_dojo" / "frameworks"
 
 
+def test_miles_component_async_waits_and_snapshot_eval(patchers, tmp_path):
+    source = """from __future__ import annotations
+from miles.ray.placement_group import create_rollout_components
+async def train(args):
+    await update_weights(actor_model, rollout_executor)
+    await inference_controller.prepare_eval()
+    await eval_dispatcher.dispatch(0, hf_dir=args.hf_checkpoint)
+    for rollout_id in range(args.start_rollout_id, args.num_rollout):
+        if rollout_data_next_future is not None:
+            rollout_data_curr_ref = await rollout_data_next_future
+        await actor_model.train(rollout_id, rollout_data_curr_ref)
+        rollout_data_curr_ref = (await x) if (x := rollout_data_next_future) is not None else None
+        rollout_data_next_future = None
+        await update_weights(actor_model, rollout_executor, rollout_id=rollout_id)
+        await eval_dispatcher.dispatch(rollout_id, force=rollout_id == args.num_rollout - 1)
+    await eval_dispatcher.drain()
+"""
+    patcher = patchers["miles"]
+    path = tmp_path / "train_async.py"
+    path.write_text(source)
+    patcher._patch_file(path, patcher.ENTRYPOINTS[path.name])
+    patched = path.read_text()
+    compile(patched, str(path), "exec")
+    for phase in (
+        "wait_for_rollout",
+        "wait_for_next_rollout",
+        "evaluate_rollouts",
+        "evaluate_rollouts_end",
+    ):
+        assert patcher.phase_marker(phase) in patched
+    assert patched.count("if not args.eval_uses_snapshots else _tg_nullcontext()") == 2
+    before_loop = patched.split("for rollout_id in range")[0]
+    assert before_loop.count("with _tg_rec.phase('evaluate_rollouts'):") == 1
+    # Weight sync is timed inside the executor package; the driver only opens
+    # a lane around the pre-loop call.
+    assert "weight_sync" not in patched
+    assert (
+        "    with _tg_role('driver', None) as _tg_rec:\n"
+        "        await update_weights(actor_model, rollout_executor)\n"
+    ) in before_loop
+
+
+def test_component_driver_does_not_write_partial_instrumentation(patchers, tmp_path):
+    source = """from miles.ray.placement_group import create_rollout_components
+async def train(args):
+    for rollout_id in range(args.start_rollout_id, args.num_rollout):
+        await actor_model.train(rollout_id, data)
+"""
+    path = tmp_path / "train_async.py"
+    path.write_text(source)
+    patcher = patchers["miles"]
+    with pytest.raises(RuntimeError, match="phases not instrumented"):
+        patcher._patch_file(path, patcher.ENTRYPOINTS[path.name])
+    assert path.read_text() == source
+
+
 def patcher_path(framework: str) -> Path:
     return (
         FRAMEWORKS / framework / "modal_helpers" / "patches" / "patch_substep_timing.py"
