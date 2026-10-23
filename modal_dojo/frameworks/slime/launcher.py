@@ -276,7 +276,7 @@ def _build_conversion_config(slime_cfg: Any, model: Any = None) -> dict[str, Any
 _CONVERSION_CONFIG_FILE = ".conversion_config.json"
 
 
-_LAYOUT_FLAGS = (
+_CONVERSION_PARALLELISM_FLAGS = (
     "--tensor-model-parallel-size",
     "--pipeline-model-parallel-size",
     "--expert-model-parallel-size",
@@ -286,7 +286,7 @@ _LAYOUT_FLAGS = (
 )
 
 
-def _without_layout(config: dict[str, Any]) -> dict[str, Any]:
+def _without_parallelism(config: dict[str, Any]) -> dict[str, Any]:
     rest = {
         key: value
         for key, value in config.items()
@@ -294,7 +294,9 @@ def _without_layout(config: dict[str, Any]) -> dict[str, Any]:
     }
     if isinstance(rest.get("extra_args"), list):
         rest["extra_args"] = [
-            a for a in rest["extra_args"] if not a.startswith(_LAYOUT_FLAGS)
+            a
+            for a in rest["extra_args"]
+            if not a.startswith(_CONVERSION_PARALLELISM_FLAGS)
         ]
     return rest
 
@@ -313,7 +315,7 @@ def _conversion_config_matches(stored: dict[str, Any], current: dict[str, Any]) 
         for a in current_args
     ):
         return False
-    return _without_layout(stored) == _without_layout(current)
+    return _without_parallelism(stored) == _without_parallelism(current)
 
 
 def _checkpoint_conversion_cache_status(
