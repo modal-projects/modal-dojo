@@ -15,12 +15,14 @@ dependencies = [
     "click>=8.2,<9",
     "cloudpickle",
     "datasets",
+    "flyte>=2.6.0",
     "httpx",
     "pydantic",
     "fastapi",
     "randomname",
     "rich",
     "transformers>=5.12.1",
+    "hlock>=0.5.0",
 ]
 
 [build-system]

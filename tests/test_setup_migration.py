@@ -91,9 +91,11 @@ def test_loader_ignores_legacy_and_guards_setup(paths, harness):
 
 
 @pytest.mark.parametrize("method", ["train", "launch"])
-def test_training_guard_precedes_launch_work(paths, harness, method):
+def test_training_guard_precedes_launch_work(paths, harness, method, monkeypatch):
     from modal_dojo.common.train import TrainConfig
 
+    # This guard is specific to the legacy Modal launch path; pin that backend.
+    monkeypatch.setenv("MODAL_DOJO_BACKEND", "modal")
     with pytest.raises(DojoConfigError, match="modal-dojo migrate"):
         getattr(TrainConfig, method)(object.__new__(TrainConfig))
 
