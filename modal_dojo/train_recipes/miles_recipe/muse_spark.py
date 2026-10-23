@@ -1,4 +1,4 @@
-"""64K Muse Spark B300 recipe derived from radixark/miles PR #4111.
+"""64K Muse Spark B300 recipes derived from radixark/miles PR #4111.
 
 Trains the text model with frozen omni towers and FP32 master weights; Adam
 moments use BF16 on disk.
@@ -33,6 +33,16 @@ def _image_patches() -> list[str]:
             "patch_muse_spark_hf_cache",
         )
     ]
+
+
+def _mismatch_metrics(**kwargs):
+    """Report behavior/current-policy ratios without reweighting the PPO loss."""
+    from miles.backends.training_utils.loss.hub.corrections import (
+        vanilla_tis_function,
+    )
+
+    _, _, metrics = vanilla_tis_function(**kwargs)
+    return kwargs["pg_loss"], kwargs["loss_masks"], metrics
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
@@ -173,4 +183,49 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
             "SGLANG_ENABLE_BF16_SPLITK_GEMM": "0",
             "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:False",
         }
+    )
+
+
+@dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
+class Muse_Spark_Open_64k_Async_Recipe(Muse_Spark_Open_64k_Recipe):
+    """Fully async GRPO on 32 training + 8 rollout B300 GPUs.
+
+    Based on Axiombio's separate trainer/rollout layout. Keeps the synchronous
+    recipe's checkpoint cache and streamed BF16 Adam moments. Defaults to one
+    proof step; this topology requires its own smoke validation.
+    """
+
+    async_mode: bool = True
+    fully_async: bool = True
+    colocate: bool = False
+    rollout_num_gpus: int | None = 8
+
+    # Dedicated GPUs retain both models between updates; only optimizer state
+    # streams to disk. Miles rejects target=disk when actor offload is disabled.
+    offload_train: bool = False
+    offload_rollout: bool = False
+    no_offload_train: bool = True
+    no_offload_rollout: bool = True
+    offload_train_target: str = "cpu"
+
+    # One batch can generate while another trains. Bound finished work to one
+    # batch and reject groups whose oldest generated token is >2 versions old.
+    async_max_concurrent_samples: int = 16
+    async_data_buffer_capacity_factor: float = 1.0
+    max_weight_staleness: int = 2
+    update_weights_interval: int = 1
+    pause_generation_mode: str = "retract"
+    # Anchor PPO ratios to the probabilities recorded during generation, even
+    # when a response spans weight publications. Keep the actor scoring pass
+    # for train/rollout agreement metrics during validation.
+    use_rollout_logprobs: bool = True
+    get_mismatch_metrics: bool = True
+    custom_tis_function_path: str = (
+        "modal_dojo.train_recipes.miles_recipe.muse_spark._mismatch_metrics"
+    )
+
+    sglang_max_running_requests: int | None = 16
+    sglang_server_concurrency: int | None = 16
+    sglang_cuda_graph_bs_decode: list[int] = field(
+        default_factory=lambda: [1, 2, 4, 8, 12, 16]
     )
