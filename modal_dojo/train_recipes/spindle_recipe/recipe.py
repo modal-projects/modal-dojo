@@ -1,4 +1,4 @@
-"""Run a raw Tinker Cookbook RL configuration against an owned Spindle server."""
+"""Run a raw tinker-cookbook RL configuration against an owned Spindle server."""
 
 from __future__ import annotations
 
@@ -19,20 +19,12 @@ if TYPE_CHECKING:
 
 
 class _SpindleRecipe:
-    """Minimal LoRA RL launcher; the cookbook driver runs in the caller process.
+    """Run tinker-cookbook LoRA RL locally against a managed Spindle deployment.
 
-    Install from a source checkout with ``uv sync --extra spindle`` and Python
-    3.12 (Spindle is not yet on PyPI). ``deploy_config`` is a
-    Spindle ``BaseConfig`` instance or subclass. Each call deploys its own server,
-    trainer, and sampler, then stops those apps on normal exit or failure.
-    Checkpoints remain in Spindle's configured volume. The platform must name
-    an existing sampler proxy secret. Hugging Face auth is optional for public
-    models; a missing HF secret is omitted.
-
-    Raw trajectories are printed and appended to ``log_path/dojo-trajectories.jsonl``.
-    Returns a Dojo ``TrainingRun`` and reports trajectories and scalar metrics
-    to the Dojo dashboard. Use ``train()`` in scripts or ``await train.aio()``
-    in async code. The Modal environment must match the deployment environment.
+    Requires Python 3.12, ``uv sync --extra spindle``, and a sampler proxy secret.
+    ``deploy_config`` accepts a Spindle ``BaseConfig`` instance or subclass.
+    Returns a ``TrainingRun`` with trajectories and metrics in Dojo. Backend
+    apps stop on exit; checkpoints remain on Spindle's volume.
     """
 
     def __init__(
@@ -65,7 +57,7 @@ class _SpindleRecipe:
             raise DojoConfigError("SpindleRecipe v0 supports LoRA training only")
         if not callable(rl_config.dataset_builder):
             raise DojoConfigError(
-                "dataset_builder must be a cookbook builder; convert DatasetConfig "
+                "dataset_builder must be a tinker-cookbook builder; convert DatasetConfig "
                 "with DojoDatasetBuilder.from_dataset(...) first"
             )
         if (
@@ -73,7 +65,7 @@ class _SpindleRecipe:
             or rl_config.stream_minibatch_config is not None
         ):
             raise DojoConfigError(
-                "SpindleRecipe v0 supports synchronous cookbook RL only"
+                "SpindleRecipe v0 supports synchronous tinker-cookbook RL only"
             )
         if rl_config.load_checkpoint_path is not None:
             raise DojoConfigError(
@@ -112,11 +104,7 @@ class _SpindleRecipe:
         return self._deploy_config
 
     async def train(self) -> TrainingRun:
-        """Run cookbook RL on Spindle and return its completed Dojo run.
-
-        The blocking interface is ``recipe.train()``; the asynchronous interface
-        is ``await recipe.train.aio()``. Owned apps are stopped on exit.
-        """
+        """Return a TrainingRun; use ``await recipe.train.aio()`` in async code."""
         from modal_dojo.frameworks.spindle.launcher import train
 
         return await train(self.rl_config, self.deploy_config)

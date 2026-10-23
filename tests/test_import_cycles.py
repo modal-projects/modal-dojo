@@ -134,7 +134,9 @@ def test_module_imports_alone(
     if module == "modal_dojo.frameworks.spindle.dataset_builders" and (
         importlib.util.find_spec("tinker_cookbook") is None
     ):
-        pytest.skip("Install modal-dojo[spindle] to check optional cookbook builders")
+        pytest.skip(
+            "Install modal-dojo[spindle] to check optional tinker-cookbook builders"
+        )
 
     pytest.fail(f"importing {module} first fails:\n{stderr}")
 

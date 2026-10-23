@@ -1,1 +1,1 @@
-"""Tinker Cookbook clients backed by Spindle."""
+"""tinker-cookbook clients backed by Spindle."""

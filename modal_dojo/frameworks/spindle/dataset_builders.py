@@ -1,4 +1,4 @@
-"""Optional cookbook implementations, imported only by dataset conversion."""
+"""Optional tinker-cookbook implementations, imported only by dataset conversion."""
 
 from __future__ import annotations
 

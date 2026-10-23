@@ -1,4 +1,4 @@
-"""A scoped cookbook rollout hook: capture complete groups before filtering."""
+"""A scoped tinker-cookbook rollout hook: capture complete groups before filtering."""
 
 from __future__ import annotations
 
@@ -70,8 +70,7 @@ async def capture_trajectories(log_path: str, tokenizer, *, on_group=None):
             yield path
         finally:
             rollouts.do_group_rollout = original
-            # Cookbook's gather can raise while sibling rollouts are still
-            # running. Drain them before closing the sink and stopping Spindle.
+            # Drain sibling rollouts before closing the output file.
             tasks = list(pending)
             for task in tasks:
                 task.cancel()

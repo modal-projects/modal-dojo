@@ -40,8 +40,11 @@ class MilesStatus(str, Enum):
 
 class SpindleStatus(str, Enum):
     INITIALIZING = "initializing"
-    ROLLOUT_LOGGING = "generate_rollouts"
-    TRAINING = "training"
+    DO_GROUP_ROLLOUT_AND_FILTER_CONSTANT_REWARD = (
+        "do_group_rollout_and_filter_constant_reward"
+    )
+    TRAIN_STEP = "train_step"
+    SAVE_CHECKPOINT_AND_GET_SAMPLING_CLIENT = "save_checkpoint_and_get_sampling_client"
 
 
 FrameworkStatus: TypeAlias = SlimeStatus | MilesStatus | SpindleStatus
@@ -57,6 +60,11 @@ def resolve_framework_status(phase: str, framework: str) -> FrameworkStatus | No
         raise ValueError(f"Invalid framework string detected: {framework}")
 
     status_enum = enums[framework.strip().lower()]
+    if status_enum is SpindleStatus:
+        phase = {
+            "generate_rollouts": SpindleStatus.DO_GROUP_ROLLOUT_AND_FILTER_CONSTANT_REWARD.value,
+            "training": SpindleStatus.TRAIN_STEP.value,
+        }.get(phase.strip(), phase)
     try:
         return status_enum(phase.strip())
     except ValueError:

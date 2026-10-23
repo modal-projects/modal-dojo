@@ -17,8 +17,7 @@ from types import SimpleNamespace
 from modal_dojo.common.errors import DojoConfigError
 
 logger = logging.getLogger(__name__)
-# Cookbook exposes module-level hooks. Reject overlap rather than route another
-# run's traffic or trajectories through the active run's credentials.
+# tinker-cookbook hooks are process-wide.
 _active_run = threading.Lock()
 
 
@@ -78,7 +77,6 @@ async def deployment(config, *, metric_tags=None, run=None):
     api_secret = run_name + "-api"
     recipe.platform["secrets"]["api"] = api_secret
     compiled = DeploymentConfig.create(recipe)
-    # Names are unique to this invocation, including the lazily created LoRA pool.
     # Stop producers before the pool so they cannot provision a replacement.
     names = [
         run_name,
@@ -90,8 +88,7 @@ async def deployment(config, *, metric_tags=None, run=None):
         api_secret, {"TINKER_API_KEY": api_key}, environment_name=environment
     )
     try:
-        # Shield deploy and wait for it on cancellation before attempting cleanup:
-        # a worker thread could otherwise create an app after we stopped it.
+        # Finish deployment before cleanup, even on cancellation.
         pending = asyncio.create_task(asyncio.to_thread(deploy, [compiled]))
         try:
             await asyncio.shield(pending)
@@ -156,6 +153,7 @@ async def deployment(config, *, metric_tags=None, run=None):
 
 
 async def train(config, deploy_config):
+    from modal.config import config as modal_config
     from tinker_cookbook.rl import train as rl_train
     from tinker_cookbook.tokenizer_utils import get_tokenizer
 
@@ -167,7 +165,11 @@ async def train(config, deploy_config):
         )
     original_tinker = rl_train.tinker
     try:
-        # Resolve the tokenizer before deploying GPUs; preserve the caller's config.
+        deploy_config = copy.deepcopy(deploy_config)
+        deploy_config.platform["modal"]["environment"] = deploy_config.platform[
+            "modal"
+        ]["environment"] or modal_config.get("environment")
+        # Resolve the tokenizer before deploying GPUs.
         tokenizer = get_tokenizer(config.model_name)
         from modal_dojo.common import modal_tag_value
 
@@ -181,20 +183,20 @@ async def train(config, deploy_config):
             async with deployment(
                 deploy_config, metric_tags=metric_tags, run=reporter.run
             ) as (url, api_key):
-                await _run_cookbook(config, url, api_key, tokenizer, reporter)
+                await _run_tinker_cookbook(config, url, api_key, tokenizer, reporter)
         return reporter.run
     finally:
         rl_train.tinker = original_tinker
         _active_run.release()
 
 
-async def _run_cookbook(config, url, api_key, tokenizer, reporter):
+async def _run_tinker_cookbook(config, url, api_key, tokenizer, reporter):
     import chz
     import tinker
     from tinker_cookbook.rl import train as rl_train
     from .trajectories import capture_trajectories
 
-    with reporter.cookbook_hooks(rl_train):
+    with reporter.tinker_cookbook_hooks(rl_train):
         clients = []
 
         def service_client(**kwargs):
@@ -204,7 +206,7 @@ async def _run_cookbook(config, url, api_key, tokenizer, reporter):
             clients.append(client)
             return client
 
-        # Patch only cookbook's module reference, not the SDK or process env.
+        # Scope client routing to tinker-cookbook.
         rl_train.tinker = SimpleNamespace(
             **{
                 **vars(tinker),
@@ -226,9 +228,7 @@ async def _run_cookbook(config, url, api_key, tokenizer, reporter):
                 try:
                     await asyncio.wait_for(client.close(status), timeout=30)
                 except tinker.NotFoundError:
-                    # This Spindle revision lacks the SDK's session-finish
-                    # route. close() still releases local holders in finally;
-                    # the owned deployment is stopped immediately below.
+                    # Spindle lacks session-finish; close() still releases local holders.
                     pass
                 except Exception:
-                    logger.exception("Could not close cookbook's Spindle client")
+                    logger.exception("Could not close tinker-cookbook's Spindle client")

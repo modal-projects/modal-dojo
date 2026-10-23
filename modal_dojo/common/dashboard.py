@@ -18,7 +18,7 @@ DASHBOARD_PREVIEW_ENV_KEY = "MODAL_DOJO_DASHBOARD_PREVIEW"
 DASHBOARD_VERSION_ENV_KEY = "DASHBOARD_VERSION"
 
 # Bump when the deployed dashboard frontend or backend changes.
-DASHBOARD_VERSION = 9
+DASHBOARD_VERSION = 10
 
 
 def current_dashboard_version() -> str:
@@ -40,7 +40,9 @@ class DashboardLookupUnknown(Exception):
     """Modal lookup of the dashboard app failed before not-found could be observed."""
 
 
-def deployed_dashboard_url(app_name: str = DASHBOARD_APP_NAME) -> str | None:
+def deployed_dashboard_url(
+    app_name: str = DASHBOARD_APP_NAME, *, environment_name: str | None = None
+) -> str | None:
     """Return the live dashboard web URL if its app is deployed, else ``None``.
 
     Raises ``DashboardLookupUnknown`` when lookup fails before that can
@@ -50,7 +52,9 @@ def deployed_dashboard_url(app_name: str = DASHBOARD_APP_NAME) -> str | None:
     from modal.exception import NotFoundError
 
     try:
-        fn = modal.Function.from_name(app_name, DASHBOARD_WEB_FUNCTION)
+        fn = modal.Function.from_name(
+            app_name, DASHBOARD_WEB_FUNCTION, environment_name=environment_name
+        )
         fn.hydrate()
         url = fn.get_web_url()
     except NotFoundError:

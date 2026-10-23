@@ -42,9 +42,6 @@ jobs:
       - name: Run tests
         run: uv run pytest tests/ -v
 
-      - name: Test optional Spindle integration
-        run: uv run --extra spindle pytest tests/test_spindle.py -q
-
       - name: Verify package builds
         run: uv build
 

@@ -8,6 +8,8 @@ import json
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from contextvars import ContextVar
 from enum import Enum
 from functools import partial
 from typing import Any, Literal, TypeVar, cast, overload
@@ -18,6 +20,17 @@ T = TypeVar("T")
 
 METADATA_VOLUME_NAME = "modal-dojo-metadata"
 _READ_CONCURRENCY = 16
+_environment: ContextVar[str | None] = ContextVar("metadata_environment", default=None)
+
+
+@contextmanager
+def metadata_environment(name: str | None):
+    """Select a metadata environment for this task without changing process config."""
+    token = _environment.set(name)
+    try:
+        yield
+    finally:
+        _environment.reset(token)
 
 
 @exclude_from_api_reference
@@ -144,7 +157,11 @@ def _canonical_items_for(
 def _metadata_volume():
     import modal
 
-    return modal.Volume.from_name(METADATA_VOLUME_NAME, create_if_missing=True)
+    return modal.Volume.from_name(
+        METADATA_VOLUME_NAME,
+        create_if_missing=True,
+        environment_name=_environment.get(),
+    )
 
 
 def _safe_reload(vol, *, is_async: bool = False):

@@ -8,7 +8,7 @@ common sources like Hugging Face and Harbor.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 import hashlib
@@ -43,14 +43,10 @@ class DatasetConfig(ABC):
     _type: DatasetType = DatasetType.DEFAULT
 
     def to_dataset_builder(self, **kwargs: Any) -> RLDatasetBuilder:
-        """Opt in to cookbook RL; generic rows do not define an environment/reward.
-
-        Unsupported sources fail during conversion, before a Spindle deployment.
-        Existing non-cookbook dataset subclasses need not implement this method.
-        """
+        """Convert to tinker-cookbook RL; unsupported datasets fail before deployment."""
         raise DojoConfigError(
-            f"{type(self).__name__} does not support cookbook RL. "
-            "Implement to_dataset_builder() or pass a cookbook RLDatasetBuilder."
+            f"{type(self).__name__} does not support tinker-cookbook RL. "
+            "Implement to_dataset_builder() or pass a tinker-cookbook RLDatasetBuilder."
         )
 
     def cache_key(self) -> str | None:
@@ -244,11 +240,38 @@ class HuggingFaceDataset(DatasetConfig):
         self.prompt_template = prompt_template
         self.always_download = always_download
 
-    def to_dataset_builder(self, **kwargs: Any) -> RLDatasetBuilder:
-        """Build single-turn RL groups; supply reward_fn(response_text, label)."""
-        from modal_dojo.frameworks.spindle.dataset import huggingface_builder
+    def to_dataset_builder(
+        self,
+        *,
+        model_name: str,
+        renderer_name: str,
+        batch_size: int,
+        group_size: int,
+        reward_fn: Callable[[str, Any], float],
+    ) -> RLDatasetBuilder:
+        """Build single-turn RL groups using reward_fn(response_text, label)."""
+        if self.input_format == "raw":
+            raise DojoConfigError("tinker-cookbook requires text or messages input")
+        if self.label_key() is None:
+            raise DojoConfigError(
+                "tinker-cookbook requires an output_column for rewards"
+            )
+        if not callable(reward_fn):
+            raise DojoConfigError(
+                "reward_fn must score (response_text, label) -> float"
+            )
+        if batch_size < 1 or group_size < 1:
+            raise DojoConfigError("batch_size and group_size must be positive")
+        from modal_dojo.frameworks.spindle.dataset_builders import HuggingFaceBuilder
 
-        return huggingface_builder(self, **kwargs)
+        return HuggingFaceBuilder(
+            dataset=self,
+            model_name=model_name,
+            renderer_name=renderer_name,
+            batch_size=batch_size,
+            group_size=group_size,
+            reward_fn=reward_fn,
+        )
 
     def cache_key(self) -> str | None:
         if self.always_download:
@@ -386,11 +409,42 @@ class HarborDataset(DatasetConfig):
         self.shuffle_seed = shuffle_seed
         self.always_download = always_download
 
-    def to_dataset_builder(self, **kwargs: Any) -> RLDatasetBuilder:
-        """Build cookbook Harbor tool environments from the selected task split."""
-        from modal_dojo.frameworks.spindle.dataset import harbor_builder
+    def to_dataset_builder(
+        self,
+        *,
+        model_name: str,
+        renderer_name: str,
+        batch_size: int,
+        group_size: int,
+        **kwargs: Any,
+    ) -> RLDatasetBuilder:
+        """Build tinker-cookbook Harbor environments from the selected task split."""
+        if batch_size < 1 or group_size < 1:
+            raise DojoConfigError("batch_size and group_size must be positive")
+        if self.system_prompt:
+            raise DojoConfigError(
+                "tinker-cookbook Harbor supplies its own system prompt"
+            )
+        import chz
+        from tinker_cookbook.recipes.harbor_rl.harbor_env import HarborDatasetBuilder
+        from modal_dojo.frameworks.spindle.dataset_builders import HarborBuilder
 
-        return harbor_builder(self, **kwargs)
+        unknown = set(kwargs) - (
+            set(chz.chz_fields(HarborDatasetBuilder))
+            - {"tasks", "batch_size", "group_size", "model_name", "renderer_name"}
+        )
+        if unknown:
+            raise DojoConfigError(
+                f"Unknown tinker-cookbook Harbor options: {sorted(unknown)}"
+            )
+        return HarborBuilder(
+            dataset=self,
+            model_name=model_name,
+            renderer_name=renderer_name,
+            batch_size=batch_size,
+            group_size=group_size,
+            options=kwargs,
+        )
 
     def cache_key(self) -> str | None:
         if self.always_download:

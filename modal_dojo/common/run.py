@@ -40,6 +40,7 @@ from modal_dojo.common.torch_dist_checkpoint import (
 )
 from modal_dojo.utils.metadata import (
     MetadataStore,
+    metadata_environment,
     vol_get,
     vol_put_with_summary,
 )
@@ -217,7 +218,8 @@ class TrainingRun(BaseModel):
 
     def _reload(self) -> None:
         try:
-            stored = TrainingRun.from_id(self.training_run_id)
+            with metadata_environment((self.metadata or {}).get("modal_environment")):
+                stored = TrainingRun.from_id(self.training_run_id)
         except (KeyError, NotFoundError, *_TRANSIENT_MODAL_ERRORS):
             return
         self.status = stored.status
@@ -294,9 +296,9 @@ class TrainingRun(BaseModel):
         """Build a ``ModelConfig`` whose path targets the latest megatron checkpoint."""
         self._reload()
         if self.framework is Framework.SPINDLE:
+            # TODO(v1): Export the LoRA adapter and merge with tinker_cookbook.weights.build_hf_model.
             raise ValueError(
-                "Spindle saves Tinker checkpoints, not a serving ModelConfig. "
-                "Inspect run.metadata['spindle_checkpoints'] for the saved paths."
+                "Spindle checkpoint conversion to a serving model is not supported in v0."
             )
         raw = self.source_model
         if raw is None:
@@ -680,13 +682,15 @@ class TrainingRun(BaseModel):
             )
 
         try:
-            stored = vol_get(
-                MetadataStore.TRAINING_RUNS, self.training_run_id, is_async=is_async
-            )
+            with metadata_environment((self.metadata or {}).get("modal_environment")):
+                stored = vol_get(
+                    MetadataStore.TRAINING_RUNS, self.training_run_id, is_async=is_async
+                )
         except Exception:
             stored = None
         if not is_async:
-            write(payload_with_stored_metadata(stored))
+            with metadata_environment((self.metadata or {}).get("modal_environment")):
+                write(payload_with_stored_metadata(stored))
             self._dashboard_component_updates.clear()
             return None
 
@@ -697,9 +701,10 @@ class TrainingRun(BaseModel):
                     stored_data = await stored
                 except Exception:
                     stored_data = None
-            result = write(payload_with_stored_metadata(stored_data))
-            if result is not None:
-                await result
+            with metadata_environment((self.metadata or {}).get("modal_environment")):
+                result = write(payload_with_stored_metadata(stored_data))
+                if result is not None:
+                    await result
             self._dashboard_component_updates.clear()
 
         return _save_async()
