@@ -21,6 +21,7 @@ def configured_dashboard_url(monkeypatch):
         lambda: "https://example.test",
     )
     monkeypatch.setattr(client_module, "modal_proxy_auth_headers", lambda: {})
+    monkeypatch.setattr(client_module, "get_dashboard_password", lambda: "")
 
 
 @pytest.fixture
@@ -94,6 +95,23 @@ def test_sends_basic_auth_when_password_exists(monkeypatch, mock_transport):
         client.get_json("/api/items")
 
     expected = base64.b64encode(b"modal-dojo:secret").decode()
+    assert requests[0].headers["authorization"] == f"Basic {expected}"
+
+
+def test_sends_saved_password_when_env_is_unset(monkeypatch, mock_transport):
+    monkeypatch.delenv("MODAL_DOJO_DASHBOARD_PASSWORD", raising=False)
+    monkeypatch.setattr(client_module, "get_dashboard_password", lambda: "saved")
+    requests = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={})
+
+    mock_transport(respond)
+    with DashboardClient() as client:
+        client.get_json("/api/items")
+
+    expected = base64.b64encode(b"modal-dojo:saved").decode()
     assert requests[0].headers["authorization"] == f"Basic {expected}"
 
 
