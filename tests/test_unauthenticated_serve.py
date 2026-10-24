@@ -24,7 +24,7 @@ def test_sglang_builder_accepts_unauthenticated() -> None:
 
 def test_vllm_builder_accepts_unauthenticated() -> None:
     parameters = inspect.signature(build_vllm_serve_app).parameters
-    assert parameters["unauthenticated"].default is True
+    assert parameters["unauthenticated"].default is False
 
 
 def test_vllm_builder_forwards_unauthenticated_to_app_server() -> None:
@@ -56,10 +56,10 @@ def test_vllm_builder_forwards_unauthenticated_to_app_server() -> None:
     assert captured["unauthenticated"] is False
 
 
-def test_default_unauthenticated_is_true() -> None:
+def test_default_unauthenticated_is_false() -> None:
     parameters = inspect.signature(CustomDeployment.launch).parameters
     assert parameters["recipe"].default is None
-    assert parameters["unauthenticated"].default is True
+    assert parameters["unauthenticated"].default is False
     assert {
         "endpoint_name",
         "environment",
@@ -106,7 +106,7 @@ def test_sglang_serve_forwards_unauthenticated() -> None:
     assert deployment.model.model_name == "test/model"
 
 
-def _serve_vllm(*, unauthenticated: bool = True) -> tuple[object, MagicMock]:
+def _serve_vllm(*, unauthenticated: bool = False) -> tuple[object, MagicMock]:
     fake_app = MagicMock()
     fake_app.app_id = "ap-test"
     fake_server = MagicMock()
@@ -146,7 +146,7 @@ def test_vllm_serve_forwards_default_unauthenticated() -> None:
     deployment, mock_build = _serve_vllm()
     assert deployment.url == "https://example.modal.run"
     mock_build.assert_called_once()
-    assert mock_build.call_args.kwargs["unauthenticated"] is True
+    assert mock_build.call_args.kwargs["unauthenticated"] is False
 
 
 def test_from_config_missing_unauthenticated_defaults_true() -> None:

@@ -100,6 +100,7 @@ def deploy_base_models():
         ),
         app_name="cross-tok-distill-teacher",
         served_model_name="deepseek-v4-flash",
+        unauthenticated=True,
     )
 
     base_student_deployment.wait_until_ready(timeout=STUDENT_READY_TIMEOUT)
