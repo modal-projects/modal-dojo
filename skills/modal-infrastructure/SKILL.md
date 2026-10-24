@@ -177,7 +177,7 @@ Do **not** use `--tool-call-parser qwen` or `qwen25` for Qwen3.5. Those parsers 
 </tool_call>
 ```
 
-With `qwen`/`qwen25`, SGLang logs `Failed to parse JSON part: ...` and the OpenAI response contains an empty `tool_calls` list, causing agent loops to hit `Reached max iterations without a final response.`. The `qwen3_coder` parser (and the `qwen3` reasoning parser for any inline thinking) handles the XML format correctly on the default `lmsysorg/sglang:v0.5.12` image.
+With `qwen`/`qwen25`, SGLang logs `Failed to parse JSON part: ...` and the OpenAI response contains an empty `tool_calls` list, causing agent loops to hit `Reached max iterations without a final response.`. The `qwen3_coder` parser (and the `qwen3` reasoning parser for any inline thinking) handles the XML format correctly on the default `lmsysorg/sglang:v0.5.22` image.
 
 (Qwen3.6-35B is a separate case: pass `--tool-call-parser qwen` on `SglangRecipe`, not `qwen3_coder`.)
 

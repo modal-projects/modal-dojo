@@ -56,7 +56,7 @@ class SglangRecipe(BaseDeployRecipe):
     mem_fraction_static: float | None = None
     chunked_prefill_size: int | None = None
     max_running_requests: int | None = None
-    sglang_image: str = "lmsysorg/sglang:v0.5.12"
+    sglang_image: str = "lmsysorg/sglang:v0.5.22"
     extra_server_args: dict[str, str] | None = None
     env_vars: dict[str, str] = field(default_factory=dict)
     install_transformers_from_git: bool = True
