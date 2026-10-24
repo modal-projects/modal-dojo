@@ -16,8 +16,8 @@ class SglangRecipe(BaseDeployRecipe):
         tp:
             Tensor-parallel degree and GPU count. Defaults to one.
         dp:
-            Data-parallel degree passed as ``--dp-size``. When set, the recipe also
-            passes ``--enable-dp-attention``.
+            Attention data-parallel degree passed as ``--attn-dp-size``. Requires
+            SGLang v0.5.22 or newer.
         context_length:
             Maximum context length. The model default applies when unset.
         mem_fraction_static:
