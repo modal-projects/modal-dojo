@@ -16,8 +16,8 @@ class SglangRecipe(BaseDeployRecipe):
         tp:
             Tensor-parallel degree and GPU count. Defaults to one.
         dp:
-            Data-parallel degree passed as ``--dp-size``. When set, the recipe also
-            passes ``--enable-dp-attention``.
+            Attention data-parallel degree passed as ``--attn-dp-size``. Requires
+            SGLang v0.5.22 or newer.
         context_length:
             Maximum context length. The model default applies when unset.
         mem_fraction_static:
@@ -56,7 +56,10 @@ class SglangRecipe(BaseDeployRecipe):
     mem_fraction_static: float | None = None
     chunked_prefill_size: int | None = None
     max_running_requests: int | None = None
-    sglang_image: str = "lmsysorg/sglang:v0.5.12"
+    sglang_image: str = (
+        "lmsysorg/sglang:v0.5.22@sha256:"
+        "e3a4f06001a29542fc4a8638536d9ffc5eb9c9942b08603c09b19a56eae4a1ae"
+    )
     extra_server_args: dict[str, str] | None = None
     env_vars: dict[str, str] = field(default_factory=dict)
     install_transformers_from_git: bool = True
