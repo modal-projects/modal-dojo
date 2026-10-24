@@ -33,7 +33,7 @@ def build_sglang_serve_app(
     revision: str | None = None,
     checkpoints_volume: "Volume | str | None" = None,
     checkpoints_mount_path: str | None = None,
-    unauthenticated: bool = True,
+    unauthenticated: bool = False,
 ) -> "App":
     import modal
     from modal import App, Image, Volume
