@@ -121,7 +121,7 @@ class Endpoint:
         checkpoint: Checkpoint | None = None,
         *,
         endpoint_name: str | None = None,
-        unauthenticated: bool = True,
+        unauthenticated: bool = False,
         routing_region: str | None = None,
         environment: str | None = None,
         colocate_compute: bool = False,
