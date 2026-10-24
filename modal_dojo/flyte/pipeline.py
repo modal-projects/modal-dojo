@@ -25,7 +25,11 @@ from typing import TYPE_CHECKING, Any
 import flyte
 import flyte.io
 
-from modal_dojo.flyte.env import data_environment
+from modal_dojo.flyte.env import (
+    apple_silicon_train_environment,
+    data_environment,
+    gpu_train_environment,
+)
 
 if TYPE_CHECKING:
     from modal_dojo.common.models import ModelConfig
@@ -34,13 +38,16 @@ if TYPE_CHECKING:
 
 # ── Module-level environments ────────────────────────────────────────────────
 # v1 ships a single CPU environment hosting every stage so that ``flyte.run``
-# builds/registers exactly one image and remote resolution just works. GPU +
-# framework-image allocation is a deployed-workflow concern (phase 2; see
-# ``flyte/DESIGN.md``): resource requests and per-env images are baked into a
-# TaskEnvironment at definition time in Flyte 2, so they can't float per-call.
-# ``env.train_environment`` remains exported for building a separate GPU env in
-# a deployed framework module.
+# builds/registers exactly one image and remote resolution just works. To
+# exercise the ``minimal`` trainer on a real accelerator we attach the train
+# stage to GPU / Apple-Silicon environments as well; each is a module-level
+# ``TaskEnvironment`` (resources are baked at definition time in Flyte 2), and
+# the ``main`` driver picks which train task to call from its ``accelerator``
+# input. Framework-image GPU allocation stays a phase-2 concern (see
+# ``flyte/DESIGN.md``).
 data_env = data_environment()
+gpu_env = gpu_train_environment()
+apple_silicon_env = apple_silicon_train_environment()
 
 
 # ── Stage helpers ────────────────────────────────────────────────────────────
@@ -143,14 +150,28 @@ def _train_minimal(
     )
     model = GPT2LMHeadModel(config)
 
+    # Use whatever accelerator the scheduler put us on: prefer MPS (Apple
+    # Silicon devbox), then CUDA (a ``--gpu`` devbox / DGX / Union nodepool),
+    # falling back to CPU. The backend routes the train stage onto the matching
+    # environment; this is just the final, defensive hop so the loop actually
+    # runs on the device that's present.
+    if torch.backends.mps.is_available():
+        device = "mps"
+    elif torch.cuda.is_available():
+        device = "cuda"
+    else:
+        device = "cpu"
+    print(f"[dojo/flyte] minimal train on device: {device}")
+
     def _ids(text: str) -> list[int]:
         return [b % 256 for b in text.encode("utf-8")]
 
     flat: list[int] = [e for t in texts for e in _ids(t)][:seq_len] or [1]
     ids = (flat + [0] * seq_len)[:seq_len]  # right-pad to seq_len
 
-    input_ids = torch.tensor([ids], dtype=torch.long)  # shape [1, seq_len]
+    input_ids = torch.tensor([ids], dtype=torch.long).to(device)  # [1, seq_len]
     labels = input_ids.clone()
+    model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
     model.train()
@@ -161,16 +182,19 @@ def _train_minimal(
         loss.backward()
         optimizer.step()
 
+    loss_cpu = float(loss.detach().cpu().item())
+    model.to("cpu")  # serialization-friendly: save_pretrained from a stable device
     model.save_pretrained(checkpoints_dir_local)
     with open(os.path.join(checkpoints_dir_local, "run_summary.json"), "w") as f:
         json.dump(
             {
                 "mode": "minimal",
+                "device": device,
                 "dataset": type(dataset).__name__,
                 "num_texts": len(texts),
                 "seq_len": seq_len,
                 "framework": "hf-gpt2-minimal",
-                "loss": float(loss.detach().item()),
+                "loss": loss_cpu,
             },
             f,
             indent=2,
@@ -226,8 +250,7 @@ async def prepare_dataset(run_id: str, dataset: Any, model: Any) -> "flyte.io.Di
 # ── Stage 3: run training ────────────────────────────────────────────────────
 
 
-@data_env.task(short_name="train")
-async def train_stage(
+async def _train_one(
     run_id: str,
     model: Any,
     dataset: Any,
@@ -236,6 +259,7 @@ async def train_stage(
     hf_cache_dir: "flyte.io.Dir",
     mode: str,
 ) -> "flyte.io.Dir":
+    """Shared train-stage body; each accelerator env wraps this in its own task."""
     data_local = await data_dir.download()
     ckpt_local = os.path.join(tempfile.mkdtemp(prefix="dojo-ckpt-"), "checkpoints")
     if mode == "minimal":
@@ -247,7 +271,68 @@ async def train_stage(
     return await flyte.io.Dir.from_local(ckpt_local)
 
 
+@data_env.task(short_name="train")
+async def train_stage(
+    run_id: str,
+    model: Any,
+    dataset: Any,
+    recipe: Any,
+    data_dir: "flyte.io.Dir",
+    hf_cache_dir: "flyte.io.Dir",
+    mode: str,
+) -> "flyte.io.Dir":
+    """CPU train stage (no accelerator requested)."""
+    return await _train_one(
+        run_id, model, dataset, recipe, data_dir, hf_cache_dir, mode
+    )
+
+
+@gpu_env.task(short_name="train_gpu")
+async def train_gpu_stage(
+    run_id: str,
+    model: Any,
+    dataset: Any,
+    recipe: Any,
+    data_dir: "flyte.io.Dir",
+    hf_cache_dir: "flyte.io.Dir",
+    mode: str,
+) -> "flyte.io.Dir":
+    """GPU (``minimal``) train stage on a CUDA-capable node."""
+    return await _train_one(
+        run_id, model, dataset, recipe, data_dir, hf_cache_dir, mode
+    )
+
+
+@apple_silicon_env.task(short_name="train_apple_silicon")
+async def train_apple_silicon_stage(
+    run_id: str,
+    model: Any,
+    dataset: Any,
+    recipe: Any,
+    data_dir: "flyte.io.Dir",
+    hf_cache_dir: "flyte.io.Dir",
+    mode: str,
+) -> "flyte.io.Dir":
+    """Apple-Silicon (``minimal``) train stage, running natively on the Mac (MPS)."""
+    return await _train_one(
+        run_id, model, dataset, recipe, data_dir, hf_cache_dir, mode
+    )
+
+
 # ── Driver entrypoint ────────────────────────────────────────────────────────
+
+
+_ACCELERATORS = ("cpu", "mps", "apple", "apple_silicon", "gpu", "cuda")
+
+
+def _normalize_accelerator(accelerator: str | None) -> str:
+    """Canonicalize an accelerator name or raise ``ValueError`` if unknown."""
+    accel = (accelerator or "cpu").strip().lower()
+    if accel not in _ACCELERATORS:
+        raise ValueError(
+            f"unknown accelerator {accelerator!r}; expected one of {_ACCELERATORS}"
+        )
+    return accel
 
 
 @data_env.task(entrypoint=True, short_name="main")
@@ -257,26 +342,48 @@ async def main(
     dataset: Any,
     recipe: dict,
     mode: str,
+    accelerator: str = "cpu",
 ) -> "flyte.io.Dir":
-    """Run the download -> prepare -> train pipeline (deterministic order)."""
+    """Run the download -> prepare -> train pipeline (deterministic order).
+
+    ``accelerator`` picks which train environment the (``minimal``) train stage
+    lands on: ``cpu`` (default), ``mps``/``apple`` (Apple-Silicon devbox), or
+    ``gpu``/``cuda`` (a ``--gpu`` devbox / DGX / Union nodepool). Download and
+    dataset stages always run on the CPU ``data_env``
+    (``dojo_data_env``).
+    """
+    accel = _normalize_accelerator(accelerator)
     hf_cache = await download_model(run_id, model)
     data_dir = await prepare_dataset(run_id, dataset, model)
-    checkpoints = await train_stage(
-        run_id, model, dataset, recipe, data_dir, hf_cache, mode
-    )
+    if accel in ("mps", "apple", "apple_silicon"):
+        checkpoints = await train_apple_silicon_stage(
+            run_id, model, dataset, recipe, data_dir, hf_cache, mode
+        )
+    elif accel in ("gpu", "cuda"):
+        checkpoints = await train_gpu_stage(
+            run_id, model, dataset, recipe, data_dir, hf_cache, mode
+        )
+    else:
+        checkpoints = await train_stage(
+            run_id, model, dataset, recipe, data_dir, hf_cache, mode
+        )
     return checkpoints
 
 
-def build_pipeline(config: Any, mode: str | None = None) -> Any:
+def build_pipeline(
+    config: Any, mode: str | None = None, accelerator: str | None = None
+) -> Any:
     """Return the module-level ``main`` driver task for ``flyte.run``.
 
-    Validates ``mode`` against the configured ``TrainConfig``'s recipe framework
-    so the correct pipeline behavior is selected at submission time.
+    Validates ``mode`` and ``accelerator`` so the correct pipeline behavior is
+    selected at submission time.
 
     Args:
         config: a ``TrainConfig`` (dataset + model + recipe).
         mode: ``TrainingMode`` value; defaults to the recipe's framework, else
             ``"minimal"``.
+        accelerator: which environment hosts the ``minimal`` train stage
+            (``cpu``/``mps``/``gpu``); defaults to ``"cpu"``.
     """
     from modal_dojo.flyte import TrainingMode
     from modal_dojo.train_recipes.miles_recipe import MilesRecipe
@@ -291,4 +398,5 @@ def build_pipeline(config: Any, mode: str | None = None) -> Any:
         else:
             mode = TrainingMode.MINIMAL.value
     TrainingMode(mode)  # validate the mode value
+    _normalize_accelerator(accelerator)  # validate the accelerator value
     return main

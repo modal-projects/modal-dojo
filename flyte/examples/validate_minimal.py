@@ -6,11 +6,17 @@ download — the whole path (image, object-store I/O via ``flyte.io.Dir``,
 orchestration, checkpoint) is exercised cheaply.
 
 Usage:
-    # Union
-    python flyte/validate_minimal.py
+    # Union (or a CPU devbox)
+    python flyte/examples/validate_minimal.py
 
     # local devbox
-    MODAL_DOJO_FLYTE_CONFIG=~/.flyte/config-devbox.yaml python flyte/validate_minimal.py
+    MODAL_DOJO_FLYTE_CONFIG=~/.flyte/config-devbox.yaml \
+      python flyte/examples/validate_minimal.py
+
+This is the CPU baseline. The train stage runs on the plain ``dojo_data_env``
+environment; the minimal trainer auto-detects MPS/CUDA/CPU, so it stays on CPU
+here. Use ``validate_apple_silicon.py`` / ``validate_gpu*.py`` when you want the
+train stage pinned to a real accelerator.
 
 Set FLYTE_RUN_ONLY=1 to launch and print the run URL without blocking on
 completion (first image builds can be slow).
