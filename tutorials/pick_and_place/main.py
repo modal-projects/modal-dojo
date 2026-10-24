@@ -1,26 +1,27 @@
 # ---
-# order: 11
+# order: 9
 # deps: mujoco, numpy, pillow
 # ---
 #
-# # Pick and place with a vision-language-action model
+# # Controlling robots with VLAs
 #
-# Vision-language-action (VLA) models function as policies for robots. They take as input a camera feed and text instructions, and return actions to execute. In this tutorial, we teach
-# [Qwen3-VL-8B](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct) to act as one.
-# Given an overhead image of a table and an instruction like "Put the red block
-# in the blue tray", it answers with where to pick and where to place:
+# Vision-language-action (VLA) models function as policies for robots. They take
+# as input a camera feed and text instructions, and return actions to execute. In
+# this tutorial, we teach [Qwen3-VL-8B](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct)
+# to act as one. Given an overhead image of a table and an instruction like "Put
+# the red block in the blue tray", it answers with where to pick and where to
+# place:
 #
 # ```text
 # PICK(412, 268) PLACE(731, 590)
 # ```
 #
 # We then carry out that command in a [MuJoCo](https://mujoco.org) physics
-# simulation, and the model only gets the full reward if the block actually lands in
-# the right tray.
+# simulation, and the model only gets the full reward if the block actually lands
+# in the right tray.
 #
 # <video controls autoplay muted loop style="display: block; margin: 0 auto;">
-# <source src="/pick-and-place-before-after.mp4" type="video/mp4">
-# <source src="https://dojo.modal.dev/pick-and-place-before-after.mp4" type="video/mp4">
+# <source src="https://modal-cdn.com/cdnbot/pick-and-place-before-afterapvzgw5e_c7933051.mp4" type="video/mp4">
 # </video>
 
 import asyncio
@@ -46,25 +47,15 @@ model = Qwen3_VL_8B()
 # ## Set up the simulator
 #
 # Each scene is a table with four colored blocks and three trays, all placed
-# randomly from a seed. Why a seed? Our dataset only has to store a number, and
-# the reward function can rebuild exactly the same scene later to check the
-# model's answer. The extra blocks and trays are distractors, so the model has to
-# actually read the instruction to know what to do.
-#
-# To carry out a command, the simulator looks straight down at the pick point
-# and, if there's a block there, releases it 10 cm above the place point. Physics
-# takes over from there, so a block that lands on a tray wall can still bounce
-# out. All of this lives in
-# [`sim.py`](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/pick_and_place/sim.py)
-# so we can focus on training.
+# randomly from a seed. The simulator, in
+# [sim.py](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/pick_and_place/sim.py),
+# grabs the block under the pick point, drops it over the place point, and lets
+# MuJoCo physics decide where it lands.
 #
 # ## Define a scoring function
 #
-# How should we score a command? We could return 1 if the right block ends up in
-# the right tray and 0 otherwise, but then grabbing the wrong block looks no
-# different from grabbing the right one and dropping it just short. Instead, we
-# give 0.25 for picking up the right block, so the model gets credit for reading
-# the instruction correctly even before its placement is accurate.
+# Success alone is a sparse signal, so we also give partial credit for picking
+# the right block. This gives the model more granular rewards to learn from.
 
 
 def score_response(response: str, seed: int) -> tuple[float, bytes | None]:
@@ -81,10 +72,8 @@ def score_response(response: str, seed: int) -> tuple[float, bytes | None]:
 
 # ## Get the dataset
 #
-# Rather than downloading a dataset, we generate one. Each row holds a rendered
-# overhead image, the instruction, and the scene's seed as the label. Note that
-# there are no answers: the simulator is the grader! We train on seeds 0 to 2047
-# and hold out 100 scenes from a separate range for evaluation.
+# We generate scenes from the simulator and use each scene's seed as its label,
+# so every scene is unique and the reward function can rebuild it for grading.
 
 PROMPT = (
     "<image>\n"
@@ -118,9 +107,9 @@ eval_dataset = PickAndPlaceDataset(range(100_000, 100_100))
 
 # ## Deploy the base model
 #
-# We serve the base model with a
-# [CustomDeployment](https://dojo.modal.dev/reference/customdeployment) to get a
-# baseline for performance.
+# Qwen3-VL isn't available on [Endpoints](https://modal.com/docs/guide/endpoints),
+# so we use a [CustomDeployment](https://dojo.modal.dev/reference/customdeployment)
+# to deploy the base and trained models.
 
 
 def deploy_base_model():
@@ -137,14 +126,12 @@ def deploy_base_model():
 
 # ## Evaluate the base model
 #
-# For RL to work, the base model needs to succeed some of the time, but not
-# always. Why? GRPO learns by comparing several answers to the same prompt, and
-# if they all get the same reward, there's nothing to compare. If the base model
-# is near 0% or 100%, lower or raise `sim.N_BLOCKS` and `sim.N_TRAYS` to make the
-# task easier or harder.
+# We report two rates: how often the model picks the right block, and how often
+# that block ends up in the right tray. Separating them shows whether errors come
+# from reading the instruction or from placement.
 
 
-def run_eval(deployment, max_concurrency: int = 8) -> float:
+def run_eval(deployment, max_concurrency: int = 8) -> None:
     def _score_one(row):
         content = [
             {"type": "text", "text": row["prompt"].replace("<image>", "").strip()},
@@ -153,25 +140,26 @@ def run_eval(deployment, max_concurrency: int = 8) -> float:
         message = deployment.chat([{"role": "user", "content": content}])
         response = model.parse_response(message.get("content") or "").content
         reward, _ = score_response(response, int(row["label"]))
-        return reward == 1.0
+        return reward
 
     with ThreadPoolExecutor(max_workers=max_concurrency) as executor:
-        successes = list(executor.map(_score_one, eval_dataset.rows()))
-    return sum(successes) / len(successes)
+        rewards = list(executor.map(_score_one, eval_dataset.rows()))
+    picked = sum(reward > 0 for reward in rewards) / len(rewards)
+    success = sum(reward == 1.0 for reward in rewards) / len(rewards)
+    print(f"picked right block: {picked:.1%}")
+    print(f"success rate: {success:.1%}")
 
 
 def run_baseline_evals(deployment):
     print("running base model evaluation...")
-    print(f"success rate: {run_eval(deployment):.1%}")
+    run_eval(deployment)
 
 
 # ## Creating a reward function
 #
-# To make our scoring function a reward function, we parse the model's response
-# and score it against the scene in the label. The simulation is CPU-bound, so we
-# run it in a thread to keep the event loop free. We also attach the final
-# overhead frame to each sample, so you can see where every block ended up in
-# the dashboard's rollout view.
+# The reward function scores many rollouts concurrently, so we keep the CPU-bound
+# simulation off the event loop. We also attach each rollout's final frame so you
+# can see what the model actually did in the dashboard's rollout view.
 
 
 async def pick_and_place_rm(args, sample, **kwargs) -> float:
@@ -187,25 +175,15 @@ async def pick_and_place_rm(args, sample, **kwargs) -> float:
 
 # ## Begin training
 #
-# Since the reward function runs MuJoCo inside the training containers, we extend
-# the training image with an `image_overlay` that installs MuJoCo and OSMesa (for
-# rendering without a display) and copies in `sim.py`. Each step samples 8 scenes
-# with 8 commands each, and we train for 200 steps.
+# The reward function runs the simulator inside the training containers, so the
+# training image needs MuJoCo, a headless renderer (OSMesa), and `sim.py`. We only
+# serve the checkpoints and never resume from them, so we skip saving optimizer
+# state to keep each checkpoint the size of the model weights.
 #
-# ![Reward curve](/pick-and-place-reward.webp)
-#
-# The training reward climbs quickly and then saturates. Since it includes the
-# partial credit for picking the right block, the held-out eval below is a better
-# measure of how often the model actually succeeds.
-
-
-def pick_and_place_image(image):
-    return (
-        image.apt_install("libosmesa6")
-        .uv_pip_install("mujoco", "numpy", "pillow")
-        .add_local_file(sim.__file__, remote_path="/root/sim.py", copy=True)
-    )
-
+# GRPO learns by comparing several answers to the same prompt, so the base model
+# needs to succeed some of the time, but not always. If your baseline is near 0%
+# or 100%, change `sim.N_BLOCKS` and `sim.N_TRAYS` to make the task easier or
+# harder.
 
 config = TrainConfig(
     model=model,
@@ -214,7 +192,7 @@ config = TrainConfig(
         actor_num_gpus_per_node=8,
         tensor_model_parallel_size=4,
         num_rollout=200,
-        save_interval=200,
+        save_interval=50,
         rollout_batch_size=8,
         n_samples_per_prompt=8,
         global_batch_size=32,
@@ -222,7 +200,11 @@ config = TrainConfig(
         sglang_mem_fraction_static=0.75,
         custom_rm_function=pick_and_place_rm,
         no_save_optim=True,
-        image_overlay=pick_and_place_image,
+        image_overlay=lambda image: (
+            image.apt_install("libosmesa6")
+            .uv_pip_install("mujoco", "numpy", "pillow")
+            .add_local_file(sim.__file__, remote_path="/root/sim.py", copy=True)
+        ),
     ),
 )
 
@@ -266,7 +248,7 @@ def deploy_trained_model(checkpoint):
 
 def run_trained_evals(trained_deployment):
     print("running checkpoint evaluation...")
-    print(f"success rate: {run_eval(trained_deployment):.1%}")
+    run_eval(trained_deployment)
 
 
 if __name__ == "__main__":
@@ -278,10 +260,18 @@ if __name__ == "__main__":
 
 # ## Results
 #
-# | Model | Success rate |
-# | --- | ---: |
-# | Base | 12% |
-# | Trained | 88% |
+# ![Reward curve](https://modal-cdn.com/cdnbot/pick-and-place-rewardluvcj3ah_1acb15e6.webp)
+#
+# The training reward climbs quickly and then saturates. Since it includes the
+# partial credit for picking the right block, the held-out eval is a better
+# measure of how often the model actually succeeds.
+#
+# | Model | Picked right block | Success rate |
+# | --- | ---: | ---: |
+# | Base | 20% | 13% |
+# | Trained | 91% | 88% |
 #
 # After 200 steps, the model succeeds on 88% of scenes it never saw during
-# training, up from 12%.
+# training, up from 13%. Most of the gain comes from reading the instruction:
+# the trained model picks the right block 91% of the time, and almost every
+# right pick lands in the right tray.

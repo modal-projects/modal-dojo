@@ -5,8 +5,6 @@ import random
 import re
 import sys
 
-# Render without a display: OSMesa on Linux (as in the Modal image) and CGL on
-# macOS, which is MuJoCo's default there.
 if sys.platform.startswith("linux"):
     os.environ.setdefault("MUJOCO_GL", "osmesa")
 
@@ -65,14 +63,11 @@ def sample_scene(seed: int) -> dict:
     }
 
 
-def _rgba(color) -> str:
-    return " ".join(f"{c:g}" for c in (*color, 1))
-
-
 def _box(half, pos, color, extra="") -> str:
     size = " ".join(f"{h:g}" for h in half)
     pos = " ".join(f"{p:g}" for p in pos)
-    return f'<geom type="box" size="{size}" pos="{pos}" rgba="{_rgba(color)}" {extra}/>'
+    rgba = " ".join(f"{c:g}" for c in (*color, 1))
+    return f'<geom type="box" size="{size}" pos="{pos}" rgba="{rgba}" {extra}/>'
 
 
 def scene_xml(scene: dict) -> str:
