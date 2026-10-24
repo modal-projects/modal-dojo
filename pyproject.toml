@@ -20,6 +20,7 @@ dependencies = [
     "fastapi",
     "randomname",
     "rich",
+    "requests",
     "transformers>=5.12.1",
 ]
 

@@ -1456,6 +1456,7 @@ dependencies = [
     { name = "modal" },
     { name = "pydantic" },
     { name = "randomname" },
+    { name = "requests" },
     { name = "rich" },
     { name = "transformers" },
 ]
@@ -1489,6 +1490,7 @@ requires-dist = [
     { name = "modal", specifier = "==1.6.1" },
     { name = "pydantic" },
     { name = "randomname" },
+    { name = "requests" },
     { name = "rich" },
     { name = "transformers", specifier = ">=5.12.1" },
 ]
