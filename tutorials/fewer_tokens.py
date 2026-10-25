@@ -39,7 +39,6 @@ model = Qwen3_5_4B()
 def deploy_base_model():
     base_deployment = Endpoint.launch(
         model,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="fewer-tokens-baseline",
     )
@@ -165,7 +164,6 @@ def deploy_trained_model(checkpoint):
     trained_deployment = Endpoint.launch(
         model,
         checkpoint,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name=f"fewer-tokens-{step}",
     )
