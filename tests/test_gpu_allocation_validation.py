@@ -285,8 +285,8 @@ def _alloc_conf_recipe(field_name: str, alloc_conf: str, **overrides):
         )
 
 
-@pytest.mark.parametrize("field_name", ["environment", "image_env"])
-def test_colocate_rejects_expandable_segments_in_global_env(
+@pytest.mark.parametrize("field_name", ["environment", "image_env", "train_env_vars"])
+def test_colocate_rejects_expandable_segments_in_env(
     field_name: str,
 ) -> None:
     with pytest.raises(ValueError, match=field_name):
@@ -295,7 +295,7 @@ def test_colocate_rejects_expandable_segments_in_global_env(
         )
 
 
-@pytest.mark.parametrize("field_name", ["environment", "image_env"])
+@pytest.mark.parametrize("field_name", ["environment", "image_env", "train_env_vars"])
 def test_colocate_rejects_expandable_segments_variants(field_name: str) -> None:
     for alloc_conf in ("expandable_segments: true", "expandable_segments:1"):
         with pytest.raises(ValueError, match=field_name):
@@ -320,11 +320,21 @@ def test_colocate_allows_expandable_segments_disabled() -> None:
         )
 
 
-def test_colocate_allows_expandable_segments_in_train_env_vars() -> None:
+def test_colocate_rejects_expandable_segments_in_train_env_vars_json() -> None:
+    with pytest.raises(ValueError, match="train_env_vars"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            MilesRecipe(
+                colocate=True,
+                train_env_vars='{"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}',
+            )
+
+
+def test_non_colocate_allows_expandable_segments_in_train_env_vars() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         MilesRecipe(
-            colocate=True,
+            colocate=False,
             train_env_vars={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
         )
 

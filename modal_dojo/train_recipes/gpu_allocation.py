@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import warnings
 from dataclasses import dataclass
 from math import prod
@@ -321,9 +322,9 @@ def _optional_positive_int_field(config: Any, field_name: str) -> int | None:
 def validate_expandable_segments_env(config: Any) -> None:
     if not getattr(config, "colocate", False):
         return
-    for field_name in ("environment", "image_env"):
-        env = getattr(config, field_name, None)
-        if not isinstance(env, dict):
+    for field_name in ("environment", "image_env", "train_env_vars"):
+        env = _env_dict(getattr(config, field_name, None))
+        if env is None:
             continue
         alloc_conf = env.get("PYTORCH_CUDA_ALLOC_CONF")
         if not isinstance(alloc_conf, str):
@@ -331,11 +332,19 @@ def validate_expandable_segments_env(config: Any) -> None:
         if not _alloc_conf_enables_expandable_segments(alloc_conf):
             continue
         raise GpuAllocationError(
-            f"{field_name} sets expandable_segments with colocate=True; "
-            "scope it to the training processes via "
-            'train_env_vars={"PYTORCH_CUDA_ALLOC_CONF": '
-            '"expandable_segments:True"}.'
+            f"{field_name} sets expandable_segments with colocate=True, which "
+            "TorchMemorySaver does not support; remove expandable_segments "
+            "from PYTORCH_CUDA_ALLOC_CONF or set colocate=False."
         )
+
+
+def _env_dict(env: Any) -> dict | None:
+    if isinstance(env, str):
+        try:
+            env = json.loads(env)
+        except json.JSONDecodeError:
+            return None
+    return env if isinstance(env, dict) else None
 
 
 def _alloc_conf_enables_expandable_segments(alloc_conf: str) -> bool:
