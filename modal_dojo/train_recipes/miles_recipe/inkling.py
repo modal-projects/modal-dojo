@@ -55,7 +55,6 @@ class _InklingSmallRecipe(MilesRecipe):
 
     modality: Literal["text", "vision"] = "text"
 
-    docker_image: str = "radixark/miles:dev-202610180955@sha256:61ddd6ad0d6991b5aa58028937289f588c35e1fa461f16752de88ba93064203d"
     image_run_commands: list[str] = field(default_factory=_image_patches)
     memory: tuple[int, int] = (1024, int(2 * 1024 * 1024))
 

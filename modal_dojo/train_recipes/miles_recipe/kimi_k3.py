@@ -52,7 +52,6 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
 
     model_config_class: ClassVar[type[ModelConfig]] = Kimi_K3
 
-    docker_image: str = _DOCKER_IMAGE
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "B300"
     # Host backups hold frozen weights for eight ranks per node.
