@@ -321,3 +321,106 @@ def convert_megatron_checkpoint_to_hf(
         checkpoints_volume_name=checkpoints_volume_name,
         checkpoints_mount_path=checkpoints_mount_path,
     )
+
+
+def convert_native_lora_checkpoint_to_peft(
+    adapter_path: str,
+    model: ModelConfig,
+    checkpoints_volume_name: str,
+    checkpoints_mount_path: str = _CHECKPOINTS_MOUNT_FALLBACK,
+) -> str:
+    """Convert a Miles native-LoRA ``iter_*/adapter`` directory to a PEFT adapter.
+
+    Raw-mode LoRA recipes, such as ``DeepSeek_V4_1_Flash_LoRA_Recipe``, save
+    per-rank adapter shards without ``adapter_model.safetensors``. The PEFT
+    adapter is written to ``<adapter_path>_hf`` for SGLang's ``--lora-paths``.
+    """
+    adapter_path = adapter_path.rstrip("/")
+    volume_relative_path(adapter_path, checkpoints_mount_path)
+    model_ref = model.model_name or model.model_path
+    if model_ref in (None, ""):
+        raise DojoConfigError(
+            "Cannot convert a LoRA adapter without model_name or model_path."
+        )
+
+    hf_cache_volume = Volume.from_name("huggingface-cache", create_if_missing=True)
+    checkpoints_volume = Volume.from_name(
+        checkpoints_volume_name, create_if_missing=False
+    )
+    import importlib.util
+
+    from modal_dojo.common import hf_secrets
+
+    spec = importlib.util.find_spec(
+        "modal_dojo.frameworks.miles.modal_helpers.convert_native_lora_to_peft"
+    )
+    if spec is None or not spec.origin:
+        raise RuntimeError(
+            "modal_dojo.frameworks.miles.modal_helpers.convert_native_lora_to_peft is missing"
+        )
+
+    converter_path = "/root/convert_native_lora_to_peft.py"
+    image = (
+        modal.Image.debian_slim(python_version="3.12")
+        .uv_pip_install(
+            "torch==2.13.0", index_url="https://download.pytorch.org/whl/cpu"
+        )
+        .uv_pip_install("safetensors==0.8.0", "huggingface-hub==1.21.0")
+        .add_local_file(spec.origin, converter_path, copy=True)
+    )
+    conversion_app = modal.App("training-gym-native-lora-convert")
+
+    @conversion_app.function(
+        image=image,
+        volumes={
+            "/root/.cache/huggingface": hf_cache_volume,
+            checkpoints_mount_path: checkpoints_volume,
+        },
+        memory=32 * 1024,
+        timeout=60 * 60,
+        secrets=hf_secrets(),
+        serialized=True,
+        name="convert_native_lora_to_peft",
+    )
+    def convert_native_lora_to_peft(
+        input_dir: str,
+        output_dir: str,
+        model_ref: str,
+        revision: str | None,
+    ) -> str:
+        import subprocess
+
+        from huggingface_hub import snapshot_download
+
+        hf_cache_volume.reload()
+        checkpoints_volume.reload()
+        if os.path.isabs(model_ref) and os.path.isdir(model_ref):
+            hf_path = model_ref
+        else:
+            hf_path = snapshot_download(
+                model_ref, revision=revision, local_files_only=True
+            )
+        subprocess.run(
+            [
+                "python",
+                converter_path,
+                "--input-dir",
+                input_dir,
+                "--output-dir",
+                output_dir,
+                "--origin-hf-dir",
+                hf_path,
+            ],
+            check=True,
+        )
+        checkpoints_volume.commit()
+        return output_dir
+
+    with modal.enable_output():
+        with conversion_app.run():
+            return convert_native_lora_to_peft.remote(
+                input_dir=adapter_path,
+                output_dir=f"{adapter_path}_hf",
+                model_ref=model_ref,
+                revision=model.revision,
+            )
