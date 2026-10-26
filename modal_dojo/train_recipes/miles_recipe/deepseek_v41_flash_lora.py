@@ -15,7 +15,7 @@ from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash import (
 )
 
 # TODO: Use a released image once Miles #4205 and SGLang #45231 are included.
-MILES_LORA_COMMIT = "65e785ff5e794a7081383e18e70c4555cb1fe0fb"
+MILES_LORA_COMMIT = "6c8e2378cfe3dc5f99633e9719a80586dac86683"
 SGLANG_LORA_COMMIT = "34033fe90b90f1bb64e63337268beada57f21f84"
 
 
@@ -28,7 +28,7 @@ def _lora_image_commands() -> list[str]:
             "patch_deepseek_v41_router_registration",
             "patch_deepseek_v41_fp4_dequant_block",
             "patch_deepseek_v41_vision_topk_capture",
-            "patch_deepseek_v41_lora_startup_timeout",
+            "patch_deepseek_v41_lora_efficiency",
             "patch_checkpoint_local_dirs",
             "patch_native_lora_checkpoint_commit",
             "patch_sglang_weights_disk_backup",
@@ -37,8 +37,10 @@ def _lora_image_commands() -> list[str]:
 
 
 def _lora_environment() -> dict[str, str]:
+    environment = DeepSeek_V4_1_Flash_Recipe().environment
+    environment.pop("NCCL_CUMEM_ENABLE", None)
     return {
-        **DeepSeek_V4_1_Flash_Recipe().environment,
+        **environment,
         "SGLANG_OPT_DEEPGEMM_HC_PRENORM": "0",
         # Adapter-only synchronization leaves room for the TP-sharded Engram
         # tables on H200; avoid host-memory lookups on every decode step.
@@ -60,12 +62,12 @@ def _lora_environment() -> dict[str, str]:
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
-    """Rank-32 attention LoRA on 32 H200 GPUs with a 32,768-token window.
+    """Rank-32 attention/shared-expert LoRA on 32 H200 GPUs with a 32K window.
 
-    Uses Sierra's four attention targets and GRPO settings. The runtime pins
-    include unmerged upstream LoRA support; they are independent of the image
-    used by Sierra's historical run. Workload and reward are supplied by the
-    training config; generation uses ordinary stopping.
+    Covers all five attention projections and the shared expert's gate/up/down
+    projections supported by Miles #4205 and SGLang #45231. Routed experts,
+    compressor, indexer and Engram remain frozen. Workload and reward are
+    supplied by the training config; generation uses ordinary stopping.
     """
 
     model_config_class: ClassVar[type[DeepSeek_V4_1_Flash_LoRA]] = (
@@ -94,8 +96,10 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
     lora_dropout: float = 0.0
     # Fully qualified names avoid the compressor/indexer/Engram suffix aliases.
     target_modules: str = ",".join(
-        f"layers.*.attn.{name}" for name in ("wq_a", "wkv", "wq_b", "wo_b")
+        [f"layers.*.attn.{name}" for name in ("wq_a", "wkv", "wq_b", "wo_a", "wo_b")]
+        + [f"layers.*.ffn.shared_experts.{name}" for name in ("w1", "w3", "w2")]
     )
+    exclude_modules: str = "layers.*.ffn.experts.*"
     lora_base_cpu_backup: bool = True
     check_lora_weight_equal: bool = True
     check_weight_update: bool = False
@@ -140,8 +144,8 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
             # batch to one cache-aware worker (its default balance threshold
             # is 64). Keep all four engines busy and inside decode graph sizes.
             "sglang_router_policy": "round_robin",
-            # Keep the engine watchdog consistent with the patched startup
-            # deadline while the full frozen model is backed up to local disk.
+            # Weight offload still occurs before training. Allow the full
+            # frozen model's disk backup to finish without killing the engine.
             "sglang_watchdog_timeout": 1800,
             "stream_optimizer_state_to_disk": False,
             "sglang_weight_loader_drop_cache_after_load": True,
@@ -150,7 +154,6 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
             "normalize_advantages": False,
             "grpo_std_normalization": True,
             "rewards_normalization": True,
-            "use_tis": False,
             "get_mismatch_metrics": True,
             # New Miles requires an explicit metrics implementation. With
             # use_tis=False this preserves the policy loss and response masks.
@@ -164,6 +167,12 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
             "tis_upper_bound": 2.0,
             "rs_lower_bound": 0.5,
             "rs_upper_bound": 2.0,
+            # Explicit defaults also make use_tis=True usable with this helper.
+            # The recipe field controls TIS; extra_config must not shadow it.
+            "tis_level": "token",
+            "tis_mode": "clip",
+            "tis_batch_normalize": False,
+            "use_rs": False,
             "recompute_loss_function": False,
             "use_unbiased_kl": False,
             "log_probs_chunk_size": 128,
@@ -197,4 +206,10 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
             raise ValueError(
                 "Training and serving must use the same positive LoRA rank"
             )
+        extra = dict(self.extra_config or {})
+        if extra.get("use_tis", self.use_tis):
+            # TIS corrects trainer-scored old-policy probabilities against the
+            # rollout policy; Miles rejects rollout probabilities in both roles.
+            extra["use_rollout_logprobs"] = False
+            object.__setattr__(self, "extra_config", extra)
         return self

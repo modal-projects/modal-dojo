@@ -32,7 +32,6 @@ from modal_dojo.common.framework import (
 )
 from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.ray_cluster import (
-    _supports_rdma,
     clustered_if,
 )
 from modal_dojo.common.run import (
@@ -277,36 +276,44 @@ def _build_conversion_config(slime_cfg: Any, model: Any = None) -> dict[str, Any
 _CONVERSION_CONFIG_FILE = ".conversion_config.json"
 
 
-_PIPELINE_SPLIT_FLAGS = (
+_LAYOUT_FLAGS = (
+    "--tensor-model-parallel-size",
+    "--pipeline-model-parallel-size",
+    "--expert-model-parallel-size",
+    "--expert-tensor-parallel-size",
     "--decoder-first-pipeline-num-layers",
     "--decoder-last-pipeline-num-layers",
 )
 
 
-def _conversion_config_matches(stored: dict[str, Any], current: dict[str, Any]) -> bool:
-    """Whether a recorded conversion still describes the current layout.
+def _without_layout(config: dict[str, Any]) -> dict[str, Any]:
+    rest = {
+        key: value
+        for key, value in config.items()
+        if key not in {"num_nodes", "nproc_per_node"}
+    }
+    if isinstance(rest.get("extra_args"), list):
+        rest["extra_args"] = [
+            a for a in rest["extra_args"] if not a.startswith(_LAYOUT_FLAGS)
+        ]
+    return rest
 
-    The record stores the emitted ``extra_args``, so a checkpoint converted before
-    the pipeline-split flags stopped being emitted at conversion PP1 would otherwise
-    read as stale and be re-converted for nothing. Dropping those flags is tolerated;
-    changing their values is not, since at PP>1 they define the split.
+
+def _conversion_config_matches(stored: dict[str, Any], current: dict[str, Any]) -> bool:
+    """Whether a recorded conversion holds the weights the current one would.
+
+    torch_dist reshards on load, so the conversion's parallelism doesn't matter,
+    except for MTP models, which convert on a single rank.
     """
     if stored == current:
         return True
-    stored_rest, current_rest = dict(stored), dict(current)
-    stored_args = stored_rest.pop("extra_args", None)
-    current_args = current_rest.pop("extra_args", None)
-    if stored_rest != current_rest:
+    current_args = current.get("extra_args")
+    if not isinstance(current_args, list) or any(
+        a.startswith("--mtp-num-layers ") and a != "--mtp-num-layers 0"
+        for a in current_args
+    ):
         return False
-    if not isinstance(stored_args, list) or not isinstance(current_args, list):
-        return False
-    if [a for a in stored_args if not a.startswith(_PIPELINE_SPLIT_FLAGS)] != [
-        a for a in current_args if not a.startswith(_PIPELINE_SPLIT_FLAGS)
-    ]:
-        return False
-    return {a for a in current_args if a.startswith(_PIPELINE_SPLIT_FLAGS)} <= {
-        a for a in stored_args if a.startswith(_PIPELINE_SPLIT_FLAGS)
-    }
+    return _without_layout(stored) == _without_layout(current)
 
 
 def _checkpoint_conversion_cache_status(
@@ -732,13 +739,7 @@ def build_slime_app(
 
         flush_status_reporter(timeout_seconds=2.0)
 
-    # Use Modal's clustered scheduler with RDMA when using a full node (8+ GPUs)
-    # on RDMA-capable hardware, or for any multi-node run.  The `rdma=True` flag
-    # provides CAP_IPC_LOCK and NVSwitch device access that slime's colocated
-    # weight sync (UpdateWeightFromTensor) needs for fast CUDA IPC transfers.
     _multi_node = slime.total_nodes > 1
-    _full_node = slime.actor_num_gpus_per_node >= 8
-    _use_clustered = _multi_node or (_full_node and _supports_rdma(slime.gpu_type))
 
     train_secrets: list[Secret] = []
     if slime.metrics is not None:
@@ -760,9 +761,10 @@ def build_slime_app(
             framework="slime",
             secrets=train_secrets,
             experimental_options={},
+            clustered=_multi_node,
         ),
     )
-    @clustered_if(_use_clustered, slime.total_nodes, gpu_type=slime.gpu_type)
+    @clustered_if(_multi_node, slime.total_nodes, gpu_type=slime.gpu_type)
     async def train(
         modal_app_id: str = "",
         modal_app_url: str = "",

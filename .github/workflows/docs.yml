@@ -91,6 +91,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    environment: modal-preview
     env:
       MODAL_TOKEN_ID: ${{ secrets.PREVIEW_MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.PREVIEW_MODAL_TOKEN_SECRET }}

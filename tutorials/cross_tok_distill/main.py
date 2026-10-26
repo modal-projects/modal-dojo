@@ -62,7 +62,6 @@ def deploy_base_models():
     print("deploying base student endpoint...")
     base_student_deployment = Endpoint.launch(
         student_model,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="cross-tok-distill-baseline",
     )
@@ -79,20 +78,20 @@ def deploy_base_models():
             mem_fraction_static=0.85,
             chunked_prefill_size=4096,
             max_running_requests=64,
-            sglang_image="lmsysorg/sglang:v0.5.12.post1-cu130",
+            sglang_image=(
+                "lmsysorg/sglang:v0.5.22@sha256:"
+                "e3a4f06001a29542fc4a8638536d9ffc5eb9c9942b08603c09b19a56eae4a1ae"
+            ),
             install_transformers_from_git=False,
             env_vars={
                 "NCCL_CUMEM_ENABLE": "1",
                 "SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK": "8320",
-                "SGLANG_OPT_DEEPGEMM_MEGA_MOE_USE_FP4_ACTS": "1",
-                "SGLANG_OPT_DEEPGEMM_MEGA_MOE_USE_MXF4_KIND": "1",
             },
             extra_server_args={
                 "--trust-remote-code": "",
                 "--moe-a2a-backend": "megamoe",
-                "--enable-breakable-cuda-graph": "",
+                "--enable-w4a4-mxfp4-megamoe": "",
                 "--enable-mixed-chunk": "",
-                "--piecewise-cuda-graph-max-tokens": "4096",
                 "--tool-call-parser": "deepseekv4",
                 "--reasoning-parser": "deepseek-v4",
             },
@@ -100,6 +99,7 @@ def deploy_base_models():
         ),
         app_name="cross-tok-distill-teacher",
         served_model_name="deepseek-v4-flash",
+        unauthenticated=True,
     )
 
     base_student_deployment.wait_until_ready(timeout=STUDENT_READY_TIMEOUT)
@@ -921,6 +921,11 @@ def build_config(teacher_deployment):
         dataset=dataset,
         recipe=Qwen3_6_35B_Recipe(
             colocate=False,
+            # Sync settings
+            async_mode=False,
+            use_distributed_optimizer=False,
+            max_tokens_per_gpu=8192,
+            ref_load="/checkpoints/Qwen3.6-35B-A3B_torch_dist_tp1pp1",
             actor_num_nodes=2,
             actor_num_gpus_per_node=8,
             rollout_num_gpus=8,
@@ -1004,7 +1009,6 @@ def deploy_trained_model(checkpoint):
     trained_student_deployment = Endpoint.launch(
         student_model,
         checkpoint,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="cross-tok-distill-trained",
     )

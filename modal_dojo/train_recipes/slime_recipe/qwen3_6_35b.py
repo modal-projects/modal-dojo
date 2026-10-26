@@ -17,7 +17,15 @@ class Qwen3_6_35B_Recipe(SlimeRecipe):
     loss_mask_type: SlimeLossMaskType = "qwen3_5"
     gpu_type: str = "B300"
     colocate: bool = False
-    rollout_num_gpus: int | None = 1
+    async_mode: bool = True
+    actor_num_gpus_per_node: int = 4
+    rollout_num_gpus: int | None = 4
+    tensor_model_parallel_size: int = 2
+    sequence_parallel: bool = True
+    use_distributed_optimizer: bool = True
+    rollout_batch_size: int = 32
+    n_samples_per_prompt: int = 8
+    global_batch_size: int = 256
     slime_model_script: str = "scripts/models/qwen3.5-35B-A3B.sh"
     hf_checkpoint: str = "Qwen/Qwen3.6-35B-A3B"
     train_function_kwargs: dict[str, int] = field(
@@ -25,7 +33,7 @@ class Qwen3_6_35B_Recipe(SlimeRecipe):
     )
 
     context_parallel_size: int = 1
-    expert_model_parallel_size: int = 1
+    expert_model_parallel_size: int = 2
     expert_tensor_parallel_size: int = 1
     sglang_ep_size: int | None = 1
     sglang_attention_backend: str | None = "triton"
@@ -40,7 +48,7 @@ class Qwen3_6_35B_Recipe(SlimeRecipe):
     sglang_speculative_num_draft_tokens: int | None = None
     sglang_mamba_scheduler_strategy: str = "extra_buffer"
 
-    max_tokens_per_gpu: MicroBatchSize = 8192
+    max_tokens_per_gpu: MicroBatchSize = 16384
     balance_data: bool = True
     moe_token_dispatcher_type: str = "alltoall"
     moe_enable_deepep: bool = False
@@ -52,5 +60,5 @@ class Qwen3_6_35B_Recipe(SlimeRecipe):
     memory: int | tuple[int, int] | None = (128, 2_097_152)
     attention_backend: str = "unfused"
 
-    ref_load: str = "/checkpoints/Qwen3.6-35B-A3B_torch_dist_tp1pp1"
+    ref_load: str = "/checkpoints/Qwen3.6-35B-A3B_torch_dist_tp2pp1"
     no_save_optim: bool = True
