@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 import warnings
 from dataclasses import dataclass
 from math import prod
 from typing import Any
 
-from modal_dojo.common.errors import DojoConfigError, GpuAllocationError
+from modal_dojo.common.errors import GpuAllocationError
+from modal_dojo.train_recipes.validation import _effective
 
 _MAX_GPUS_PER_CONTAINER = {"A10": 4}
 
@@ -323,119 +323,8 @@ def _positive_int(field_name: str, value: Any) -> int:
     return value
 
 
-def _effective(config: Any, field_name: str, default: Any = None) -> Any:
-    hatch = getattr(config, "_escape_hatch_values", None)
-    values = hatch() if callable(hatch) else {}
-    if field_name in values:
-        return values[field_name]
-    return getattr(config, field_name, default)
-
-
-def _torch_memory_saver_offloads(config: Any) -> tuple[bool, bool]:
-    if _effective(config, "debug_rollout_only"):
-        return False, False
-    offload_train = _effective(config, "offload_train")
-    offload_rollout = _effective(config, "offload_rollout")
-    if getattr(config, "no_offload_train", False):
-        offload_train = False
-    if getattr(config, "no_offload_rollout", False):
-        offload_rollout = False
-    if _effective(config, "offload"):
-        offload_train = offload_rollout = True
-    sft = getattr(config, "loss_type", None) == "sft_loss"
-    if not sft and _effective(config, "colocate", False):
-        if _effective(config, "release_train"):
-            offload_train, offload_rollout = False, True
-        if offload_train is None:
-            offload_train = True
-        if offload_rollout is None:
-            offload_rollout = True
-    if not sft and _effective(config, "advantage_estimator") == "ppo":
-        offload_train = True if offload_train is None else offload_train
-    return bool(offload_train), bool(offload_rollout)
-
-
 def _optional_positive_int_field(config: Any, field_name: str) -> int | None:
     value = getattr(config, field_name, None)
     if value is None:
         return None
     return _positive_int_field(config, field_name)
-
-
-def validate_expandable_segments_env(config: Any) -> None:
-    offload_train, offload_rollout = _torch_memory_saver_offloads(config)
-    for field_name in ("environment", "image_env", "train_env_vars"):
-        if field_name == "train_env_vars":
-            offload = "offload_train" if offload_train else None
-            env = _effective(config, field_name)
-        else:
-            offload = (
-                "offload_train"
-                if offload_train
-                else "offload_rollout"
-                if offload_rollout
-                else None
-            )
-            env = getattr(config, field_name, None)
-        env = _env_dict(env) if offload else None
-        if env is None:
-            continue
-        alloc_conf = env.get("PYTORCH_CUDA_ALLOC_CONF")
-        if not isinstance(alloc_conf, str):
-            continue
-        if not _alloc_conf_enables_expandable_segments(alloc_conf):
-            continue
-        raise DojoConfigError(
-            f"{field_name} sets expandable_segments with {offload} on, which "
-            "TorchMemorySaver does not support; remove expandable_segments "
-            f"from PYTORCH_CUDA_ALLOC_CONF or disable {offload}."
-        )
-
-
-def validate_loss_and_sampling_args(
-    config: Any, *, ppo_rejects_kl_coef: bool = False
-) -> None:
-    if getattr(config, "loss_type", None) == "sft_loss":
-        return
-    kl_coef = _effective(config, "kl_coef") or 0
-    if kl_coef and _effective(config, "kl_loss_coef"):
-        raise DojoConfigError(
-            "kl_coef and kl_loss_coef are both nonzero; only one can be set."
-        )
-    if (
-        ppo_rejects_kl_coef
-        and kl_coef
-        and _effective(config, "advantage_estimator") == "ppo"
-    ):
-        raise DojoConfigError(
-            "advantage_estimator='ppo' does not support kl_coef; set kl_coef=0 "
-            "and use use_kl_loss with kl_loss_coef instead."
-        )
-    over_sampling = _effective(config, "over_sampling_batch_size")
-    rollout_batch_size = _effective(config, "rollout_batch_size")
-    if (
-        type(over_sampling) is int
-        and type(rollout_batch_size) is int
-        and over_sampling < rollout_batch_size
-    ):
-        raise DojoConfigError(
-            f"over_sampling_batch_size={over_sampling} must be at least "
-            f"rollout_batch_size={rollout_batch_size}."
-        )
-
-
-def _env_dict(env: Any) -> dict | None:
-    if isinstance(env, str):
-        try:
-            env = json.loads(env)
-        except json.JSONDecodeError:
-            return None
-    return env if isinstance(env, dict) else None
-
-
-def _alloc_conf_enables_expandable_segments(alloc_conf: str) -> bool:
-    for item in alloc_conf.split(","):
-        key, _, value = item.partition(":")
-        if key.strip() == "expandable_segments":
-            return value.strip().lower() in ("true", "1", "yes", "on")
-    return False

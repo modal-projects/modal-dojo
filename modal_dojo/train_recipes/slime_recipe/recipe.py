@@ -37,11 +37,13 @@ from modal_dojo.train_recipes.base import (
 )
 from modal_dojo.train_recipes.gpu_allocation import (
     resolve_gpu_allocation,
-    validate_expandable_segments_env,
-    validate_loss_and_sampling_args,
     validate_megatron_actor_parallelism,
     validate_multi_node_gpu_count,
     validate_num_experts_divisible_by_expert_parallel_size,
+)
+from modal_dojo.train_recipes.validation import (
+    validate_expandable_segments_env,
+    validate_loss_and_sampling_args,
 )
 
 # ── Types ─────────────────────────────────────────────────────────────────────
@@ -667,8 +669,8 @@ class SlimeRecipe(BaseTrainRecipe):
     def _validate_gpu_allocation(self) -> "SlimeRecipe":
         validate_multi_node_gpu_count(resolve_gpu_allocation(self), self.gpu_type)
         validate_megatron_actor_parallelism(self)
-        validate_expandable_segments_env(self)
-        validate_loss_and_sampling_args(self)
+        validate_expandable_segments_env(self, "slime")
+        validate_loss_and_sampling_args(self, "slime")
         return self
 
     # ── Container → slime flag converters ────────────────────────────────────
