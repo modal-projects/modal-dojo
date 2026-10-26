@@ -9,7 +9,7 @@
 # as input a camera feed and text instructions, and return actions to execute. In
 # this tutorial, we teach [Qwen3-VL-8B](https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct)
 # to act as one. Given an overhead image of a table and an instruction like "Put
-# the red block in the blue tray", it answers with where to pick and where to
+# the yellow block in the blue tray", it answers with where to pick and where to
 # place:
 #
 # ```text
@@ -19,6 +19,7 @@
 # We then carry out that command in a [MuJoCo](https://mujoco.org) physics
 # simulation, and the model only gets the full reward if the block actually lands
 # in the right tray.
+#
 #
 # <video controls autoplay muted loop style="display: block; margin: 0 auto;">
 # <source src="https://modal-cdn.com/cdnbot/pick-and-place-before-afterapvzgw5e_c7933051.mp4" type="video/mp4">
