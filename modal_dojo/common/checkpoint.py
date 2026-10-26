@@ -243,9 +243,9 @@ def convert_megatron_checkpoint_to_hf(
     from modal_dojo.frameworks.miles.launcher import _build_miles_base_image
     from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
-    image = _build_miles_base_image(MilesRecipe()).add_local_python_source(
-        "modal_dojo", copy=True
-    )
+    image = _build_miles_base_image(
+        MilesRecipe.get_base_recipe(model) or MilesRecipe()
+    ).add_local_python_source("modal_dojo", copy=True)
     conversion_app = modal.App("training-gym-checkpoint-convert")
     gpu_spec = _conversion_gpu_spec(checkpoint, recipe)
 

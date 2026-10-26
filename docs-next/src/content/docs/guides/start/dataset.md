@@ -137,7 +137,7 @@ When the [environment](https://dojo.modal.dev/guides/recipe#environment) generat
 ```python
 from modal_dojo import OnlineRollout
 
-recipe = Qwen3_5_4B_Recipe(
+recipe = Qwen3_5_4B_Miles_Recipe(
     # ...
     custom_generate_function=fn,
     rollout_batch_size=4,

@@ -31,9 +31,8 @@ def _diff_touching(*repo_relative_paths: str) -> str:
 ALL_CONFIGS = _ValidationConfig.select()
 
 
-def test_registry_has_both_frameworks_represented():
-    frameworks = {config.framework for config in VALIDATION_CONFIGS}
-    assert frameworks == set(Framework)
+def test_registry_covers_the_active_framework():
+    assert {config.framework for config in VALIDATION_CONFIGS} == {Framework.MILES}
 
 
 @pytest.mark.parametrize(

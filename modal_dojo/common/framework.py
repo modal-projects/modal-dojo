@@ -90,3 +90,5 @@ class Framework(str, Enum):
     # ``json.dumps`` (dashboard blobs do not coerce enums), matching the
     # MilesStatus convention.
     MILES = "miles"
+    # Historical runs persisted with framework="slime" still deserialize.
+    SLIME = "slime"

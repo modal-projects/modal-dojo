@@ -186,7 +186,7 @@ Then, it wrote the training code:
 ```python
 import os
 
-from modal_dojo import Qwen3_5_4B_Recipe, TrainConfig
+from modal_dojo import Qwen3_5_4B_Miles_Recipe, TrainConfig
 
 NUM_ROLLOUT = int(os.environ.get("NUM_ROLLOUT", "1"))
 
@@ -194,7 +194,7 @@ config = TrainConfig(
     model=model,
     dataset=DollyQuestions(0, 2000),
     eval_dataset=DollyQuestions(2000, 2050),
-    recipe=Qwen3_5_4B_Recipe(
+    recipe=Qwen3_5_4B_Miles_Recipe(
         num_rollout=NUM_ROLLOUT,
         save_interval=NUM_ROLLOUT,
         rollout_batch_size=16,
