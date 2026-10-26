@@ -206,7 +206,7 @@
   });
 
   // Active tab: "summary" | "rollouts" | "logs". One-way sync with the URL:
-  // init/popstate/runId read URL → activeTab; selectTab replaces the current URL.
+  // init/popstate/runId read URL → activeTab; selectTab writes pushState.
   let activeTab = $state(/** @type {TabId} */ (DEFAULT_TAB));
   let isSftRun = $derived(run?.training_type === "sft");
 
@@ -216,7 +216,7 @@
     if (embedded || typeof window === "undefined") return;
     const target = urlForTab(next);
     if (target !== locationKey()) {
-      history.replaceState({}, "", target);
+      history.pushState({}, "", target);
     }
   }
 
