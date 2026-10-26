@@ -9,6 +9,10 @@ _EXPORTS = {
         "modal_dojo.common.checkpoint",
         "convert_megatron_checkpoint_to_hf",
     ),
+    "convert_native_lora_checkpoint_to_peft": (
+        "modal_dojo.common.checkpoint",
+        "convert_native_lora_checkpoint_to_peft",
+    ),
     "CustomDeployment": (
         "modal_dojo.common.deployment",
         "CustomDeployment",
@@ -222,6 +226,7 @@ __all__ = [
     "Checkpoint",
     "CheckpointType",
     "convert_megatron_checkpoint_to_hf",
+    "convert_native_lora_checkpoint_to_peft",
     "DashboardMetricConfig",
     "DatasetConfig",
     "Endpoint",

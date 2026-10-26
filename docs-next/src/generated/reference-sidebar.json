@@ -137,6 +137,10 @@
       "link": "/reference/convert_megatron_checkpoint_to_hf"
     },
     {
+      "label": "convert_native_lora_checkpoint_to_peft",
+      "link": "/reference/convert_native_lora_checkpoint_to_peft"
+    },
+    {
       "label": "extract_code",
       "link": "/reference/extract_code"
     },

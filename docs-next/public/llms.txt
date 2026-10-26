@@ -148,6 +148,7 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [TrainingRun](https://dojo.modal.dev/reference/trainingrun)
 - [WandbConfig](https://dojo.modal.dev/reference/wandbconfig)
 - [convert_megatron_checkpoint_to_hf](https://dojo.modal.dev/reference/convert_megatron_checkpoint_to_hf)
+- [convert_native_lora_checkpoint_to_peft](https://dojo.modal.dev/reference/convert_native_lora_checkpoint_to_peft)
 - [extract_code](https://dojo.modal.dev/reference/extract_code)
 - [score_in_sandbox](https://dojo.modal.dev/reference/score_in_sandbox)
 
