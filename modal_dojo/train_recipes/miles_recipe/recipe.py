@@ -33,6 +33,7 @@ from modal_dojo.train_recipes.base import (
 from modal_dojo.train_recipes.gpu_allocation import (
     resolve_gpu_allocation,
     validate_expandable_segments_env,
+    validate_loss_and_sampling_args,
     validate_multi_node_gpu_count,
     validate_num_experts_divisible_by_expert_parallel_size,
 )
@@ -743,6 +744,7 @@ class MilesRecipe(BaseTrainRecipe):
     def _validate_gpu_allocation(self) -> "MilesRecipe":
         validate_multi_node_gpu_count(resolve_gpu_allocation(self), self.gpu_type)
         validate_expandable_segments_env(self)
+        validate_loss_and_sampling_args(self, ppo_rejects_kl_coef=True)
         return self
 
     @model_validator(mode="after")

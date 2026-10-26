@@ -392,6 +392,38 @@ def validate_expandable_segments_env(config: Any) -> None:
         )
 
 
+def validate_loss_and_sampling_args(
+    config: Any, *, ppo_rejects_kl_coef: bool = False
+) -> None:
+    if getattr(config, "loss_type", None) == "sft_loss":
+        return
+    kl_coef = _effective(config, "kl_coef") or 0
+    if kl_coef and _effective(config, "kl_loss_coef"):
+        raise DojoConfigError(
+            "kl_coef and kl_loss_coef are both nonzero; only one can be set."
+        )
+    if (
+        ppo_rejects_kl_coef
+        and kl_coef
+        and _effective(config, "advantage_estimator") == "ppo"
+    ):
+        raise DojoConfigError(
+            "advantage_estimator='ppo' does not support kl_coef; set kl_coef=0 "
+            "and use use_kl_loss with kl_loss_coef instead."
+        )
+    over_sampling = _effective(config, "over_sampling_batch_size")
+    rollout_batch_size = _effective(config, "rollout_batch_size")
+    if (
+        type(over_sampling) is int
+        and type(rollout_batch_size) is int
+        and over_sampling < rollout_batch_size
+    ):
+        raise DojoConfigError(
+            f"over_sampling_batch_size={over_sampling} must be at least "
+            f"rollout_batch_size={rollout_batch_size}."
+        )
+
+
 def _env_dict(env: Any) -> dict | None:
     if isinstance(env, str):
         try:
