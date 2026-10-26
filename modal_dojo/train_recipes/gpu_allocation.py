@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from math import prod
 from typing import Any
 
-from modal_dojo.common.errors import GpuAllocationError
+from modal_dojo.common.errors import DojoConfigError, GpuAllocationError
 
 _MAX_GPUS_PER_CONTAINER = {"A10": 4}
 
@@ -170,11 +170,13 @@ def validate_num_experts_divisible_by_expert_parallel_size(
     if not num_experts:
         return
 
-    if getattr(config, "expert_model_parallel_size", None) is None:
+    if _effective(config, "expert_model_parallel_size") is None:
         # Unset EP falls back to the framework default of 1, which always divides.
         return
 
-    expert_parallel_size = _positive_int_field(config, "expert_model_parallel_size")
+    expert_parallel_size = _effective_positive_int_field(
+        config, "expert_model_parallel_size"
+    )
     _require_divisible(
         num_experts,
         expert_parallel_size,
@@ -257,7 +259,7 @@ def _rollout_gpus(
 
 def _parallelism_fields(config: Any, *field_names: str) -> dict[str, int]:
     return {
-        field_name: _positive_int_field(config, field_name, default=1)
+        field_name: _effective_positive_int_field(config, field_name, default=1)
         for field_name in field_names
     }
 
@@ -300,7 +302,16 @@ def _require_divisible(
 def _positive_int_field(
     config: Any, field_name: str, *, default: int | None = None
 ) -> int:
-    value = getattr(config, field_name, default)
+    return _positive_int(field_name, getattr(config, field_name, default))
+
+
+def _effective_positive_int_field(
+    config: Any, field_name: str, *, default: int | None = None
+) -> int:
+    return _positive_int(field_name, _effective(config, field_name, default))
+
+
+def _positive_int(field_name: str, value: Any) -> int:
     if value is None:
         raise GpuAllocationError(f"{field_name} must be set")
     if type(value) is not int:
@@ -312,6 +323,38 @@ def _positive_int_field(
     return value
 
 
+def _effective(config: Any, field_name: str, default: Any = None) -> Any:
+    hatch = getattr(config, "_escape_hatch_values", None)
+    values = hatch() if callable(hatch) else {}
+    if field_name in values:
+        return values[field_name]
+    return getattr(config, field_name, default)
+
+
+def _torch_memory_saver_offloads(config: Any) -> tuple[bool, bool]:
+    if _effective(config, "debug_rollout_only"):
+        return False, False
+    offload_train = _effective(config, "offload_train")
+    offload_rollout = _effective(config, "offload_rollout")
+    if getattr(config, "no_offload_train", False):
+        offload_train = False
+    if getattr(config, "no_offload_rollout", False):
+        offload_rollout = False
+    if _effective(config, "offload"):
+        offload_train = offload_rollout = True
+    sft = getattr(config, "loss_type", None) == "sft_loss"
+    if not sft and _effective(config, "colocate", False):
+        if _effective(config, "release_train"):
+            offload_train, offload_rollout = False, True
+        if offload_train is None:
+            offload_train = True
+        if offload_rollout is None:
+            offload_rollout = True
+    if not sft and _effective(config, "advantage_estimator") == "ppo":
+        offload_train = True if offload_train is None else offload_train
+    return bool(offload_train), bool(offload_rollout)
+
+
 def _optional_positive_int_field(config: Any, field_name: str) -> int | None:
     value = getattr(config, field_name, None)
     if value is None:
@@ -320,10 +363,21 @@ def _optional_positive_int_field(config: Any, field_name: str) -> int | None:
 
 
 def validate_expandable_segments_env(config: Any) -> None:
-    if not getattr(config, "colocate", False):
-        return
+    offload_train, offload_rollout = _torch_memory_saver_offloads(config)
     for field_name in ("environment", "image_env", "train_env_vars"):
-        env = _env_dict(getattr(config, field_name, None))
+        if field_name == "train_env_vars":
+            offload = "offload_train" if offload_train else None
+            env = _effective(config, field_name)
+        else:
+            offload = (
+                "offload_train"
+                if offload_train
+                else "offload_rollout"
+                if offload_rollout
+                else None
+            )
+            env = getattr(config, field_name, None)
+        env = _env_dict(env) if offload else None
         if env is None:
             continue
         alloc_conf = env.get("PYTORCH_CUDA_ALLOC_CONF")
@@ -331,10 +385,10 @@ def validate_expandable_segments_env(config: Any) -> None:
             continue
         if not _alloc_conf_enables_expandable_segments(alloc_conf):
             continue
-        raise GpuAllocationError(
-            f"{field_name} sets expandable_segments with colocate=True, which "
+        raise DojoConfigError(
+            f"{field_name} sets expandable_segments with {offload} on, which "
             "TorchMemorySaver does not support; remove expandable_segments "
-            "from PYTORCH_CUDA_ALLOC_CONF or set colocate=False."
+            f"from PYTORCH_CUDA_ALLOC_CONF or disable {offload}."
         )
 
 
