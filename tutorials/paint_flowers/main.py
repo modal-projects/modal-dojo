@@ -36,7 +36,7 @@ from modal_dojo import (
     DatasetConfig,
     Endpoint,
     Qwen3_5_4B,
-    Qwen3_5_4B_Recipe,
+    Qwen3_5_4B_Miles_Recipe,
     Qwen3_6_27B,
     Sandbox,
     TrainConfig,
@@ -246,7 +246,7 @@ def build_config(judge):
         model=base_model,
         dataset=train_dataset,
         eval_dataset=eval_dataset,
-        recipe=Qwen3_5_4B_Recipe(
+        recipe=Qwen3_5_4B_Miles_Recipe(
             custom_rm_function=make_flower_rm(judge),
             custom_reward_post_process_function=helpers.skip_infra_rewards,
             num_rollout=100,

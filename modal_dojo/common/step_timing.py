@@ -6,7 +6,7 @@ from typing import Any, Awaitable
 
 from pydantic import BaseModel, Field, model_validator
 
-from modal_dojo.common.status import SlimeStatus
+from modal_dojo.common.status import MilesStatus
 from modal_dojo.common.timing_recorder import (
     MAX_PHASE_INVOCATIONS,
     MAX_TIMING_PHASES,
@@ -109,24 +109,24 @@ class RoleTimingRecord(BaseModel):
 
 class Substep(str, Enum):
     INITIAL_WEIGHT_SYNC = "initial_weight_sync"
-    EVAL_BEFORE = SlimeStatus.EVAL_ROLLOUT_LOGGING.value
-    GENERATE_ROLLOUTS = SlimeStatus.ROLLOUT_LOGGING.value
+    EVAL_BEFORE = MilesStatus.EVAL_ROLLOUT_LOGGING.value
+    GENERATE_ROLLOUTS = MilesStatus.ROLLOUT_LOGGING.value
     GENERATE_SAMPLES = "generate_samples"
     SAMPLE_GENERATION = "sample_generation"
     REWARD = "reward"
     REWARD_BATCH = "reward_batch"
     REWARD_POST_PROCESS = "reward_post_process"
-    OFFLOAD_ROLLOUT = SlimeStatus.OFFLOAD_ROLLOUT.value
+    OFFLOAD_ROLLOUT = MilesStatus.OFFLOAD_ROLLOUT.value
     TRAIN_MODELS = "train_models"
-    COMPUTE_LOG_PROBS = SlimeStatus.COMPUTE_LOG_PROBS.value
+    COMPUTE_LOG_PROBS = MilesStatus.COMPUTE_LOG_PROBS.value
     FORWARD_BACKWARD = "forward_backward"
-    OPTIMIZER_STEP = SlimeStatus.OPTIMIZER_STEP.value
+    OPTIMIZER_STEP = MilesStatus.OPTIMIZER_STEP.value
     TRAIN_STEP_FINALIZE = "train_step_finalize"
     TRAINER_FINALIZE = "trainer_finalize"
-    CHECKPOINT_SAVE = SlimeStatus.CHECKPOINT_SAVE.value
-    OFFLOAD_TRAIN = SlimeStatus.OFFLOAD_TRAIN.value
-    WEIGHT_SYNC = SlimeStatus.WEIGHT_SYNC.value
-    EVAL_AFTER = f"{SlimeStatus.EVAL_ROLLOUT_LOGGING.value}_end"
+    CHECKPOINT_SAVE = MilesStatus.CHECKPOINT_SAVE.value
+    OFFLOAD_TRAIN = MilesStatus.OFFLOAD_TRAIN.value
+    WEIGHT_SYNC = MilesStatus.WEIGHT_SYNC.value
+    EVAL_AFTER = f"{MilesStatus.EVAL_ROLLOUT_LOGGING.value}_end"
     WAIT_FOR_ROLLOUT = "wait_for_rollout"
     WAIT_FOR_NEXT_ROLLOUT = "wait_for_next_rollout"
 

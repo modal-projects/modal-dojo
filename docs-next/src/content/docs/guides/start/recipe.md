@@ -20,9 +20,9 @@ from modal_dojo import Qwen3_5_4B_Recipe
 recipe = Qwen3_5_4B_Recipe()
 ```
 
-We provide optimized recipes for all supported models in the Modal Dojo, but note that they are easily extensible to fit whatever use case you may have. Under the hood, each recipe is backed by one of two backend frameworks: [Miles](https://github.com/radixark/miles) or [Slime](https://github.com/THUDM/slime). All recipes allow you to specify framework-native parameters using the corresponding recipe fields.
+We provide optimized recipes for all supported models in the Modal Dojo, but note that they are easily extensible to fit whatever use case you may have. Under the hood, each recipe is backed by [Miles](https://github.com/radixark/miles). All recipes allow you to specify framework-native parameters using the corresponding recipe fields.
 
-This guide will focus on the most important ones. However, you can see the full lists for each of the base classes (i.e., [MilesRecipe](https://dojo.modal.dev/reference/milesrecipe) and [SlimeRecipe](https://dojo.modal.dev/reference/slimerecipe)).
+This guide will focus on the most important ones. However, you can see the full list for the base class: [MilesRecipe](https://dojo.modal.dev/reference/milesrecipe).
 
 See [this guide](https://dojo.modal.dev/guides/metric) for more details on logging integrations.
 
@@ -171,9 +171,9 @@ Note that in SFT, the model simply trains on the dataset's conversations, so nei
 
 ```python
 async def my_custom_generate(args, sample, sampling_params):
-    from slime.rollout.sglang_rollout import GenerateState
-    from slime.utils.http_utils import post
-    from slime.utils.types import Sample
+    from miles.rollout.sglang_rollout import GenerateState
+    from miles.utils.http_utils import post
+    from miles.utils.types import Sample
 
     # step 1
 

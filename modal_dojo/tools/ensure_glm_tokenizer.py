@@ -1,7 +1,7 @@
 """Ensure GLM-4.7 snapshot has tokenizer.json and tokenizer_config.json.
 
 The HF snapshot for ``zai-org/GLM-4.7`` sometimes lacks ``tokenizer.json``
-(only the legacy ``tokenizer.model`` is present).  Slime's
+(only the legacy ``tokenizer.model`` is present).  Miles'
 ``load_tokenizer`` requires a ``PreTrainedTokenizerFast`` with a chat
 template, so we download the missing files into the snapshot directory.
 """

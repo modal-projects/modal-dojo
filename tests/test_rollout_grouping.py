@@ -9,7 +9,7 @@ from modal_dojo.common.training_rollout import (
     TrainingRolloutSample,
     TrainingRolloutSummary,
 )
-from modal_dojo.frameworks.slime import phase_reporting as pr
+from modal_dojo.frameworks.miles import phase_reporting as pr
 
 
 EPISODES = [(0.0, 1), (1.0, 2), (2.0, 3), (3.0, 4)]
@@ -74,7 +74,7 @@ def test_payload_identifies_a_rollout_by_sample_index_when_rollout_id_unset(
     assert [s["rollout_index"] for s in captured["samples"]] == [0, 1, 2]
 
 
-def test_payload_omits_grouping_when_slime_reports_no_indices(monkeypatch):
+def test_payload_omits_grouping_when_miles_reports_no_indices(monkeypatch):
     samples = [SimpleNamespace(prompt="p", response="r", reward=1.0)]
     captured = _capture(monkeypatch, samples)
 

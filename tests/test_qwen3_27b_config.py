@@ -6,38 +6,40 @@ from modal_dojo import (
     Qwen3_8_27B,
     Qwen3_8_27B_Recipe,
 )
-from modal_dojo.frameworks.slime.modal_helpers.utils import (
+from modal_dojo.frameworks.miles.modal_helpers.utils import (
     get_checkpoint_conversion_policy,
 )
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
 
 @pytest.mark.parametrize(
-    ("model_cls", "recipe_cls", "ref_load", "conversion_tp"),
+    ("model_cls", "recipe_cls", "miles_model_name", "ref_load", "conversion_tp"),
     [
         (
             Qwen3_6_27B,
             Qwen3_6_27B_Recipe,
+            "qwen3.6-27B",
             "/checkpoints/Qwen3.6-27B_torch_dist_tp1pp1",
             1,
         ),
         (
             Qwen3_8_27B,
             Qwen3_8_27B_Recipe,
+            "qwen3.8-27B",
             "/checkpoints/Qwen3.8-27B_torch_dist_tp2pp1",
             2,
         ),
     ],
     ids=["qwen3.6-27b", "qwen3.8-27b"],
 )
-def test_qwen3_27b_adapts_current_slime_qwen3_5_recipe(
-    model_cls, recipe_cls, ref_load, conversion_tp
+def test_qwen3_27b_adapts_current_miles_qwen3_5_recipe(
+    model_cls, recipe_cls, miles_model_name, ref_load, conversion_tp
 ) -> None:
     model = model_cls()
     recipe = recipe_cls()
 
-    assert isinstance(SlimeRecipe.get_base_recipe(model), recipe_cls)
-    assert recipe.slime_model_script == "scripts/models/qwen3.5-27B.sh"
+    assert isinstance(MilesRecipe.get_base_recipe(model), recipe_cls)
+    assert recipe.miles_model_name == miles_model_name
     assert recipe.hf_checkpoint == model.model_name
     assert recipe.ref_load == ref_load
     assert recipe.gpu_type == "B300"
@@ -50,10 +52,6 @@ def test_qwen3_27b_adapts_current_slime_qwen3_5_recipe(
     assert fields["hf_checkpoint"] == model.model_name
     assert "num_layers" not in fields
     assert "spec" not in fields
-    cli_args = recipe.cli_args(model=model)
-    prefill_backend = cli_args.index("--sglang-cuda-graph-backend-prefill")
-    assert cli_args[prefill_backend + 1] == "disabled"
-
     nodes, processes, conversion_args = get_checkpoint_conversion_policy(
         recipe, model=model
     )

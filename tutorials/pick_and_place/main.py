@@ -1,5 +1,5 @@
 # ---
-# order: 9
+# order: 8
 # deps: mujoco, numpy, pillow
 # ---
 #

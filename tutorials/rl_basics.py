@@ -22,7 +22,7 @@ from modal_dojo import (
     Endpoint,
     HuggingFaceDataset,
     Qwen3_5_4B,
-    Qwen3_5_4B_Recipe,
+    Qwen3_5_4B_Miles_Recipe,
     TrainConfig,
 )
 
@@ -192,15 +192,14 @@ async def haiku_rm(args, sample, **kwargs) -> float:
 
 # ## Train the model
 #
-# Finally, onto the training. The Modal Dojo supports both the
-# [Slime](https://github.com/THUDM/slime) and
-# [Miles](https://github.com/radixark/miles) frameworks.
-# Here, we use Slime for demonstration purposes.
+# Finally, onto the training. The Modal Dojo runs on the
+# [Miles](https://github.com/radixark/miles) framework.
+# Here, we use Miles for demonstration purposes.
 #
 # Training is simple: pass in the model you intend to train,
 # the dataset you wish to train on, and a recipe for how you want
 # training to occur. The recipe wraps all
-# [framework-native flags](https://thudm.github.io/slime/get_started/usage.html)
+# [framework-native flags](https://github.com/radixark/miles/tree/main/docs)
 # in addition to providing Modal-specific ones.
 #
 # Once we run the code below, training kicks off and we'll immediately get a run ID, which we may
@@ -210,7 +209,7 @@ config = TrainConfig(
     model=model,
     dataset=train_dataset,
     eval_dataset=eval_dataset,
-    recipe=Qwen3_5_4B_Recipe(
+    recipe=Qwen3_5_4B_Miles_Recipe(
         num_rollout=10,
         save_interval=10,
         rollout_batch_size=16,
@@ -281,7 +280,7 @@ def continue_training(checkpoint):
         model=model,
         dataset=train_dataset,
         resume_from_checkpoint=checkpoint,
-        recipe=Qwen3_5_4B_Recipe(
+        recipe=Qwen3_5_4B_Miles_Recipe(
             custom_rm_function=haiku_rm,
             num_rollout=20,
             save_interval=20,

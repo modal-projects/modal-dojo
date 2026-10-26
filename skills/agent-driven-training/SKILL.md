@@ -164,7 +164,7 @@ rate, timing, and whether all apps stopped.
 Continue from a checkpoint only when the run is healthy and preserving its
 optimizer and scheduler state avoids discarding useful progress, such as after
 an interruption or while reward is still improving at the configured horizon.
-For Slime, keep the original model path and set `recipe.load` to the training
+For Miles, keep the original model path and set `recipe.load` to the training
 checkpoint; when extending the saved scheduler horizon, also set
 `extra_config={"override_opt_param_scheduler": True}`. Launch with a fresh run
 ID and prove one step before proceeding. Prefer a new run when changing the

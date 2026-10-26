@@ -8,11 +8,10 @@ from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 from modal_dojo.train_recipes.miles_recipe.qwen3_5_4b import (
     Qwen3_5_4B_Miles_Recipe,
 )
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
-from modal_dojo.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
+from modal_dojo.train_recipes.miles_recipe.qwen3_4b import Qwen3_4B_Recipe
 
 
-def _config(recipe: SlimeRecipe | MilesRecipe, model: ModelConfig) -> TrainConfig:
+def _config(recipe: MilesRecipe | MilesRecipe, model: ModelConfig) -> TrainConfig:
     return TrainConfig(
         dataset=HuggingFaceDataset(
             hf_repo="some/dataset",
@@ -31,7 +30,7 @@ def _config(recipe: SlimeRecipe | MilesRecipe, model: ModelConfig) -> TrainConfi
         (
             Qwen3_4B_Recipe(),
             Qwen3_4B(),
-            Framework.SLIME,
+            Framework.MILES,
         ),
         (
             Qwen3_5_4B_Miles_Recipe(),
@@ -48,8 +47,8 @@ def test_recipe_subclass_selects_framework_and_builder(
         "modal_dojo.common.train._warn_if_external_build_app", lambda: None
     )
     monkeypatch.setattr(
-        "modal_dojo.common.train.build_slime_app",
-        lambda **kwargs: calls.append(Framework.SLIME),
+        "modal_dojo.common.train.build_miles_app",
+        lambda **kwargs: calls.append(Framework.MILES),
     )
     monkeypatch.setattr(
         "modal_dojo.common.train.build_miles_app",

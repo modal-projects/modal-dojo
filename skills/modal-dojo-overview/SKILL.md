@@ -35,9 +35,9 @@ modal_dojo/         <- installable package
 │   ├── models/             <- ModelConfig hierarchy (see below)
 │   ├── wandb.py            <- WandbConfig
 │   ├── framework.py        <- resolve_caller_module, TOOLS_*
-│   └── ray_cluster.py      <- ModalRayCluster helper (used by slime)
+│   └── ray_cluster.py      <- ModalRayCluster helper (used by miles)
 ├── frameworks/             <- one subpackage per training framework
-│   ├── slime/              <- slime GRPO (Ray + Megatron + SGLang)
+│   
 └── tools/                  <- shared scripts mounted on every image at
                               /opt/modal-dojo/tools (see "Tools" below)
 
@@ -74,13 +74,13 @@ Built-in subclasses:
 
 | Class | HF repo | Architecture populated? | Notes |
 |---|---|---|---|
-| `Qwen3_4B` | `Qwen/Qwen3-4B` | yes | slime-ready |
-| `GLM_4_7` | `zai-org/GLM-4.7` | yes | MoE; slime-ready |
+| `Qwen3_4B` | `Qwen/Qwen3-4B` | yes | miles-ready |
+| `GLM_4_7` | `zai-org/GLM-4.7` | yes | MoE; miles-ready |
 | `Llama2_7B` | `meta-llama/Llama-2-7b-hf` | no | torchrun-based workflows |
 
-**Rule of thumb for slime**: slime emits architecture fields as CLI flags,
+**Rule of thumb for miles**: miles emits architecture fields as CLI flags,
 so it requires `architecture` to be a populated `ModelArchitecture(...)`.
-`SlimeRecipe._validate_custom_model_architecture` raises an
+`MilesRecipe._validate_custom_model_architecture` raises an
 actionable `ValueError` if a user attaches a model with
 `architecture is None`. Every other framework only needs `model_name`.
 
@@ -116,7 +116,7 @@ training run use a fresh path and attempt materialization independently.
 
 ### `TrainConfig` + recipe
 
-`TrainConfig` composes `dataset`, `model`, and a recipe (`SlimeRecipe` /
+`TrainConfig` composes `dataset`, `model`, and a recipe (`MilesRecipe` /
 `MilesRecipe`). It also accepts an optional, separate `eval_dataset` for the
 framework's internal evaluation loop; this is independent from explicit
 offline evaluation over `eval_dataset.rows()`. Recipes carry Modal infra +
@@ -145,7 +145,8 @@ the remote container.
 
 | Framework | Uses `config.model` CLI-wise | Needs `architecture` | Best for |
 |---|---|---|---|
-| `slime` | hf_checkpoint CLI flag **plus** architecture flags | **yes** | GRPO |
+| `miles` | hf_checkpoint CLI flag **plus** architecture flags | **yes** | GRPO |
+
 
 ## The `tools/` shared directory
 
@@ -169,7 +170,7 @@ remote_path=TOOLS_REMOTE_PATH, copy=True)` on every framework image.
 
    class MyModel(HFModelConfiguration):
        model_name = "org/repo"
-       # Optional: populate only if slime users will consume this model.
+       # Optional: populate only if miles users will consume this model.
        architecture = ModelArchitecture(
            num_layers=..., hidden_size=..., ...,
        )
@@ -234,7 +235,7 @@ remote_path=TOOLS_REMOTE_PATH, copy=True)` on every framework image.
    step by default so Tier 2 validation is cheap:
    - Small `global_batch_size` / tiny dataset slice
      (e.g. `split="train[:4]"`).
-   - For slime, prefer short recipes (`num_rollout=1`) so the first training step is visible.
+   - For miles, prefer short recipes (`num_rollout=1`) so the first training step is visible.
    - Disable eval / save if they'd gate the first-step marker.
 
 ### Custom-model tutorial pattern (no built-in subclass)
@@ -249,7 +250,7 @@ from modal_dojo import ModelArchitecture, ModelConfig
 
 class MyTinyModel(ModelConfig):
     model_name = "HuggingFaceTB/SmolLM2-135M"
-    # Slime also requires a populated model architecture.
+    # Miles also requires a populated model architecture.
     architecture = ModelArchitecture(...)
 
     def download(self):
@@ -261,7 +262,7 @@ model = MyTinyModel()
 
 Better: inherit from `HFModelConfiguration` and skip the `download`
 override (the one-line snapshot_download is the inherited default). See
-existing slime tutorials for full examples.
+existing miles tutorials for full examples.
 
 ## Validation
 
@@ -286,7 +287,7 @@ tutorial only. Don't expand to all tutorials on a single change.
   image's Python to match the local one. If a framework image has Python
   3.11 (e.g. some ModelScope images), app build fails with `InvalidError`.
 - **Framework image switches**. Recipes have no `image=`; use
-  `image_overlay=` (slime/miles) or Miles `docker_image=` to customize.
+  `image_overlay=` or `docker_image=` to customize.
   The launcher's `pip_install` chain reinstalls the framework fresh, so
   switching/overlaying the base is usually enough. Check whether transitive
   deps (megatron-core, pillow, tokenizers for transformers) are in the new

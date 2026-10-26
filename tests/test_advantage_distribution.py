@@ -20,7 +20,8 @@ from modal_dojo.common.advantage_distribution import (
     merge_shards,
     summarize_steps,
 )
-from modal_dojo.frameworks.slime import phase_reporting as pr
+from modal_dojo.common.reporting import _advantage_samples_payload
+from modal_dojo.frameworks.miles import phase_reporting as pr
 
 
 # ── _advantage_samples_payload ───────────────────────────────────────────────
@@ -28,7 +29,7 @@ from modal_dojo.frameworks.slime import phase_reporting as pr
 
 def test_payload_divides_sum_by_count_and_assigns_groups():
     """advantage = sum/count; group_index = sample_index // n_samples_per_prompt."""
-    rows = pr._advantage_samples_payload(
+    rows = _advantage_samples_payload(
         sample_sums=[2.0, 4.0, 9.0, 3.0],
         sample_counts=[2.0, 2.0, 3.0, 1.0],
         sample_indices=[0, 1, 2, 3],
@@ -44,7 +45,7 @@ def test_payload_divides_sum_by_count_and_assigns_groups():
 
 def test_payload_zero_count_is_zero_not_nan():
     """An all-masked sample (count 0) yields advantage 0.0, never a division error."""
-    rows = pr._advantage_samples_payload(
+    rows = _advantage_samples_payload(
         sample_sums=[0.0],
         sample_counts=[0.0],
         sample_indices=[5],
@@ -58,7 +59,7 @@ def test_payload_zero_count_is_zero_not_nan():
 
 def test_payload_uses_global_sample_index_for_groups():
     """Group is derived from the global sample index, not the local position."""
-    rows = pr._advantage_samples_payload(
+    rows = _advantage_samples_payload(
         sample_sums=[1.0, 1.0],
         sample_counts=[1.0, 1.0],
         sample_indices=[8, 9],  # a shard that holds only group 4's samples
@@ -170,13 +171,13 @@ def test_summarize_steps_one_row_per_rollout():
 def test_patch_anchor_targets_existing_reporter():
     """The injected call must name a function that actually exists, so a rename
     surfaces here instead of as a silent no-op patch in the container."""
-    from modal_dojo.frameworks.slime.modal_helpers.patches import (
+    from modal_dojo.frameworks.miles.modal_helpers.patches import (
         patch_advantage_distribution as patch,
     )
 
     assert "report_advantage_distribution" in patch.PREAMBLE
     assert hasattr(pr, "report_advantage_distribution")
-    # The injection keeps the original anchor intact (so slime's own logic runs).
+    # The injection keeps the original anchor intact (so miles' own logic runs).
     assert patch.ANCHOR in patch.INJECTION
     assert "_tg_report_advantage_distribution(rollout_id, args, rollout_data)" in (
         patch.INJECTION

@@ -1,6 +1,6 @@
 """Fire-and-forget HTTP poster for framework-status updates.
 
-Used by the slime/miles launcher and by ``common/train.py`` so that
+Used by the miles launcher and by ``common/train.py`` so that
 ``framework_status`` writes don't block training/orchestration on Modal Volume
 round-trips. A single daemon thread drains a bounded queue and POSTs JSON to
 the dashboard's ``/api/framework-status`` endpoint.
@@ -28,7 +28,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-# Shared with slime's phase_reporting, whose rollout payloads can be 100KB+ —
+# Shared with miles' phase_reporting, whose rollout payloads can be 100KB+ —
 # size the queue for bursts of per-step rollout/advantage items.
 _QUEUE: Queue[dict[str, Any] | None] = Queue(maxsize=512)
 _STARTED = False

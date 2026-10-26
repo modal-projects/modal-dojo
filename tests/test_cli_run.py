@@ -60,7 +60,7 @@ def _summary(**overrides):
         "framework_status": "training",
         "model": "org/model",
         "dataset": "org/data",
-        "recipe": "slime",
+        "recipe": "miles",
         "group_id": "nightly",
         "created_at": 100,
         "updated_at": 200,
@@ -266,7 +266,7 @@ def test_run_params_prints_raw_recipe_as_json():
         "critic_num_nodes": None,
     }
     FakeDashboardClient.payload = _summary(
-        framework="slime",
+        framework="miles",
         config={"recipe": params},
     )
 
@@ -280,7 +280,7 @@ def test_run_params_prints_raw_recipe_as_json():
     assert json.loads(result.stdout) == params
 
 
-def test_run_params_supports_non_slime_frameworks():
+def test_run_params_supports_non_miles_frameworks():
     params = {"gpu_type": "H100", "num_nodes": 2}
     FakeDashboardClient.payload = _summary(
         framework="miles",
@@ -770,7 +770,7 @@ def test_run_trace_rejects_missing_and_invalid_steps(tmp_path):
         ("--status", "failed", "display_status"),
         ("--model", "org/model", "model"),
         ("--dataset", "org/data", "dataset"),
-        ("--recipe", "slime", "recipe"),
+        ("--recipe", "miles", "recipe"),
         ("--training-type", "sft", "training_type"),
         ("--group", "nightly", "group_id"),
     ],
@@ -830,7 +830,7 @@ def test_run_list_forwards_filters_and_prints_configured_fields_as_json():
             "stage": "Training",
             "model": "org/model",
             "dataset": "org/data",
-            "recipe": "slime",
+            "recipe": "miles",
             "training_type": "rl",
             "group": "nightly",
             "created_at": "1970-01-01T00:01:40Z",

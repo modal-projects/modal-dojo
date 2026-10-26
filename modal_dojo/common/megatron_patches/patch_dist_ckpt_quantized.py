@@ -1,4 +1,4 @@
-"""Backport NVIDIA/Megatron-LM #3845 into slime's pinned Megatron.
+"""Backport NVIDIA/Megatron-LM #3845 into miles' pinned Megatron.
 
 The async dist-checkpoint writer's ``_clone_if_needed`` (nested in
 ``FileSystemWriterAsync.write_preloaded_data`` in ``filesystem_async.py``)
@@ -7,7 +7,7 @@ quantized CUDA tensors (FP8/TE ``_extra_state``) the IPC handle isn't created,
 so the async worker hits invalid memory access and the torch_dist save crashes
 in ``inline_container.cc`` with "unexpected pos" (e.g. the GLM-5.2 convert).
 
-Upstream #3845 dequantizes such tensors before they reach the writer. slime
+Upstream #3845 dequantizes such tensors before they reach the writer. miles
 pins a pre-#3845 Megatron, so we inject the same guard here: for a CUDA tensor
 that exposes a ``dequantize`` method, dequantize before returning. No-op for
 non-quantized tensors, so it's safe for every image.

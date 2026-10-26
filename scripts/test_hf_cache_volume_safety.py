@@ -1,7 +1,7 @@
 """Validate that every file mounting a volume at /root/.cache/huggingface also
 clears the directory during image build.
 
-Modal volumes cannot mount on non-empty paths.  Several base images (slime,
+Modal volumes cannot mount on non-empty paths.  Several base images (miles,
 sglang, vllm) ship with files under /root/.cache/huggingface after pip install,
 so every image that mounts the HF cache volume must include a
 ``rm -rf /root/.cache/huggingface`` (or equivalent) in its build commands.

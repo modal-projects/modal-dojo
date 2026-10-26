@@ -1,5 +1,5 @@
 # ---
-# order: 6
+# order: 5
 # ---
 #
 # # Long chain-of-thought reasoning for large-scale RL
@@ -21,7 +21,7 @@ from modal_dojo import (
     Endpoint,
     HuggingFaceDataset,
     Qwen3_5_4B,
-    Qwen3_5_4B_Recipe,
+    Qwen3_5_4B_Miles_Recipe,
     TrainConfig,
 )
 
@@ -180,7 +180,7 @@ async def dapo_overlong_rm(args, sample, **kwargs) -> float:
 config = TrainConfig(
     model=model,
     dataset=train_dataset,
-    recipe=Qwen3_5_4B_Recipe(
+    recipe=Qwen3_5_4B_Miles_Recipe(
         actor_num_gpus_per_node=8,
         tensor_model_parallel_size=2,
         sequence_parallel=True,
@@ -202,7 +202,7 @@ config = TrainConfig(
         },
         over_sampling_batch_size=48,
         dynamic_sampling_filter_path=(
-            "slime.rollout.filter_hub.dynamic_sampling_filters."
+            "miles.rollout.filter_hub.dynamic_sampling_filters."
             "check_reward_nonzero_std"
         ),
         balance_data=True,

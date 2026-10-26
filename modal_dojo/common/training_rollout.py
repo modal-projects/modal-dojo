@@ -2,7 +2,7 @@
 
 Mirrors the EvalResult shape but lives under its own MetadataStore so the
 dashboard can list rollouts per training run without scanning the eval store.
-Records are written by slime's `log_rollout_data` hook through the async
+Records are written by miles' `log_rollout_data` hook through the async
 phase-reporter; reads happen via the dashboard's
 ``/api/runs/{id}/rollouts`` endpoint.
 """
@@ -34,7 +34,7 @@ from modal_dojo.utils.metadata import (
 
 
 class TrainingRolloutSample(Sample):
-    """``rollout_index`` is slime's per-episode ``Sample.rollout_id``, not the
+    """``rollout_index`` is miles' per-episode ``Sample.rollout_id``, not the
     step id on ``TrainingRolloutResult``."""
 
     rollout_index: int | None = None

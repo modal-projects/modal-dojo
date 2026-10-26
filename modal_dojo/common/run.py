@@ -62,7 +62,7 @@ _TRANSIENT_MODAL_ERRORS = (
 class FrameworkStatusUpdate(BaseModel):
     """Body of ``POST /api/framework-status``.
 
-    Reporters (``common/status_reporter.py``, slime's ``phase_reporting``) post
+    Reporters (``common/status_reporter.py``, miles' ``phase_reporting``) post
     more keys than the dashboard tracks (``app_name``, ``metrics``, …); those
     extras are ignored. Progress values come from loosely-typed framework args,
     so anything non-numeric or negative reads as "not provided".

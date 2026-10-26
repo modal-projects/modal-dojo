@@ -43,7 +43,7 @@ if m and marker not in src:
     patched = True
 
 # ── 2. Patch MCoreSavePlanner.transform_object to seek(0) BytesIO ───────────
-# The slime fork's transform_object is a simple one-liner:
+# The miles fork's transform_object is a simple one-liner:
 #     def transform_object(self, write_item: WriteItem, object: Any):
 #         return object
 

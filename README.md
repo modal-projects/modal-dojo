@@ -58,7 +58,7 @@ import re
 from modal_dojo import (
     HuggingFaceDataset,
     Qwen3_5_4B,
-    Qwen3_5_4B_Recipe,
+    Qwen3_5_4B_Miles_Recipe,
     TrainConfig,
 )
 
@@ -84,7 +84,7 @@ config = TrainConfig(
         output_column="label",
         input_format="text",
     ),
-    recipe=Qwen3_5_4B_Recipe(
+    recipe=Qwen3_5_4B_Miles_Recipe(
         custom_rm_function=gsm8k_rm,
     ),
 )

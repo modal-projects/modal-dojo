@@ -348,7 +348,7 @@ def test_status_reporting_posts_include_proxy_auth_headers(config_path, monkeypa
     assert headers["Authorization"] == "Bearer run-token"
 
 
-def test_slime_reporting_posts_include_proxy_auth_headers(config_path, monkeypatch):
+def test_miles_reporting_posts_include_proxy_auth_headers(config_path, monkeypatch):
     config.save_proxy_auth("wk-test", "ws-test")
     monkeypatch.delenv("MODAL_KEY", raising=False)
     monkeypatch.delenv("MODAL_SECRET", raising=False)

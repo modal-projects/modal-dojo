@@ -17,7 +17,7 @@ What this does:
 2. On first deploy, asks how to protect the dashboard (a password by default).
 3. Deploys the dashboard's ASGI app and orphan reconciler.
 4. Persists the FastAPI web URL to ``~/.modal-dojo.toml`` so other
-   clients (e.g. the slime launcher) can find the dashboard.
+   clients (e.g. the miles launcher) can find the dashboard.
 """
 
 from __future__ import annotations

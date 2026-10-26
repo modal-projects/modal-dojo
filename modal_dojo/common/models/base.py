@@ -35,7 +35,7 @@ class ModelArchitecture:
         moe_router_dtype: Data type for router computation.
         moe_permute_fusion: Whether to enable permute fusion.
         moe_aux_loss_coeff: Auxiliary load-balancing loss coefficient.
-        megatron_model_type: Slime/Megatron model type used for checkpoint
+        megatron_model_type: Miles/Megatron model type used for checkpoint
             conversion outside bridge mode.
         apply_layernorm_1p: Whether to use zero-centered LayerNorm.
         use_gated_attention: Whether to enable gated attention.

@@ -240,9 +240,12 @@ def convert_megatron_checkpoint_to_hf(
     hf_cache_volume = Volume.from_name("huggingface-cache", create_if_missing=True)
     checkpoints_volume = volume
     from modal_dojo.common import hf_secrets
-    from modal_dojo.frameworks.slime.launcher import _build_slime_base_image
+    from modal_dojo.frameworks.miles.launcher import _build_miles_base_image
+    from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
-    image = _build_slime_base_image().add_local_python_source("modal_dojo", copy=True)
+    image = _build_miles_base_image(MilesRecipe()).add_local_python_source(
+        "modal_dojo", copy=True
+    )
     conversion_app = modal.App("training-gym-checkpoint-convert")
     gpu_spec = _conversion_gpu_spec(checkpoint, recipe)
 
@@ -281,12 +284,12 @@ def convert_megatron_checkpoint_to_hf(
             )
 
         spec = importlib.util.find_spec(
-            "modal_dojo.frameworks.slime.modal_helpers.convert_torch_dist_to_hf"
+            "modal_dojo.frameworks.miles.modal_helpers.convert_torch_dist_to_hf"
         )
         convert_script = spec.origin if spec else None
         if convert_script in (None, ""):
             raise RuntimeError(
-                "modal_dojo.frameworks.slime.modal_helpers.convert_torch_dist_to_hf is missing"
+                "modal_dojo.frameworks.miles.modal_helpers.convert_torch_dist_to_hf is missing"
             )
         cmd = (
             f"python {convert_script} "

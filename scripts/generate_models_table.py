@@ -22,10 +22,9 @@ BANNER = (
     "registries in modal_dojo/train_recipes/*/__init__.py. -->"
 )
 FRAMEWORKS = (
-    "modal_dojo.train_recipes.slime_recipe",
     "modal_dojo.train_recipes.miles_recipe",
 )
-BASE_RECIPES = {"SlimeRecipe", "MilesRecipe"}
+BASE_RECIPES = {"MilesRecipe"}
 FRAMEWORK_BASES = frozenset({*BASE_RECIPES, "MilesConfig"})
 MODEL_CONFIGS = {name.lower(): getattr(models, name) for name in models.__all__}
 FAMILY_RE = re.compile(r"^([A-Za-z]+(?:\d+(?:\.\d+)*|\d+)?)")

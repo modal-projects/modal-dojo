@@ -1,7 +1,7 @@
 """Trace / image / trajectory extraction from framework Samples for dashboard
 rollout reporting.
 
-Shared by the slime and miles frameworks (miles is a slime fork; its Sample
+Shared by the miles framework (miles is a slime fork; its Sample
 carries the same prompt/response/reward/metadata/multimodal fields). Everything
 here is duck-typed so neither framework need be importable; heavy optional deps
 (PIL) are imported lazily inside the functions that need them.
@@ -107,7 +107,7 @@ def _coerce_text(value: Any) -> str:
 #   sample.metadata["shaped_reward"] = float(task_score)
 #
 # Extraction maps that onto gym ``Sample.score``; do not grow gym Sample with
-# slime/OPD fields like ``reward: dict``.
+# miles/OPD fields like ``reward: dict``.
 _SHAPED_REWARD_KEY = "shaped_reward"
 
 
@@ -242,7 +242,7 @@ def _normalize_span(raw: Any) -> dict[str, Any] | None:
 
 
 def _normalize_trace(raw: Any) -> list[dict[str, Any]] | None:
-    """Coerce slime's per-sample trace (shape varies by version) into a list of
+    """Coerce miles' per-sample trace (shape varies by version) into a list of
     ``{name, start, end, attributes, parent}`` spans rebased to start at 0.
     Returns ``None`` when there's nothing usable."""
     spans: list[Any] | None = None
@@ -274,7 +274,7 @@ def _normalize_trace(raw: Any) -> list[dict[str, Any]] | None:
 
 
 def _extract_trace(sample: Any) -> Any:
-    """Pull slime's trace carrier off a sample — it lives either as a ``trace``
+    """Pull miles' trace carrier off a sample — it lives either as a ``trace``
     attribute/key or nested under ``metadata['trace']``, depending on version."""
     if isinstance(sample, dict):
         raw = sample.get("trace")
@@ -396,7 +396,7 @@ def _compact_trajectory_messages(raw: Any) -> list[dict[str, Any]] | None:
 def _image_to_data_uri(value: Any) -> str | None:
     """Coerce an image reference into a browser-renderable, thumbnailed data-URI.
 
-    Handles PIL Images (how slime's ``process_vision_info`` stores them on the
+    Handles PIL Images (how miles' ``process_vision_info`` stores them on the
     Sample), raw bytes, and ``data:``/``http(s)`` strings. Downscales to a
     thumbnail and skips anything that's still too big, so a full-res screenshot
     can't blow up the rollout payload. Remote URLs pass through untouched (the
@@ -447,11 +447,11 @@ def _image_to_data_uri(value: Any) -> str | None:
 
 
 def _image_candidates(sample: Any) -> list[Any]:
-    """Unencoded image references on a slime Sample, best first.
+    """Unencoded image references on a miles Sample, best first.
 
     An image a reward/rollout function stashes on ``sample.metadata["image"]``
     (e.g. a rendering of the model's output) comes first. For image-modality
-    runs slime's ``process_vision_info`` lifts the screenshot into
+    runs miles' ``process_vision_info`` lifts the screenshot into
     ``sample.multimodal_inputs['images']`` (even when ``apply_chat_template``
     collapses the prompt to a string). Falls back to image items in a
     conversation-list prompt. Returns ``[]`` for non-image samples.
@@ -634,7 +634,7 @@ def _sample_to_dict(
     reward_key: str | None = None,
 ) -> dict[str, Any]:
     """Best-effort extraction of (prompt, response, reward, metadata) from a
-    slime Sample-like object. Duck-typed so we don't import slime here."""
+    miles Sample-like object. Duck-typed so we don't import miles here."""
     if isinstance(sample, dict):
         attrs = sample
         get = sample.get

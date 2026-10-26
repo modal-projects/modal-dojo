@@ -10,10 +10,9 @@ from modal_dojo.train_recipes.gpu_allocation import (
     validate_megatron_actor_parallelism,
     validate_num_experts_divisible_by_expert_parallel_size,
 )
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
-_SLIME_KW = dict(
+_RECIPE_KW = dict(
     gpu_type="H100",
     colocate=False,
     actor_num_gpus_per_node=8,
@@ -28,8 +27,8 @@ _SLIME_KW = dict(
 )
 
 
-def test_slime_resolves_non_colocated_gpu_allocation() -> None:
-    recipe = SlimeRecipe(**_SLIME_KW, rollout_num_gpus=8)
+def test_miles_resolves_non_colocated_gpu_allocation() -> None:
+    recipe = MilesRecipe(**_RECIPE_KW, rollout_num_gpus=8)
 
     allocation = recipe.gpu_allocation
     assert allocation.actor_gpus == 8
@@ -42,14 +41,14 @@ def test_slime_resolves_non_colocated_gpu_allocation() -> None:
 
 def test_rollout_gpus_must_divide_rollout_engine_size() -> None:
     with pytest.raises(ValueError, match="not divisible"):
-        SlimeRecipe(**_SLIME_KW, rollout_num_gpus=10)
+        MilesRecipe(**_RECIPE_KW, rollout_num_gpus=10)
 
 
 def test_colocated_rollout_gpu_override_warns_when_it_changes_nothing() -> None:
     with pytest.warns(UserWarning, match="colocate=True uses actor GPUs"):
-        recipe = SlimeRecipe(
+        recipe = MilesRecipe(
             **{
-                **_SLIME_KW,
+                **_RECIPE_KW,
                 "colocate": True,
                 "rollout_num_gpus": 16,
             }
@@ -61,7 +60,7 @@ def test_colocated_rollout_gpu_override_warns_when_it_changes_nothing() -> None:
 
 def test_large_rollout_allocation_warns() -> None:
     with pytest.warns(UserWarning) as caught:
-        SlimeRecipe(**_SLIME_KW, rollout_num_gpus=32)
+        MilesRecipe(**_RECIPE_KW, rollout_num_gpus=32)
 
     messages = [str(w.message) for w in caught]
     assert any("more than 2x actor allocation" in message for message in messages)
@@ -69,9 +68,9 @@ def test_large_rollout_allocation_warns() -> None:
 
 def test_multi_node_requires_full_node_gpus() -> None:
     with pytest.raises(ValueError, match="8 GPUs per node"):
-        SlimeRecipe(
+        MilesRecipe(
             **{
-                **_SLIME_KW,
+                **_RECIPE_KW,
                 "gpu_type": "B300",
                 "actor_num_nodes": 2,
                 "actor_num_gpus_per_node": 4,
@@ -82,9 +81,9 @@ def test_multi_node_requires_full_node_gpus() -> None:
 
 def test_single_node_rejects_gpus_over_container_max() -> None:
     with pytest.raises(ValueError, match="exceeds the 4 GPU container limit"):
-        SlimeRecipe(
+        MilesRecipe(
             **{
-                **_SLIME_KW,
+                **_RECIPE_KW,
                 "gpu_type": "A10",
                 "actor_num_nodes": 1,
                 "actor_num_gpus_per_node": 8,
@@ -339,9 +338,9 @@ def test_non_colocate_allows_expandable_segments_in_train_env_vars() -> None:
         )
 
 
-def test_slime_colocate_rejects_expandable_segments_in_global_env() -> None:
+def test_miles_colocate_rejects_expandable_segments_in_global_env() -> None:
     with pytest.raises(ValueError, match="environment"):
-        SlimeRecipe(
-            **{**_SLIME_KW, "colocate": True},
+        MilesRecipe(
+            **{**_RECIPE_KW, "colocate": True},
             environment={"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
         )

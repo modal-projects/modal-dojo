@@ -1,12 +1,12 @@
 """Per-step, per-group advantage distributions for RL training runs.
 
-slime logs only the *mean* advantage per training step. For GRPO-style
+miles logs only the *mean* advantage per training step. For GRPO-style
 estimators the interesting signal is the *spread* of advantages within each
 prompt group (the ``n_samples_per_prompt`` responses to one prompt), since the
 advantage is a group-normalized reward. This module stores the full per-sample
 distribution so the dashboard can render per-group histograms / quantiles.
 
-Write path: slime's ``log_rollout_data`` hook → the async phase-reporter →
+Write path: miles' ``log_rollout_data`` hook → the async phase-reporter →
 ``POST /api/advantage-distributions``. Each data-parallel rank holds a disjoint
 shard of the rollout's samples, so each rank posts its own shard and we persist
 one file per ``(run, rollout, dp_rank)`` — concurrent DP posts never touch the
@@ -79,7 +79,7 @@ def distribution_stats(values: list[float]) -> dict[str, Any]:
 class AdvantageSample(BaseModel):
     """One sample's group-normalized advantage within a rollout step."""
 
-    # Global sample index within the rollout step (``sample.index`` in slime).
+    # Global sample index within the rollout step (``sample.index`` in miles).
     sample_index: int
     # ``sample_index // n_samples_per_prompt`` — the GRPO prompt group.
     group_index: int
@@ -87,7 +87,7 @@ class AdvantageSample(BaseModel):
     # the advantage is constant across response tokens, so this is just that
     # constant; for token-varying estimators it is the per-token mean.
     advantage: float
-    # The pre-normalization reward, when slime exposes it (handy for sanity).
+    # The pre-normalization reward, when miles exposes it (handy for sanity).
     raw_reward: float | None = None
 
 

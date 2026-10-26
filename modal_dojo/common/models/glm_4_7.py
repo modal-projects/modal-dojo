@@ -63,7 +63,7 @@ class GLM_4_7(HFModelConfiguration):
                 snapshot_dir,
             ],
         )
-        # The Slime model provider reads num_nextn_predict_layers via the
+        # The Miles model provider reads num_nextn_predict_layers via the
         # megatron-bridge ``AutoBridge.from_hf_pretrained`` path but does NOT
         # override it from CLI args. With PP > 1 the MTP embedding on the last
         # pipeline stage collides with the main embedding on the first stage

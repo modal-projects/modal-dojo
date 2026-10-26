@@ -374,7 +374,7 @@ class _RunProxy:
 
 
 def install_wandb_shim() -> None:
-    """Expose Trackio as the W&B subset used by Slime and Miles."""
+    """Expose Trackio as the W&B subset used by Miles."""
     current = sys.modules.get("wandb")
     if current is not None and getattr(current, _SHIM_MARKER, False):
         return
@@ -432,7 +432,7 @@ def install_wandb_shim() -> None:
         shim.run = proxy
         shim.finished = False
         shim.config = run.config
-        # Materialize the remote run before Slime's worker processes resume it.
+        # Materialize the remote run before Miles' worker processes resume it.
         trackio.log({}, step=-1)
         return proxy
 
@@ -444,7 +444,7 @@ def install_wandb_shim() -> None:
         **_kwargs: Any,
     ) -> Any:
         # trackio.log() reads the run from a ContextVar that threads started
-        # after init() can't see (slime's engine-metrics thread, for one), so
+        # after init() can't see (miles' engine-metrics thread, for one), so
         # go through the run object directly.
         run = shim.run
         if run is None:

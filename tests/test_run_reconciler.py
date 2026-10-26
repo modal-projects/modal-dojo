@@ -30,7 +30,7 @@ def _run(
     return TrainingRun(
         training_run_id=training_run_id,
         modal_app_id=modal_app_id,
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
         status=status,
         created_at=updated_at or started_at or 1_700_000_000,
@@ -71,7 +71,7 @@ def test_pre_app_orphan_uses_created_at_not_updated_at():
     run = TrainingRun(
         training_run_id="old-pre-app",
         modal_app_id="",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
         status=TrainingRunStatus.RUNNING,
         created_at=created,
@@ -89,7 +89,7 @@ def test_recent_pre_app_run_stays_running():
     run = TrainingRun(
         training_run_id="recent-pre-app",
         modal_app_id="",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
         status=TrainingRunStatus.RUNNING,
         created_at=recent,
@@ -277,7 +277,7 @@ def test_load_running_runs_reads_canonical_store_not_only_summary(fake_volume):
     stale_run = TrainingRun(
         training_run_id="canonical-only",
         modal_app_id="",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
         status=TrainingRunStatus.RUNNING,
         created_at=created,

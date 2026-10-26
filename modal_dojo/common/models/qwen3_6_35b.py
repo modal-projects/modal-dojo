@@ -36,7 +36,7 @@ class Qwen3_6_35B(HFModelConfiguration):
         moe_router_dtype="fp32",
         moe_permute_fusion=True,
         moe_aux_loss_coeff=0,
-        megatron_spec=["slime_plugins.models.qwen3_5", "get_qwen3_5_spec"],
+        megatron_spec=["miles_plugins.models.qwen3_5", "get_qwen3_5_spec"],
         megatron_model_type="qwen3.5-35B-A3B",
         apply_layernorm_1p=True,
         use_gated_attention=True,

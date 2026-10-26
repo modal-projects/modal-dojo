@@ -1,6 +1,6 @@
 """User-local config persisted at ``~/.modal-dojo.toml``.
 
-Populated by ``modal-dojo setup``; read by the slime launcher (and any other
+Populated by ``modal-dojo setup``; read by the miles launcher (and any other
 caller) to look up where to POST phase reports and other client-side defaults.
 """
 

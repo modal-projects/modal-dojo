@@ -6,7 +6,7 @@ sends the resulting ``input_ids``. For Gemma-4 those already carry one
 image, so every request 400s. Turning the chat template off is not an escape:
 the processor then gets message dicts and fails in ``validate_inputs``.
 
-slime sends ``text`` instead whenever a single-turn request carries images, so
+miles sends ``text`` instead whenever a single-turn request carries images, so
 SGLang expands the placeholders itself; this mirrors that branch. It stays gated
 on a Gemma-4 processor because miles expects other models to keep one
 placeholder for ``mm_data.py`` to expand later.

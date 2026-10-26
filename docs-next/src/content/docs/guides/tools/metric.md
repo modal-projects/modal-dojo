@@ -8,7 +8,7 @@ The [observability dashboard](https://dojo.modal.dev/guides/dashboard) captures 
 
 ## Dashboard only
 
-This is the default: `SlimeRecipe` and `MilesRecipe` start with `metrics=DashboardMetricConfig()` (a few model recipes override it, e.g. `Qwen3_6_27B_Recipe_Agentic` ships with Trackio), which sends the framework's metrics to the dashboard and nowhere else — no account, API key, or extra server. Set it explicitly to name the project or group:
+This is the default: `MilesRecipe` starts with `metrics=DashboardMetricConfig()` (a few model recipes override it, e.g. `Qwen3_6_27B_Recipe_Agentic` ships with Trackio), which sends the framework's metrics to the dashboard and nowhere else — no account, API key, or extra server. Set it explicitly to name the project or group:
 
 ```python
 from modal_dojo import DashboardMetricConfig, Qwen3_5_4B, Qwen3_5_4B_Recipe, TrainConfig

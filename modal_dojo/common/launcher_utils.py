@@ -1,4 +1,4 @@
-"""Framework-agnostic Modal launcher utilities shared by slime and miles.
+"""Framework-agnostic Modal launcher utilities shared by the miles launcher.
 
 Both frameworks' ``modal_helpers/utils.py`` are thin wrappers over these
 implementations; they pass framework-specific parametrization (extended MoE
@@ -496,8 +496,8 @@ def serialize_recipe_params(
 ) -> dict[str, Any]:
     """The recipe's effective CLI flags, serialized for the dashboard run record.
 
-    Framework-agnostic: any recipe implementing ``_fields`` works, so slime and
-    miles runs get the same parameter table.
+    Framework-agnostic: any recipe implementing ``_fields`` works, so miles
+    runs get the same parameter table.
     """
     result = {
         key: serialize_recipe_param_value(key, value)

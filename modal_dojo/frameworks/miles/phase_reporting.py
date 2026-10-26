@@ -6,12 +6,12 @@ paths import from this module *inside the training container*, so everything
 they reference must stay importable here. The implementation is split across:
 
 - :mod:`modal_dojo.common.reporting` — HTTP queue/URL/token plumbing +
-  run-context helpers (shared with slime)
+  run-context helpers (shared)
 - :mod:`modal_dojo.common.sample_extraction` — trace/image/trajectory
-  extraction from Samples (shared with slime; miles' Sample is the same shape)
+  extraction from Samples (shared; miles' Sample is the same shape)
 - :mod:`.advantage_reporting` — torch/megatron advantage-distribution math
 
-Mirror of :mod:`modal_dojo.frameworks.slime.phase_reporting` with two
+Two
 differences: statuses come from :class:`MilesStatus`, and miles has no step
 timing at all — no ``step_event`` markers are emitted, and the dashboard skips
 step-time recording for miles runs entirely.
@@ -102,7 +102,7 @@ def report_step_event(
     ``status`` may be a plain string — the patched miles train.py passes phase
     names as literals so the injected code stays stdlib-only.
 
-    Unlike slime, miles does not track step times: there is no ``step_event``
+    miles does not track step times: there is no ``step_event``
     parameter, so the dashboard gets phase + progress updates without
     start/finish timing events.
     """

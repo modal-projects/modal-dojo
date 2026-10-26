@@ -15,7 +15,6 @@ from modal_dojo.common.models.base import ModelArchitecture
 from modal_dojo.common.models.qwen3_4b import Qwen3_4B
 from modal_dojo.common.models.validation import VALIDATION_CONFIGS
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 @pytest.mark.parametrize(
@@ -26,7 +25,7 @@ from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 def test_presets_do_not_warn(entry) -> None:
     model = entry.model_config()
     recipe = (
-        SlimeRecipe if entry.framework is Framework.SLIME else MilesRecipe
+        MilesRecipe if entry.framework is Framework.MILES else MilesRecipe
     ).get_base_recipe(model)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -35,7 +34,7 @@ def test_presets_do_not_warn(entry) -> None:
 
 
 def test_known_mistake_warns() -> None:
-    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    model, recipe = Qwen3_4B(), MilesRecipe.get_base_recipe(Qwen3_4B())
     recipe.max_tokens_per_gpu = 65536
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -49,7 +48,7 @@ def test_known_mistake_warns() -> None:
 def test_invalid_model_name_without_arch_does_not_raise() -> None:
     model = Qwen3_4B()
     model.architecture, model.model_name = None, ""
-    maybe_warn_gpu_oom(SlimeRecipe.get_base_recipe(Qwen3_4B()), model)
+    maybe_warn_gpu_oom(MilesRecipe.get_base_recipe(Qwen3_4B()), model)
 
 
 def test_hf_cfg_detects_moe(tmp_path, monkeypatch) -> None:
@@ -141,7 +140,7 @@ def test_lora_recipe_estimated() -> None:
     "hook", ["custom_generate_function_path", "rollout_function_path"]
 )
 def test_multi_turn_without_context_cap_warns(hook: str) -> None:
-    model, recipe = Qwen3_4B(), SlimeRecipe.get_base_recipe(Qwen3_4B())
+    model, recipe = Qwen3_4B(), MilesRecipe.get_base_recipe(Qwen3_4B())
     recipe.extra_config = {hook: "pkg.fn"}
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")

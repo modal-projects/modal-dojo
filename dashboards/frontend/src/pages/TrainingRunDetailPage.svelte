@@ -721,7 +721,7 @@
       advantageSteps = rows;
       return true;
     } catch {
-      // Advantage data is optional (only present once the slime hook has
+      // Advantage data is optional (only present once the miles hook has
       // reported a step) — keep whatever we have on a transient failure.
     }
   }

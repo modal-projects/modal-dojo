@@ -8,8 +8,8 @@ LLM-backbone-only).
 
 The class holds only the model's specs. Alongside it live the Qwen3-ASR-specific
 input-prep functions (prompt rendering + processor tokenization) the
-transcription rollout needs — model knowledge, kept out of the generic slime glue,
-mirroring ``parse_qwen3_response`` in :mod:`.base`. Framework wiring (the slime
+transcription rollout needs — model knowledge, kept out of the generic miles glue,
+mirroring ``parse_qwen3_response`` in :mod:`.base`. Framework wiring (the miles
 image-build shims and audio deps) lives on ``Qwen3_ASR_1_7B_Recipe`` instead,
 since it's meaningless for other backends.
 """
@@ -101,7 +101,7 @@ def _processor(checkpoint: str) -> Any:
 
 
 def _prompt_user_text(prompt: str | list) -> str:
-    """User instruction text from slime's ``Sample.prompt`` (a chat-message list in
+    """User instruction text from miles' ``Sample.prompt`` (a chat-message list in
     our case, or a plain string), with audio payloads and the ``<audio>`` marker
     stripped. Empty/missing is fine for ASR — the audio placeholder alone drives
     transcription, so the instruction text is optional."""

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`modal-dojo` is a pip-installable Python package that provides framework-aware launchers for distributed training on Modal's multi-node GPU clusters. The current entrypoint is `TrainConfig` + a recipe (`SlimeRecipe` / `MilesConfig`), then `.train()` / `.launch()` — the package handles image construction, cluster topology, Ray/NCCL bring-up, volume mounts, and checkpointing.
+`modal-dojo` is a pip-installable Python package that provides framework-aware launchers for distributed training on Modal's multi-node GPU clusters. The current entrypoint is `TrainConfig` + a recipe (`MilesRecipe`), then `.train()` / `.launch()` — the package handles image construction, cluster topology, Ray/NCCL bring-up, volume mounts, and checkpointing.
 
 ## Commands
 
@@ -53,7 +53,7 @@ git diff | uv run python -m scripts.diff_impact
 
 ### TrainConfig + recipe
 
-`TrainConfig` composes `dataset`, `model`, and a recipe (`SlimeRecipe` or `MilesConfig`). Call `.train()` or `.launch()` — there is no public `build_app()`. Recipes carry Modal infra + framework CLI flags (`extra="forbid"`).
+`TrainConfig` composes `dataset`, `model`, and a recipe (`MilesRecipe`). Call `.train()` or `.launch()` — there is no public `build_app()`. Recipes carry Modal infra + framework CLI flags (`extra="forbid"`).
 
 ### Train pipeline
 
@@ -80,11 +80,11 @@ Known-model presets live under `train_recipes/`, such as `Qwen3_4B_Recipe`. `Tra
 
 One registry, one script, one workflow, across every framework.
 
-`common/models/validation.py` holds `VALIDATION_CONFIGS`: each entry maps a model name to its `ModelConfig` and the framework whose `get_base_recipe` trains it. The framework has to be declared — `SlimeRecipe.get_base_recipe` returns a recipe for any model it's asked about, so the recipe classes can't answer "is this model mine?".
+`common/models/validation.py` holds `VALIDATION_CONFIGS`: each entry maps a model name to its `ModelConfig` and the framework whose `get_base_recipe` trains it. The framework has to be declared — `MilesRecipe.get_base_recipe` returns a recipe for any model it's asked about, so the recipe classes can't answer "is this model mine?".
 
 `scripts/validate_model_configs.py` owns everything framework-agnostic (CLI, result JSON, markdown summary, PR comment, and the `check` flags). `scripts/validation_backends/<framework>.py` owns the only two things that differ: which recipe trains the model and which dataset it trains on, returned as a pair from one `build_*_validation` function. Recipes are used as `get_base_recipe` returns them, image included — the image a miles model trains on is declared once, in `MilesRecipe`, and validating a candidate image means bumping it on a branch and dispatching, not passing a flag. Adding a framework is one module here plus registry entries.
 
-`list` and `list --names-only` print every registered model. The workflow's blank-dispatch branch and `diff_impact.py` use that same set, so a PR or weekly synmon run covers the whole registry. `diff_impact.py` scopes re-validation per framework, so a miles-only change doesn't re-run the slime set.
+`list` and `list --names-only` print every registered model. The workflow's blank-dispatch branch and `diff_impact.py` use that same set, so a PR or weekly synmon run covers the whole registry. `diff_impact.py` scopes re-validation per framework, so a miles-only change re-runs only the miles set.
 
 ### Cloudpickle caller resolution
 
@@ -129,4 +129,4 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
   `skills/modal-infrastructure/SKILL.md` before acting. Use it for apps,
   containers, volumes, scheduling, image builds, caches, and endpoint
   authentication.
-- For model support work, read `skills/model-support/SKILL.md` before acting. Use it when adding, debugging, validating, or productionizing new model support, especially Slime recipes and model configs.
+- For model support work, read `skills/model-support/SKILL.md` before acting. Use it when adding, debugging, validating, or productionizing new model support, especially Miles recipes and model configs.

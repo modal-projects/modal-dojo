@@ -40,7 +40,7 @@ def _save_run(status: TrainingRunStatus = TrainingRunStatus.RUNNING) -> None:
     TrainingRun(
         training_run_id=RUN_ID,
         modal_app_id="ap-metrics",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={"model": {"model_name": "Qwen/Qwen3-4B"}},
         created_at=100,
         started_at=100,

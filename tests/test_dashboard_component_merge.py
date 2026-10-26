@@ -28,7 +28,7 @@ def _attach(monkeypatch, run: TrainingRun, name: str, digest: str) -> None:
 def test_component_names_from_independent_handles_are_preserved(
     monkeypatch, fake_volume
 ) -> None:
-    TrainingRun(training_run_id="r", framework=Framework.SLIME, config={}).save()
+    TrainingRun(training_run_id="r", framework=Framework.MILES, config={}).save()
     first = TrainingRun.from_id("r")
     second = TrainingRun.from_id("r")
 
@@ -42,7 +42,7 @@ def test_component_names_from_independent_handles_are_preserved(
 def test_stale_handle_save_does_not_revert_replacement(
     monkeypatch, fake_volume
 ) -> None:
-    TrainingRun(training_run_id="r", framework=Framework.SLIME, config={}).save()
+    TrainingRun(training_run_id="r", framework=Framework.MILES, config={}).save()
     original = TrainingRun.from_id("r")
     _attach(monkeypatch, original, "viewer", "a" * 64)
 
@@ -58,7 +58,7 @@ def test_stale_handle_save_does_not_revert_replacement(
 
 
 def test_replacement_moves_entry_to_end(monkeypatch, fake_volume) -> None:
-    TrainingRun(training_run_id="r", framework=Framework.SLIME, config={}).save()
+    TrainingRun(training_run_id="r", framework=Framework.MILES, config={}).save()
     run = TrainingRun.from_id("r")
     _attach(monkeypatch, run, "a", "a" * 64)
     _attach(monkeypatch, run, "b", "b" * 64)

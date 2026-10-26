@@ -14,7 +14,7 @@ renames it; its existing-directory fix does not synchronize Modal Volumes:
 https://github.com/radixark/miles/blob/0cc65167f991ab1f0d228f6c9b648d89bc60a203/miles/backends/megatron_utils/checkpoint.py#L190-L199
 
 Pipeline-parallel auto-inflation is suppressed upstream via CONVERT_KEEP_PP1,
-which the launcher sets when it pins PP/TP explicitly (slime has no such env
+which the launcher sets when it pins PP/TP explicitly (miles had no such env
 var, hence the source patch in its wrapper).
 
 CONVERT_DEQUANT_HF_WEIGHTS=1 dequantizes DeepSeek block-scaled fp8/fp4 weights

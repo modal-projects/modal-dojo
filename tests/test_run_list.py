@@ -20,7 +20,7 @@ def _summary(**overrides) -> RunSummary:
         "framework_status": "training",
         "model": "org/model",
         "dataset": "org/data",
-        "recipe": "slime",
+        "recipe": "miles",
         "group_id": "nightly",
         "created_at": 100,
         "updated_at": 200,
@@ -78,7 +78,7 @@ def test_filtering_uses_projection_values_and_update_recency():
         ("display_status", "failed"),
         ("model", "org/model"),
         ("dataset", "org/data"),
-        ("recipe", "slime"),
+        ("recipe", "miles"),
         ("group_id", "nightly"),
     ],
 )
@@ -107,7 +107,7 @@ def test_multiple_filters_use_intersection_semantics():
         display_status="failed",
         model="org/model",
         dataset="org/data",
-        recipe="slime",
+        recipe="miles",
         group_id="nightly",
     )
     wrong_model = _summary(
@@ -129,7 +129,7 @@ def test_multiple_filters_use_intersection_semantics():
             "display_status": "failed",
             "model": "org/model",
             "dataset": "org/data",
-            "recipe": "slime",
+            "recipe": "miles",
             "group_id": "nightly",
         },
     ) == [matching]
@@ -177,7 +177,7 @@ def test_since_uses_created_or_updated_time_inclusively_before_limiting():
 
 
 def test_facets_select_buckets_and_default_to_every_bucket():
-    slime = _summary(run_id="slime", training_run_id="slime", recipe="slime")
+    other = _summary(run_id="other", training_run_id="other", recipe="custom")
     miles = _summary(
         run_id="miles",
         training_run_id="miles",
@@ -186,12 +186,12 @@ def test_facets_select_buckets_and_default_to_every_bucket():
         group_id="",
     )
 
-    assert filter_run_summaries([slime, miles], facets={"recipe": {"miles"}}) == [miles]
+    assert filter_run_summaries([other, miles], facets={"recipe": {"miles"}}) == [miles]
     assert filter_run_summaries(
-        [slime, miles],
+        [other, miles],
         facets={"status": {"pending", "failed"}, "group": {"nightly", "(no group)"}},
-    ) == [slime, miles]
-    assert filter_run_summaries([slime, miles], facets={"group": {"(no group)"}}) == [
+    ) == [other, miles]
+    assert filter_run_summaries([other, miles], facets={"group": {"(no group)"}}) == [
         miles
     ]
 
@@ -247,7 +247,7 @@ def test_facet_counts_cover_every_run():
     assert count_run_facets(runs) == {
         "total": 3,
         "status": {"pending": 2, "failed": 1},
-        "recipe": {"slime": 2, "miles": 1},
+        "recipe": {"miles": 3},
         "group": {"nightly": 2, "(no group)": 1},
         "training_type": {"rl": 3},
     }

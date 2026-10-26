@@ -1,4 +1,4 @@
-"""Framework-agnostic launcher helpers shared by the slime and miles apps.
+"""Framework-agnostic launcher helpers shared by the miles app.
 
 The two launchers are structurally identical: they ship user callables into the
 image, resolve checkpoint volumes, tag the Modal app, run the download/prepare

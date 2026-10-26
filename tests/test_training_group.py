@@ -7,7 +7,7 @@ from modal_dojo.common.dataset import HuggingFaceDataset
 from modal_dojo.common.models import Qwen3_6_35B
 from modal_dojo.common.run import TrainingRun
 from modal_dojo.common.training_group import TrainingGroupError
-from modal_dojo.train_recipes.slime_recipe.qwen3_6_35b import Qwen3_6_35B_Recipe
+from modal_dojo.train_recipes.miles_recipe.qwen3_6_35b import Qwen3_6_35B_Recipe
 
 
 def _base() -> TrainConfig:
@@ -165,7 +165,7 @@ def test_training_run_persists_group_id(fake_volume):
 
     run = TrainingRun(
         training_run_id="run-x",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
         metadata={"group_id": "group-abc123"},
     )
@@ -189,7 +189,7 @@ def test_training_run_result_returns_self(fake_volume):
         training_run_id="run-x",
         modal_app_id="",
         modal_app_url="",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
         function_call_id="fc-123",
         metadata={"group_id": "group-abc123"},

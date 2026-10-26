@@ -305,7 +305,7 @@ def test_registered_presets_are_exported_and_sidebar_excluded() -> None:
     assert model_presets & set(modal_dojo.__all__) <= excluded
     assert excluded.isdisjoint(labels)
     assert {
-        "SlimeRecipe",
+        "MilesRecipe",
         "MilesRecipe",
         "ModelConfig",
         "HFModelConfiguration",
@@ -388,7 +388,7 @@ def test_excluded_preset_pages_omit_attributes() -> None:
         assert entry.get("sidebar_excluded")
         page = generate_class_page(getattr(modal_dojo, name), entry, 0)
         assert "**Attributes**" not in page
-    for name in ("SlimeRecipe", "MilesRecipe", "SglangRecipe"):
+    for name in ("MilesRecipe", "MilesRecipe", "SglangRecipe"):
         entry = entries[name]
         assert not entry.get("sidebar_excluded")
         page = generate_class_page(getattr(modal_dojo, name), entry, 0)

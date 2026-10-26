@@ -2,17 +2,17 @@ from modal_dojo import (
     Qwen3_6_35B,
     Qwen3_6_35B_Recipe,
 )
-from modal_dojo.frameworks.slime.modal_helpers.utils import (
+from modal_dojo.frameworks.miles.modal_helpers.utils import (
     get_checkpoint_conversion_policy,
 )
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
 
 def test_qwen3_6_35b_uses_async_disagg_eight_b300_tp2_ep2() -> None:
     model = Qwen3_6_35B()
     recipe = Qwen3_6_35B_Recipe()
 
-    assert isinstance(SlimeRecipe.get_base_recipe(model), Qwen3_6_35B_Recipe)
+    assert isinstance(MilesRecipe.get_base_recipe(model), Qwen3_6_35B_Recipe)
     assert recipe.gpu_type == "B300"
     assert recipe.colocate is False
     assert recipe.train_async is True
@@ -37,9 +37,6 @@ def test_qwen3_6_35b_uses_async_disagg_eight_b300_tp2_ep2() -> None:
         assert cli_args[cli_args.index(flag) + 1] == value
     assert "--sequence-parallel" in cli_args
     assert "--use-distributed-optimizer" in cli_args
-    dispatcher = cli_args.index("--moe-token-dispatcher-type")
-    assert cli_args[dispatcher + 1] == "alltoall"
-    assert "--moe-enable-deepep" not in cli_args
     ep = cli_args.index("--sglang-ep-size")
     assert cli_args[ep + 1] == "1"
     attn = cli_args.index("--sglang-attention-backend")
