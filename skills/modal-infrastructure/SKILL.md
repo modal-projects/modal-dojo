@@ -31,7 +31,7 @@ CLI cannot explain the underlying failure.
 - Set `MODAL_ENVIRONMENT` explicitly, or pass `--env <env>`, when the target environment matters.
 - If your local setup relies on shell init for auth or helper tooling, ensure that setup is loaded before launching jobs.
 - Store credentials in local shell config or Modal secrets, not in tracked files.
-- **Proxy-auth tokens for served endpoints.** SGLang and vLLM endpoints from `CustomDeployment.launch()` are public by default (`unauthenticated=True`). Pass `unauthenticated=False` to require Modal proxy auth — then *any* call to that endpoint — `deployment.generate()`, an OPD teacher `/generate`, health/readiness polls — must send a proxy-auth token pair or it returns **HTTP 401**. Create a token in the Modal dashboard (Settings → Proxy Auth Tokens) and export it in the launching shell as `MODAL_KEY` (`wk-…`) and `MODAL_SECRET` (`ws-…`); the package turns these into `Modal-Key`/`Modal-Secret` headers. For calls issued from **remote workers** (e.g. a custom rm/reward function hitting a teacher endpoint), the driver's shell env does not reach the worker — forward the pair into the worker by attaching a `modal.Secret` (e.g. via the recipe's `train_function_kwargs={"secrets": [...]}`).
+- **Proxy-auth tokens for served endpoints.** `Endpoint.launch()` and SGLang and vLLM endpoints from `CustomDeployment.launch()` require Modal proxy auth by default (pass `unauthenticated=True` to make them public). *Any* call to an authenticated endpoint — `deployment.generate()`, an OPD teacher `/generate`, health/readiness polls — must send a proxy-auth token pair or it returns **HTTP 401**. Create a token in the Modal dashboard (Settings → Proxy Auth Tokens) and export it in the launching shell as `MODAL_KEY` (`wk-…`) and `MODAL_SECRET` (`ws-…`); the package turns these into `Modal-Key`/`Modal-Secret` headers. For calls issued from **remote workers** (e.g. a custom rm/reward function hitting a teacher endpoint), the driver's shell env does not reach the worker — forward the pair into the worker by attaching a `modal.Secret` (e.g. via the recipe's `train_function_kwargs={"secrets": [...]}`).
 
 ## Finding The Right Entrypoint
 
@@ -177,7 +177,7 @@ Do **not** use `--tool-call-parser qwen` or `qwen25` for Qwen3.5. Those parsers 
 </tool_call>
 ```
 
-With `qwen`/`qwen25`, SGLang logs `Failed to parse JSON part: ...` and the OpenAI response contains an empty `tool_calls` list, causing agent loops to hit `Reached max iterations without a final response.`. The `qwen3_coder` parser (and the `qwen3` reasoning parser for any inline thinking) handles the XML format correctly on the default `lmsysorg/sglang:v0.5.12` image.
+With `qwen`/`qwen25`, SGLang logs `Failed to parse JSON part: ...` and the OpenAI response contains an empty `tool_calls` list, causing agent loops to hit `Reached max iterations without a final response.`. The `qwen3_coder` parser (and the `qwen3` reasoning parser for any inline thinking) handles the XML format correctly on the default `lmsysorg/sglang:v0.5.22` image.
 
 (Qwen3.6-35B is a separate case: pass `--tool-call-parser qwen` on `SglangRecipe`, not `qwen3_coder`.)
 

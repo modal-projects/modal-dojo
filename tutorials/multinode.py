@@ -148,7 +148,6 @@ def deploy_trained_model(checkpoint):
     trained_deployment = Endpoint.launch(
         model,
         checkpoint,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="multinode",
     )

@@ -48,7 +48,6 @@ def deploy_base_model():
     print("deploying base model endpoint...")
     base_deployment = Endpoint.launch(
         model,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="rl-basics-baseline",
     )
@@ -257,7 +256,6 @@ def deploy_trained_model(checkpoint):
     trained_deployment = Endpoint.launch(
         model,
         checkpoint,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="rl-basics-trained",
     )
@@ -326,7 +324,6 @@ def deploy_continued_model(new_checkpoint):
     new_deployment = Endpoint.launch(
         model,
         new_checkpoint,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="rl-basics-continued",
     )

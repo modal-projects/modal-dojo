@@ -33,7 +33,7 @@ def build_sglang_serve_app(
     revision: str | None = None,
     checkpoints_volume: "Volume | str | None" = None,
     checkpoints_mount_path: str | None = None,
-    unauthenticated: bool = True,
+    unauthenticated: bool = False,
 ) -> "App":
     import modal
     from modal import App, Image, Volume
@@ -46,16 +46,13 @@ def build_sglang_serve_app(
         "HF_HUB_CACHE": "/root/.cache/huggingface",
         "HF_XET_HIGH_PERFORMANCE": "1",
         "HF_HUB_ENABLE_HF_TRANSFER": "1",
+        "SGLANG_TIMEOUT_KEEP_ALIVE": "300",
         **(recipe.env_vars or {}),
     }
     image = (
         Image.from_registry(recipe.sglang_image)
         .entrypoint([])
-        .run_commands(
-            "sed -i 's/timeout_keep_alive=5/timeout_keep_alive=300/g'"
-            " /sgl-workspace/sglang/python/sglang/srt/entrypoints/http_server.py",
-            "rm -rf /root/.cache/huggingface",
-        )
+        .run_commands("rm -rf /root/.cache/huggingface")
         # pydantic_core in the nightly image needs typing_extensions>=4.13 (Sentinel)
         .uv_pip_install("typing_extensions>=4.13")
     )
@@ -66,7 +63,7 @@ def build_sglang_serve_app(
     # ``qwen3_asr`` and crashloops ``sglang.launch_server`` on import.
     if recipe.install_transformers_from_git:
         image = image.run_commands(
-            "uv pip install --system --no-build-isolation "
+            "uv pip install --python $(command -v python) --no-build-isolation "
             "'transformers @ git+https://github.com/huggingface/transformers.git'"
         )
     image = image.env(image_env).add_local_python_source("modal_dojo", copy=True)
