@@ -74,7 +74,12 @@
 
   function urlForTab(tab) {
     const url = new URL(window.location.href);
-    url.searchParams.set("tab", DETAIL_TABS.has(tab) ? tab : DEFAULT_TAB);
+    const targetTab = DETAIL_TABS.has(tab) ? tab : DEFAULT_TAB;
+    url.searchParams.set("tab", targetTab);
+    if (targetTab !== "rollouts") {
+      url.searchParams.delete("step");
+      url.searchParams.delete("rollout");
+    }
     return `${url.pathname}${url.search}${url.hash}`;
   }
 
@@ -84,10 +89,7 @@
 
   function clearPendingRolloutLink() {
     pendingRolloutLink = null;
-    const url = new URL(window.location.href);
-    url.searchParams.delete("step");
-    url.searchParams.delete("rollout");
-    history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+    syncRolloutUrl();
   }
 
   let {
@@ -204,7 +206,7 @@
   });
 
   // Active tab: "summary" | "rollouts" | "logs". One-way sync with the URL:
-  // init/popstate/runId read URL → activeTab; selectTab writes pushState.
+  // init/popstate/runId read URL → activeTab; selectTab replaces the current URL.
   let activeTab = $state(/** @type {TabId} */ (DEFAULT_TAB));
   let isSftRun = $derived(run?.training_type === "sft");
 
@@ -214,7 +216,7 @@
     if (embedded || typeof window === "undefined") return;
     const target = urlForTab(next);
     if (target !== locationKey()) {
-      history.pushState({}, "", target);
+      history.replaceState({}, "", target);
     }
   }
 
@@ -444,6 +446,25 @@
       pos: activeSamplePos,
       count: list.length,
     };
+  });
+
+  function syncRolloutUrl() {
+    if (embedded || typeof window === "undefined") return;
+    if (pendingRolloutLink || activeTab !== "rollouts") return;
+    const url = new URL(window.location.href);
+    if (expandedRolloutId === null) url.searchParams.delete("step");
+    else url.searchParams.set("step", String(expandedRolloutId));
+    if (expandedRolloutId === null || !activeSample) url.searchParams.delete("rollout");
+    else url.searchParams.set("rollout", String(activeSample.rollout));
+    const target = `${url.pathname}${url.search}${url.hash}`;
+    if (target !== locationKey()) history.replaceState({}, "", target);
+  }
+
+  $effect(() => {
+    expandedRolloutId;
+    activeSample?.rollout;
+    activeTab;
+    syncRolloutUrl();
   });
 
   function onSampleKeydown(e) {
