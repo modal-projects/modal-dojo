@@ -256,9 +256,10 @@ if __name__ == "__main__":
 #
 # ![Reward curve](https://modal-cdn.com/cdnbot/pick-and-place-rewardluvcj3ah_1acb15e6.webp)
 #
-# The training reward climbs quickly and then saturates. Since it includes the
-# partial credit for picking the right block, the held-out eval is a better
-# measure of how often the model actually succeeds.
+# The mean reward climbs quickly and plateaus near 1, while the minimum keeps
+# improving until later in the run as the model's remaining mistakes get ironed
+# out. The reward combines picking and placing into one number, so the eval
+# below reports them separately.
 #
 # | Model | Picked right block | Success rate |
 # | --- | ---: | ---: |
