@@ -176,9 +176,7 @@ async def pick_and_place_rm(args, sample, **kwargs) -> float:
 # ## Begin training
 #
 # The reward function runs the simulator inside the training containers, so the
-# training image needs MuJoCo, a headless renderer (OSMesa), and `sim.py`. We only
-# serve the checkpoints and never resume from them, so we skip saving optimizer
-# state to keep each checkpoint the size of the model weights.
+# training image needs MuJoCo, a headless renderer (OSMesa), and `sim.py`.
 #
 # GRPO learns by comparing several answers to the same prompt, so the base model
 # needs to succeed some of the time, but not always. If your baseline is near 0%
@@ -192,14 +190,11 @@ config = TrainConfig(
         actor_num_gpus_per_node=8,
         tensor_model_parallel_size=4,
         num_rollout=200,
-        save_interval=50,
         rollout_batch_size=8,
         n_samples_per_prompt=8,
         global_batch_size=32,
         rollout_max_response_len=64,
-        sglang_mem_fraction_static=0.75,
         custom_rm_function=pick_and_place_rm,
-        no_save_optim=True,
         image_overlay=lambda image: (
             image.apt_install("libosmesa6")
             .uv_pip_install("mujoco", "numpy", "pillow")
@@ -271,7 +266,6 @@ if __name__ == "__main__":
 # | Base | 20% | 13% |
 # | Trained | 91% | 88% |
 #
-# After 200 steps, the model succeeds on 88% of scenes it never saw during
-# training, up from 13%. Most of the gain comes from reading the instruction:
-# the trained model picks the right block 91% of the time, and almost every
-# right pick lands in the right tray.
+# After 200 steps, the model succeeds on 88% of held-out scenes, up from 13%.
+# The base model usually fails by grabbing the wrong block, while the trained model
+# picks the right one 91% of the time.
