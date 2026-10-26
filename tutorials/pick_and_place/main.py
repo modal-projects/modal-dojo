@@ -256,10 +256,8 @@ if __name__ == "__main__":
 #
 # ![Reward curve](https://modal-cdn.com/cdnbot/pick-and-place-rewardluvcj3ah_1acb15e6.webp)
 #
-# The mean reward climbs quickly and plateaus near 1, while the minimum keeps
-# improving until later in the run as the model's remaining mistakes get ironed
-# out. The reward combines picking and placing into one number, so the eval
-# below reports them separately.
+# The reward combines picking and placing into one number, so the eval below
+# reports them separately.
 #
 # | Model | Picked right block | Success rate |
 # | --- | ---: | ---: |
