@@ -365,7 +365,7 @@ def convert_native_lora_checkpoint_to_peft(
         .uv_pip_install(
             "torch==2.13.0", index_url="https://download.pytorch.org/whl/cpu"
         )
-        .uv_pip_install("safetensors==0.8.0", "huggingface-hub==1.21.0")
+        .uv_pip_install("numpy==2.5.0", "safetensors==0.8.0", "huggingface-hub==1.21.0")
         .add_local_file(spec.origin, converter_path, copy=True)
     )
     conversion_app = modal.App("training-gym-native-lora-convert")
