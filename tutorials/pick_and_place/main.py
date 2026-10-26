@@ -107,7 +107,7 @@ eval_dataset = PickAndPlaceDataset(range(100_000, 100_100))
 
 # ## Deploy the base model
 #
-# Some models don't have native [Endpoints](https://modal.com/docs/guide/endpoints)
+# Some models don't have native [Endpoint](https://modal.com/docs/guide/endpoints)
 # support, so we use a [CustomDeployment](https://dojo.modal.dev/reference/customdeployment)
 # to deploy the base and trained models.
 
