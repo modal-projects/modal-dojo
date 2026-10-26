@@ -59,7 +59,7 @@ object-store persistence (deterministic key layout in `fields.py`).
 flyte start devbox                                   # ~/.flyte/config-devbox.yaml
 uv add flyte@">=2.6.0"
 MODAL_DOJO_FLYTE_CONFIG=~/.flyte/config-devbox.yaml \
-  python flyte/validate_minimal.py
+  python flyte/examples/validate_minimal.py
 ```
 
 ## Run on Union
@@ -68,7 +68,7 @@ Your Union config is `~/.flyte/config.yaml` (the default). Verify connectivity
 with `flyte get project`, then:
 
 ```bash
-python flyte/validate_minimal.py                     # minimal (CPU) pipeline
+python flyte/examples/validate_minimal.py                     # minimal (CPU) pipeline
 # or in your own script:
 from modal_dojo import TrainConfig, flyte_launch    # flyte_launch(cfg, mode="minimal")
 ```
@@ -76,12 +76,34 @@ from modal_dojo import TrainConfig, flyte_launch    # flyte_launch(cfg, mode="mi
 `flyte run` builds task images through Union's remote builder on first use, then
 caches them; subsequent runs skip the build.
 
+## Examples (flyte/examples)
+
+Ready-to-run launchers, one per target, all exercising the `minimal` (noise-free,
+self-contained GPT-2) pipeline. The minimal trainer **auto-detects** MPS → CUDA →
+CPU; the accelerator you pick just decides which environment the train stage is
+scheduled onto:
+
+| Example | Target | Run from repo root |
+|---|---|---|
+| `validate_minimal.py` | CPU baseline — any devbox or Union | `python flyte/examples/validate_minimal.py` |
+| `validate_apple_silicon.py` | Apple-Silicon devbox (`torch.mps`) | `flyte start devbox --apple-silicon`; `MODAL_DOJO_FLYTE_CONFIG=~/.flyte/config-devbox.yaml python flyte/examples/validate_apple_silicon.py` |
+| `validate_gpu_devbox.py` | NVIDIA devbox / DGX (`torch.cuda`) | `flyte start devbox --gpu` on an NVIDIA host; `MODAL_DOJO_FLYTE_CONFIG=~/.flyte/config-devbox.yaml MODAL_DOJO_FLYTE_GPU=H100:1 python flyte/examples/validate_gpu_devbox.py` |
+| `validate_union.py` | Union tenant GPU nodepool | `MODAL_DOJO_FLYTE_GPU=H100:1 python flyte/examples/validate_union.py` (config `~/.flyte/config.yaml`) |
+
+`flyte_launch(cfg, mode="minimal", accelerator=...)` accepts `cpu`, `mps`
+(or `apple`), and `gpu` (or `cuda`). For the GPU targets, `MODAL_DOJO_FLYTE_GPU`
+(`"H100:1"`, `"A100:2"`, …) sets the requested GPU spec — match your `--gpu`
+devbox's host or one of the Union tenant's nodepools. All examples accept
+`FLYTE_RUN_ONLY=1` to launch and print the run URL without blocking.
+
 ## Validation
 
-`flyte/validate_minimal.py` runs the full pipeline (download → prepare → train →
-checkpoint `Dir`) with bundled smoke configs (`modal_dojo.flyte.smoke`), no
-large downloads. Verified end to end on Union
-(see git history / the run URL it prints).
+`flyte/examples/validate_minimal.py` runs the full pipeline (download → prepare →
+train → checkpoint `Dir`) with bundled smoke configs (`modal_dojo.flyte.smoke`),
+no large downloads. Verified end to end on Union
+(see git history / the run URL it prints). The other `flyte/examples/*` scripts
+repeat this on an Apple-Silicon devbox (`mps`) and on CUDA GPU nodes
+(`--gpu` devbox / DGX / Union nodepool).
 
 Unit tests: `tests/test_flyte_backend.py` (no cluster required).
 

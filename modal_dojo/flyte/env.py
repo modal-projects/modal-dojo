@@ -13,6 +13,7 @@ already use:
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -92,6 +93,22 @@ def framework_image(recipe: Any) -> "flyte.Image":
 # ── Environments ─────────────────────────────────────────────────────────────
 
 
+# GPU accelerator string the minimal trainer should be scheduled onto. ``None``
+# (or unset) keeps the train stage on the plain CPU ``dojo_data_env``.
+# ``MODAL_DOJO_FLYTE_GPU`` overrides it without touching code.
+_ENV_GPU = os.environ.get("MODAL_DOJO_FLYTE_GPU") or None
+
+
+def gpu_spec_default() -> str | None:
+    """GPU spec (e.g. ``"H100:1"``) for the GPU train environment.
+
+    Reads ``MODAL_DOJO_FLYTE_GPU`` at import so a launch script can pick an
+    accelerator that matches its target (a ``--gpu`` devbox, a DGX node, or a
+    Union nodepool) before importing the pipeline. ``None``/unset means CPU.
+    """
+    return _ENV_GPU
+
+
 def data_environment() -> "flyte.TaskEnvironment":
     """CPU ``TaskEnvironment`` for the download / dataset / convert stages."""
     import flyte
@@ -100,6 +117,40 @@ def data_environment() -> "flyte.TaskEnvironment":
         name="dojo_data_env",
         image=minimal_train_image(),
         resources=flyte.Resources(cpu="2", memory="4Gi"),
+    )
+
+
+def gpu_train_environment(gpu: str | None = None) -> "flyte.TaskEnvironment":
+    """NVIDIA-GPU ``TaskEnvironment`` hosting the ``minimal`` train stage.
+
+    Uses the same image as the CPU path (``torch`` from PyPI bundles CUDA on
+    Linux), so a real GPU node gets CUDA without a separate image. Request a
+    spec that matches the target (devbox ``--gpu`` passthrough, DGX node, or a
+    Union nodepool): ``gpu`` defaults to ``MODAL_DOJO_FLYTE_GPU``.
+    """
+    import flyte
+
+    spec = gpu or gpu_spec_default() or "H100:1"
+    return flyte.TaskEnvironment(
+        name="dojo_train_gpu",
+        image=minimal_train_image(),
+        resources=flyte.Resources(cpu="2", memory="4Gi", gpu=spec, disk="10Gi"),
+    )
+
+
+def apple_silicon_train_environment() -> "flyte.TaskEnvironment":
+    """Apple-Silicon ``TaskEnvironment`` hosting the ``minimal`` train stage.
+
+    Tasks requesting ``gpu="AppleSilicon"`` run natively on the Mac (built from
+    the image's Python packages), so the train stage can use ``torch.mps``. See
+    ``flyte start devbox --apple-silicon``.
+    """
+    import flyte
+
+    return flyte.TaskEnvironment(
+        name="dojo_train_apple_silicon",
+        image=minimal_train_image(),
+        resources=flyte.Resources(cpu="2", memory="4Gi", gpu="AppleSilicon"),
     )
 
 

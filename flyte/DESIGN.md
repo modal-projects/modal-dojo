@@ -52,8 +52,12 @@ action IDs for stable replay).
 
 ## Modes
 
-- `minimal`: small HF `Trainer` on CPU/1 GPU — **end-to-end runnable on devbox**
-  and Union CPU. This is the testable path.
+- `minimal`: small self-contained PyTorch GPT-2 loop (no weights) — **end-to-end
+  runnable on devbox and Union CPU**. The train stage can also be routed onto a
+  real accelerator (Apple-Silicon `mps`, or CUDA on a `--gpu` devbox / DGX /
+  Union nodepool) via the driver's `accelerator` input (`cpu`/`mps`/`gpu`),
+  which picks the matching module-level train environment; the trainer
+  auto-detects the final device. This is the testable path.
 - `slime` / `miles`: real framework CLI on GPU — production path on a GPU
   Union cluster with the framework task image pushed.
 

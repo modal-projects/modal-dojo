@@ -94,8 +94,25 @@ def _recipe_as_plain(recipe: Any) -> dict:
     return plain
 
 
+def _resolve_accelerator(config: "TrainConfig", accelerator: str | None) -> str:
+    """Resolve the accelerator for the ``minimal`` train stage.
+
+    ``MODAL_DOJO_FLYTE_GPU`` (which also pins the GPU environment's requested
+    spec) selects ``gpu`` when set; otherwise the explicit ``accelerator``
+    argument wins; default ``cpu``.
+    """
+    if accelerator is not None:
+        return accelerator
+    if os.environ.get("MODAL_DOJO_FLYTE_GPU"):
+        return "gpu"
+    return "cpu"
+
+
 def flyte_launch(
-    config: "TrainConfig", *, mode: str | None = None
+    config: "TrainConfig",
+    *,
+    mode: str | None = None,
+    accelerator: str | None = None,
 ) -> "FlyteTrainingRun":
     """Start one training run on the configured Flyte cluster (non-blocking).
 
@@ -103,17 +120,21 @@ def flyte_launch(
         config: the ``TrainConfig`` to run.
         mode: ``TrainingMode`` value (``minimal``/``slime``/``miles``).
             Defaults to the recipe's framework, else ``minimal``.
+        accelerator: which environment hosts the ``minimal`` train stage
+            (``cpu``/``mps``/``gpu``). Defaults to ``cpu`` unless
+            ``MODAL_DOJO_FLYTE_GPU`` is set (then ``gpu``).
     """
     from modal_dojo.flyte.pipeline import build_pipeline
     from modal_dojo.flyte.run import FlyteTrainingRun
 
     run_id = config._generate_training_run_id()
     mode = _resolve_mode(config, mode)
+    accelerator = _resolve_accelerator(config, accelerator)
 
     _init_flyte()
     import flyte
 
-    main = build_pipeline(config, mode=mode)
+    main = build_pipeline(config, mode=mode, accelerator=accelerator)
     run = flyte.run(
         main,
         run_id=run_id,
@@ -121,19 +142,26 @@ def flyte_launch(
         dataset=config.dataset,
         recipe=_recipe_as_plain(config.recipe),
         mode=mode,
+        accelerator=accelerator,
     )
     handle = FlyteTrainingRun(run_id, run)
-    print(f"Launched Flyte training {run_id} (mode={mode}): {handle.url}")
+    print(
+        f"Launched Flyte training {run_id} "
+        f"(mode={mode}, accelerator={accelerator}): {handle.url}"
+    )
     return handle
 
 
 def flyte_train(
-    config: "TrainConfig", *, mode: str | None = None
+    config: "TrainConfig",
+    *,
+    mode: str | None = None,
+    accelerator: str | None = None,
 ) -> "FlyteTrainingRun":
     """Run one training configuration to completion (blocking).
 
     Same as :func:`flyte_launch` but waits for the run to finish.
     """
-    handle = flyte_launch(config, mode=mode)
+    handle = flyte_launch(config, mode=mode, accelerator=accelerator)
     handle.wait()
     return handle

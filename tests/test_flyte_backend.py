@@ -109,6 +109,63 @@ def test_resolve_mode_defaults_to_framework_or_minimal() -> None:
     assert _resolve_mode(miles_cfg, mode=None) == "miles"
 
 
+# ── Accelerator environments ────────────────────────────────────────────────
+
+
+def test_gpu_and_apple_silicon_environments() -> None:
+    """GPU / Apple-Silicon train environments request the right accelerator."""
+    from modal_dojo.flyte.env import (
+        apple_silicon_train_environment,
+        gpu_train_environment,
+    )
+
+    apple = apple_silicon_train_environment()
+    assert apple.name == "dojo_train_apple_silicon"
+    assert apple.resources.gpu == "AppleSilicon"
+
+    gpu = gpu_train_environment("A100:2")
+    assert gpu.name == "dojo_train_gpu"
+    assert gpu.resources.gpu == "A100:2"
+
+    # default falls back to MODAL_DOJO_FLYTE_GPU if set
+    old = os.environ.get("MODAL_DOJO_FLYTE_GPU")
+    try:
+        os.environ["MODAL_DOJO_FLYTE_GPU"] = "H100:1"
+        assert gpu_train_environment().resources.gpu == "H100:1"
+    finally:
+        if old is None:
+            os.environ.pop("MODAL_DOJO_FLYTE_GPU", None)
+        else:
+            os.environ["MODAL_DOJO_FLYTE_GPU"] = old
+
+
+def test_normalize_accelerator() -> None:
+    from modal_dojo.flyte.pipeline import _normalize_accelerator
+
+    assert _normalize_accelerator(None) == "cpu"
+    assert _normalize_accelerator("cpu") == "cpu"
+    assert _normalize_accelerator("MPS") == "mps"
+    assert _normalize_accelerator("apple") == "apple"
+    assert _normalize_accelerator("CUDA") == "cuda"
+    assert _normalize_accelerator("gpu") == "gpu"
+    with pytest.raises(ValueError):
+        _normalize_accelerator("nonsense")
+
+
+def test_main_exposes_accelerator_wiring() -> None:
+    """The module-level ``main`` task references all accelerator train stages."""
+    import inspect
+
+    from modal_dojo.flyte import pipeline as P
+
+    assert hasattr(P, "gpu_env")
+    assert hasattr(P, "apple_silicon_env")
+    assert hasattr(P, "train_gpu_stage")
+    assert hasattr(P, "train_apple_silicon_stage")
+    # accelerator is a real input to the driver task
+    assert "accelerator" in inspect.signature(P.main.func).parameters
+
+
 # ── Pipeline module-level tasks ──────────────────────────────────────────────
 
 
