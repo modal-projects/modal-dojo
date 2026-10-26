@@ -329,16 +329,11 @@ def convert_native_lora_checkpoint_to_peft(
     checkpoints_volume_name: str,
     checkpoints_mount_path: str = _CHECKPOINTS_MOUNT_FALLBACK,
 ) -> str:
-    """Convert a Miles native-LoRA ``iter_*/adapter`` directory to a PEFT adapter.
-
-    Raw-mode LoRA recipes, such as ``DeepSeek_V4_1_Flash_LoRA_Recipe``, save
-    per-rank adapter shards without ``adapter_model.safetensors``. The PEFT
-    adapter is written to ``<adapter_path>_hf`` for SGLang's ``--lora-paths``.
-    """
+    """Convert a Miles native-LoRA ``iter_*/adapter`` directory to a PEFT adapter at ``<adapter_path>_hf``."""
     adapter_path = adapter_path.rstrip("/")
     volume_relative_path(adapter_path, checkpoints_mount_path)
     model_ref = model.model_name or model.model_path
-    if model_ref in (None, ""):
+    if not model_ref:
         raise DojoConfigError(
             "Cannot convert a LoRA adapter without model_name or model_path."
         )
@@ -354,11 +349,6 @@ def convert_native_lora_checkpoint_to_peft(
     spec = importlib.util.find_spec(
         "modal_dojo.frameworks.miles.modal_helpers.convert_native_lora_to_peft"
     )
-    if spec is None or not spec.origin:
-        raise RuntimeError(
-            "modal_dojo.frameworks.miles.modal_helpers.convert_native_lora_to_peft is missing"
-        )
-
     converter_path = "/root/convert_native_lora_to_peft.py"
     image = (
         modal.Image.debian_slim(python_version="3.12")
@@ -376,11 +366,9 @@ def convert_native_lora_checkpoint_to_peft(
             "/root/.cache/huggingface": hf_cache_volume,
             checkpoints_mount_path: checkpoints_volume,
         },
-        memory=32 * 1024,
         timeout=60 * 60,
         secrets=hf_secrets(),
         serialized=True,
-        name="convert_native_lora_to_peft",
     )
     def convert_native_lora_to_peft(
         input_dir: str,
@@ -392,8 +380,6 @@ def convert_native_lora_checkpoint_to_peft(
 
         from huggingface_hub import snapshot_download
 
-        hf_cache_volume.reload()
-        checkpoints_volume.reload()
         if os.path.isabs(model_ref) and os.path.isdir(model_ref):
             hf_path = model_ref
         else:

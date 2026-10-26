@@ -1,14 +1,4 @@
-"""Convert a Miles native-LoRA checkpoint into a PEFT adapter SGLang can serve.
-
-Raw-mode LoRA saves (``megatron_to_hf_mode="raw"``) write one
-``adapter_megatron_rank{N}.pt`` per rank and no ``adapter_model.safetensors``.
-This rebuilds the adapter that Miles' ``export_lora_hf_named`` streams to
-SGLang during training: tensor-parallel shards are concatenated per layout,
-names are the raw converter's HF names, and tensors are bf16.
-
-Supports DeepSeek-V4.1 (attention and shared expert).
-TODO: remove when upstream raw-mode LoRA saves write the PEFT adapter.
-"""
+"""Convert a Miles native-LoRA checkpoint into a PEFT adapter SGLang can serve."""
 
 from __future__ import annotations
 
@@ -24,8 +14,6 @@ from safetensors.torch import save_file
 
 _REPLICATED, _COLUMN, _ROW = "replicated", "column", "row"
 
-# native adapter parameter (below ``decoder.layers.N.``, without ``_A``/``_B``)
-# -> (HF module below ``layers.N.``, tensor-parallel layout)
 _DEEPSEEK_V41 = {
     "self_attention.lora_q_a_adapter.q_a": ("attn.wq_a", _REPLICATED),
     "self_attention.lora_q_b_adapter.q_b": ("attn.wq_b", _COLUMN),
@@ -115,8 +103,6 @@ def convert(
             f"{len(shards)} rank shards are not a multiple of TP {tp_size}"
         )
 
-    # Megatron's tp-cp-ep-dp-pp order: TP is the fastest-varying rank dimension,
-    # so rank r holds TP shard r % tp and must equal its replica in ranks 0..tp-1.
     for rank, shard in enumerate(shards):
         replica = shards[rank % tp_size]
         if shard.keys() != replica.keys() or any(
