@@ -492,3 +492,19 @@ def test_executor_package_skips_unpatchable_files(miles, tmp_path, capsys):
     for rel in files:
         if "model.py" not in rel:
             assert miles.PREAMBLE_MARKER in (tmp_path / rel).read_text()
+
+
+def test_beam_async_executor_timing(miles, tmp_path):
+    """PR 4149 uses executor handles and disposer cleanup, not the old driver."""
+    work = tmp_path / "train_async.py"
+    work.write_text((TESTDATA / "miles/beam/train_async.py.input").read_text())
+    miles._patch_file(work, miles.ENTRYPOINTS[work.name])
+    patched = work.read_text()
+    assert patched.count("with _tg_time_phase('wait_for_rollout'):") == 2
+    for phase in ("train_models", "checkpoint_save", "evaluate_rollouts"):
+        assert f"with _tg_time_phase('{phase}'):" in patched
+    assert "eager_create_task(prepare_and_generate(rollout_id + 1))" in patched
+    compile(patched, str(work), "exec")
+    miles._patch_file(work, miles.ENTRYPOINTS[work.name])
+    assert work.read_text() == patched
+    assert patched == (TESTDATA / "miles/beam/train_async.py.timing.output").read_text()

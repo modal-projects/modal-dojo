@@ -952,6 +952,16 @@ class MilesRecipe(BaseTrainRecipe):
             Qwen3_5_4B_Miles_Recipe,
         )
 
+        from modal_dojo.common.models.beam import Beam_1_0_501B_A23B_LoRA
+        from modal_dojo.train_recipes.miles_recipe.beam import (
+            Beam_1_0_501B_A23B_Recipe,
+            Beam_1_0_501B_A23B_LoRA_Recipe,
+        )
+
+        if isinstance(model_config, Beam_1_0_501B_A23B_LoRA):
+            return Beam_1_0_501B_A23B_LoRA_Recipe()
+        if model_config.model_name == "reflection/Beam-1.0-501B-A23B":
+            return Beam_1_0_501B_A23B_Recipe()
         if isinstance(model_config, GLM_5_3_Flash_LoRA):
             return GLM_5_3_Flash_LoRA_Recipe()
         if model_config.model_name == "meta-models/Muse-Spark-Open-816B-A42B":

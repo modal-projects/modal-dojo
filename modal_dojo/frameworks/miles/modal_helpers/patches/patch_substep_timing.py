@@ -570,6 +570,13 @@ def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
         print(f"{path.name} already patched for substep timing")
         return
 
+    if path.name == "train_async.py" and "create_rollout_components" in src:
+        src = _patch_async_executor_driver(src, path)
+        compile(src, str(path), "exec")
+        path.write_text(src)
+        print(f"Patched {path.name} for async executor-based substep timing")
+        return
+
     if path.name == "train.py" and "create_rollout_components" in src:
         src = _patch_executor_driver(src, path)
         compile(src, str(path), "exec")
@@ -707,6 +714,54 @@ def _wrap_calls(
 
 def _phase(name: str) -> str:
     return f"_tg_time_phase({name!r})"
+
+
+def _patch_async_executor_driver(src: str, path: Path) -> str:
+    """Instrument the executor async loop without serializing its prefetch tasks."""
+    src = _wrap_calls(
+        src,
+        "train",
+        {
+            "create_rollout_components": _phase("initialize_rollout"),
+            "create_training_models": _phase("initialize_training"),
+            "actor_model.train": _phase("train_models"),
+            "critic_model.train": _phase("train_models"),
+            "save_training_model": _phase("checkpoint_save"),
+            "rollout_executor.save": _phase("checkpoint_save"),
+            "update_weights": "_tg_time_phase('weight_sync' if 'rollout_id' in locals() else 'initial_weight_sync')",
+            "inference_controller.prepare_eval": _phase("prepare_eval"),
+            "eval_dispatcher.dispatch": _phase("evaluate_rollouts"),
+        },
+        optional={
+            "actor_model.offload": _phase("offload_train"),
+            "critic_model.offload": _phase("offload_train"),
+        },
+    )
+    # The driver awaits an already running rollout future at two synchronization
+    # points. Record wait time separately from the rollout worker's generation.
+    waits = [
+        node
+        for node in ast.walk(_function(src, "train"))
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(t, ast.Name) and t.id == "rollout_data_curr_ref"
+            for t in node.targets
+        )
+        and any(isinstance(n, ast.Await) for n in ast.walk(node.value))
+    ]
+    if len(waits) != 2:
+        raise RuntimeError(
+            f"{path}: expected two async rollout waits, found {len(waits)}"
+        )
+    for node in sorted(waits, key=lambda n: n.lineno, reverse=True):
+        src = _wrap_span(src, node.lineno, node.end_lineno, _phase("wait_for_rollout"))
+    src = _wrap_driver_loop(src, path)
+    body = _function(src, "train").body
+    loop_index = next(i for i, node in enumerate(body) if isinstance(node, ast.For))
+    src = _wrap_span(
+        src, body[0].lineno, body[loop_index - 1].end_lineno, "_tg_role('driver', None)"
+    )
+    return _inject_preamble(src)
 
 
 def _patch_executor_driver(src: str, path: Path) -> str:
