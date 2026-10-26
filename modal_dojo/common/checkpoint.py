@@ -366,7 +366,6 @@ def convert_native_lora_checkpoint_to_peft(
             "/root/.cache/huggingface": hf_cache_volume,
             checkpoints_mount_path: checkpoints_volume,
         },
-        timeout=60 * 60,
         secrets=hf_secrets(),
         serialized=True,
     )
