@@ -6,6 +6,7 @@ from math import prod
 from typing import Any
 
 from modal_dojo.common.errors import GpuAllocationError
+from modal_dojo.train_recipes.validation import _effective
 
 _MAX_GPUS_PER_CONTAINER = {"A10": 4}
 
@@ -169,11 +170,13 @@ def validate_num_experts_divisible_by_expert_parallel_size(
     if not num_experts:
         return
 
-    if getattr(config, "expert_model_parallel_size", None) is None:
+    if _effective(config, "expert_model_parallel_size") is None:
         # Unset EP falls back to the framework default of 1, which always divides.
         return
 
-    expert_parallel_size = _positive_int_field(config, "expert_model_parallel_size")
+    expert_parallel_size = _effective_positive_int_field(
+        config, "expert_model_parallel_size"
+    )
     _require_divisible(
         num_experts,
         expert_parallel_size,
@@ -256,7 +259,7 @@ def _rollout_gpus(
 
 def _parallelism_fields(config: Any, *field_names: str) -> dict[str, int]:
     return {
-        field_name: _positive_int_field(config, field_name, default=1)
+        field_name: _effective_positive_int_field(config, field_name, default=1)
         for field_name in field_names
     }
 
@@ -299,7 +302,16 @@ def _require_divisible(
 def _positive_int_field(
     config: Any, field_name: str, *, default: int | None = None
 ) -> int:
-    value = getattr(config, field_name, default)
+    return _positive_int(field_name, getattr(config, field_name, default))
+
+
+def _effective_positive_int_field(
+    config: Any, field_name: str, *, default: int | None = None
+) -> int:
+    return _positive_int(field_name, _effective(config, field_name, default))
+
+
+def _positive_int(field_name: str, value: Any) -> int:
     if value is None:
         raise GpuAllocationError(f"{field_name} must be set")
     if type(value) is not int:
@@ -316,31 +328,3 @@ def _optional_positive_int_field(config: Any, field_name: str) -> int | None:
     if value is None:
         return None
     return _positive_int_field(config, field_name)
-
-
-def validate_expandable_segments_env(config: Any) -> None:
-    if not getattr(config, "colocate", False):
-        return
-    for field_name in ("environment", "image_env"):
-        env = getattr(config, field_name, None)
-        if not isinstance(env, dict):
-            continue
-        alloc_conf = env.get("PYTORCH_CUDA_ALLOC_CONF")
-        if not isinstance(alloc_conf, str):
-            continue
-        if not _alloc_conf_enables_expandable_segments(alloc_conf):
-            continue
-        raise GpuAllocationError(
-            f"{field_name} sets expandable_segments with colocate=True; "
-            "scope it to the training processes via "
-            'train_env_vars={"PYTORCH_CUDA_ALLOC_CONF": '
-            '"expandable_segments:True"}.'
-        )
-
-
-def _alloc_conf_enables_expandable_segments(alloc_conf: str) -> bool:
-    for item in alloc_conf.split(","):
-        key, _, value = item.partition(":")
-        if key.strip() == "expandable_segments":
-            return value.strip().lower() in ("true", "1", "yes", "on")
-    return False
