@@ -832,6 +832,7 @@
       const detail = await fetchRollout(runId, rolloutId);
       if (expandedRolloutId === rolloutId) {
         expandedRollout = detail;
+        expandedRolloutLoading = false;
         const d = sampleDist;
         const first = d ? d.buckets.findIndex((b) => b.length > 0) : -1;
         let matched = false;
