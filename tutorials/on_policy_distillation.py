@@ -72,7 +72,6 @@ def deploy_models():
     print("deploying base student endpoint...")
     base_student_deployment = Endpoint.launch(
         student_model,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="on-policy-distillation-baseline",
     )
@@ -359,7 +358,6 @@ def deploy_trained_model(checkpoint):
     trained_student_deployment = Endpoint.launch(
         student_model,
         checkpoint,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="on-policy-distillation-trained",
     )

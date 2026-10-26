@@ -38,7 +38,6 @@ def deploy_base_model():
     print("deploying base model endpoint...")
     base_deployment = Endpoint.launch(
         model,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="dapo-baseline",
     )
@@ -240,7 +239,6 @@ def deploy_trained_model(checkpoint):
     trained_deployment = Endpoint.launch(
         model,
         checkpoint,
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="dapo-trained",
     )
