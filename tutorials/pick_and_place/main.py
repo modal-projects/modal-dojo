@@ -3,7 +3,7 @@
 # deps: mujoco, numpy, pillow
 # ---
 #
-# # Controlling robots with VLAs
+# # Teaching a robot arm to move blocks
 #
 # Vision-language-action (VLA) models function as policies for robots. They take
 # as input a camera feed and text instructions, and return actions to execute. In
