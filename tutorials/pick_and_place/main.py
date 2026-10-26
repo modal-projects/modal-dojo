@@ -107,8 +107,8 @@ eval_dataset = PickAndPlaceDataset(range(100_000, 100_100))
 
 # ## Deploy the base model
 #
-# Qwen3-VL isn't available on [Endpoints](https://modal.com/docs/guide/endpoints),
-# so we use a [CustomDeployment](https://dojo.modal.dev/reference/customdeployment)
+# Some models don't have native [Endpoints](https://modal.com/docs/guide/endpoints)
+# support, so we use a [CustomDeployment](https://dojo.modal.dev/reference/customdeployment)
 # to deploy the base and trained models.
 
 
@@ -179,9 +179,8 @@ async def pick_and_place_rm(args, sample, **kwargs) -> float:
 # training image needs MuJoCo, a headless renderer (OSMesa), and `sim.py`.
 #
 # GRPO learns by comparing several answers to the same prompt, so the base model
-# needs to succeed some of the time, but not always. If your baseline is near 0%
-# or 100%, change `sim.N_BLOCKS` and `sim.N_TRAYS` to make the task easier or
-# harder.
+# should succeed some of the time, but not always. In `sim.py`, `N_BLOCKS` and
+# `N_TRAYS` set the task's difficulty to keep it in that range.
 
 config = TrainConfig(
     model=model,
