@@ -1,0 +1,38 @@
+    def forward(self, x: torch.Tensor, *args: Any, **kwargs: Any):
+        """Forward pass that combines the wrapped module output with the adapter output.
+
+        Args:
+            x: Input tensor.
+            *args: Additional positional arguments for the wrapped module.
+            **kwargs: Additional keyword arguments for the wrapped module.
+
+        Returns:
+            When the wrapped module returns a Megatron-style tuple, a
+            ``(combined_output, bias)`` tuple; when it returns a bare tensor
+            (e.g. a plain ``nn.Linear``), a bare tensor so the wrapper stays a
+            drop-in replacement in simple (non-parallel) models.
+        """
+        # pylint: disable=C0115,C0116
+        linear_output, bias, layernorm_output = self.base_linear_forward(x, *args, **kwargs)
+        if not self._adapter_enabled:
+            return linear_output if not self._base_returns_tuple else (linear_output, bias)
+        # MODAL_DOJO_BEAM_LORA_ACCUMULATE: leave the base output unmodified.
+        from megatron.bridge.peft.utils import GroupedExpertLinearAdapter
+        if (
+            isinstance(self.adapter, GroupedExpertLinearAdapter)
+            and (self.adapter.config.expert_tensor_parallel_size or 1) == 1
+            and not self.adapter._is_te_fp8_enabled()
+            and linear_output.dtype == torch.bfloat16
+        ):
+            adapter_output = self.adapter_forward(self.adapter, layernorm_output.contiguous(), *args, **kwargs)
+            combined_output = adapter_output.reshape(linear_output.shape)
+            combined_output.add_(linear_output)
+        else:
+            combined_output = linear_output.clone()
+            del linear_output
+            adapter_output = self.adapter_forward(self.adapter, layernorm_output.contiguous(), *args, **kwargs)
+            adapter_output = adapter_output.reshape(combined_output.shape)
+            combined_output.add_(adapter_output)
+        if not self._base_returns_tuple:
+            return combined_output
+        return combined_output, bias

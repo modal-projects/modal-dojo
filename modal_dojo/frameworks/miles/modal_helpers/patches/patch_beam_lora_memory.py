@@ -27,11 +27,48 @@ def patch_source(source: str) -> str:
     return source.replace(INPUT, INPUT_PATCH).replace(SCALE, SCALE_PATCH)
 
 
+WRAPPER = """        # Serialize full-width branch buffers to keep long-context peak at two outputs.
+        combined_output = linear_output.clone()
+        del linear_output
+        adapter_output = self.adapter_forward(self.adapter, layernorm_output.contiguous(), *args, **kwargs)
+        adapter_output = adapter_output.reshape(combined_output.shape)
+        combined_output.add_(adapter_output)
+"""
+WRAPPER_PATCH = """        # MODAL_DOJO_BEAM_LORA_ACCUMULATE: leave the base output unmodified.
+        from megatron.bridge.peft.utils import GroupedExpertLinearAdapter
+        if (
+            isinstance(self.adapter, GroupedExpertLinearAdapter)
+            and (self.adapter.config.expert_tensor_parallel_size or 1) == 1
+            and not self.adapter._is_te_fp8_enabled()
+            and linear_output.dtype == torch.bfloat16
+        ):
+            adapter_output = self.adapter_forward(self.adapter, layernorm_output.contiguous(), *args, **kwargs)
+            combined_output = adapter_output.reshape(linear_output.shape)
+            combined_output.add_(linear_output)
+        else:
+            combined_output = linear_output.clone()
+            del linear_output
+            adapter_output = self.adapter_forward(self.adapter, layernorm_output.contiguous(), *args, **kwargs)
+            adapter_output = adapter_output.reshape(combined_output.shape)
+            combined_output.add_(adapter_output)
+"""
+
+
+def patch_wrapper(source: str) -> str:
+    if WRAPPER_PATCH in source:
+        return source
+    if source.count(WRAPPER) != 1:
+        raise RuntimeError("Pinned LoRA output accumulation changed")
+    return source.replace(WRAPPER, WRAPPER_PATCH)
+
+
 if __name__ == "__main__":
     path = Path(
         "/opt/sglang/lib/python3.12/site-packages/megatron/bridge/peft/utils.py"
     )
     path.write_text(patch_source(path.read_text()))
+    wrapper = path.with_name("lora_layers.py")
+    wrapper.write_text(patch_wrapper(wrapper.read_text()))
     print(
         "Beam expert LoRA memory patch: reuse unpadded input and scale output in place"
     )

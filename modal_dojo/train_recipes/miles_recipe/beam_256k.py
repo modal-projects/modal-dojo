@@ -39,6 +39,9 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
     )
 
     _BEAM_ATTENTION_BACKENDS: ClassVar[tuple[str, ...]] = ("flash",)
+    train_env_vars: dict | None = field(
+        default_factory=lambda: {"PYTORCH_ALLOC_CONF": "expandable_segments:True"}
+    )
     attention_backend: str = "flash"
     context_parallel_size: int = 2
     cp_comm_type: str = "all_gather"
