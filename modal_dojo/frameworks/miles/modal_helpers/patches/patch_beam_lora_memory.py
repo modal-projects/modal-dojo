@@ -1,4 +1,9 @@
-"""Avoid redundant full-width buffers in Beam's BF16 expert-TP1 adapters."""
+"""
+image: radixark/miles:v0.1.2
+file: megatron/bridge/peft/{utils,lora_layers}.py
+
+Avoid redundant full-width buffers in Beam's BF16 expert-TP1 adapters.
+"""
 
 from pathlib import Path
 
@@ -62,7 +67,7 @@ def patch_wrapper(source: str) -> str:
     return source.replace(WRAPPER, WRAPPER_PATCH)
 
 
-if __name__ == "__main__":
+def main() -> None:
     path = Path(
         "/opt/sglang/lib/python3.12/site-packages/megatron/bridge/peft/utils.py"
     )
@@ -72,3 +77,7 @@ if __name__ == "__main__":
     print(
         "Beam expert LoRA memory patch: reuse unpadded input and scale output in place"
     )
+
+
+if __name__ == "__main__":
+    main()

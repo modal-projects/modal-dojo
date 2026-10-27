@@ -1,4 +1,11 @@
-"""Wrap miles' driver loop, rollout worker and actor with measured substep timing.
+"""
+image: radixark/miles:v0.1.2
+commit: https://github.com/radixark/miles/commit/819cfd23ab74de9975931597894500632dd708fc
+file: train*.py, miles/ray/rollout/rollout_executor.py, miles/backends/megatron_utils/{actor,model}.py
+
+Wrap Miles' driver loop, rollout worker and actor with measured substep timing.
+The image/revision above validates the Beam executor-based driver; legacy driver
+support is retained for other recipe images.
 
 Slime has the same script over its own source: the lanes, phase names and record
 format are the two frameworks' shared contract, so a change to one belongs in

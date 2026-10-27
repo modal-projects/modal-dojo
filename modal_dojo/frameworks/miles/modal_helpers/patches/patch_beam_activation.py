@@ -1,4 +1,9 @@
-"""Bound Beam expert activation temporaries without enabling fused numerics."""
+"""
+image: radixark/miles:v0.1.2
+file: megatron/core/transformer/moe/experts.py
+
+Bound Beam expert activation temporaries without enabling fused numerics.
+"""
 
 from pathlib import Path
 
@@ -72,6 +77,11 @@ def patch_source(source: str) -> str:
     return source.replace(marker, HELPER + marker).replace(ANCHOR, REPLACEMENT)
 
 
-if __name__ == "__main__":
+def main() -> None:
     path = Path("/root/Megatron-LM/megatron/core/transformer/moe/experts.py")
     path.write_text(patch_source(path.read_text()))
+    print(f"Applied Beam activation patch to {path}")
+
+
+if __name__ == "__main__":
+    main()
