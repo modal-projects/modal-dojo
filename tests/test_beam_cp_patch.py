@@ -22,7 +22,7 @@ def test_pinned_bridge_cp_patch_snapshot():
     )
     # Exercise the real patched parallelism statements without importing GPU libraries.
     body = fn.body[1:8]
-    for value in (["all_gather"], ["p2p"], None):
+    for value in (["all_gather"], ["p2p"], "all_gather", ["all_gather"] * 52, None):
         provider = SimpleNamespace(cp_comm_type="existing")
         args = SimpleNamespace(
             **{
@@ -42,7 +42,10 @@ def test_pinned_bridge_cp_patch_snapshot():
             compile(ast.Module(body=body, type_ignores=[]), "<patched>", "exec"),
             {"provider": provider, "args": args},
         )
-        assert provider.cp_comm_type == (value if value is not None else "existing")
+        expected = value[0] if isinstance(value, list) and len(value) == 1 else value
+        assert provider.cp_comm_type == (
+            expected if expected is not None else "existing"
+        )
 
 
 def test_patch_rejects_unknown_source():

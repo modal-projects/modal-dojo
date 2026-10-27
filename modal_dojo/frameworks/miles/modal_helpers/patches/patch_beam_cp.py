@@ -6,7 +6,11 @@ MARKER = "# MODAL_DOJO_BEAM_CP_RUNTIME"
 ANCHOR = "    provider.context_parallel_size = args.context_parallel_size\n"
 INSERT = """    # MODAL_DOJO_BEAM_CP_RUNTIME
     if getattr(args, "cp_comm_type", None) is not None:
-        provider.cp_comm_type = args.cp_comm_type
+        cp_comm_type = args.cp_comm_type
+        # CLI nargs produces a singleton list; MCore expects a scalar for all layers.
+        if isinstance(cp_comm_type, (list, tuple)) and len(cp_comm_type) == 1:
+            cp_comm_type = cp_comm_type[0]
+        provider.cp_comm_type = cp_comm_type
 """
 
 
