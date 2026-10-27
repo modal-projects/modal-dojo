@@ -1,4 +1,4 @@
-"""Experimental 256k Beam LoRA; full-model long-context validation is pending."""
+"""Experimental 256k Beam LoRA; full-window trainer replay validated."""
 
 from dataclasses import field
 from pathlib import Path
@@ -13,11 +13,11 @@ from .beam import _BeamLoRABase, _image_commands
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
-    """256k total context on 16 training + 16 rollout H200s (unvalidated).
+    """256k total context on 16 training + 16 rollout H200s.
 
     Uses the requested 32k response budget; preserves batch size and optimizer.
     FlashAttention avoids quadratic score storage; CP2 shards training sequences.
-    Full-window generation is validated; full-model training remains experimental.
+    Full-window generation and one trainer replay step passed; memory is tight.
     """
 
     patch_files: list[str] = field(

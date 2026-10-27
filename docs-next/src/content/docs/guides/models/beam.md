@@ -5,8 +5,8 @@ description: Experimental 256k Beam LoRA recipe and measured throughput validati
 
 Beam support is experimental, based on [Miles PR 4149](https://github.com/radixark/miles/pull/4149).
 The maintained recipe is `Beam_1_0_501B_A23B_LoRA_256k_Recipe`. Short-context
-and full-parameter recipes are not exposed. Full-model training validation and
-throughput tuning are in progress. Rollout concurrency eight is the measured
+and full-parameter recipes are not exposed. Full-window generation and a trainer-only optimizer-step replay have passed;
+fresh end-to-end confirmation is in progress. Rollout concurrency eight is the measured
 default; end-to-end throughput remains unvalidated.
 
 ```python
@@ -65,17 +65,20 @@ The shared, synthetically padded prompt produced a high prefix-cache hit rate;
 distinct repository contexts may perform differently. This is not SWE-bench
 validation or an agentic software-engineering workload.
 
-Full-model training remains experimental. After correcting context-parallel
-configuration, the trainer completed its full-length log-probability pass but
-ran out of memory during backward recomputation. Recipe-scoped patches reuse
+Full-model training remains experimental. Early proofs exposed missing
+context-parallel configuration and excessive expert activation buffers. Recipe-scoped patches reuse
 expert LoRA buffers and bound expert activation temporaries while preserving
 Beam's unfused BF16 arithmetic. The allocator uses expandable segments.
 The LoRA changes passed H200 output/gradient and checkpoint-recomputation checks.
 For the activation change, H200 tests matched outputs and input gradients
 exactly; routing-weight gradients matched at `rtol=1e-6, atol=1e-5`.
 A representative activation forward/backward test reduced peak memory from
-13.00 GiB to 5.41 GiB. A complete full-model optimizer step is still pending;
-these component checks do not establish that the recipe fits.
+13.00 GiB to 5.41 GiB. Trainer replay `constant-take-9b17c555b6e0` then completed a valid optimizer
+step on all eight saved full-window samples and finished `SUCCEEDED`: 136.28 s
+for log probabilities, 394.16 s for training, finite loss -0.00057016 and gradient
+norm 0.0160357. GPU 7 emitted recoverable allocator-pressure warnings, so memory
+headroom is tight. This is a trainer-only replay, not a fresh end-to-end run.
+A two-batch confirmation with fresh generation and adapter transfer is pending.
 
 Attention-only preflight on two H200s passed for both sliding-window and full
 attention in the pinned runtime. At 1,024 tokens, FlashAttention CP1 and CP2
