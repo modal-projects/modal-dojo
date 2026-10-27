@@ -3,6 +3,11 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORTS = {
+    "Backend": ("modal_dojo.flyte", "Backend"),
+    "FlyteTrainingRun": ("modal_dojo.flyte", "FlyteTrainingRun"),
+    "TrainingMode": ("modal_dojo.flyte", "TrainingMode"),
+    "flyte_launch": ("modal_dojo.flyte", "flyte_launch"),
+    "flyte_train": ("modal_dojo.flyte", "flyte_train"),
     "Checkpoint": ("modal_dojo.common.checkpoint", "Checkpoint"),
     "CheckpointType": ("modal_dojo.common.checkpoint", "CheckpointType"),
     "convert_megatron_checkpoint_to_hf": (
@@ -220,6 +225,11 @@ _EXPORTS = {
 }
 
 __all__ = [
+    "Backend",
+    "FlyteTrainingRun",
+    "TrainingMode",
+    "flyte_launch",
+    "flyte_train",
     "CustomDeployment",
     "DASHBOARD_OVERLAY_VOLUME_NAME",
     "DashboardComponent",
