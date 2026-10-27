@@ -16,6 +16,11 @@ driver's phases all sit in one loop body, with a local (``_tg_rec``) recorder.
 The rollout worker and the actor measure work further down the call stack, so
 they open a lane at their entry point and the phases below use the module-level
 ``_tg_time_phase``, which records on whichever lane that process has open.
+
+TODO: Remove when Miles exposes phase hooks covering the driver, rollout
+executor, and actor that Dojo can connect to its shared timing recorder.
+This is Dojo instrumentation; upstream aggregate timers alone do not replace
+its per-phase lane records. No matching upstream PR was found on 2026-10-27.
 """
 
 from __future__ import annotations

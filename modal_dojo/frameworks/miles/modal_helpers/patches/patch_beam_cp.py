@@ -5,6 +5,12 @@ file: miles/backends/megatron_utils/model_provider.py
 
 Preserve explicit context communication and normalize singleton CLI lists
 for the pinned Miles bridge provider.
+
+TODO: Remove once the pinned Miles propagates explicit cp_comm_type and
+normalizes singleton CLI lists. The merged runtime-config fix intentionally
+leaves cp_comm_type provider-owned, so it does not replace this patch:
+https://github.com/radixark/miles/pull/1483
+Beam support is still tracked in https://github.com/radixark/miles/pull/4149.
 """
 
 from pathlib import Path

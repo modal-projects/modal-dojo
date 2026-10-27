@@ -3,6 +3,12 @@ image: radixark/miles:v0.1.2
 file: megatron/core/transformer/moe/experts.py
 
 Bound Beam expert activation temporaries without enabling fused numerics.
+
+TODO: Remove once the pinned Megatron bounds expert activation temporaries
+with equivalent BF16 rounding and supports Bridge LoRA, CP2, and full recompute.
+The open chunked-EP implementation is related, not a drop-in replacement:
+it requires MXFP8/CP1 and rejects full recompute.
+https://github.com/NVIDIA/Megatron-LM/pull/7331
 """
 
 from pathlib import Path

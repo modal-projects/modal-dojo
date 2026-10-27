@@ -3,6 +3,13 @@ image: radixark/miles:v0.1.2
 file: megatron/bridge/peft/{utils,lora_layers}.py
 
 Avoid redundant full-width buffers in Beam's BF16 expert-TP1 adapters.
+
+TODO: Remove once the pinned Bridge avoids the grouped-expert input copy,
+full-width scaling temporary, and base-output clone for BF16 expert TP1.
+The merged long-context LoRA fix is already reflected in the pinned wrapper;
+it still clones the base output and does not fix these grouped-adapter copies:
+https://github.com/NVIDIA-NeMo/Megatron-Bridge/pull/5906
+Revalidate forward/backward and 256k peak memory before removing this patch.
 """
 
 from pathlib import Path
