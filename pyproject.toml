@@ -30,14 +30,13 @@ dependencies = [
 spindle = [
     "tinker==0.34.0",
     "tml-renderers==0.2.0",
-    "modal-spindle==0.1.0; python_version == '3.12'",
+    "modal-spindle==0.1.2; python_version == '3.12'",
     "tinker-cookbook>=0.5.8.dev15,<0.6",
 ]
 
-# Spindle is not yet on PyPI. Keep VCS pins out of published Requires-Dist;
-# use `uv sync --extra spindle` from a checkout for this experimental integration.
+# Use `uv sync --extra spindle` from a checkout for the pinned experimental integration.
 [tool.uv.sources]
-modal-spindle = { git = "https://github.com/modal-projects/spindle.git", rev = "a36673f377a4bd79d1a48df326321414963dd40d" }
+modal-spindle = { git = "https://github.com/modal-projects/spindle.git", rev = "99075245e9d576d9173a2f5dce876208ff6f7746" }
 tinker-cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook.git", rev = "ad3b5c541cd383b05d1c301e8ccc2d9cc0c5f774" }
 
 [build-system]

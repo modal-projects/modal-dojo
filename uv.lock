@@ -1700,7 +1700,7 @@ requires-dist = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "modal", specifier = "==1.6.1" },
-    { name = "modal-spindle", marker = "python_full_version == '3.12.*' and extra == 'spindle'", git = "https://github.com/modal-projects/spindle.git?rev=a36673f377a4bd79d1a48df326321414963dd40d" },
+    { name = "modal-spindle", marker = "python_full_version == '3.12.*' and extra == 'spindle'", git = "https://github.com/modal-projects/spindle.git?rev=99075245e9d576d9173a2f5dce876208ff6f7746" },
     { name = "pydantic" },
     { name = "randomname" },
     { name = "requests" },
@@ -1732,8 +1732,8 @@ docs = [
 
 [[package]]
 name = "modal-spindle"
-version = "0.1.0"
-source = { git = "https://github.com/modal-projects/spindle.git?rev=a36673f377a4bd79d1a48df326321414963dd40d#a36673f377a4bd79d1a48df326321414963dd40d" }
+version = "0.1.2"
+source = { git = "https://github.com/modal-projects/spindle.git?rev=99075245e9d576d9173a2f5dce876208ff6f7746#99075245e9d576d9173a2f5dce876208ff6f7746" }
 dependencies = [
     { name = "fastapi", marker = "python_full_version < '3.14'" },
     { name = "httpx", marker = "python_full_version < '3.14'" },
