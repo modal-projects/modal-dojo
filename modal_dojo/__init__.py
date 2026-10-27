@@ -62,6 +62,14 @@ _EXPORTS = {
         "modal_dojo.train_recipes.miles_recipe",
         "DeepSeek_V4_1_Flash_Recipe",
     ),
+    "DeepSeek_V4_1_Flash_B300_32k_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash_b300_32k",
+        "DeepSeek_V4_1_Flash_B300_32k_Recipe",
+    ),
+    "DeepSeek_V4_1_Flash_LoRA_B300_32k_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash_b300_32k",
+        "DeepSeek_V4_1_Flash_LoRA_B300_32k_Recipe",
+    ),
     "Gemma4_26B_A4B": ("modal_dojo.common.models", "Gemma4_26B_A4B"),
     "Gemma4_26B_A4B_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
@@ -77,6 +85,10 @@ _EXPORTS = {
     "GLM_5_3_Flash_LoRA_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
         "GLM_5_3_Flash_LoRA_Recipe",
+    ),
+    "GLM_5_3_Flash_LoRA_B300_32k_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe.glm_5_3_flash_b300_32k",
+        "GLM_5_3_Flash_LoRA_B300_32k_Recipe",
     ),
     "GLM_5_3_Flash_LoRA_256k_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
@@ -236,6 +248,8 @@ __all__ = [
     "DeepSeek_V4_1_Flash_Recipe",
     "DeepSeek_V4_1_Flash_LoRA",
     "DeepSeek_V4_1_Flash_LoRA_Recipe",
+    "DeepSeek_V4_1_Flash_B300_32k_Recipe",
+    "DeepSeek_V4_1_Flash_LoRA_B300_32k_Recipe",
     "Gemma4_26B_A4B",
     "Gemma4_26B_A4B_Recipe",
     "GLM_4_7",
@@ -243,6 +257,7 @@ __all__ = [
     "GLM_5_3_Flash",
     "GLM_5_3_Flash_LoRA",
     "GLM_5_3_Flash_LoRA_Recipe",
+    "GLM_5_3_Flash_LoRA_B300_32k_Recipe",
     "GLM_5_3_Flash_LoRA_256k_Recipe",
     "HarborDataset",
     "EvalConfig",
