@@ -24,12 +24,18 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
         default_factory=lambda: [
             str(
                 Path(__file__).parents[2]
-                / "frameworks/miles/modal_helpers/patches/patch_beam_cp.py"
+                / "frameworks/miles/modal_helpers/patches"
+                / name
             )
+            for name in ("patch_beam_cp.py", "patch_beam_lora_memory.py")
         ]
     )
     image_run_commands: list[str] = field(
-        default_factory=lambda: [*_image_commands(), "python /tmp/patch_beam_cp.py"]
+        default_factory=lambda: [
+            *_image_commands(),
+            "python /tmp/patch_beam_cp.py",
+            "python /tmp/patch_beam_lora_memory.py",
+        ]
     )
 
     _BEAM_ATTENTION_BACKENDS: ClassVar[tuple[str, ...]] = ("flash",)
