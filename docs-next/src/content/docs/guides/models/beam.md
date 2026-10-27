@@ -5,9 +5,9 @@ description: Experimental 256k Beam LoRA recipe and measured throughput validati
 
 Beam support is experimental, based on [Miles PR 4149](https://github.com/radixark/miles/pull/4149).
 The maintained recipe is `Beam_1_0_501B_A23B_LoRA_256k_Recipe`. Short-context
-and full-parameter recipes are not exposed. Full-window generation and a trainer-only optimizer-step replay have passed;
-fresh end-to-end confirmation is in progress. Rollout concurrency eight is the measured
-default; end-to-end throughput remains unvalidated.
+and full-parameter recipes are not exposed. Two fresh full-window rollout/training steps and adapter-weight transfers have
+passed on 32 H200s. Rollout concurrency eight is the measured default. The
+capacity proof uses batch eight; the maintained batch-256 workload is unvalidated.
 
 ```python
 from modal_dojo import Beam_1_0_501B_A23B_LoRA, Beam_1_0_501B_A23B_LoRA_256k_Recipe, TrainConfig
@@ -50,16 +50,20 @@ substep timing remains enabled.
 
 ## Validation and throughput
 
-Both capacity proofs independently generated eight responses with exactly
+Each capacity-proof batch independently generated eight responses with exactly
 229,376 input tokens and 32,768 output tokens each (262,144 generated tokens).
 
 | Rollout concurrency | Run | Rollout time | Output tokens/sec |
 | --- | --- | --- | --- |
 | 4 | `staff-hatchback-b91f94bef820` | 3,271.43 s | 80.13 |
 | 8 | `rectilinear-bullet-6180c878f4a7` | 1,842.32 s | 142.29 |
+| 8 | `elaborate-tower-14d7d362dcf7`, batch 0 | 1,802.30 s | 145.45 |
+| 8 | `elaborate-tower-14d7d362dcf7`, batch 1 | 1,771.07 s | 148.01 |
 
 Concurrency eight improved this workload's rollout throughput by **1.78×**.
-The latter time also includes saving the generated batch for trainer debugging.
+The concurrency-eight times also include saving generated batches for debugging.
+The two-batch confirmation averaged 146.72 output tokens/sec across its rollout
+phases, approximately 1.83× the concurrency-four baseline.
 These are rollout-only measurements, not end-to-end training throughput.
 The shared, synthetically padded prompt produced a high prefix-cache hit rate;
 distinct repository contexts may perform differently. This is not SWE-bench
@@ -77,8 +81,24 @@ A representative activation forward/backward test reduced peak memory from
 step on all eight saved full-window samples and finished `SUCCEEDED`: 136.28 s
 for log probabilities, 394.16 s for training, finite loss -0.00057016 and gradient
 norm 0.0160357. GPU 7 emitted recoverable allocator-pressure warnings, so memory
-headroom is tight. This is a trainer-only replay, not a fresh end-to-end run.
-A two-batch confirmation with fresh generation and adapter transfer is pending.
+headroom is tight. This replay was followed by fresh end-to-end confirmation
+[`elaborate-tower-14d7d362dcf7`](https://modal.com/apps/modal-labs/main/ap-Ltl0K6UYgfFl2XJMLI6BJj),
+which completed both optimizer steps and both post-step adapter transfers with
+Ray status `SUCCEEDED`. All 16 samples passed the full-window audit, totaling
+524,288 generated tokens.
+
+| Fresh training step | Log probabilities | Forward/backward and optimizer | Loss | Gradient norm |
+| --- | --- | --- | --- | --- |
+| 0 | 143.5 s | 419.3 s | -0.00057016 | 0.0160442 |
+| 1 | 121.8 s | 390.6 s | -0.00136924 | 0.0309251 |
+
+Post-step adapter transfers completed in 30.4 s and 16.4 s. The async loop
+generated batch 1 while training batch 0, then waited for generation before
+transferring weights; both batches were sampled from weight version 1. This
+validates repeated training and transfer, not generation from updated adapters.
+Recoverable allocator-pressure warnings persisted, so the preset remains
+experimental with tight memory headroom. No batch-256, checkpoint-resume,
+SWE-bench, or learning-quality result is claimed.
 
 Attention-only preflight on two H200s passed for both sliding-window and full
 attention in the pinned runtime. At 1,024 tokens, FlashAttention CP1 and CP2

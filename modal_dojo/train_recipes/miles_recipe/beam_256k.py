@@ -1,4 +1,4 @@
-"""Experimental 256k Beam LoRA; full-window trainer replay validated."""
+"""Experimental 256k Beam LoRA; two full-window batch-eight steps validated."""
 
 from dataclasses import field
 from pathlib import Path
@@ -17,7 +17,7 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
 
     Uses the requested 32k response budget; preserves batch size and optimizer.
     FlashAttention avoids quadratic score storage; CP2 shards training sequences.
-    Full-window generation and one trainer replay step passed; memory is tight.
+    Two fresh batch-eight steps and adapter transfers passed; memory is tight.
     """
 
     patch_files: list[str] = field(
