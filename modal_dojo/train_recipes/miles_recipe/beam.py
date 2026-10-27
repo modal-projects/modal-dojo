@@ -1,13 +1,13 @@
 """Experimental Beam presets from radixark/miles#4149; GPU validation pending."""
 
 from dataclasses import field
-from typing import Any, Callable, ClassVar
+from typing import Callable, ClassVar
 
 from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models.base import ModelConfig
-from modal_dojo.common.models.beam import Beam_1_0_501B_A23B, Beam_1_0_501B_A23B_LoRA
+from modal_dojo.common.models.beam import Beam_1_0_501B_A23B_LoRA
 from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
@@ -144,29 +144,7 @@ class _BeamRecipe(MilesRecipe):
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class Beam_1_0_501B_A23B_Recipe(_BeamRecipe):
-    """Full-parameter async GRPO on 64 trainer + 32 rollout H200 GPUs.
-
-    Upstream baseline with NVMe-streamed Adam state; not yet benchmarked on Modal.
-    """
-
-    model_config_class: ClassVar[type[ModelConfig]] = Beam_1_0_501B_A23B
-    actor_num_nodes: int = 8
-    rollout_num_gpus: int | None = 32
-    expert_model_parallel_size: int = 8
-    sglang_max_running_requests: int | None = 128
-    sglang_cuda_graph_max_bs_decode: int = 128
-    stream_optimizer_state_to_disk: bool = True
-    stream_optimizer_state_moment_dtype: str = "bf16"
-    offload_train_disk_dir: str = "/tmp/beam-optimizer"
-    offload_train_disk_chunk_mb: int = 256
-    train_function_kwargs: dict[str, Any] = field(
-        default_factory=lambda: {"ephemeral_disk": 1024 * 1024}
-    )
-
-
-@dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class Beam_1_0_501B_A23B_LoRA_Recipe(_BeamRecipe):
+class _BeamLoRABase(_BeamRecipe):
     """Upstream rank-16 async GRPO on 16 trainer + 16 rollout H200 GPUs."""
 
     model_config_class: ClassVar[type[ModelConfig]] = Beam_1_0_501B_A23B_LoRA
@@ -187,7 +165,7 @@ class Beam_1_0_501B_A23B_LoRA_Recipe(_BeamRecipe):
     sglang_cuda_graph_max_bs_decode: int = 256
 
     @model_validator(mode="after")
-    def _check_beam_lora(self) -> "Beam_1_0_501B_A23B_LoRA_Recipe":
+    def _check_beam_lora(self) -> "_BeamLoRABase":
         if self.expert_tensor_parallel_size != 1:
             raise ValueError("Beam expert LoRA requires expert_tensor_parallel_size=1")
         if self.lora_rank is None or self.lora_rank <= 0:

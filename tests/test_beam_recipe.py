@@ -3,10 +3,8 @@
 import pytest
 
 from modal_dojo import (
-    Beam_1_0_501B_A23B,
     Beam_1_0_501B_A23B_LoRA,
-    Beam_1_0_501B_A23B_Recipe,
-    Beam_1_0_501B_A23B_LoRA_Recipe,
+    Beam_1_0_501B_A23B_LoRA_256k_Recipe,
 )
 from modal_dojo.frameworks.miles.modal_helpers.utils import model_args_command
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
@@ -16,8 +14,7 @@ from scripts.validation_backends.miles import build_miles_validation
 @pytest.mark.parametrize(
     "model,recipe_type,total",
     [
-        (Beam_1_0_501B_A23B, Beam_1_0_501B_A23B_Recipe, 96),
-        (Beam_1_0_501B_A23B_LoRA, Beam_1_0_501B_A23B_LoRA_Recipe, 32),
+        (Beam_1_0_501B_A23B_LoRA, Beam_1_0_501B_A23B_LoRA_256k_Recipe, 32),
     ],
 )
 def test_beam_launch_contract(model, recipe_type, total):
@@ -42,21 +39,21 @@ def test_beam_launch_contract(model, recipe_type, total):
     [
         {"use_dynamic_batch_size": True},
         {"qkv_format": "thd"},
-        {"attention_backend": "flash"},
+        {"attention_backend": "unfused"},
         {"colocate": True},
     ],
 )
 def test_reject_unsupported_attention_and_async_layout(overrides):
     with pytest.raises(ValueError):
-        Beam_1_0_501B_A23B_Recipe(**overrides)
+        Beam_1_0_501B_A23B_LoRA_256k_Recipe(**overrides)
 
 
 def test_lora_requires_unsharded_expert_adapters():
     with pytest.raises(ValueError, match="expert_tensor_parallel_size"):
-        Beam_1_0_501B_A23B_LoRA_Recipe(expert_tensor_parallel_size=2)
+        Beam_1_0_501B_A23B_LoRA_256k_Recipe(expert_tensor_parallel_size=2)
     with pytest.raises(ValueError, match="positive lora_rank"):
-        Beam_1_0_501B_A23B_LoRA_Recipe(lora_rank=0)
-    args = Beam_1_0_501B_A23B_LoRA_Recipe().cli_args()
+        Beam_1_0_501B_A23B_LoRA_256k_Recipe(lora_rank=0)
+    args = Beam_1_0_501B_A23B_LoRA_256k_Recipe().cli_args()
     assert "--stream-optimizer-state-to-disk" not in args
     assert "--target-modules" not in args
 
@@ -64,7 +61,6 @@ def test_lora_requires_unsharded_expert_adapters():
 def test_256k_beam_preserves_training_workload_and_limits_memory():
     from modal_dojo import Beam_1_0_501B_A23B_LoRA_256k_Recipe
 
-    base = Beam_1_0_501B_A23B_LoRA_Recipe()
     recipe = Beam_1_0_501B_A23B_LoRA_256k_Recipe()
     assert recipe.gpu_allocation.total_gpus == 32
     assert recipe.rollout_max_response_len == 32768
@@ -74,15 +70,12 @@ def test_256k_beam_preserves_training_workload_and_limits_memory():
     assert recipe.rollout_max_prompt_len + recipe.rollout_max_response_len == 262144
     assert recipe.seq_length == 262144
     assert recipe.sglang_context_length == 262146
-    for key in (
-        "lr",
-        "lr_decay_style",
-        "global_batch_size",
-        "n_samples_per_prompt",
-        "rollout_batch_size",
-        "custom_rm_function",
-    ):
-        assert getattr(recipe, key) == getattr(base, key)
+    assert recipe.lr == 1e-4
+    assert recipe.lr_decay_style == "cosine"
+    assert recipe.global_batch_size == 256
+    assert recipe.n_samples_per_prompt == 8
+    assert recipe.rollout_batch_size == 32
+    assert recipe.custom_rm_function is not None
     assert "--cp-comm-type" in recipe.cli_args()
 
 

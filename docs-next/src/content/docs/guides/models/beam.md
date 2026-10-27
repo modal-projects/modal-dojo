@@ -1,94 +1,64 @@
 ---
-title: Reflection Beam 1.0
-description: Experimental Miles presets and throughput validation for Beam.
+title: Reflection Beam 1.0 LoRA 256k
+description: Experimental 256k Beam LoRA recipe and measured throughput validation.
 ---
 
 Beam support is experimental, based on [Miles PR 4149](https://github.com/radixark/miles/pull/4149).
-The presets have passed local configuration tests, but have not been GPU-validated
-or throughput-benchmarked on Modal. The upstream PR remains a draft.
-
-`Beam_1_0_501B_A23B_Recipe` uses 96 H200 GPUs: 64 trainers
-(TP8, EP8, expert TP8) and two 16-GPU rollout engines. The separate
-`Beam_1_0_501B_A23B_LoRA_Recipe` uses 32 H200 GPUs: 16 trainers
-(TP8, EP16, expert TP1) and one 16-GPU rollout engine. LoRA changes which
-parameters learn and is not an equivalent throughput comparison.
+The maintained recipe is `Beam_1_0_501B_A23B_LoRA_256k_Recipe`. Short-context
+and full-parameter recipes are not exposed. Full-model training validation and
+throughput tuning are in progress; no throughput winner has been promoted.
 
 ```python
-from modal_dojo import Beam_1_0_501B_A23B, Beam_1_0_501B_A23B_Recipe, TrainConfig
+from modal_dojo import Beam_1_0_501B_A23B_LoRA, Beam_1_0_501B_A23B_LoRA_256k_Recipe, TrainConfig
 from modal_dojo.common.dataset import HuggingFaceDataset
 
 config = TrainConfig(
-    model=Beam_1_0_501B_A23B(),
+    model=Beam_1_0_501B_A23B_LoRA(),
     dataset=HuggingFaceDataset(
-        "zhuzilin/dapo-math-17k",
-        hf_split="train[:32]",
-        input_column="prompt",
-        output_column="label",
-        input_format="messages",
+        "zhuzilin/dapo-math-17k", hf_split="train[:32]",
+        input_column="prompt", output_column="label", input_format="messages",
     ),
-    recipe=Beam_1_0_501B_A23B_Recipe(
+    recipe=Beam_1_0_501B_A23B_LoRA_256k_Recipe(
         num_rollout=1, save=None, save_interval=None, max_retries=0,
     ),
 )
-# Allocates 96 H200 GPUs; run only with an approved cluster budget:
-# run = config.train()
+# Allocates 32 H200 GPUs:
+# run = config.launch()
 ```
 
-Both presets preserve upstream async GRPO with 32 prompts, eight responses per
-prompt, a batch of 256, and a 5,120-token window (1,024 prompt + 4,096 response).
-The reward retains upstream boxed-integer grading and the soft length penalty.
-AIME evaluation prompts need the same answer-format instruction as DAPO.
+The recipe uses 229,376 prompt tokens plus up to 32,768 response tokens, for a
+262,144-token total window. Training uses TP8/CP2/EP16/expert-TP1 across 16 H200s,
+with a separate 16-H200 rollout engine. Rank-16 LoRA, the upstream optimizer,
+and 32 prompts × eight responses (global batch 256) are preserved. The
+capacity proof uses only one prompt × eight responses and is not a measurement
+of the maintained batch-256 recipe.
 
-The recipes pin Miles `819cfd23`, SGLang `9ac1c65b`, the upstream v0.1.2 image
-digest and HF revision. SGLang is installed without dependency upgrades to keep
-Torch and the image's prebuilt extensions compatible. Bridge loads the BF16 HF
-checkpoint directly. Full training streams optimizer state to node-local storage
-with a 1 TiB reservation per training worker; LoRA keeps its optimizer resident.
+FlashAttention avoids quadratic score storage. Fixed `bshd` microbatches are
+required; dynamic packing is disabled. Context parallelism uses `all_gather`,
+because the pinned Transformer Engine rejects sliding-window attention with
+`p2p`. A recipe-scoped image patch propagates `cp_comm_type` through the Miles
+bridge provider, which otherwise silently drops this flag. The patch is guarded
+against upstream source changes and has pinned source fixtures.
 
-The baseline presets retain the upstream unfused `bshd` attention path. The
-experimental 256k preset below uses FlashAttention through the same Beam attention
-wrapper. Dynamic token packing remains disabled. Expert LoRA requires expert TP1.
-Dojo's timing hooks are preserved, including async executor timing and rollout
-wait time; generation and training overlap, so their durations are not additive.
+The recipe pins Miles `819cfd23`, SGLang `9ac1c65b`, the v0.1.2 image digest,
+and the HF checkpoint revision. Dependency upgrades are disabled when installing
+these forks to preserve the image's Torch and compiled extensions. Dojo's async
+substep timing remains enabled.
 
-For throughput tuning, first prove one healthy step and inspect responses, reward
-and per-stage timing. Sweep rollout concurrency (64, 128, 256) one value at a time
-with all training semantics fixed. Confirm the best candidate against the baseline
-using two three-step replicas per recipe before promoting a throughput winner.
-Then validate a longer smoke run for output quality and learning. There is no
-measured speedup or promoted throughput winner yet.
+## Validation and throughput
 
+Run `staff-hatchback-b91f94bef820` completed eight independently generated
+responses with exactly 229,376 input and 32,768 output tokens each. The batch
+audit counted 262,144 generated tokens over 3,271.43 seconds: **80.13 output
+tokens/sec** with rollout concurrency four. This is rollout-only throughput,
+including generation overhead, not end-to-end training throughput. The shared
+prompt produced a high prefix-cache hit rate; distinct repository contexts may
+perform differently.
 
-## Experimental 256k LoRA
-
-`Beam_1_0_501B_A23B_LoRA_256k_Recipe` keeps the 32-H200 layout and upstream
-optimizer and sample count, with the requested 32,768-token response budget.
-It allows up to 229,376 prompt tokens, for 262,144 total. It is explicitly selected rather than replacing
-the shorter default:
-
-```python
-from modal_dojo import Beam_1_0_501B_A23B_LoRA_256k_Recipe
-
-recipe = Beam_1_0_501B_A23B_LoRA_256k_Recipe(
-    num_rollout=1, save=None, save_interval=None, max_retries=0,
-)
-```
-
-The training layout is TP8/CP2/EP16/expert-TP1 on 16 H200s, with a separate
-16-GPU rollout engine. FlashAttention avoids materializing quadratic attention
-scores. Context parallelism uses `all_gather`: the pinned Transformer Engine
-rejects sliding-window attention with `p2p`, and all-to-all cannot shard the one
-KV head per TP rank across CP2. Rollout concurrency is four and prefill chunks
-are 4,096 tokens, limiting the memory consumed by long requests without changing
-the training batch.
-
-The checkpoint advertises 1,048,576 positions, so 256k does not require extending
-its configured positional range. That is not evidence of training capacity or
-quality at 256k. Full-model long-context training, rollout memory and routing replay
-still require GPU validation. A short DAPO prompt with a larger configured limit
-does not establish 256k throughput. The original short-context proof was cancelled
-during download and produced no training measurements.
-
+The trainer then failed because Miles dropped `cp_comm_type` and reverted to
+`p2p`. The recipe-scoped bridge patch addresses that failure. A new proof tests
+concurrency eight while preserving the eight-response workload and token budgets.
+A complete optimizer step and follow-up throughput comparisons are still pending.
 
 Attention-only preflight on two H200s passed for both sliding-window and full
 attention in the pinned runtime. At 1,024 tokens, FlashAttention CP1 and CP2

@@ -1,22 +1,36 @@
 """Experimental 256k Beam LoRA; full-model long-context validation is pending."""
 
+from dataclasses import field
+from pathlib import Path
 from typing import ClassVar
 
 from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.train_recipes.base import MicroBatchSize
-from .beam import Beam_1_0_501B_A23B_LoRA_Recipe
+from .beam import _BeamLoRABase, _image_commands
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class Beam_1_0_501B_A23B_LoRA_256k_Recipe(Beam_1_0_501B_A23B_LoRA_Recipe):
+class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
     """256k total context on 16 training + 16 rollout H200s (unvalidated).
 
     Uses the requested 32k response budget; preserves batch size and optimizer.
     FlashAttention avoids quadratic score storage; CP2 shards training sequences.
-    A 5k DAPO proof does not validate this preset at the advertised context length.
+    Full-window generation is validated; full-model training remains experimental.
     """
+
+    patch_files: list[str] = field(
+        default_factory=lambda: [
+            str(
+                Path(__file__).parents[2]
+                / "frameworks/miles/modal_helpers/patches/patch_beam_cp.py"
+            )
+        ]
+    )
+    image_run_commands: list[str] = field(
+        default_factory=lambda: [*_image_commands(), "python /tmp/patch_beam_cp.py"]
+    )
 
     _BEAM_ATTENTION_BACKENDS: ClassVar[tuple[str, ...]] = ("flash",)
     attention_backend: str = "flash"
