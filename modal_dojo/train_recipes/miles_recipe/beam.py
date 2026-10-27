@@ -1,4 +1,4 @@
-"""Experimental Beam presets from radixark/miles#4149; GPU validation pending."""
+"""Beam model and LoRA defaults from radixark/miles#4149."""
 
 from dataclasses import field
 from typing import Callable, ClassVar

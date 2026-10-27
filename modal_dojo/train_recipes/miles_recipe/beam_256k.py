@@ -1,4 +1,4 @@
-"""Experimental 256k Beam LoRA; two full-window batch-eight steps validated."""
+"""Beam LoRA with a 224k prompt and 32k response budget."""
 
 from dataclasses import field
 from pathlib import Path
@@ -13,11 +13,9 @@ from .beam import _BeamLoRABase, _image_commands
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
-    """256k total context on 16 training + 16 rollout H200s.
+    """256k Beam LoRA on 16 training and 16 rollout H200s.
 
-    Uses the requested 32k response budget; preserves batch size and optimizer.
-    FlashAttention avoids quadratic score storage; CP2 shards training sequences.
-    Two fresh batch-eight steps and adapter transfers passed; memory is tight.
+    Uses FlashAttention, CP2, and full activation recomputation.
     """
 
     patch_files: list[str] = field(
@@ -72,18 +70,6 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
             )
         if self.context_parallel_size < 2:
             raise ValueError("The 256k Beam preset requires context_parallel_size >= 2")
-        if (
-            self.rollout_max_prompt_len + self.rollout_max_response_len
-            > self.rollout_max_context_len
-        ):
-            raise ValueError(
-                "Prompt and response budgets exceed the Beam context window"
-            )
-        if (
-            self.seq_length < self.rollout_max_context_len
-            or self.sglang_context_length < self.rollout_max_context_len + 2
-        ):
-            raise ValueError(
-                "Trainer and rollout engine must cover the Beam context window"
-            )
+        if self.sglang_context_length < self.rollout_max_context_len + 2:
+            raise ValueError("Beam's pinned SGLang requires two extra context slots")
         return self

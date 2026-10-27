@@ -746,6 +746,30 @@ class MilesRecipe(BaseTrainRecipe):
         return self
 
     @model_validator(mode="after")
+    def _validate_context_budget(self) -> "MilesRecipe":
+        """Check explicit context budgets using effective CLI values."""
+        overrides = self._escape_hatch_values()
+
+        def value(name: str) -> int | None:
+            raw = overrides.get(name, getattr(self, name, None))
+            return raw if isinstance(raw, int) and not isinstance(raw, bool) else None
+
+        context = value("rollout_max_context_len")
+        if context is None:
+            return self
+        prompt = value("rollout_max_prompt_len")
+        response = value("rollout_max_response_len")
+        if prompt is not None and response is not None and prompt + response > context:
+            raise DojoConfigError(
+                "Prompt and response budgets exceed rollout_max_context_len"
+            )
+        for name in ("seq_length", "sglang_context_length"):
+            capacity = value(name)
+            if capacity is not None and capacity < context:
+                raise DojoConfigError(f"{name} must cover rollout_max_context_len")
+        return self
+
+    @model_validator(mode="after")
     def _validate_tito_session_server(self) -> "MilesRecipe":
         hatch = self._escape_hatch_values()
         tito_model = hatch.get("tito_model", getattr(self, "tito_model", None))

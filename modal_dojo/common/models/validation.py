@@ -90,7 +90,7 @@ VALIDATION_CONFIGS: set[_ValidationConfig] = {
         "Beam-1.0-501B-A23B-LoRA",
         Beam_1_0_501B_A23B_LoRA,
         Framework.MILES,
-        timeout_s=4 * 60 * 60,
+        timeout_s=2 * 60 * 60,
     ),
     _ValidationConfig(
         "Muse-Spark-Open", Muse_Spark_Open, Framework.MILES, timeout_s=24 * 60 * 60
