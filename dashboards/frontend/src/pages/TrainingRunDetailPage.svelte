@@ -783,6 +783,23 @@
     }
   }
 
+  async function openRollout(rolloutId) {
+    if (rolloutId == null) return;
+    selectTab("rollouts");
+    if (expandedRolloutId !== rolloutId) void toggleRolloutDetail(rolloutId);
+    await tick();
+    document
+      .getElementById(`rollout-row-${rolloutId}`)
+      ?.scrollIntoView({ block: "center" });
+  }
+
+  function openInSummary(rolloutId) {
+    if (chartXDomain && (rolloutId < chartXDomain[0] || rolloutId > chartXDomain[1])) {
+      setChartRange(null);
+    }
+    selectTab("summary");
+  }
+
   // ── Live Modal log stream (SSE, pure pass-through) ───────────────────
   const LOG_BUFFER_MAX = 2000;
   let logLines = $state([]); // [{task_id, line, ts}]
@@ -1558,6 +1575,7 @@
         name: `rollout ${dist.firstId}`,
         color: "var(--color-c-gray-40)",
         values: dist.bins.map((b) => b.first),
+        rollout_id: dist.firstId,
       },
     ];
     if (dist.firstId !== dist.lastId) {
@@ -1565,6 +1583,7 @@
         name: `latest (rollout ${dist.lastId})`,
         color: "var(--accent)",
         values: dist.bins.map((b) => b.last),
+        rollout_id: dist.lastId,
       });
     }
     return series;
@@ -1772,10 +1791,7 @@
                 onChangeTimeRange={setChartRange}
                 showOpenRollout={!isSftRun}
                 trainingType={run?.training_type}
-                onOpenRollout={(id) => {
-                  selectTab("rollouts");
-                  if (expandedRolloutId !== id) void toggleRolloutDetail(id);
-                }}
+                onOpenRollout={openRollout}
               />
               {/if}
             </div>
@@ -1818,6 +1834,8 @@
                   onChangeDomainX={onChartDomainChange}
                   xToTime={chartXToTime}
                   timeToX={chartTimeToX}
+                  onOpen={(row) => openRollout(row.rollout_id)}
+                  highlightX={expandedRolloutId}
                 />
               </div>
               {#if chartStats}
@@ -1841,6 +1859,7 @@
                     showCategoryLabels={false}
                     zoomable={false}
                     format={(v) => `${v}`}
+                    onOpen={(s) => openRollout(s.rollout_id)}
                   />
                   <div class="dist-axis">
                     <span>{formatMean(scoreDist.lo)}</span>
@@ -1863,6 +1882,8 @@
                     onChangeDomainX={onChartDomainChange}
                     xToTime={chartXToTime}
                     timeToX={chartTimeToX}
+                    onOpen={openRollout}
+                    highlightX={expandedRolloutId}
                   />
                 </div>
                 <div class="rollout-chart">
@@ -1873,6 +1894,8 @@
                     onChangeDomainX={onChartDomainChange}
                     xToTime={chartXToTime}
                     timeToX={chartTimeToX}
+                    onOpen={openRollout}
+                    highlightX={expandedRolloutId}
                   />
                 </div>
                 <div class="rollout-chart">
@@ -1885,6 +1908,7 @@
                       showCategoryLabels={false}
                       zoomable={false}
                       format={(v) => `${v}`}
+                      onOpen={(s) => openRollout(s.rollout_id)}
                     />
                     <div class="dist-axis">
                       <span>{formatMean(advantageDist.lo)}</span>
@@ -1914,6 +1938,8 @@
                       onChangeDomainX={onChartDomainChange}
                       xToTime={chartXToTime}
                       timeToX={chartTimeToX}
+                      onOpen={(row) => openRollout(row.rollout_id)}
+                      highlightX={expandedRolloutId}
                     />
                     {#if tagChartStats(tag)}
                       <div class="flex gap-[16px] mt-[6px] text-[11px] text-(--muted) [font-variant-numeric:tabular-nums]">
@@ -1982,6 +2008,7 @@
           <tbody>
             {#each rolloutSummaries as r (r.rollout_id)}
               <tr
+                id={`rollout-row-${r.rollout_id}`}
                 class:expanded={expandedRolloutId === r.rollout_id}
                 class:rollout-error={r.error_summary?.verdict === "all_infra_failure"}
                 class:rollout-warn={r.error_summary?.verdict === "partial_infra_failure"}
@@ -2020,10 +2047,7 @@
                             timelineKey={`${runId}:${r.rollout_id}`}
                             downloadName={`substep_timing_${runId}_rollout_${r.rollout_id}.json`}
                             rolloutIds={[r.rollout_id]}
-                            onOpenRollout={(id) => {
-                              selectTab("rollouts");
-                              if (expandedRolloutId !== id) void toggleRolloutDetail(id);
-                            }}
+                            onOpenRollout={openRollout}
                           />
                         </div>
                       {/if}
@@ -2067,7 +2091,14 @@
                         {/if}
                       {/if}
                       <div class="mb-[16px]">
-                        <div class="flex justify-end mb-[6px]">
+                        <div class="flex justify-end gap-[8px] mb-[6px]">
+                          <button
+                            type="button"
+                            class="inline-flex items-center gap-[5px] [background:none] [border:1px_solid_var(--border,#2f2f2f)] rounded-[4px] text-(--muted) text-[11px] p-[3px_8px] cursor-pointer hover:text-(--text) hover:border-(--border-strong,#4a4a4a)"
+                            onclick={() => openInSummary(r.rollout_id)}
+                          >
+                            Open in Summary →
+                          </button>
                           <button
                             type="button"
                             class="inline-flex items-center gap-[5px] [background:none] [border:1px_solid_var(--border,#2f2f2f)] rounded-[4px] text-(--muted) text-[11px] p-[3px_8px] cursor-pointer hover:text-(--text) hover:border-(--border-strong,#4a4a4a)"
