@@ -17,6 +17,29 @@ TESTDATA = Path(__file__).parent / "testdata" / "miles"
 STATUS_PATCH_FILES = ("train.py", "train_async.py", "log_utils.py")
 
 
+def test_controller_executor_status_anchors(tmp_path, capsys):
+    path = tmp_path / "train.py"
+    path.write_text("""async def train(args):
+    inference_controller, rollout_executor, num_rollout_per_epoch = await create_rollout_components(args)
+    for rollout_id in range(args.num_rollout):
+        await inference_controller.prepare_rollout(rollout_id)
+        await inference_controller.offload(tags=offload_tags)
+        await actor_model.train(rollout_id, rollout_data_pack)
+        await offload_train()
+        await update_weights(actor_model, rollout_executor, rollout_id=rollout_id)
+        if should_run_periodic_action(rollout_id, args.save_interval, num_rollout_per_epoch, args.num_rollout):
+            await save(rollout_id)
+""")
+    rollout_patcher._patch_file(path)
+    patched = path.read_text()
+    compile(patched, str(path), "exec")
+    assert "WARNING" not in capsys.readouterr().out
+    for _, phase, _, _ in rollout_patcher._LINE_INJECTIONS:
+        assert f"_tg_report('{phase}', args," in patched
+    rollout_patcher._patch_file(path)
+    assert path.read_text() == patched
+
+
 @pytest.fixture(scope="session")
 def miles_inputs() -> dict[str, str]:
     inputs = [TESTDATA / f"{name}.input" for name in STATUS_PATCH_FILES]
