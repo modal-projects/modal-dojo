@@ -59,3 +59,47 @@ def test_lora_requires_unsharded_expert_adapters():
     args = Beam_1_0_501B_A23B_LoRA_Recipe().cli_args()
     assert "--stream-optimizer-state-to-disk" not in args
     assert "--target-modules" not in args
+
+
+def test_256k_beam_preserves_training_workload_and_limits_memory():
+    from modal_dojo import Beam_1_0_501B_A23B_LoRA_256k_Recipe
+
+    base = Beam_1_0_501B_A23B_LoRA_Recipe()
+    recipe = Beam_1_0_501B_A23B_LoRA_256k_Recipe()
+    assert recipe.gpu_allocation.total_gpus == 32
+    assert recipe.rollout_max_response_len == 32768
+    assert recipe.rollout_max_prompt_len == 229376
+    assert recipe.context_parallel_size == 2
+    assert recipe.attention_backend == "flash"
+    assert recipe.rollout_max_prompt_len + recipe.rollout_max_response_len == 262144
+    assert recipe.seq_length == 262144
+    assert recipe.sglang_context_length == 262146
+    for key in (
+        "lr",
+        "lr_decay_style",
+        "global_batch_size",
+        "n_samples_per_prompt",
+        "rollout_batch_size",
+        "custom_rm_function",
+    ):
+        assert getattr(recipe, key) == getattr(base, key)
+    assert "--cp-comm-type" in recipe.cli_args()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"attention_backend": "unfused"},
+        {"cp_comm_type": "p2p"},
+        {"context_parallel_size": 1},
+        {"rollout_max_prompt_len": 262144},
+        {"sglang_context_length": 5120},
+        {"sglang_context_length": 262144},
+        {"seq_length": 5120},
+    ],
+)
+def test_256k_beam_rejects_inconsistent_windows(overrides):
+    from modal_dojo import Beam_1_0_501B_A23B_LoRA_256k_Recipe
+
+    with pytest.raises(ValueError):
+        Beam_1_0_501B_A23B_LoRA_256k_Recipe(**overrides)

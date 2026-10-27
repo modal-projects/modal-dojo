@@ -30,6 +30,8 @@ def _image_commands() -> list[str]:
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class _BeamRecipe(MilesRecipe):
+    _BEAM_ATTENTION_BACKENDS: ClassVar[tuple[str, ...]] = ("unfused",)
+
     docker_image: str = (
         "radixark/miles:v0.1.2@sha256:"
         "c81d8ba7b91571aac8e0bb2be372c6a9664e1ff7b88f518a8891861bae83e3b7"
@@ -132,8 +134,10 @@ class _BeamRecipe(MilesRecipe):
     def _check_beam_attention(self) -> "_BeamRecipe":
         if self.use_dynamic_batch_size or self.qkv_format != "bshd":
             raise ValueError("Beam requires fixed microbatches and qkv_format=bshd")
-        if self.attention_backend != "unfused":
-            raise ValueError("Beam requires its unfused custom attention path")
+        if self.attention_backend not in self._BEAM_ATTENTION_BACKENDS:
+            raise ValueError(
+                f"This Beam preset requires attention_backend in {self._BEAM_ATTENTION_BACKENDS}"
+            )
         if self.async_mode and self.colocate:
             raise ValueError("Beam async training requires separate rollout GPUs")
         return self

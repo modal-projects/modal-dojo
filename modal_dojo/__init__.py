@@ -3,6 +3,10 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORTS = {
+    "Beam_1_0_501B_A23B_LoRA_256k_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "Beam_1_0_501B_A23B_LoRA_256k_Recipe",
+    ),
     "Beam_1_0_501B_A23B": ("modal_dojo.common.models", "Beam_1_0_501B_A23B"),
     "Beam_1_0_501B_A23B_LoRA": ("modal_dojo.common.models", "Beam_1_0_501B_A23B_LoRA"),
     "Beam_1_0_501B_A23B_Recipe": (
@@ -230,6 +234,7 @@ _EXPORTS = {
 }
 
 __all__ = [
+    "Beam_1_0_501B_A23B_LoRA_256k_Recipe",
     "Beam_1_0_501B_A23B",
     "Beam_1_0_501B_A23B_LoRA",
     "Beam_1_0_501B_A23B_Recipe",
