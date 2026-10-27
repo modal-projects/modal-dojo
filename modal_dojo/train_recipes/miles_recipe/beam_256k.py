@@ -27,7 +27,11 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
                 / "frameworks/miles/modal_helpers/patches"
                 / name
             )
-            for name in ("patch_beam_cp.py", "patch_beam_lora_memory.py")
+            for name in (
+                "patch_beam_cp.py",
+                "patch_beam_lora_memory.py",
+                "patch_beam_activation.py",
+            )
         ]
     )
     image_run_commands: list[str] = field(
@@ -35,6 +39,7 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
             *_image_commands(),
             "python /tmp/patch_beam_cp.py",
             "python /tmp/patch_beam_lora_memory.py",
+            "python /tmp/patch_beam_activation.py",
         ]
     )
 
@@ -55,8 +60,8 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
     # Keep the actual prompt+response at 262144 while leaving both internal slots.
     sglang_context_length: int = 262146
     # Limit concurrent long KV caches, without changing samples per optimizer step.
-    sglang_max_running_requests: int | None = 4
-    sglang_cuda_graph_max_bs_decode: int = 4
+    sglang_max_running_requests: int | None = 8
+    sglang_cuda_graph_max_bs_decode: int = 8
     sglang_chunked_prefill_size: int = 4096
 
     @model_validator(mode="after")

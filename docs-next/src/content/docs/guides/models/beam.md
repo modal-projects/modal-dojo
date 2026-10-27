@@ -6,7 +6,8 @@ description: Experimental 256k Beam LoRA recipe and measured throughput validati
 Beam support is experimental, based on [Miles PR 4149](https://github.com/radixark/miles/pull/4149).
 The maintained recipe is `Beam_1_0_501B_A23B_LoRA_256k_Recipe`. Short-context
 and full-parameter recipes are not exposed. Full-model training validation and
-throughput tuning are in progress; no throughput winner has been promoted.
+throughput tuning are in progress. Rollout concurrency eight is the measured
+default; end-to-end throughput remains unvalidated.
 
 ```python
 from modal_dojo import Beam_1_0_501B_A23B_LoRA, Beam_1_0_501B_A23B_LoRA_256k_Recipe, TrainConfig
@@ -37,7 +38,9 @@ FlashAttention avoids quadratic score storage. Fixed `bshd` microbatches are
 required; dynamic packing is disabled. Context parallelism uses `all_gather`,
 because the pinned Transformer Engine rejects sliding-window attention with
 `p2p`. A recipe-scoped image patch propagates `cp_comm_type` through the Miles
-bridge provider, which otherwise silently drops this flag. The patch is guarded
+bridge provider, which otherwise silently drops this flag. It normalizes the CLI
+singleton list to a scalar: Megatron interprets lists as per-layer settings and
+requires 52 entries for Beam. The patch is guarded
 against upstream source changes and has pinned source fixtures.
 
 The recipe pins Miles `819cfd23`, SGLang `9ac1c65b`, the v0.1.2 image digest,
@@ -47,18 +50,32 @@ substep timing remains enabled.
 
 ## Validation and throughput
 
-Run `staff-hatchback-b91f94bef820` completed eight independently generated
-responses with exactly 229,376 input and 32,768 output tokens each. The batch
-audit counted 262,144 generated tokens over 3,271.43 seconds: **80.13 output
-tokens/sec** with rollout concurrency four. This is rollout-only throughput,
-including generation overhead, not end-to-end training throughput. The shared
-prompt produced a high prefix-cache hit rate; distinct repository contexts may
-perform differently.
+Both capacity proofs independently generated eight responses with exactly
+229,376 input tokens and 32,768 output tokens each (262,144 generated tokens).
 
-The trainer then failed because Miles dropped `cp_comm_type` and reverted to
-`p2p`. The recipe-scoped bridge patch addresses that failure. A new proof tests
-concurrency eight while preserving the eight-response workload and token budgets.
-A complete optimizer step and follow-up throughput comparisons are still pending.
+| Rollout concurrency | Run | Rollout time | Output tokens/sec |
+| --- | --- | --- | --- |
+| 4 | `staff-hatchback-b91f94bef820` | 3,271.43 s | 80.13 |
+| 8 | `rectilinear-bullet-6180c878f4a7` | 1,842.32 s | 142.29 |
+
+Concurrency eight improved this workload's rollout throughput by **1.78×**.
+The latter time also includes saving the generated batch for trainer debugging.
+These are rollout-only measurements, not end-to-end training throughput.
+The shared, synthetically padded prompt produced a high prefix-cache hit rate;
+distinct repository contexts may perform differently. This is not SWE-bench
+validation or an agentic software-engineering workload.
+
+Full-model training remains experimental. After correcting context-parallel
+configuration, the trainer completed its full-length log-probability pass but
+ran out of memory during backward recomputation. Recipe-scoped patches reuse
+expert LoRA buffers and bound expert activation temporaries while preserving
+Beam's unfused BF16 arithmetic. The allocator uses expandable segments.
+The LoRA changes passed H200 output/gradient and checkpoint-recomputation checks.
+For the activation change, H200 tests matched outputs and input gradients
+exactly; routing-weight gradients matched at `rtol=1e-6, atol=1e-5`.
+A representative activation forward/backward test reduced peak memory from
+13.00 GiB to 5.41 GiB. A complete full-model optimizer step is still pending;
+these component checks do not establish that the recipe fits.
 
 Attention-only preflight on two H200s passed for both sliding-window and full
 attention in the pinned runtime. At 1,024 tokens, FlashAttention CP1 and CP2

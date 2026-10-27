@@ -70,6 +70,8 @@ def test_256k_beam_preserves_training_workload_and_limits_memory():
     assert recipe.rollout_max_prompt_len + recipe.rollout_max_response_len == 262144
     assert recipe.seq_length == 262144
     assert recipe.sglang_context_length == 262146
+    assert recipe.sglang_max_running_requests == 8
+    assert recipe.sglang_cuda_graph_max_bs_decode == 8
     assert recipe.lr == 1e-4
     assert recipe.lr_decay_style == "cosine"
     assert recipe.global_batch_size == 256
