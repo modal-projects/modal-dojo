@@ -48,6 +48,9 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
     attention_backend: str = "flash"
     context_parallel_size: int = 2
     cp_comm_type: str = "all_gather"
+    rollout_batch_size: int = 1
+    n_samples_per_prompt: int = 8
+    global_batch_size: int = 8
     rollout_max_context_len: int = 262144
     rollout_max_prompt_len: int = 229376
     rollout_max_response_len: int = 32768
