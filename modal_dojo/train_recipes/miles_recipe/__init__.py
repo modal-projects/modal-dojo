@@ -1,3 +1,4 @@
+from .beam_256k import Beam_1_0_501B_A23B_LoRA_256k_Recipe
 from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash_lora import (
     DeepSeek_V4_1_Flash_LoRA_Recipe,
 )
@@ -35,6 +36,7 @@ from modal_dojo.train_recipes.miles_recipe.qwen3_5_4b import (
 )
 
 __all__ = [
+    "Beam_1_0_501B_A23B_LoRA_256k_Recipe",
     "MilesRecipe",
     "DeepSeek_V4_1_Flash_Recipe",
     "DeepSeek_V4_1_Flash_LoRA_Recipe",

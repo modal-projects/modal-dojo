@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from ..framework import Framework
 from .base import ModelConfig
+from .beam import Beam_1_0_501B_A23B_LoRA
 from .deepseek_v41_flash import DeepSeek_V4_1_Flash, DeepSeek_V4_1_Flash_LoRA
 from .gemma4_26b_a4b import Gemma4_26B_A4B
 from .glm_4_7 import GLM_4_7
@@ -85,6 +86,12 @@ class _ValidationConfig:
 
 
 VALIDATION_CONFIGS: set[_ValidationConfig] = {
+    _ValidationConfig(
+        "Beam-1.0-501B-A23B-LoRA",
+        Beam_1_0_501B_A23B_LoRA,
+        Framework.MILES,
+        timeout_s=2 * 60 * 60,
+    ),
     _ValidationConfig(
         "Muse-Spark-Open", Muse_Spark_Open, Framework.MILES, timeout_s=24 * 60 * 60
     ),
