@@ -24,8 +24,6 @@ DASHBOARD_VERSION_ENV_KEY = "DASHBOARD_VERSION"
 def current_dashboard_version() -> str:
     if baked := os.environ.get(DASHBOARD_VERSION_ENV_KEY):
         return baked
-    # In a repo checkout the pyproject is this code's version; an installed
-    # distribution's metadata can be stale or absent.
     pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
     if pyproject.is_file():
         with pyproject.open("rb") as f:
@@ -36,8 +34,6 @@ def current_dashboard_version() -> str:
 def is_dashboard_upgrade(incoming: str, deployed: str | None) -> bool:
     if not deployed:
         return True
-    # Bare integers are the pre-package, hand-bumped scheme: a release
-    # supersedes them and they never supersede a release.
     if incoming.isdigit() != deployed.isdigit():
         return deployed.isdigit()
     from packaging.version import InvalidVersion, Version
