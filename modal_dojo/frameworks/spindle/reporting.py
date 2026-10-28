@@ -27,6 +27,8 @@ from modal_dojo.common.training_rollout import (
 )
 from modal_dojo.utils.metadata import MetadataStore, vol_put
 
+from .timing import timing_record
+
 logger = logging.getLogger(__name__)
 _training_rollout = ContextVar("spindle_training_rollout", default=False)
 
@@ -39,7 +41,12 @@ class DojoReporter:
         # Preserve per-endpoint ordering without blocking other streams.
         self.queues = {
             endpoint: asyncio.Queue(maxsize=128)
-            for endpoint in ("framework-status", "training-rollouts", "metric-points")
+            for endpoint in (
+                "framework-status",
+                "training-rollouts",
+                "metric-points",
+                "timing-events",
+            )
         }
         self.failures = 0
         self.token = secrets.token_urlsafe(32)
@@ -264,6 +271,7 @@ class DojoReporter:
     @contextmanager
     def tinker_cookbook_hooks(self, rl_train):
         original_log = rl_train.ml_log
+        original_trace = rl_train.trace
         operations = {
             phase: getattr(rl_train, phase.value)
             for phase in (
@@ -286,6 +294,27 @@ class DojoReporter:
             result.loggers.append(Logger())
             return result
 
+        @contextmanager
+        def trace_iteration(step):
+            with original_trace.trace_iteration(step) as window:
+                try:
+                    yield window
+                finally:
+                    try:
+                        if window.spans:
+                            record = timing_record(
+                                reporter.run.training_run_id,
+                                step,
+                                window.get_span_dicts(),
+                                min(span.wall_start for span in window.spans),
+                            )
+                            reporter._enqueue(
+                                "timing-events", record.model_dump(mode="json")
+                            )
+                    except Exception:
+                        reporter.failures += 1
+                        logger.exception("Could not report tinker-cookbook timing")
+
         def wrap_operation(operation, phase):
             @wraps(operation)
             async def wrapped(*args, **kwargs):
@@ -304,12 +333,16 @@ class DojoReporter:
         rl_train.ml_log = SimpleNamespace(
             **{**vars(original_log), "setup_logging": setup_logging}
         )
+        rl_train.trace = SimpleNamespace(
+            **{**vars(original_trace), "trace_iteration": trace_iteration}
+        )
         for phase, operation in operations.items():
             setattr(rl_train, phase.value, wrap_operation(operation, phase))
         try:
             yield
         finally:
             rl_train.ml_log = original_log
+            rl_train.trace = original_trace
             for phase, operation in operations.items():
                 setattr(rl_train, phase.value, operation)
 

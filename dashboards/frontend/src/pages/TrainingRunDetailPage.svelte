@@ -1882,6 +1882,7 @@
                 onChangeTimeRange={setChartRange}
                 showOpenRollout={!isSftRun}
                 trainingType={run?.training_type}
+                timingNote={run?.metadata?.timing_note}
                 onOpenRollout={(id) => {
                   selectTab("rollouts");
                   if (expandedRolloutId !== id) void toggleRolloutDetail(id);
@@ -2129,6 +2130,7 @@
                             showOpenRollout={false}
                             timelineKey={`${runId}:${r.rollout_id}`}
                             downloadName={`substep_timing_${runId}_rollout_${r.rollout_id}.json`}
+                            timingNote={run?.metadata?.timing_note}
                             rolloutIds={[r.rollout_id]}
                             onOpenRollout={(id) => {
                               selectTab("rollouts");
