@@ -10,7 +10,9 @@ Framework = Literal["slime", "miles"]
 
 def _effective(config: Any, field_name: str, default: Any = None) -> Any:
     hatch = getattr(config, "_escape_hatch_values", None)
-    values = hatch() if callable(hatch) else {}
+    values = hatch() if callable(hatch) else getattr(config, "extra_config", {})
+    if not isinstance(values, dict):
+        values = {}
     if field_name in values:
         return values[field_name]
     return getattr(config, field_name, default)
@@ -98,8 +100,13 @@ def validate_loss_and_sampling_args(config: Any, framework: Framework) -> None:
         )
     over_sampling = _effective(config, "over_sampling_batch_size")
     rollout_batch_size = _effective(config, "rollout_batch_size")
+    if over_sampling is not None and (
+        type(over_sampling) is not int or over_sampling < 1
+    ):
+        raise DojoConfigError("over_sampling_batch_size must be a positive integer")
     if (
-        type(over_sampling) is int
+        framework != "miles"
+        and type(over_sampling) is int
         and type(rollout_batch_size) is int
         and over_sampling < rollout_batch_size
     ):

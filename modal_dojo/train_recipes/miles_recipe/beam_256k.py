@@ -7,7 +7,6 @@ from typing import ClassVar
 from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
-from modal_dojo.train_recipes.base import MicroBatchSize
 from .beam import _BeamLoRABase, _image_commands
 
 
@@ -30,6 +29,7 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
                 "patch_beam_lora_memory.py",
                 "patch_beam_activation.py",
                 "patch_beam_checkpoint.py",
+                "patch_beam_startup.py",
             )
         ]
     )
@@ -40,6 +40,7 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
             "python /tmp/patch_beam_lora_memory.py",
             "python /tmp/patch_beam_activation.py",
             "python /tmp/patch_beam_checkpoint.py",
+            "python /tmp/patch_beam_startup.py",
         ]
     )
 
@@ -61,13 +62,12 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
     rollout_max_response_len: int = 32768
     eval_max_response_len: int = 32768
     seq_length: int = 262144
-    max_tokens_per_gpu: MicroBatchSize = 262144
     # The pinned worker subtracts one slot, then the scheduler reserves another.
     # Keep the actual prompt+response at 262144 while leaving both internal slots.
     sglang_context_length: int = 262146
-    # Limit concurrent long KV caches, without changing samples per optimizer step.
-    sglang_max_running_requests: int | None = 8
-    sglang_cuda_graph_max_bs_decode: int = 8
+    # Let SGLang admit requests according to KV capacity and retract when needed.
+    sglang_max_running_requests: int | None = None
+    sglang_cuda_graph_max_bs_decode: int = 64
     sglang_chunked_prefill_size: int = 4096
 
     @model_validator(mode="after")
