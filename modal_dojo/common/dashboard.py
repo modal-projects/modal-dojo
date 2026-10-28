@@ -24,13 +24,13 @@ DASHBOARD_VERSION_ENV_KEY = "DASHBOARD_VERSION"
 def current_dashboard_version() -> str:
     if baked := os.environ.get(DASHBOARD_VERSION_ENV_KEY):
         return baked
-    try:
-        return importlib.metadata.version("modal-dojo")
-    except importlib.metadata.PackageNotFoundError:
-        # Repo checkout without the distribution installed.
-        pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    # In a repo checkout the pyproject is this code's version; an installed
+    # distribution's metadata can be stale or absent.
+    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    if pyproject.is_file():
         with pyproject.open("rb") as f:
             return tomllib.load(f)["project"]["version"]
+    return importlib.metadata.version("modal-dojo")
 
 
 def is_dashboard_upgrade(incoming: str, deployed: str | None) -> bool:
