@@ -865,6 +865,25 @@ def build_miles_app(
                 if (
                     beam_resume
                     and resume_checkpoint is None
+                    and miles.lora_adapter_path
+                ):
+                    adapter = Path(miles.lora_adapter_path)
+                    checkpoint_path = adapter.parent
+                    if adapter.name != "adapter" or not is_complete(
+                        str(checkpoint_path)
+                    ):
+                        raise RuntimeError(
+                            f"Incomplete Beam resume checkpoint: {checkpoint_path}"
+                        )
+                    iteration = int(checkpoint_path.name.removeprefix("iter_"))
+                    resume_checkpoint = {
+                        "resume_checkpoint_path": str(checkpoint_path),
+                        "resume_checkpoint_name": checkpoint_path.name,
+                        "resume_from_iteration": iteration,
+                    }
+                if (
+                    beam_resume
+                    and resume_checkpoint is None
                     and (run_record.metadata or {}).get("attempt_count", 1) > 1
                     and not miles.lora_adapter_path
                 ):
