@@ -128,14 +128,24 @@ def write_checkpoint_dir(*args, **kwargs):
     def _dojo_load(self, rollout_id: int | None = None) -> None:""",
         )
     elif target == "train_async.py":
+        # The timing patch may wrap this call in a context manager first.
+        anchor = next(
+            line
+            for line in source.splitlines()
+            if line.strip() == "await rollout_executor.save(rollout_id)"
+        )
+        indent = anchor[: len(anchor) - len(anchor.lstrip())]
         replace(
-            "            await rollout_executor.save(rollout_id)",
-            """            # Publishing reloads the checkpoint volume. Agent subprocesses in
-            # the prefetched rollout must close their trace files first. Keep
-            # the completed future so normal consumption retains this batch.
-            if not args.fully_async and rollout_data_next_future is not None:
-                await rollout_data_next_future
-            await rollout_executor.save(rollout_id)""",
+            anchor,
+            "\n".join(
+                indent + line
+                for line in """# Publishing reloads the checkpoint volume. Agent subprocesses in
+# the prefetched rollout must close their trace files first. Keep
+# the completed future so normal consumption retains this batch.
+if not args.fully_async and rollout_data_next_future is not None:
+    await rollout_data_next_future
+await rollout_executor.save(rollout_id)""".splitlines()
+            ),
         )
     elif target == "data_source.py":
         replace(
