@@ -29,6 +29,7 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
                 "patch_beam_cp.py",
                 "patch_beam_lora_memory.py",
                 "patch_beam_activation.py",
+                "patch_beam_checkpoint.py",
             )
         ]
     )
@@ -38,6 +39,7 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
             "python /tmp/patch_beam_cp.py",
             "python /tmp/patch_beam_lora_memory.py",
             "python /tmp/patch_beam_activation.py",
+            "python /tmp/patch_beam_checkpoint.py",
         ]
     )
 
@@ -45,6 +47,10 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
     train_env_vars: dict | None = field(
         default_factory=lambda: {"PYTORCH_ALLOC_CONF": "expandable_segments:True"}
     )
+    # Save each completed update so an interruption loses at most one update.
+    save_interval: int | None = 1
+    max_retries: int = 10
+    lora_adapter_path: str | None = None
     attention_backend: str = "flash"
     context_parallel_size: int = 2
     # Preserve TP8 sequence-parallel alignment after splitting tokens across CP2.

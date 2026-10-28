@@ -2,6 +2,7 @@
 
 from dataclasses import field
 from math import lcm
+from pathlib import Path
 from typing import Callable, ClassVar
 
 from pydantic import ConfigDict, model_validator
@@ -173,7 +174,7 @@ class _BeamLoRABase(_BeamRecipe):
     lora_rank: int | None = 16
     lora_alpha: int | None = 32
     lora_dropout: float | None = 0.0
-    # Bridge LoRA resume is not supported by the Dojo launcher yet.
+    # Native resume requires the checkpoint patch supplied by the 256k recipe.
     max_retries: int = 0
     # Leave target_modules unset: the pinned Beam registry includes the output gate.
     lr: float = 1e-4
@@ -188,7 +189,9 @@ class _BeamLoRABase(_BeamRecipe):
 
     @model_validator(mode="after")
     def _check_beam_lora(self) -> "_BeamLoRABase":
-        if self.max_retries != 0:
+        if self.max_retries != 0 and not any(
+            Path(path).name == "patch_beam_checkpoint.py" for path in self.patch_files
+        ):
             raise ValueError(
                 "Beam LoRA requires max_retries=0 until adapter resume is supported"
             )
