@@ -295,3 +295,22 @@ def test_dashboard_prices_the_actual_launcher_snapshot(mode):
     # Older runs really allocated both pools; don't rewrite their cost history.
     legacy = {k: v for k, v in snapshot.items() if k != "allocated_gpus"}
     assert RunPricing.from_recipe(legacy, {}).gpus == 32
+
+
+@pytest.mark.parametrize(
+    "overrides,reason",
+    [
+        ({"expert_tensor_parallel_size": 8}, "expert_tensor_parallel_size=1"),
+        ({"lora_rank": 0}, "positive lora_rank"),
+        ({"lora_rank": None}, "positive lora_rank"),
+        ({"sglang_decode_attention_backend": "triton"}, "trtllm_mha"),
+        ({"sglang_prefill_attention_backend": "triton"}, "trtllm_mha"),
+        (
+            {"colocate": True, "offload_train": False, "offload_rollout": False},
+            "separate rollout GPUs",
+        ),
+    ],
+)
+def test_extra_config_cannot_bypass_beam_compatibility_guards(overrides, reason):
+    with pytest.raises(ValueError, match=reason):
+        Beam(extra_config=overrides)

@@ -244,7 +244,14 @@ class _BeamRecipe(MilesRecipe):
             )
         if effective("sglang_attention_backend") != "trtllm_mha":
             raise ValueError("Pinned Beam requires sglang_attention_backend=trtllm_mha")
-        if self.async_mode and self.colocate:
+        for name in (
+            "sglang_prefill_attention_backend",
+            "sglang_decode_attention_backend",
+        ):
+            backend = overrides.get(name, getattr(self, name, None))
+            if backend not in (None, "trtllm_mha"):
+                raise ValueError(f"Pinned Beam requires {name}=trtllm_mha when set")
+        if self.async_mode and effective("colocate"):
             raise ValueError("Beam async training requires separate rollout GPUs")
         cp = effective("context_parallel_size")
         if (
@@ -296,8 +303,15 @@ class _BeamLoRABase(_BeamRecipe):
             raise ValueError(
                 "Beam LoRA requires max_retries=0 until adapter resume is supported"
             )
-        if self.expert_tensor_parallel_size != 1:
+        overrides = self._escape_hatch_values()
+        if (
+            overrides.get(
+                "expert_tensor_parallel_size", self.expert_tensor_parallel_size
+            )
+            != 1
+        ):
             raise ValueError("Beam expert LoRA requires expert_tensor_parallel_size=1")
-        if self.lora_rank is None or self.lora_rank <= 0:
+        rank = overrides.get("lora_rank", self.lora_rank)
+        if type(rank) is not int or rank <= 0:
             raise ValueError("Beam LoRA requires a positive lora_rank")
         return self
