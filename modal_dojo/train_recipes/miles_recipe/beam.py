@@ -1,6 +1,7 @@
 """Beam model and LoRA defaults from radixark/miles#4149."""
 
 from dataclasses import field
+from math import lcm
 from typing import Callable, ClassVar
 
 from pydantic import ConfigDict, model_validator
@@ -140,6 +141,25 @@ class _BeamRecipe(MilesRecipe):
             )
         if self.async_mode and self.colocate:
             raise ValueError("Beam async training requires separate rollout GPUs")
+        overrides = self._escape_hatch_values()
+
+        def effective(name):
+            return overrides.get(name, getattr(self, name))
+
+        cp = effective("context_parallel_size")
+        if (
+            effective("qkv_format") == "bshd"
+            and cp > 1
+            and effective("sequence_parallel")
+        ):
+            tp = effective("tensor_model_parallel_size")
+            multiplier = effective("data_pad_size_multiplier")
+            # CP uses two zigzag chunks per rank; each local sequence must fit TP.
+            if tp < 1 or multiplier < 1 or (tp * multiplier) % (cp * lcm(tp, 2)):
+                raise ValueError(
+                    "Beam bshd padding must preserve CP and sequence-parallel "
+                    "alignment; increase data_pad_size_multiplier"
+                )
         return self
 
 
@@ -153,6 +173,8 @@ class _BeamLoRABase(_BeamRecipe):
     lora_rank: int | None = 16
     lora_alpha: int | None = 32
     lora_dropout: float | None = 0.0
+    # Bridge LoRA resume is not supported by the Dojo launcher yet.
+    max_retries: int = 0
     # Leave target_modules unset: the pinned Beam registry includes the output gate.
     lr: float = 1e-4
     min_lr: float = 1e-5
@@ -166,6 +188,10 @@ class _BeamLoRABase(_BeamRecipe):
 
     @model_validator(mode="after")
     def _check_beam_lora(self) -> "_BeamLoRABase":
+        if self.max_retries != 0:
+            raise ValueError(
+                "Beam LoRA requires max_retries=0 until adapter resume is supported"
+            )
         if self.expert_tensor_parallel_size != 1:
             raise ValueError("Beam expert LoRA requires expert_tensor_parallel_size=1")
         if self.lora_rank is None or self.lora_rank <= 0:
