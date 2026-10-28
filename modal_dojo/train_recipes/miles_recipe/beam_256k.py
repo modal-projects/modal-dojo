@@ -72,12 +72,42 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
 
     @model_validator(mode="after")
     def _check_long_context(self) -> "Beam_1_0_501B_A23B_LoRA_256k_Recipe":
-        if self.cp_comm_type != "all_gather":
+        overrides = self._escape_hatch_values()
+
+        def effective(name):
+            return overrides.get(name, getattr(self, name, None))
+
+        for name in (
+            "load",
+            "lora_adapter_path",
+            "start_rollout_id",
+            "no_load_optim",
+            "no_save_optim",
+        ):
+            if name in overrides:
+                raise ValueError(
+                    f"Set {name} on the Beam recipe directly so resume cannot be overridden by extra_config"
+                )
+        if overrides.get("fully_async"):
+            raise ValueError(
+                "Beam checkpoint resume supports the default one-batch async prefetch, not fully_async"
+            )
+        if self.max_retries and (not effective("save") or effective("no_save_optim")):
+            raise ValueError(
+                "Beam retries require checkpoint and optimizer saving; otherwise set max_retries=0"
+            )
+        cp_comm_type = effective("cp_comm_type")
+        if isinstance(cp_comm_type, list) and len(cp_comm_type) == 1:
+            cp_comm_type = cp_comm_type[0]
+        if cp_comm_type != "all_gather":
             raise ValueError(
                 "Beam sliding-window CP requires all_gather in this preset"
             )
-        if self.context_parallel_size < 2:
+        if effective("context_parallel_size") < 2:
             raise ValueError("The 256k Beam preset requires context_parallel_size >= 2")
-        if self.sglang_context_length < self.rollout_max_context_len + 2:
+        if (
+            effective("sglang_context_length")
+            < effective("rollout_max_context_len") + 2
+        ):
             raise ValueError("Beam's pinned SGLang requires two extra context slots")
         return self

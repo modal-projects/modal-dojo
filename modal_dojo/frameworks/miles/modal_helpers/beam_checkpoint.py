@@ -2,7 +2,9 @@
 
 import json
 import os
+from copy import deepcopy
 from pathlib import Path
+from threading import Lock
 
 MARKER = "dojo_lora_complete.json"
 LAYOUT = (
@@ -12,6 +14,55 @@ LAYOUT = (
     "expert_model_parallel_size",
     "expert_tensor_parallel_size",
 )
+
+
+def _cursor_state(source) -> dict:
+    state = {
+        key: getattr(source, key)
+        for key in (
+            "sample_offset",
+            "epoch_id",
+            "sample_group_index",
+            "sample_index",
+            "metadata",
+        )
+    }
+    if hasattr(source, "buffer"):
+        state["buffer"] = source.buffer
+    return deepcopy(state)
+
+
+def remember_rollout_cursor(executor, rollout_id: int) -> None:
+    """Remember the dataset position before the async producer consumes it."""
+    if not executor.args.rollout_global_dataset:
+        return
+    if not hasattr(executor, "_dojo_cursor_lock"):
+        executor._dojo_cursor_lock = Lock()
+        executor._dojo_rollout_cursors = {}
+    with executor._dojo_cursor_lock:
+        executor._dojo_rollout_cursors[rollout_id] = _cursor_state(executor.data_source)
+        for previous in list(executor._dojo_rollout_cursors):
+            if previous < rollout_id - 1:
+                del executor._dojo_rollout_cursors[previous]
+
+
+def save_rollout_cursor(executor, rollout_id: int) -> None:
+    """Save the next untrained batch's position, excluding in-flight prefetch."""
+    if not executor.args.rollout_global_dataset:
+        executor.data_source.save(rollout_id)
+        return
+    import torch
+    from miles.rollout.data_source import compute_global_dataset_state_path
+
+    with executor._dojo_cursor_lock:
+        state = executor._dojo_rollout_cursors.get(rollout_id + 1)
+        if state is None:
+            state = _cursor_state(executor.data_source)
+    path = Path(
+        compute_global_dataset_state_path(executor.args.save, rollout_id=rollout_id)
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(state, path)
 
 
 def complete_checkpoint(path: str) -> bool:

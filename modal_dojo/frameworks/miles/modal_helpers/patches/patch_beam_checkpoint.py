@@ -3,10 +3,12 @@ image: radixark/miles:v0.1.2
 commit: https://github.com/radixark/miles/commit/819cfd23ab74de9975931597894500632dd708fc
 file: miles/backends/training_utils/checkpoint/io.py,
       miles/backends/megatron_utils/{megatron_config,model,checkpoint,lora/utils}.py,
-      miles/ray/rollout/rollout_executor.py
+      miles/ray/rollout/rollout_executor.py, miles/rollout/data_source.py
 
 Commit native adapter shards on every node, restore the optimizer and scheduler,
 and publish a resumable checkpoint only after rollout state has been saved.
+Save the next untrained rollout's cursor and buffered samples, excluding
+the async producer's in-flight prefetch from the committed dataset position.
 TODO: Remove once pinned Miles supports native bridge LoRA resume on Modal.
 """
 
@@ -94,6 +96,17 @@ def write_checkpoint_dir(*args, **kwargs):
         )
     elif target == "rollout_executor.py":
         replace(
+            "    async def _get_rollout_data(self, rollout_id, trainer_model_id: str | None = None):",
+            """    async def _get_rollout_data(self, rollout_id, trainer_model_id: str | None = None):
+        from modal_dojo.frameworks.miles.modal_helpers.beam_checkpoint import remember_rollout_cursor
+        remember_rollout_cursor(self, rollout_id)""",
+        )
+        replace(
+            "        self.data_source.save(rollout_id)",
+            """        from modal_dojo.frameworks.miles.modal_helpers.beam_checkpoint import save_rollout_cursor
+        save_rollout_cursor(self, rollout_id)""",
+        )
+        replace(
             "        event_logger_checkpoint.snapshot(self.args, rollout_id)",
             """        event_logger_checkpoint.snapshot(self.args, rollout_id)
         from modal_dojo.frameworks.miles.modal_helpers.beam_checkpoint import publish_checkpoint
@@ -113,6 +126,17 @@ def write_checkpoint_dir(*args, **kwargs):
 
     def _dojo_load(self, rollout_id: int | None = None) -> None:""",
         )
+    elif target == "data_source.py":
+        replace(
+            "        state_dict = torch.load(path)",
+            "        state_dict = torch.load(path, weights_only=False)",
+        )
+        replace(
+            '        self.metadata = state_dict.get("metadata", {})',
+            """        self.metadata = state_dict.get("metadata", {})
+        if hasattr(self, "buffer"):
+            self.buffer = state_dict.get("buffer", [])""",
+        )
     else:
         raise ValueError(f"Unknown Beam checkpoint target: {target}")
     source += f"\n# {MARKER}\n"
@@ -129,6 +153,7 @@ def main() -> None:
         "backends/megatron_utils/model.py",
         "backends/megatron_utils/checkpoint.py",
         "ray/rollout/rollout_executor.py",
+        "rollout/data_source.py",
     ):
         path = root / relative
         path.write_text(patch_source(path.read_text(), path.name))

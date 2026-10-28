@@ -134,19 +134,19 @@ class _BeamRecipe(MilesRecipe):
 
     @model_validator(mode="after")
     def _check_beam_attention(self) -> "_BeamRecipe":
-        if self.use_dynamic_batch_size or self.qkv_format != "bshd":
-            raise ValueError("Beam requires fixed microbatches and qkv_format=bshd")
-        if self.attention_backend not in self._BEAM_ATTENTION_BACKENDS:
-            raise ValueError(
-                f"This Beam preset requires attention_backend in {self._BEAM_ATTENTION_BACKENDS}"
-            )
-        if self.async_mode and self.colocate:
-            raise ValueError("Beam async training requires separate rollout GPUs")
         overrides = self._escape_hatch_values()
 
         def effective(name):
             return overrides.get(name, getattr(self, name))
 
+        if effective("use_dynamic_batch_size") or effective("qkv_format") != "bshd":
+            raise ValueError("Beam requires fixed microbatches and qkv_format=bshd")
+        if effective("attention_backend") not in self._BEAM_ATTENTION_BACKENDS:
+            raise ValueError(
+                f"This Beam preset requires attention_backend in {self._BEAM_ATTENTION_BACKENDS}"
+            )
+        if self.async_mode and self.colocate:
+            raise ValueError("Beam async training requires separate rollout GPUs")
         cp = effective("context_parallel_size")
         if (
             effective("qkv_format") == "bshd"
