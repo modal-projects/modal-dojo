@@ -65,3 +65,14 @@ def test_qwen3_27b_adapts_current_slime_qwen3_5_recipe(
     else:
         assert tp_args == [f"--tensor-model-parallel-size {conversion_tp}"]
         assert pp_args == ["--pipeline-model-parallel-size 1"]
+
+
+def test_qwen3_8_27b_uses_async_disagg_four_plus_four_b300() -> None:
+    recipe = Qwen3_8_27B_Recipe()
+
+    assert recipe.colocate is False
+    assert recipe.train_async is True
+    assert recipe.gpu_allocation.actor_gpus == 4
+    assert recipe.gpu_allocation.rollout_gpus == 4
+    assert recipe.gpu_allocation.total_gpus == 8
+    assert recipe.gpu_allocation.total_nodes == 1
