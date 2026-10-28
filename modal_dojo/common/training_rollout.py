@@ -78,6 +78,25 @@ def _clean_prompt(text: str) -> str:
     Pull the message content out and drop the template scaffolding; fall
     back to stripping special tokens when there's no messages repr.
     """
+    # Beam uses adjacent role/message delimiters, without newline separators.
+    # Parse those boundaries before stripping tokens so roles cannot run into
+    # message content. Ignore the unfinished assistant generation header.
+    if text.startswith("<|start|>"):
+        turns = []
+        for turn in text.split("<|start|>")[1:]:
+            header, separator, content = turn.partition("<|message|>")
+            if not separator:
+                continue
+            role, _, channel = header.partition("<|channel|>")
+            if role not in {"system", "developer", "user", "assistant", "tool"}:
+                break
+            content = re.split(r"<\|(?:end|finish|fim_suffix|handoff)\|>", content)[0]
+            label = role.capitalize() + (f" ({channel})" if channel else "")
+            turns.append(f"{label}:\n{content.strip()}")
+        else:
+            if turns:
+                return "\n\n".join(turns)
+
     start, end = text.find("[{"), text.rfind("}]")
     if start != -1 and end > start:
         try:

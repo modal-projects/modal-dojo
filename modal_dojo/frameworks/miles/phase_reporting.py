@@ -143,6 +143,7 @@ def report_rollout_samples(
                 image_store=image_store,
                 include_trajectory=(i < trajectory_limit),
                 n_samples_per_prompt=n_per,
+                reward_key=_arg_value(args, "reward_key"),
             )
             for i, s in enumerate(samples)
         ]

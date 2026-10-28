@@ -1,3 +1,4 @@
+from .beam import Beam_1_0_501B_A23B, Beam_1_0_501B_A23B_LoRA
 from .base import (
     HFModelConfiguration,
     ModelArchitecture,
@@ -33,6 +34,8 @@ from .qwen3_asr_1_7b import Qwen3_ASR_1_7B
 from .qwen3_vl_8b import Qwen3_VL_8B
 
 __all__ = [
+    "Beam_1_0_501B_A23B",
+    "Beam_1_0_501B_A23B_LoRA",
     "HFModelConfiguration",
     "ModelArchitecture",
     "ModelConfig",

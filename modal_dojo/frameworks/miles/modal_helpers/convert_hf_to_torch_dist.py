@@ -141,7 +141,7 @@ def _run_conversion(src: str) -> None:
         sys.argv[save_index] = str(staging)
     try:
         exec(
-            compile(src, _UPSTREAM, "exec"),
+            compile(src, _UPSTREAM, "exec", dont_inherit=True),
             {"__name__": "__main__", "__file__": _UPSTREAM},
         )
         if destination is not None and os.environ.get("RANK", "0") == "0":

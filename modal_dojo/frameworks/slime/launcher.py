@@ -15,6 +15,7 @@ Usage (from a tutorial file):
 Then: `uv run modal run <tutorial_file>.py::train`.
 """
 
+import contextlib
 import os
 import shlex
 import subprocess
@@ -65,6 +66,12 @@ from modal_dojo.common.trackio import resolve_trackio_destination
 from modal_dojo.common.wandb import WandbConfig
 from modal_dojo.common.status_reporter import flush as flush_status_reporter
 from modal_dojo.common.status import SlimeStatus
+from modal_dojo.common.convert_lock import (
+    acquire_convert_lock,
+    convert_lock_heartbeat,
+    refresh_convert_lock,
+    release_convert_lock,
+)
 from modal_dojo.common.torch_dist_checkpoint import (
     is_complete_torch_dist_checkpoint_dir,
 )
@@ -276,7 +283,7 @@ def _build_conversion_config(slime_cfg: Any, model: Any = None) -> dict[str, Any
 _CONVERSION_CONFIG_FILE = ".conversion_config.json"
 
 
-_LAYOUT_FLAGS = (
+_CONVERSION_PARALLELISM_FLAGS = (
     "--tensor-model-parallel-size",
     "--pipeline-model-parallel-size",
     "--expert-model-parallel-size",
@@ -286,7 +293,7 @@ _LAYOUT_FLAGS = (
 )
 
 
-def _without_layout(config: dict[str, Any]) -> dict[str, Any]:
+def _without_parallelism(config: dict[str, Any]) -> dict[str, Any]:
     rest = {
         key: value
         for key, value in config.items()
@@ -294,7 +301,9 @@ def _without_layout(config: dict[str, Any]) -> dict[str, Any]:
     }
     if isinstance(rest.get("extra_args"), list):
         rest["extra_args"] = [
-            a for a in rest["extra_args"] if not a.startswith(_LAYOUT_FLAGS)
+            a
+            for a in rest["extra_args"]
+            if not a.startswith(_CONVERSION_PARALLELISM_FLAGS)
         ]
     return rest
 
@@ -313,7 +322,7 @@ def _conversion_config_matches(stored: dict[str, Any], current: dict[str, Any]) 
         for a in current_args
     ):
         return False
-    return _without_layout(stored) == _without_layout(current)
+    return _without_parallelism(stored) == _without_parallelism(current)
 
 
 def _checkpoint_conversion_cache_status(
@@ -605,34 +614,50 @@ def build_slime_app(
             return None
         print(f"torch_dist checkpoint at {save_path} is {cache_status}.")
 
-        if cache_status == "stale":
-            if stored_config is None:
-                print(
-                    f"Checkpoint at {save_path} has missing or unreadable conversion "
-                    "config metadata — reconverting."
-                )
-            else:
-                print(
-                    f"Checkpoint at {save_path} was built with different config:"
-                    f"\n  stored: {stored_config}\n  current: {current_config}"
-                )
-        if cache_status in {"stale", "incomplete"}:
-            print(f"Removing {cache_status} torch_dist checkpoint at {save_path}.")
-            import shutil
-
-            shutil.rmtree(save_path, ignore_errors=True)
-            checkpoints_volume.commit()
-
-        if slime.megatron_conversion_hf_checkpoint:
-            return resolve_checkpoint_ref(slime.megatron_conversion_hf_checkpoint)
-        if model.model_path:
-            return str(model.model_path)
-
-        from huggingface_hub import snapshot_download
-
-        return snapshot_download(
-            model.model_name, revision=model.revision, local_files_only=True
+        holder = acquire_convert_lock(
+            training_run_id, checkpoints_volume_name, save_path
         )
+        if holder != training_run_id:
+            raise RuntimeError(
+                f"Run {holder} is already converting into {save_path}. Two runs of "
+                "this recipe share one ref_load, so continuing would delete that "
+                "run's in-flight conversion and interleave shards. Wait for it to "
+                "finish and relaunch to pick up the cached checkpoint, or point this "
+                "run at a different ref_load."
+            )
+
+        try:
+            if cache_status == "stale":
+                if stored_config is None:
+                    print(
+                        f"Checkpoint at {save_path} has missing or unreadable "
+                        "conversion config metadata — reconverting."
+                    )
+                else:
+                    print(
+                        f"Checkpoint at {save_path} was built with different config:"
+                        f"\n  stored: {stored_config}\n  current: {current_config}"
+                    )
+            if cache_status in {"stale", "incomplete"}:
+                print(f"Removing {cache_status} torch_dist checkpoint at {save_path}.")
+                import shutil
+
+                shutil.rmtree(save_path, ignore_errors=True)
+                checkpoints_volume.commit()
+
+            if slime.megatron_conversion_hf_checkpoint:
+                return resolve_checkpoint_ref(slime.megatron_conversion_hf_checkpoint)
+            if model.model_path:
+                return str(model.model_path)
+
+            from huggingface_hub import snapshot_download
+
+            return snapshot_download(
+                model.model_name, revision=model.revision, local_files_only=True
+            )
+        except BaseException:
+            release_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+            raise
 
     @app.function(
         image=image,
@@ -723,16 +748,30 @@ def build_slime_app(
             f"nproc_per_node={nproc_per_node}, node_rank={node_rank}"
         )
         print(f"Running: bash -c {cmd!r}")
-        subprocess.run(["bash", "-c", cmd], check=True, env=env)
-
         if node_rank == 0:
-            config_path = os.path.join(save_path, _CONVERSION_CONFIG_FILE)
-            try:
-                with open(config_path, "w") as f:
-                    json.dump(current_config, f)
-            except OSError as exc:
-                print(f"WARNING: could not write conversion config: {exc}")
-        checkpoints_volume.commit()
+            refresh_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+        heartbeat = (
+            convert_lock_heartbeat(training_run_id, checkpoints_volume_name, save_path)
+            if node_rank == 0
+            else contextlib.nullcontext()
+        )
+        try:
+            with heartbeat:
+                subprocess.run(["bash", "-c", cmd], check=True, env=env)
+
+                if node_rank == 0:
+                    config_path = os.path.join(save_path, _CONVERSION_CONFIG_FILE)
+                    try:
+                        with open(config_path, "w") as f:
+                            json.dump(current_config, f)
+                    except OSError as exc:
+                        print(f"WARNING: could not write conversion config: {exc}")
+                checkpoints_volume.commit()
+        finally:
+            if node_rank == 0:
+                release_convert_lock(
+                    training_run_id, checkpoints_volume_name, save_path
+                )
 
         if node_rank == 0:
             print(f"Saved torch_dist checkpoint to {save_path}")

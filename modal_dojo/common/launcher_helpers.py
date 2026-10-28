@@ -381,6 +381,10 @@ def ship_recipe_callables(
 
     for attr, key in hooks.items():
         value = getattr(recipe, attr)
+        if attr == "custom_rm_function" and recipe._escape_hatch_values().get(key):
+            # Explicit native paths must not be replaced by preset callables.
+            setattr(recipe, attr, None)
+            continue
         if not callable(value):  # A str is an import path the user vouches for.
             continue
         image, path = ship_callable(

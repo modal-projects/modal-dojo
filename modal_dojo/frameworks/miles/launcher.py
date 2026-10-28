@@ -7,12 +7,10 @@ import shlex
 import subprocess
 import shutil
 import tempfile
-import threading
 import time
 from pathlib import Path
-from typing import Any
 
-from modal import App, Dict as ModalDict, Image, __version__ as MODAL_VERSION
+from modal import App, Image, __version__ as MODAL_VERSION
 
 from modal_dojo.common import (
     hf_secrets,
@@ -63,6 +61,12 @@ from modal_dojo.common.launcher_helpers import (
 )
 from modal_dojo.common.status_reporter import flush as flush_status_reporter
 from modal_dojo.common.status import MilesStatus
+from modal_dojo.common.convert_lock import (
+    acquire_convert_lock as _acquire_convert_lock,
+    convert_lock_heartbeat as _convert_lock_heartbeat,
+    refresh_convert_lock as _refresh_convert_lock,
+    release_convert_lock as _release_convert_lock,
+)
 from modal_dojo.common.torch_dist_checkpoint import (
     is_complete_torch_dist_checkpoint_storage,
 )
@@ -126,155 +130,6 @@ _PATCH_CHECKPOINT_COMMIT_B64 = encode_patch(
 _MEGATRON_TORCH_STRATEGY_PY = (
     "/root/Megatron-LM/megatron/core/dist_checkpointing/strategies/torch.py"
 )
-
-
-_CONVERT_LOCK_DICT_NAME = "training-gym-convert-lock"
-_CONVERT_LOCK_TTL_S = 900.0
-_CONVERT_LOCK_REFRESH_S = 300.0
-_CONVERT_TOKEN_TTL_S = 4 * _CONVERT_LOCK_TTL_S
-
-
-def _convert_lock_dict() -> Any:
-    return ModalDict.from_name(_CONVERT_LOCK_DICT_NAME, create_if_missing=True)
-
-
-def _convert_lock_key(volume_name: str, save_path: str) -> str:
-    return f"lock:{volume_name}:{save_path}"
-
-
-def _sweep_convert_tokens(locks: Any, key: str) -> None:
-    """Drop takeover tokens old enough that no live contender can act on one.
-
-    A token has to outlive the takeover it settles, or a contender still holding the
-    stale read it was written for could win a fresh one and pop the new owner's claim.
-    Past that it is only litter, and nothing else reclaims it, so tokens are swept on
-    release and on the next takeover for the same path.
-    """
-    prefix = f"{key}:takeover:"
-    cutoff = time.time() - _CONVERT_TOKEN_TTL_S
-    try:
-        names = [str(name) for name in locks.keys() if str(name).startswith(prefix)]
-        for name in names:
-            token = locks.get(name)
-            written_at = token.get("at") if isinstance(token, dict) else None
-            if not isinstance(written_at, (int, float)) or written_at < cutoff:
-                locks.pop(name, None)
-    except Exception as exc:
-        print(f"WARNING: could not sweep stale conversion tokens: {exc}")
-
-
-def _acquire_convert_lock(run_id: str, volume_name: str, save_path: str) -> str:
-    """Claim the right to convert into ``save_path``; return the current holder.
-
-    Two launches of the same recipe share one ``ref_load``, so without this the
-    loser's cleanup deletes the winner's still-metadata-less conversion output.
-
-    ``Dict.put(..., skip_if_exists=True)`` is the atomic compare-and-set that decides
-    the winner; a read-then-write claim would let two runs both observe an unheld lock
-    and both proceed. The claim expires after ``_CONVERT_LOCK_TTL_S``, sized against the
-    heartbeat interval so a holder that cannot run its release path frees the path in a
-    TTL rather than a conversion's worth of time.
-
-    Taking a stale claim over cannot be a delete followed by a put: two runs that both
-    read the same stale holder would delete each other's fresh claim and both come away
-    believing they own the path. Instead each contender first claims a token naming the
-    stale holder it saw, which only one can win, and only that winner replaces the
-    claim. Those tokens are swept by age, not on use — see ``_sweep_convert_tokens``.
-    """
-    locks = _convert_lock_dict()
-    key = _convert_lock_key(volume_name, save_path)
-    claim = {"run_id": run_id, "claimed_at": time.time()}
-    if locks.put(key, claim, skip_if_exists=True):
-        return run_id
-
-    owner, claimed_at = "", None
-    holder = locks.get(key)
-    if isinstance(holder, dict):
-        owner = str(holder.get("run_id") or "")
-        claimed_at = holder.get("claimed_at")
-        if owner == run_id:
-            return run_id
-        if (
-            owner
-            and isinstance(claimed_at, (int, float))
-            and time.time() - claimed_at < _CONVERT_LOCK_TTL_S
-        ):
-            return owner
-
-    takeover_key = f"{key}:takeover:{owner}:{claimed_at}"
-    token = {"run_id": run_id, "at": time.time()}
-    if not locks.put(takeover_key, token, skip_if_exists=True):
-        winner = locks.get(takeover_key)
-        if isinstance(winner, dict) and winner.get("run_id"):
-            return str(winner["run_id"])
-        return owner or run_id
-
-    _sweep_convert_tokens(locks, key)
-    try:
-        locks.pop(key)
-    except KeyError:
-        pass
-    if locks.put(key, claim, skip_if_exists=True):
-        return run_id
-    holder = locks.get(key)
-    if isinstance(holder, dict) and holder.get("run_id"):
-        return str(holder["run_id"])
-    return run_id
-
-
-def _refresh_convert_lock(run_id: str, volume_name: str, save_path: str) -> None:
-    """Extend an existing claim of this run's; never create one.
-
-    A refresh that wrote unconditionally would resurrect the claim when a tick
-    straddles the release, leaving it held with nobody to give it back.
-    """
-    locks = _convert_lock_dict()
-    key = _convert_lock_key(volume_name, save_path)
-    holder = locks.get(key)
-    if not isinstance(holder, dict) or str(holder.get("run_id") or "") != run_id:
-        return
-    locks[key] = {"run_id": run_id, "claimed_at": time.time()}
-
-
-@contextlib.contextmanager
-def _convert_lock_heartbeat(run_id: str, volume_name: str, save_path: str):
-    """Keep this run's claim fresh for as long as the body runs.
-
-    Refreshing on elapsed time rather than on work done: a torch_dist conversion
-    writes only about one file per rank, so any progress-based cadence never fires,
-    and the claim would lapse mid-conversion and let a later launch delete the output
-    being written.
-    """
-    stop = threading.Event()
-
-    def beat() -> None:
-        while not stop.wait(_CONVERT_LOCK_REFRESH_S):
-            try:
-                _refresh_convert_lock(run_id, volume_name, save_path)
-            except Exception as exc:
-                print(f"WARNING: could not refresh conversion claim: {exc}")
-
-    thread = threading.Thread(target=beat, daemon=True)
-    thread.start()
-    try:
-        yield
-    finally:
-        stop.set()
-        thread.join(timeout=5.0)
-
-
-def _release_convert_lock(run_id: str, volume_name: str, save_path: str) -> None:
-    """Drop the conversion claim, but only if this run still holds it."""
-    locks = _convert_lock_dict()
-    key = _convert_lock_key(volume_name, save_path)
-    holder = locks.get(key)
-    if isinstance(holder, dict) and str(holder.get("run_id") or "") != run_id:
-        return
-    try:
-        locks.pop(key)
-    except KeyError:
-        pass
-    _sweep_convert_tokens(locks, key)
 
 
 def _is_resumable_checkpoint(path: str) -> bool:
@@ -993,13 +848,52 @@ def build_miles_app(
                 )
 
             def build_cmd() -> str:
-                resume_checkpoint = torch_dist_resume_checkpoint(
-                    save_root, is_complete=_is_resumable_checkpoint
+                beam_resume = any(
+                    os.path.basename(path) == "patch_beam_checkpoint.py"
+                    for path in miles.patch_files
                 )
+                is_complete = _is_resumable_checkpoint
+                if beam_resume:
+                    from modal_dojo.frameworks.miles.modal_helpers.beam_checkpoint import (
+                        complete_checkpoint,
+                    )
+
+                    is_complete = complete_checkpoint
+                resume_checkpoint = torch_dist_resume_checkpoint(
+                    save_root, is_complete=is_complete
+                )
+                if (
+                    beam_resume
+                    and resume_checkpoint is None
+                    and miles.lora_adapter_path
+                ):
+                    adapter = Path(miles.lora_adapter_path)
+                    checkpoint_path = adapter.parent
+                    if adapter.name != "adapter" or not is_complete(
+                        str(checkpoint_path)
+                    ):
+                        raise RuntimeError(
+                            f"Incomplete Beam resume checkpoint: {checkpoint_path}"
+                        )
+                    iteration = int(checkpoint_path.name.removeprefix("iter_"))
+                    resume_checkpoint = {
+                        "resume_checkpoint_path": str(checkpoint_path),
+                        "resume_checkpoint_name": checkpoint_path.name,
+                        "resume_from_iteration": iteration,
+                    }
+                if (
+                    beam_resume
+                    and resume_checkpoint is None
+                    and (run_record.metadata or {}).get("attempt_count", 1) > 1
+                    and not miles.lora_adapter_path
+                ):
+                    raise RuntimeError(
+                        "Beam retry has no complete training checkpoint; refusing to restart from step zero"
+                    )
                 record_resume_checkpoint(run_record, resume_checkpoint)
                 resume_overrides = {}
                 if (
-                    miles.megatron_to_hf_mode == "raw"
+                    (miles.megatron_to_hf_mode == "raw" or beam_resume)
                     and miles.lora_rank is not None
                     and hasattr(miles, "lora_adapter_path")
                 ):
@@ -1013,10 +907,13 @@ def build_miles_app(
                     if adapter_path is not None:
                         # Native LoRA loads the frozen base separately from the adapter.
                         # Explicit --load also prevents Miles resetting optimizer/rollout state.
-                        resume_overrides = {
-                            "load": miles.ref_load,
-                            "lora_adapter_path": adapter_path,
-                        }
+                        resume_overrides = {"lora_adapter_path": adapter_path}
+                        if beam_resume:
+                            resume_overrides["load"] = str(
+                                Path(adapter_path).parent.parent
+                            )
+                        else:
+                            resume_overrides["load"] = miles.ref_load
                 with shared.resumed_recipe(
                     miles, save_root, resume_checkpoint, overrides=resume_overrides
                 ):

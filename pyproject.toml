@@ -17,6 +17,7 @@ dependencies = [
     "cloudpickle",
     "datasets",
     "httpx",
+    "packaging",
     "pydantic",
     "fastapi",
     "randomname",

@@ -499,7 +499,7 @@ def serialize_recipe_params(
     Framework-agnostic: any recipe implementing ``_fields`` works, so slime and
     miles runs get the same parameter table.
     """
-    return {
+    result = {
         key: serialize_recipe_param_value(key, value)
         for key, value in recipe._fields(
             dataset=dataset,
@@ -509,6 +509,17 @@ def serialize_recipe_params(
             model=model,
         ).items()
     }
+
+    # These launcher decisions are not CLI flags, but pricing and run inspection
+    # must retain what was actually allocated, including debug-only jobs.
+    allocation = getattr(recipe, "gpu_allocation", None)
+    if allocation is not None:
+        result["allocated_gpus"] = allocation.total_gpus
+    for key in ("gpu_type", "cpu", "memory", "async_mode"):
+        value = getattr(recipe, key, None)
+        if value is not None:
+            result[key] = serialize_recipe_param_value(key, value)
+    return result
 
 
 def prepare_launch_config(
