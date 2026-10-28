@@ -1,4 +1,4 @@
-"""Beam LoRA with a 224k prompt and 32k response budget."""
+"""Beam LoRA with a 32k prompt and 224k response budget."""
 
 from dataclasses import field
 from pathlib import Path
@@ -56,9 +56,9 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
     data_pad_size_multiplier: int = 2
     cp_comm_type: str = "all_gather"
     rollout_max_context_len: int = 262144
-    rollout_max_prompt_len: int = 229376
-    rollout_max_response_len: int = 32768
-    eval_max_response_len: int = 32768
+    rollout_max_prompt_len: int = 32768
+    rollout_max_response_len: int = 229376
+    eval_max_response_len: int = 229376
     seq_length: int = 262144
     # The pinned worker subtracts one slot, then the scheduler reserves another.
     # Keep the actual prompt+response at 262144 while leaving both internal slots.
