@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import sys
 from types import SimpleNamespace
 from urllib.error import HTTPError, URLError
@@ -16,7 +17,6 @@ from modal_dojo.common import config
 from modal_dojo.common import status_reporter
 from modal_dojo.common import reporting
 from modal_dojo.common.dashboard import (
-    DASHBOARD_VERSION,
     DashboardLookupUnknown,
     current_dashboard_version,
     deployed_dashboard_url,
@@ -217,7 +217,7 @@ def _record_setup(monkeypatch):
 
 
 def test_auto_deploy_skips_when_version_is_not_newer(config_path, monkeypatch):
-    _deployed_dashboard(monkeypatch, live_version="1", local_version="1")
+    _deployed_dashboard(monkeypatch, live_version="0.1.1", local_version="0.1.1")
     calls = _record_setup(monkeypatch)
 
     assert cli_setup_module.ensure_dashboard_deployed() == "https://dashboard.test"
@@ -225,7 +225,7 @@ def test_auto_deploy_skips_when_version_is_not_newer(config_path, monkeypatch):
 
 
 def test_auto_deploy_redeploys_when_incoming_version_is_newer(config_path, monkeypatch):
-    _deployed_dashboard(monkeypatch, live_version=1, local_version=2)
+    _deployed_dashboard(monkeypatch, live_version="0.1.1", local_version="0.1.2")
     calls = _record_setup(monkeypatch)
 
     assert cli_setup_module.ensure_dashboard_deployed() == "https://dashboard.test"
@@ -263,19 +263,21 @@ def test_auto_deploy_skips_when_version_is_unknown(config_path, monkeypatch):
 @pytest.mark.parametrize(
     ("incoming", "deployed", "expected"),
     [
-        ("2", None, True),
-        ("2", "1", True),
-        ("1", "1", False),
-        ("1", "deadbeef", True),
+        ("0.1.2", None, True),
+        ("0.1.2", "0.1.1", True),
+        ("0.1.1", "0.1.1", False),
+        ("0.1.1", "8", True),
+        ("8", "0.1.1", False),
+        ("0.1.1", "deadbeef", True),
     ],
 )
 def test_is_dashboard_upgrade(incoming, deployed, expected):
     assert is_dashboard_upgrade(incoming, deployed) is expected
 
 
-def test_current_dashboard_version_uses_source_constant(monkeypatch):
+def test_current_dashboard_version_uses_package_version(monkeypatch):
     monkeypatch.delenv(_dashboard.DASHBOARD_VERSION_ENV_KEY, raising=False)
-    assert current_dashboard_version() == str(DASHBOARD_VERSION)
+    assert current_dashboard_version() == importlib.metadata.version("modal-dojo")
 
 
 def test_current_dashboard_version_uses_baked_env(monkeypatch):
