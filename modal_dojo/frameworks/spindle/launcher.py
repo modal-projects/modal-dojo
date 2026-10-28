@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
-import os
 import secrets
 import subprocess
 import sys
@@ -40,6 +39,7 @@ def _stop_app(name: str, environment: str | None) -> None:
 @asynccontextmanager
 async def deployment(config, *, metric_tags=None, run=None):
     import modal
+    from modal.config import config as modal_config
     from spindle.deployment_cli import deploy
     from spindle.deployments import DeploymentConfig
     from spindle.providers.modal.lora_pool import LoraPoolSpec
@@ -48,9 +48,7 @@ async def deployment(config, *, metric_tags=None, run=None):
     run_name = "dojo-spindle-" + uuid.uuid4().hex[:12]
     recipe.name = run_name
     recipe.platform["frontend"] = run_name
-    environment = recipe.platform["modal"]["environment"] or os.getenv(
-        "MODAL_ENVIRONMENT"
-    )
+    environment = modal_config.get("environment")
     recipe.platform["modal"]["environment"] = environment
     # Validate existing credentials before creating apps or requesting GPUs.
     for key, required in (
@@ -153,7 +151,6 @@ async def deployment(config, *, metric_tags=None, run=None):
 
 
 async def train(config, deploy_config):
-    from modal.config import config as modal_config
     from tinker_cookbook.rl import train as rl_train
     from tinker_cookbook.tokenizer_utils import get_tokenizer
 
@@ -165,10 +162,6 @@ async def train(config, deploy_config):
         )
     original_tinker = rl_train.tinker
     try:
-        deploy_config = copy.deepcopy(deploy_config)
-        deploy_config.platform["modal"]["environment"] = deploy_config.platform[
-            "modal"
-        ]["environment"] or modal_config.get("environment")
         # Resolve the tokenizer before deploying GPUs.
         tokenizer = get_tokenizer(config.model_name)
         from modal_dojo.common import modal_tag_value
@@ -179,7 +172,7 @@ async def train(config, deploy_config):
                 "_modal_metric_provider": "wandb",
                 "_modal_metric_project": modal_tag_value(config.wandb_project),
             }
-        async with DojoReporter(config, deploy_config) as reporter:
+        async with DojoReporter(config) as reporter:
             async with deployment(
                 deploy_config, metric_tags=metric_tags, run=reporter.run
             ) as (url, api_key):

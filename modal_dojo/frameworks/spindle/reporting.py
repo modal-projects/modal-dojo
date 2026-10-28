@@ -9,11 +9,8 @@ from functools import wraps
 import json
 import logging
 import math
-import os
 from pathlib import Path
 import secrets
-import subprocess
-import sys
 import time
 from types import SimpleNamespace
 import uuid
@@ -28,16 +25,15 @@ from modal_dojo.common.training_rollout import (
     TrainingRolloutResult,
     TrainingRolloutSample,
 )
-from modal_dojo.utils.metadata import MetadataStore, metadata_environment, vol_put
+from modal_dojo.utils.metadata import MetadataStore, vol_put
 
 logger = logging.getLogger(__name__)
 _training_rollout = ContextVar("spindle_training_rollout", default=False)
 
 
 class DojoReporter:
-    def __init__(self, config, deploy_config):
+    def __init__(self, config):
         self.config = config
-        self.deploy_config = deploy_config
         self.groups = []
         self.next_step = 0
         # Preserve per-endpoint ordering without blocking other streams.
@@ -74,35 +70,16 @@ class DojoReporter:
             metadata={
                 "log_path": config.log_path,
                 "driver": "local",
-                "modal_environment": deploy_config.platform["modal"]["environment"],
             },
         )
 
     async def __aenter__(self):
-        from modal.config import config as modal_config
         from modal_dojo.cli.setup import ensure_dashboard_deployed
         from modal_dojo.common.config import modal_proxy_auth_headers
         from modal_dojo.common.dashboard import deployed_dashboard_url
 
-        environment = self.deploy_config.platform["modal"]["environment"]
-        if environment and environment != modal_config.get("environment"):
-            # Dashboard setup uses process-wide Modal config; isolate the override.
-            await asyncio.to_thread(
-                subprocess.run,
-                [
-                    sys.executable,
-                    "-c",
-                    "from modal_dojo.cli.setup import ensure_dashboard_deployed; "
-                    "ensure_dashboard_deployed()",
-                ],
-                env={**os.environ, "MODAL_ENVIRONMENT": environment},
-                check=True,
-            )
-        else:
-            await asyncio.to_thread(ensure_dashboard_deployed)
-        url = await asyncio.to_thread(
-            deployed_dashboard_url, environment_name=environment
-        )
+        await asyncio.to_thread(ensure_dashboard_deployed)
+        url = await asyncio.to_thread(deployed_dashboard_url)
         if not url:
             raise DojoConfigError(
                 "Could not connect to Dojo. Run `modal-dojo setup` in the training "
@@ -110,13 +87,12 @@ class DojoReporter:
             )
         self.run.metadata["dashboard_url"] = url.rstrip("/")
         await self.run.save(is_async=True)
-        with metadata_environment(environment):
-            await vol_put(
-                MetadataStore.FRAMEWORK_STATUS_TOKENS,
-                self.run.training_run_id,
-                {"token": self.token},
-                is_async=True,
-            )
+        await vol_put(
+            MetadataStore.FRAMEWORK_STATUS_TOKENS,
+            self.run.training_run_id,
+            {"token": self.token},
+            is_async=True,
+        )
         self.client = httpx.AsyncClient(
             base_url=url.rstrip("/"),
             headers={

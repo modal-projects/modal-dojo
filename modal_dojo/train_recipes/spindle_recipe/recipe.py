@@ -23,6 +23,7 @@ class _SpindleRecipe:
 
     Requires Python 3.12, ``uv sync --extra spindle``, and a sampler proxy secret.
     ``deploy_config`` accepts a Spindle ``BaseConfig`` instance or subclass.
+    Deployment and reporting always use the active Modal environment.
     Returns a ``TrainingRun`` with trajectories and metrics in Dojo. Backend
     apps stop on exit; checkpoints remain on Spindle's volume.
     """
