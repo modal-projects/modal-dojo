@@ -74,14 +74,27 @@ def resolve_gpu_allocation(config: Any, *, warn: bool = True) -> GpuAllocation:
 
     colocate = bool(getattr(config, "colocate", False))
     critic_gpus = _critic_gpus(config, actor_nodes, gpus_per_node)
-    rollout_gpus = _rollout_gpus(
-        config,
-        actor_gpus=actor_gpus,
-        critic_gpus=critic_gpus,
-        rollout_num_gpus_per_engine=rollout_num_gpus_per_engine,
-        colocate=colocate,
-        warn=warn,
-    )
+    debug_train = bool(_effective(config, "debug_train_only", False))
+    debug_rollout = bool(_effective(config, "debug_rollout_only", False))
+    if debug_train and debug_rollout:
+        raise GpuAllocationError(
+            "debug_train_only and debug_rollout_only are mutually exclusive"
+        )
+    if debug_train:
+        rollout_gpus = _effective(config, "eval_num_gpus", 0) or 0
+        if type(rollout_gpus) is not int or rollout_gpus < 0:
+            raise GpuAllocationError("eval_num_gpus must be a nonnegative integer")
+    else:
+        rollout_gpus = _rollout_gpus(
+            config,
+            actor_gpus=actor_gpus,
+            critic_gpus=critic_gpus,
+            rollout_num_gpus_per_engine=rollout_num_gpus_per_engine,
+            colocate=colocate and not debug_rollout,
+            warn=warn,
+        )
+        if debug_rollout:
+            actor_gpus = critic_gpus = 0
 
     total_gpus = actor_gpus + critic_gpus + rollout_gpus
     max_gpus = _max_gpus_per_container(getattr(config, "gpu_type", None))

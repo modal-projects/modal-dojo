@@ -2,7 +2,8 @@
 image: radixark/miles:v0.1.2
 file: megatron/core/transformer/moe/experts.py
 
-Bound Beam expert activation temporaries without enabling fused numerics.
+Chunk the unfused BF16 SwiGLU forward and backward temporaries.
+The input, output, and gradients still span the full local token batch.
 
 TODO: Remove once the pinned Megatron bounds expert activation temporaries
 with equivalent BF16 rounding and supports Bridge LoRA, CP2, and full recompute.

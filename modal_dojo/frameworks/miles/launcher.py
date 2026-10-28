@@ -848,13 +848,52 @@ def build_miles_app(
                 )
 
             def build_cmd() -> str:
-                resume_checkpoint = torch_dist_resume_checkpoint(
-                    save_root, is_complete=_is_resumable_checkpoint
+                beam_resume = any(
+                    os.path.basename(path) == "patch_beam_checkpoint.py"
+                    for path in miles.patch_files
                 )
+                is_complete = _is_resumable_checkpoint
+                if beam_resume:
+                    from modal_dojo.frameworks.miles.modal_helpers.beam_checkpoint import (
+                        complete_checkpoint,
+                    )
+
+                    is_complete = complete_checkpoint
+                resume_checkpoint = torch_dist_resume_checkpoint(
+                    save_root, is_complete=is_complete
+                )
+                if (
+                    beam_resume
+                    and resume_checkpoint is None
+                    and miles.lora_adapter_path
+                ):
+                    adapter = Path(miles.lora_adapter_path)
+                    checkpoint_path = adapter.parent
+                    if adapter.name != "adapter" or not is_complete(
+                        str(checkpoint_path)
+                    ):
+                        raise RuntimeError(
+                            f"Incomplete Beam resume checkpoint: {checkpoint_path}"
+                        )
+                    iteration = int(checkpoint_path.name.removeprefix("iter_"))
+                    resume_checkpoint = {
+                        "resume_checkpoint_path": str(checkpoint_path),
+                        "resume_checkpoint_name": checkpoint_path.name,
+                        "resume_from_iteration": iteration,
+                    }
+                if (
+                    beam_resume
+                    and resume_checkpoint is None
+                    and (run_record.metadata or {}).get("attempt_count", 1) > 1
+                    and not miles.lora_adapter_path
+                ):
+                    raise RuntimeError(
+                        "Beam retry has no complete training checkpoint; refusing to restart from step zero"
+                    )
                 record_resume_checkpoint(run_record, resume_checkpoint)
                 resume_overrides = {}
                 if (
-                    miles.megatron_to_hf_mode == "raw"
+                    (miles.megatron_to_hf_mode == "raw" or beam_resume)
                     and miles.lora_rank is not None
                     and hasattr(miles, "lora_adapter_path")
                 ):
@@ -868,10 +907,13 @@ def build_miles_app(
                     if adapter_path is not None:
                         # Native LoRA loads the frozen base separately from the adapter.
                         # Explicit --load also prevents Miles resetting optimizer/rollout state.
-                        resume_overrides = {
-                            "load": miles.ref_load,
-                            "lora_adapter_path": adapter_path,
-                        }
+                        resume_overrides = {"lora_adapter_path": adapter_path}
+                        if beam_resume:
+                            resume_overrides["load"] = str(
+                                Path(adapter_path).parent.parent
+                            )
+                        else:
+                            resume_overrides["load"] = miles.ref_load
                 with shared.resumed_recipe(
                     miles, save_root, resume_checkpoint, overrides=resume_overrides
                 ):
