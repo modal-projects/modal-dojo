@@ -278,3 +278,20 @@ def test_disabling_expandable_segments_allows_explicit_offload():
         train_env_vars={"PYTORCH_ALLOC_CONF": "expandable_segments:False"},
     )
     assert recipe.extra_config["offload_train"] is True
+
+
+@pytest.mark.parametrize("mode", ["debug_train_only", "debug_rollout_only"])
+def test_dashboard_prices_the_actual_launcher_snapshot(mode):
+    from modal_dojo.common.launcher_utils import serialize_recipe_params
+    from modal_dojo.common.derived_metrics import RunPricing
+
+    recipe = Beam(extra_config={mode: True})
+    snapshot = serialize_recipe_params(recipe)
+    assert snapshot["allocated_gpus"] == 16
+    assert snapshot["async_mode"] is True
+    assert snapshot["cpu"] == 32
+    assert snapshot["memory"][0] == 256 * 1024
+    assert RunPricing.from_recipe(snapshot, {}).gpus == 16
+    # Older runs really allocated both pools; don't rewrite their cost history.
+    legacy = {k: v for k, v in snapshot.items() if k != "allocated_gpus"}
+    assert RunPricing.from_recipe(legacy, {}).gpus == 32
