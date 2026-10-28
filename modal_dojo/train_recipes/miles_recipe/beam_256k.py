@@ -47,6 +47,8 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
     )
     attention_backend: str = "flash"
     context_parallel_size: int = 2
+    # Preserve TP8 sequence-parallel alignment after splitting tokens across CP2.
+    data_pad_size_multiplier: int = 2
     cp_comm_type: str = "all_gather"
     rollout_max_context_len: int = 262144
     rollout_max_prompt_len: int = 229376
