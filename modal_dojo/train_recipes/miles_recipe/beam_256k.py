@@ -29,7 +29,6 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
                 "patch_beam_lora_memory.py",
                 "patch_beam_activation.py",
                 "patch_beam_checkpoint.py",
-                "patch_beam_startup.py",
             )
         ]
     )
@@ -40,7 +39,6 @@ class Beam_1_0_501B_A23B_LoRA_256k_Recipe(_BeamLoRABase):
             "python /tmp/patch_beam_lora_memory.py",
             "python /tmp/patch_beam_activation.py",
             "python /tmp/patch_beam_checkpoint.py",
-            "python /tmp/patch_beam_startup.py",
         ]
     )
 

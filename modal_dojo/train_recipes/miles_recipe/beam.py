@@ -135,7 +135,6 @@ class _BeamRecipe(MilesRecipe):
             "MILES_USE_LEGACY_ROLLOUT_V1": "0",
             # Broadcast weight sync does not need the Mooncake RDMA reinstall.
             "MILES_REINSTALL_RDMA": "0",
-            "MILES_CELL_READY_TIMEOUT_SECONDS": "10800",
             "PYTHONDONTWRITEBYTECODE": "1",
             "RAY_USAGE_STATS_ENABLED": "0",
             "DO_NOT_TRACK": "1",
