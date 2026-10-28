@@ -6,7 +6,10 @@ resolve the live dashboard without importing ``cli``, which imports ``common``.
 
 from __future__ import annotations
 
+import importlib.metadata
 import os
+import tomllib
+from pathlib import Path
 
 DASHBOARD_APP_NAME = "dojo-dashboard"
 LEGACY_DASHBOARD_APP_NAME = "training-gym-dashboard"
@@ -17,22 +20,31 @@ DASHBOARD_WEB_FUNCTION = "fastapi_app"
 DASHBOARD_PREVIEW_ENV_KEY = "MODAL_DOJO_DASHBOARD_PREVIEW"
 DASHBOARD_VERSION_ENV_KEY = "DASHBOARD_VERSION"
 
-# Bump when the deployed dashboard frontend or backend changes.
-DASHBOARD_VERSION = 8
-
 
 def current_dashboard_version() -> str:
     if baked := os.environ.get(DASHBOARD_VERSION_ENV_KEY):
         return baked
-    return str(DASHBOARD_VERSION)
+    try:
+        return importlib.metadata.version("modal-dojo")
+    except importlib.metadata.PackageNotFoundError:
+        # Repo checkout without the distribution installed.
+        pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        with pyproject.open("rb") as f:
+            return tomllib.load(f)["project"]["version"]
 
 
 def is_dashboard_upgrade(incoming: str, deployed: str | None) -> bool:
     if not deployed:
         return True
+    # Bare integers are the pre-package, hand-bumped scheme: a release
+    # supersedes them and they never supersede a release.
+    if incoming.isdigit() != deployed.isdigit():
+        return deployed.isdigit()
+    from packaging.version import InvalidVersion, Version
+
     try:
-        return int(incoming) > int(deployed)
-    except ValueError:
+        return Version(incoming) > Version(deployed)
+    except InvalidVersion:
         return True
 
 
