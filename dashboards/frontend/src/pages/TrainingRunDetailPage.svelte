@@ -209,6 +209,19 @@
   // init/popstate/runId read URL → activeTab; selectTab writes pushState.
   let activeTab = $state(/** @type {TabId} */ (DEFAULT_TAB));
   let isSftRun = $derived(run?.training_type === "sft");
+  const spindleTimingMetrics = {
+    "time/total": "Total step",
+    "time/sampling": "Sampling",
+    "time/prepare_minibatch": "Prepare minibatch",
+    "time/train_step": "Training call",
+    "time/save_checkpoint_and_get_sampling_client": "Save checkpoint / sampler weights",
+    "timing/prepare_batch_s": "Prepare batch",
+    "timing/forward_backward_s": "Forward/backward",
+    "timing/optim_step_s": "Optimizer step",
+    "timing/trainer_step_s": "Trainer compute",
+    "timing/publish_weights_s": "Publish weights",
+    "timing/save_sampler_weights_s": "Save sampler weights",
+  };
 
   function selectTab(tab) {
     const next = DETAIL_TABS.has(tab) ? /** @type {TabId} */ (tab) : DEFAULT_TAB;
@@ -1888,6 +1901,21 @@
                 }}
               />
               {/if}
+            </div>
+          {/if}
+          {#if run?.framework === "spindle"}
+            <div class="rollout-chart">
+              <div class="rollout-chart-title">Substep durations</div>
+              <p class="text-(--text-muted) text-[12px] mb-[12px]">
+                Seconds per training step, including warmup. Client timers include server work;
+                overlapping timers should not be added together.
+              </p>
+              <RunMetricsPanel
+                {runId}
+                {isRunning}
+                metricLabels={spindleTimingMetrics}
+                groupTitles={{ time: "Cookbook client (seconds)", timing: "Spindle server (seconds)" }}
+              />
             </div>
           {/if}
           {#if !isSftRun}

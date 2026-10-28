@@ -4,7 +4,7 @@
 export const UNGROUPED = "Charts";
 
 export function metricAxisLabel(stepKey) {
-  return ({ "train/step": "Training step", "rollout/step": "Rollout step", "eval/step": "Evaluation step" })[stepKey]
+  return ({ "train/step": "Training step", "progress/batch": "Training step", "rollout/step": "Rollout step", "eval/step": "Evaluation step" })[stepKey]
     ?? stepKey ?? "Logging step";
 }
 

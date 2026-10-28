@@ -9,7 +9,7 @@
   import { fetchRunMetrics } from "../lib/api.js";
   import { formatMetricValue, groupMetricKeys, metricAxisLabel } from "../lib/metricSeries.js";
 
-  let { runId, isRunning = false } = $props();
+  let { runId, isRunning = false, metricLabels = null, groupTitles = {} } = $props();
 
   const POLL_MS = 5000;
 
@@ -55,7 +55,7 @@
 
   let series = $derived(payload?.series ?? {});
   let stepKeys = $derived(payload?.step_keys ?? {});
-  let allKeys = $derived(Object.keys(series));
+  let allKeys = $derived(Object.keys(series).filter((key) => !metricLabels || Object.hasOwn(metricLabels, key)));
   let groups = $derived(groupMetricKeys(allKeys, search));
   let rows = $derived.by(() => {
     const out = new Map();
@@ -86,19 +86,23 @@
   {:else if !allKeys.length}
     <div class="detail-empty">
       <div class="text-(--text-bright) mb-[6px]">No metrics reported yet.</div>
-      <div class="max-w-[64ch] leading-[1.5]">
-        Scalars the framework logs through <code>wandb.log</code> show up here for every metric provider.
-      </div>
+      {#if !metricLabels}
+        <div class="max-w-[64ch] leading-[1.5]">
+          Scalars the framework logs through <code>wandb.log</code> show up here for every metric provider.
+        </div>
+      {/if}
     </div>
   {:else}
     <div class="flex flex-wrap items-center gap-[10px]">
-      <input
-        class="flex-1 min-w-[200px] bg-(--color-c-gray-08,#1c1c1c) text-(--text) [border:1px_solid_var(--border,#3a3a3a)] rounded-[5px] p-[6px_10px] text-[12px] [font-family:inherit] focus:outline-none focus:[border-color:color-mix(in_srgb,var(--accent)_55%,transparent)]"
-        type="search"
-        placeholder="Search panels (e.g. loss, rollout/)"
-        bind:value={search}
-        aria-label="Search panels by metric name"
-      />
+      {#if !metricLabels}
+        <input
+          class="flex-1 min-w-[200px] bg-(--color-c-gray-08,#1c1c1c) text-(--text) [border:1px_solid_var(--border,#3a3a3a)] rounded-[5px] p-[6px_10px] text-[12px] [font-family:inherit] focus:outline-none focus:[border-color:color-mix(in_srgb,var(--accent)_55%,transparent)]"
+          type="search"
+          placeholder="Search panels (e.g. loss, rollout/)"
+          bind:value={search}
+          aria-label="Search panels by metric name"
+        />
+      {/if}
       {#if Object.values(stepDomains).some(Boolean)}
         <button class="log-button" type="button" onclick={() => stepDomains = {}}>Reset zoom</button>
       {/if}
@@ -113,7 +117,7 @@
 
     {#each groups as group (group.name)}
       <GroupSection
-        title={group.name}
+        title={groupTitles[group.name] ?? group.name}
         subtitle={`${group.keys.length} ${group.keys.length === 1 ? "panel" : "panels"}`}
         expanded={!collapsed.has(group.name)}
         onToggle={() => toggleGroup(group.name)}
@@ -122,12 +126,12 @@
           {#each group.keys as key (key)}
             <div class="metric-panel">
               <LineChart
-                title={key}
+                title={metricLabels?.[key] ?? key}
                 data={rows.get(key)}
                 height={150}
                 label="value"
                 axes
-                ariaLabel={`${key} over ${metricAxisLabel(stepKeys[key]).toLowerCase()}s`}
+                ariaLabel={`${metricLabels?.[key] ?? key} over ${metricAxisLabel(stepKeys[key]).toLowerCase()}s`}
                 formatX={(row) => `${metricAxisLabel(stepKeys[key])} ${row?.x ?? ""}`}
                 formatY={formatMetricValue}
                 xDomain={stepDomains[stepKeys[key] ?? ""] ?? null}
