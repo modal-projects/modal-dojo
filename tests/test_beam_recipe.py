@@ -264,3 +264,17 @@ def test_startup_timeout_is_configurable_and_rejects_invalid_values(
 def test_user_patch_cannot_shadow_a_required_patch_in_remote_tmp():
     with pytest.raises(ValueError, match="Cannot replace required Beam patch"):
         Beam(patch_files=["/tmp/patch_beam_cp.py"])
+
+
+@pytest.mark.parametrize("flag", ["offload_train", "offload"])
+def test_offload_rejects_beams_current_allocator_variable(flag):
+    with pytest.raises(ValueError, match="PYTORCH_ALLOC_CONF"):
+        Beam(extra_config={flag: True})
+
+
+def test_disabling_expandable_segments_allows_explicit_offload():
+    recipe = Beam(
+        extra_config={"offload_train": True},
+        train_env_vars={"PYTORCH_ALLOC_CONF": "expandable_segments:False"},
+    )
+    assert recipe.extra_config["offload_train"] is True

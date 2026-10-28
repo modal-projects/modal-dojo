@@ -56,28 +56,29 @@ def _torch_memory_saver_offloads(
 def validate_expandable_segments_env(config: Any, framework: Framework) -> None:
     offload_train, offload_rollout = _torch_memory_saver_offloads(config, framework)
     train_env = _env_dict(_effective(config, "train_env_vars")) or {}
-    for field_name in ("environment", "image_env", "train_env_vars"):
-        if field_name == "train_env_vars":
-            env = train_env
-            reaches_train, reaches_rollout = True, False
-        else:
-            env = _env_dict(getattr(config, field_name, None)) or {}
-            reaches_train = "PYTORCH_CUDA_ALLOC_CONF" not in train_env
-            reaches_rollout = True
-        if not _alloc_conf_enables_expandable_segments(
-            env.get("PYTORCH_CUDA_ALLOC_CONF")
-        ):
+    image_env = _env_dict(getattr(config, "image_env", None)) or {}
+    environment = _env_dict(getattr(config, "environment", None)) or {}
+    global_env = {**image_env, **environment}
+    for offload, enabled, env in (
+        ("offload_train", offload_train, {**global_env, **train_env}),
+        ("offload_rollout", offload_rollout, global_env),
+    ):
+        # The new spelling takes precedence over the legacy CUDA alias.
+        key = (
+            "PYTORCH_ALLOC_CONF"
+            if "PYTORCH_ALLOC_CONF" in env
+            else "PYTORCH_CUDA_ALLOC_CONF"
+        )
+        if not enabled or not _alloc_conf_enables_expandable_segments(env.get(key)):
             continue
-        if offload_train and reaches_train:
-            offload = "offload_train"
-        elif offload_rollout and reaches_rollout:
-            offload = "offload_rollout"
+        if offload == "offload_train" and key in train_env:
+            field_name = "train_env_vars"
         else:
-            continue
+            field_name = "environment" if key in environment else "image_env"
         raise DojoConfigError(
             f"{field_name} sets expandable_segments with {offload} on, which "
             "TorchMemorySaver does not support; remove expandable_segments "
-            f"from PYTORCH_CUDA_ALLOC_CONF or disable {offload}."
+            f"from {key} or disable {offload}."
         )
 
 
