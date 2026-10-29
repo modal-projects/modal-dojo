@@ -14,6 +14,7 @@ from pathlib import Path
 DASHBOARD_APP_NAME = "dojo-dashboard"
 LEGACY_DASHBOARD_APP_NAME = "training-gym-dashboard"
 DASHBOARD_WEB_FUNCTION = "fastapi_app"
+DASHBOARD_CLI_TOKEN_FUNCTION = "cli_token"
 
 # Set on a per-PR dashboard deploy (scripts/previews/dashboard_api.py) so it
 # serves the API without the scheduled jobs that rewrite shared metadata.
@@ -68,3 +69,13 @@ def deployed_dashboard_url(app_name: str = DASHBOARD_APP_NAME) -> str | None:
     if not url:
         raise DashboardLookupUnknown
     return url
+
+
+def fetch_cli_token(app_name: str = DASHBOARD_APP_NAME) -> str:
+    """Get the dashboard's CLI token through Modal; ``""`` if unavailable."""
+    import modal
+
+    try:
+        return modal.Function.from_name(app_name, DASHBOARD_CLI_TOKEN_FUNCTION).remote()
+    except Exception:
+        return ""

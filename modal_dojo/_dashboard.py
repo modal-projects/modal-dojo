@@ -52,6 +52,7 @@ from starlette.requests import Request
 from modal_dojo import _dashboard_login as _login
 from modal_dojo.common.advantage_distribution import AdvantageDistribution
 from modal_dojo.common.config import (
+    DASHBOARD_PASSWORD_AUTH_PATH,
     DASHBOARD_PASSWORD_SECRET_NAME,
     DASHBOARD_PROXY_AUTH_PATH,
     DASHBOARD_VERSION_PATH,
@@ -230,12 +231,12 @@ STATIC_DIR = "/app/frontend/dist"
 # Secrets UI and is auto-created on first deploy from ~/.modal.toml.
 MODAL_CREDS_SECRET_NAME = "_training-gym-modal-creds"
 
-# Routes that must bypass Basic Auth. These endpoints authenticate with their
-# own per-run bearer token; the proxy-auth status route must report only the
-# Modal-layer setting, independent of dashboard password protection.
+# Routes that must bypass the password. These endpoints authenticate with their
+# own per-run bearer token; the auth status routes must answer without a login.
 PASSWORD_EXEMPT_PATHS = frozenset(
     {
         DASHBOARD_PROXY_AUTH_PATH,
+        DASHBOARD_PASSWORD_AUTH_PATH,
         DASHBOARD_VERSION_PATH,
         "/api/framework-status",
         "/api/training-rollouts",
@@ -408,18 +409,21 @@ def _function_secrets() -> list[modal.Secret]:
     return [*secrets, password]
 
 
-def set_dashboard_password(password: str) -> None:
-    """Set (or clear) the dashboard password.
+def set_dashboard_password(password: str) -> str:
+    """Replace the dashboard password and return a new CLI token.
 
-    Creates the ``_training-gym-dashboard-password`` Secret on demand. An empty
-    string disables auth. The new value only takes effect once the dashboard app
-    is redeployed, since containers read it from the environment at startup.
+    An empty password disables auth and returns ``""``. The new values only
+    take effect once the dashboard app is redeployed, since containers read
+    them at startup. The Secret is recreated rather than updated: after
+    ``Secret.update``, redeploys with otherwise unchanged functions kept
+    starting containers with the old values, while a new Secret has a new id.
     """
-    env_values = {"DASHBOARD_PASSWORD": password}
-    modal.Secret.objects.create(
-        DASHBOARD_PASSWORD_SECRET_NAME, env_values, allow_existing=True
-    )
-    modal.Secret.from_name(DASHBOARD_PASSWORD_SECRET_NAME).update(env_values)
+    env = {"DASHBOARD_PASSWORD": password}
+    if password:
+        env["DASHBOARD_CLI_TOKEN"] = _secrets.token_urlsafe(32)
+    modal.Secret.objects.delete(DASHBOARD_PASSWORD_SECRET_NAME, allow_missing=True)
+    modal.Secret.objects.create(DASHBOARD_PASSWORD_SECRET_NAME, env)
+    return env.get("DASHBOARD_CLI_TOKEN", "")
 
 
 # Auto-create the creds secret at module-load so `modal deploy
@@ -590,6 +594,12 @@ def reconcile() -> None:
         print("No orphaned runs to reconcile.")
 
 
+@app.function(secrets=_function_secrets())
+def cli_token() -> str:
+    """Give the CLI its token; callers can already read the Secret."""
+    return os.environ.get("DASHBOARD_CLI_TOKEN", "")
+
+
 @app.function(
     min_containers=0 if IS_PREVIEW else 1,
     secrets=_function_secrets(),
@@ -628,14 +638,19 @@ def fastapi_app():
 
     # ── Optional password protection ──────────────────────────────────────
     # When DASHBOARD_PASSWORD is set, browsers log in at /login (session
-    # cookie) and the CLI sends HTTP Basic Auth. An empty value means open.
+    # cookie) and the CLI sends its token or HTTP Basic Auth. An empty value
+    # means open.
     dashboard_password = os.environ.get("DASHBOARD_PASSWORD", "")
+    dashboard_cli_token = os.environ.get("DASHBOARD_CLI_TOKEN", "")
 
     def _signed_in(request: Request) -> bool:
-        return _login.basic_auth_ok(
-            request.headers.get("Authorization"), dashboard_password
-        ) or _login.session_token_ok(
-            request.cookies.get(_login.SESSION_COOKIE), dashboard_password
+        authorization = request.headers.get("Authorization")
+        return (
+            _login.basic_auth_ok(authorization, dashboard_password)
+            or _login.bearer_token_ok(authorization, dashboard_cli_token)
+            or _login.session_token_ok(
+                request.cookies.get(_login.SESSION_COOKIE), dashboard_password
+            )
         )
 
     @web.middleware("http")
@@ -706,6 +721,10 @@ def fastapi_app():
     @web.get(DASHBOARD_PROXY_AUTH_PATH)
     async def proxy_auth_status() -> bool:
         return os.environ.get(DASHBOARD_REQUIRES_PROXY_AUTH_ENV_KEY, "false") == "true"
+
+    @web.get(DASHBOARD_PASSWORD_AUTH_PATH)
+    async def password_auth_status() -> bool:
+        return bool(dashboard_password)
 
     @web.get(DASHBOARD_VERSION_PATH)
     async def version() -> str:

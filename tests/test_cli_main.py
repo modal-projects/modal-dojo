@@ -77,24 +77,26 @@ def test_setup_dispatches_to_existing_function(runner, monkeypatch):
 
     assert result.exit_code == 0
     assert result.stderr == ""
-    setup.assert_called_once_with(proxy_auth=ProxyAuthMode.UNSPECIFIED)
+    setup.assert_called_once_with(proxy_auth=ProxyAuthMode.UNSPECIFIED, password=None)
 
 
 @pytest.mark.parametrize(
-    ("flag", "expected"),
+    ("flag", "proxy_auth", "password"),
     [
-        ("--proxy-auth", ProxyAuthMode.REQUIRE),
-        ("--no-proxy-auth", ProxyAuthMode.DISABLE),
+        ("--proxy-auth", ProxyAuthMode.REQUIRE, None),
+        ("--no-proxy-auth", ProxyAuthMode.DISABLE, None),
+        ("--password", ProxyAuthMode.UNSPECIFIED, True),
+        ("--no-password", ProxyAuthMode.UNSPECIFIED, False),
     ],
 )
-def test_setup_preserves_proxy_auth_choice(runner, monkeypatch, flag, expected):
+def test_setup_preserves_auth_choice(runner, monkeypatch, flag, proxy_auth, password):
     setup = Mock()
     monkeypatch.setattr("modal_dojo.cli.setup.setup", setup)
 
     result = runner.invoke(cli_module.entrypoint_cli, ["setup", flag])
 
     assert result.exit_code == 0
-    setup.assert_called_once_with(proxy_auth=expected)
+    setup.assert_called_once_with(proxy_auth=proxy_auth, password=password)
 
 
 def test_setup_rejects_both_proxy_auth_flags(runner):
@@ -117,7 +119,7 @@ def test_setup_delegates_auth_inheritance(runner, monkeypatch):
     result = runner.invoke(cli_module.entrypoint_cli, ["setup"])
 
     assert result.exit_code == 0
-    setup.assert_called_once_with(proxy_auth=ProxyAuthMode.UNSPECIFIED)
+    setup.assert_called_once_with(proxy_auth=ProxyAuthMode.UNSPECIFIED, password=None)
 
 
 def test_open_dispatches_to_existing_function(runner, monkeypatch):
@@ -145,7 +147,6 @@ def test_set_proxy_auth_dispatches_to_existing_function(runner, monkeypatch):
     [
         (["set-password"], None),
         (["set-password", "--password", "secret"], "secret"),
-        (["set-password", "--password", ""], ""),
     ],
 )
 def test_set_password_preserves_arguments(runner, monkeypatch, args, expected):
@@ -156,6 +157,19 @@ def test_set_password_preserves_arguments(runner, monkeypatch, args, expected):
 
     assert result.exit_code == 0
     set_password.assert_called_once_with(password=expected)
+
+
+def test_set_password_points_to_setup_for_turning_it_off(runner, monkeypatch):
+    set_password = Mock()
+    monkeypatch.setattr("modal_dojo.cli.setup.set_password", set_password)
+
+    result = runner.invoke(
+        cli_module.entrypoint_cli, ["set-password", "--password", ""]
+    )
+
+    assert result.exit_code != 0
+    assert "modal-dojo setup --no-password" in result.output
+    set_password.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -172,7 +186,9 @@ def test_set_password_warns_about_stale_trackio_password(
     from modal_dojo.cli.setup import set_password
 
     monkeypatch.setattr("modal_dojo._dashboard.set_dashboard_password", Mock())
-    monkeypatch.setattr("modal_dojo.cli.setup.setup", Mock())
+    monkeypatch.setattr("modal_dojo.common.config.save_cli_token_to_config", Mock())
+    deploy = Mock()
+    monkeypatch.setattr("modal_dojo.cli.setup.setup", deploy)
     monkeypatch.setattr(
         "modal_dojo.common.config.get_dashboard_proxy_auth",
         lambda: False,
@@ -190,6 +206,7 @@ def test_set_password_warns_about_stale_trackio_password(
 
     set_password(password="secret")
 
+    assert deploy.call_args.kwargs["always_restart"] is True
     err = " ".join(capsys.readouterr().err.split())
     if expect_old_password:
         assert "Warning:" in err

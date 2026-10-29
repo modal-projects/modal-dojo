@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from modal_dojo import _dashboard
 from modal_dojo import _dashboard_login as login
+from modal_dojo.common import config
 
 PASSWORD = "correct horse"
 HTML = {"Accept": "text/html"}
@@ -78,6 +79,22 @@ def test_basic_auth_still_works_for_cli(dashboard):
     with dashboard() as client:
         assert client.get("/", headers=_basic(PASSWORD)).text == "spa"
         assert client.get("/", headers=_basic("wrong")).status_code == 401
+
+
+def test_cli_token(dashboard, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_CLI_TOKEN", "cli-token")
+    with dashboard() as client:
+        ok = client.get("/", headers={"Authorization": "Bearer cli-token"})
+        wrong = client.get("/", headers={"Authorization": "Bearer wrong"})
+
+    assert ok.text == "spa"
+    assert wrong.status_code == 401
+
+
+@pytest.mark.parametrize("password", [PASSWORD, ""])
+def test_password_auth_status_needs_no_login(dashboard, password):
+    with dashboard(password=password) as client:
+        assert client.get(config.DASHBOARD_PASSWORD_AUTH_PATH).json() is bool(password)
 
 
 @pytest.mark.parametrize(

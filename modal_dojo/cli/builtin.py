@@ -21,6 +21,11 @@ from .commands import _DojoCommand
     help="Deploy the dashboard without Modal proxy authentication.",
 )
 @click.option(
+    "--password/--no-password",
+    default=None,
+    help="Require a dashboard password, or turn it off.",
+)
+@click.option(
     "--trajectory-viewer",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
@@ -34,6 +39,7 @@ from .commands import _DojoCommand
 def setup_command(
     proxy_auth: bool,
     no_proxy_auth: bool,
+    password: bool | None,
     trajectory_viewer: Path | None,
     no_trajectory_viewer: bool,
 ) -> None:
@@ -56,11 +62,15 @@ def setup_command(
         selected_auth = ProxyAuthMode.DISABLE
 
     if no_trajectory_viewer:
-        setup(proxy_auth=selected_auth, reset_trajectory_viewer=True)
+        setup(proxy_auth=selected_auth, password=password, reset_trajectory_viewer=True)
     elif trajectory_viewer is None:
-        setup(proxy_auth=selected_auth)
+        setup(proxy_auth=selected_auth, password=password)
     else:
-        setup(proxy_auth=selected_auth, trajectory_viewer=trajectory_viewer)
+        setup(
+            proxy_auth=selected_auth,
+            password=password,
+            trajectory_viewer=trajectory_viewer,
+        )
 
 
 @click.command("open", cls=_DojoCommand)
@@ -88,10 +98,14 @@ def set_proxy_auth_command() -> None:
     "--password",
     default=None,
     metavar="PASSWORD",
-    help="Set a password, prompt when omitted, or disable authentication with an empty value.",
+    help="Set a password; prompt when omitted.",
 )
 def set_password_command(password: str | None) -> None:
-    """Set or clear dashboard Basic Auth, then redeploy."""
+    """Set a new dashboard password, then redeploy."""
+    if password == "":
+        raise click.UsageError(
+            "To turn the password off, run `modal-dojo setup --no-password`."
+        )
     from .setup import set_password
 
     set_password(password=password)

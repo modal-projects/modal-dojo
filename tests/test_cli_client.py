@@ -5,6 +5,7 @@ import base64
 import httpx
 import pytest
 
+from modal_dojo._dashboard_login import LOGIN_REQUIRED_HEADER
 from modal_dojo.cli import client as client_module
 from modal_dojo.cli.client import (
     DEFAULT_TIMEOUT_SECONDS,
@@ -21,6 +22,9 @@ def configured_dashboard_url(monkeypatch):
         lambda: "https://example.test",
     )
     monkeypatch.setattr(client_module, "modal_proxy_auth_headers", lambda: {})
+    monkeypatch.setattr(client_module, "get_cli_token_from_config", lambda: "")
+    monkeypatch.setattr(client_module, "save_cli_token_to_config", lambda _t: None)
+    monkeypatch.setattr(client_module, "fetch_cli_token", lambda: "")
 
 
 @pytest.fixture
@@ -95,6 +99,48 @@ def test_sends_basic_auth_when_password_exists(monkeypatch, mock_transport):
 
     expected = base64.b64encode(b"modal-dojo:secret").decode()
     assert requests[0].headers["authorization"] == f"Basic {expected}"
+
+
+def test_sends_saved_cli_token(monkeypatch, mock_transport):
+    monkeypatch.delenv("MODAL_DOJO_DASHBOARD_PASSWORD", raising=False)
+    monkeypatch.setattr(client_module, "get_cli_token_from_config", lambda: "saved")
+    requests = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={})
+
+    mock_transport(respond)
+    with DashboardClient() as client:
+        client.get_json("/api/items")
+
+    assert requests[0].headers["authorization"] == "Bearer saved"
+
+
+@pytest.mark.parametrize("login_required", [True, False])
+def test_fetches_cli_token_once_when_rejected(
+    monkeypatch, mock_transport, login_required
+):
+    monkeypatch.delenv("MODAL_DOJO_DASHBOARD_PASSWORD", raising=False)
+    saved = []
+    monkeypatch.setattr(client_module, "fetch_cli_token", lambda: "fresh")
+    monkeypatch.setattr(client_module, "save_cli_token_to_config", saved.append)
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.headers.get("authorization") == "Bearer fresh":
+            return httpx.Response(200, json={"ok": True})
+        headers = {LOGIN_REQUIRED_HEADER: "/login"} if login_required else {}
+        return httpx.Response(401, headers=headers)
+
+    mock_transport(respond)
+    with DashboardClient() as client:
+        if login_required:
+            assert client.get_json("/api/items") == {"ok": True}
+        else:
+            with pytest.raises(CLIError):
+                client.get_json("/api/items")
+
+    assert saved == (["fresh"] if login_required else [])
 
 
 def test_sends_modal_proxy_auth_headers(monkeypatch, mock_transport):
