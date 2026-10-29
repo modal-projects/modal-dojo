@@ -68,6 +68,14 @@ def test_first_deploy_prompts_until_passwords_match(secret, monkeypatch, capsys)
     assert "mine" not in capsys.readouterr().out
 
 
+def test_proxy_auth_alone_means_no_password(secret, monkeypatch):
+    monkeypatch.setattr("getpass.getpass", Mock(side_effect=AssertionError))
+
+    assert _update(attended=True, proxy=True) is False
+
+    assert _created_env(secret) == {"DASHBOARD_PASSWORD": ""}
+
+
 def test_existing_password_is_kept(secret):
     assert _update(configured=True) is None
     secret.create.assert_not_called()

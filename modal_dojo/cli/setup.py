@@ -251,9 +251,10 @@ def _update_password(
 ) -> bool | None:
     """Create or clear the password as requested; return it if it changed.
 
-    ``None`` keeps an existing setting and creates a password when none was
-    ever configured, except on an unattended redeploy of a live dashboard,
-    which would lock out teammates.
+    ``None`` keeps an existing setting. When none was ever configured, it
+    turns the password on unless proxy auth already protects the dashboard,
+    except on an unattended redeploy of a live dashboard, which would lock
+    out teammates.
     """
     from modal_dojo.common.config import get_dashboard_password_auth
 
@@ -267,7 +268,7 @@ def _update_password(
                     "with its URL can open it. Run `modal-dojo setup --password`."
                 )
             return None
-        password = True
+        password = not require_proxy_auth
     if not password:
         _replace_password("")
         return False
