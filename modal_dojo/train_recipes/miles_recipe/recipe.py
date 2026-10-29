@@ -32,9 +32,12 @@ from modal_dojo.train_recipes.base import (
 )
 from modal_dojo.train_recipes.gpu_allocation import (
     resolve_gpu_allocation,
-    validate_expandable_segments_env,
     validate_multi_node_gpu_count,
     validate_num_experts_divisible_by_expert_parallel_size,
+)
+from modal_dojo.train_recipes.validation import (
+    validate_expandable_segments_env,
+    validate_loss_and_sampling_args,
 )
 
 _MILES_SKIP = {
@@ -742,7 +745,32 @@ class MilesRecipe(BaseTrainRecipe):
     @model_validator(mode="after")
     def _validate_gpu_allocation(self) -> "MilesRecipe":
         validate_multi_node_gpu_count(resolve_gpu_allocation(self), self.gpu_type)
-        validate_expandable_segments_env(self)
+        validate_expandable_segments_env(self, "miles")
+        validate_loss_and_sampling_args(self, "miles")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_context_budget(self) -> "MilesRecipe":
+        """Check explicit context budgets using effective CLI values."""
+        overrides = self._escape_hatch_values()
+
+        def value(name: str) -> int | None:
+            raw = overrides.get(name, getattr(self, name, None))
+            return raw if isinstance(raw, int) and not isinstance(raw, bool) else None
+
+        context = value("rollout_max_context_len")
+        if context is None:
+            return self
+        prompt = value("rollout_max_prompt_len")
+        response = value("rollout_max_response_len")
+        if prompt is not None and response is not None and prompt + response > context:
+            raise DojoConfigError(
+                "Prompt and response budgets exceed rollout_max_context_len"
+            )
+        for name in ("seq_length", "sglang_context_length"):
+            capacity = value(name)
+            if capacity is not None and capacity < context:
+                raise DojoConfigError(f"{name} must cover rollout_max_context_len")
         return self
 
     @model_validator(mode="after")
@@ -952,6 +980,13 @@ class MilesRecipe(BaseTrainRecipe):
             Qwen3_5_4B_Miles_Recipe,
         )
 
+        from modal_dojo.common.models.beam import Beam_1_0_501B_A23B_LoRA
+        from modal_dojo.train_recipes.miles_recipe.beam_256k import (
+            Beam_1_0_501B_A23B_LoRA_256k_Recipe,
+        )
+
+        if isinstance(model_config, Beam_1_0_501B_A23B_LoRA):
+            return Beam_1_0_501B_A23B_LoRA_256k_Recipe()
         if isinstance(model_config, GLM_5_3_Flash_LoRA):
             return GLM_5_3_Flash_LoRA_Recipe()
         if model_config.model_name == "meta-models/Muse-Spark-Open-816B-A42B":

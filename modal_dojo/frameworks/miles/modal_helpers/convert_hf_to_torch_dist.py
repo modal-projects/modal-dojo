@@ -22,17 +22,23 @@ as mbridge reads them (see hf_block_dequant), for checkpoints that ship without
 a bf16 export. CONVERT_DEQUANT_MXFP4=1 does the same for MXFP4
 compressed-tensors experts (see hf_mxfp4_dequant), which Kimi-K3 ships.
 
-When neither variable is set this wrapper is a transparent pass-through, apart
+CONVERT_LOCAL_STAGING=1 writes single-node conversions to local disk, then
+copies shards to the Volume before publishing metadata and the tracker.
+
+Without these options this wrapper is a transparent pass-through, apart
 from local rank 0 logging host/cgroup memory so a SIGKILLed rank can be told
 apart from a Python failure.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
+import shutil
 import sys
 import threading
 import time
+from pathlib import Path
 
 _UPSTREAM = "/root/miles/tools/convert_hf_to_torch_dist.py"
 _MEM_LOG_INTERVAL_S = 30
@@ -111,6 +117,56 @@ def keep_iteration_directory(src: str) -> str:
     )
 
 
+def _run_conversion(src: str) -> None:
+    """Optionally stage a large, single-node conversion on local disk.
+
+    All local ranks write the same temporary directory. Upstream's final
+    barrier completes the save before rank zero copies it onto the Volume.
+    Publish metadata and the iteration tracker only after every shard copies.
+    """
+    destination = None
+    staging = None
+    save_index = None
+    if os.environ.get("CONVERT_LOCAL_STAGING") == "1":
+        if int(os.environ.get("WORLD_SIZE", "1")) != int(
+            os.environ.get("LOCAL_WORLD_SIZE", "1")
+        ):
+            raise ValueError("CONVERT_LOCAL_STAGING requires a single-node conversion")
+        save_index = sys.argv.index("--save") + 1
+        if not sys.argv[save_index].strip():
+            raise ValueError("CONVERT_LOCAL_STAGING requires a nonempty --save path")
+        destination = Path(sys.argv[save_index])
+        key = hashlib.sha256(str(destination).encode()).hexdigest()[:16]
+        staging = Path("/tmp/dojo-conversion") / key
+        sys.argv[save_index] = str(staging)
+    try:
+        exec(
+            compile(src, _UPSTREAM, "exec", dont_inherit=True),
+            {"__name__": "__main__", "__file__": _UPSTREAM},
+        )
+        if destination is not None and os.environ.get("RANK", "0") == "0":
+            print(
+                f"Copying converted checkpoint from {staging} to {destination}",
+                flush=True,
+            )
+            shutil.copytree(
+                staging,
+                destination,
+                dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns(
+                    ".metadata", "latest_checkpointed_iteration.txt"
+                ),
+            )
+            for metadata in staging.rglob(".metadata"):
+                shutil.copy2(metadata, destination / metadata.relative_to(staging))
+            tracker = "latest_checkpointed_iteration.txt"
+            shutil.copy2(staging / tracker, destination / tracker)
+            shutil.rmtree(staging)
+    finally:
+        if save_index is not None:
+            sys.argv[save_index] = str(destination)
+
+
 def main() -> None:
     _start_memory_monitor()
     src = _load_upstream_source()
@@ -128,9 +184,7 @@ def main() -> None:
         import hf_mxfp4_dequant
 
         hf_mxfp4_dequant.install()
-    exec(
-        compile(src, _UPSTREAM, "exec"), {"__name__": "__main__", "__file__": _UPSTREAM}
-    )
+    _run_conversion(src)
 
 
 if __name__ == "__main__":

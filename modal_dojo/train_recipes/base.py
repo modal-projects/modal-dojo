@@ -5,12 +5,14 @@ import os
 import re
 import sys
 import uuid
-from abc import ABC
+from abc import ABC, ABCMeta
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
-from modal_dojo.common.errors import DojoConfigError
+from pydantic import ValidationError
+
+from modal_dojo.common.errors import DojoConfigError, DojoError
 from modal_dojo.train_recipes.gpu_allocation import (
     GpuAllocation,
     resolve_gpu_allocation,
@@ -126,7 +128,19 @@ def _apply_loss_type_fields(
 MicroBatchSize = int | Literal["auto"]
 
 
-class BaseTrainRecipe(ABC):
+class _UnwrapDojoErrorMeta(ABCMeta):
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return super().__call__(*args, **kwargs)
+        except ValidationError as exc:
+            errors = exc.errors()
+            error = errors[0].get("ctx", {}).get("error") if len(errors) == 1 else None
+            if isinstance(error, DojoError):
+                raise error from None
+            raise
+
+
+class BaseTrainRecipe(ABC, metaclass=_UnwrapDojoErrorMeta):
     model_config_class: ClassVar["type[ModelConfig] | None"] = None
 
     # Fields consumed by the Modal launcher (image build, cluster topology,

@@ -1,6 +1,6 @@
 <script>
-  import { onMount, tick, untrack } from "svelte";
-  import { ArrowLeft, ChevronLeft, ChevronRight, Download, ExternalLink, Minimize2, X } from "lucide-svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
+  import { ArrowLeft, Check, ChevronLeft, ChevronRight, Download, ExternalLink, Link, Minimize2, X } from "lucide-svelte";
   import Tabs from "../components/Tabs.svelte";
   import RunSummary from "../components/RunSummary.svelte";
   import RunTimeline from "../components/RunTimeline.svelte";
@@ -64,6 +64,7 @@
   /** @typedef {"summary" | "metrics" | "rollouts" | "logs"} TabId */
   const DETAIL_TABS = new Set(["summary", "metrics", "rollouts", "logs"]);
   const DEFAULT_TAB = "summary";
+  let pendingRolloutLink = null;
 
   function parseTabFromUrl() {
     if (typeof window === "undefined") return DEFAULT_TAB;
@@ -73,12 +74,22 @@
 
   function urlForTab(tab) {
     const url = new URL(window.location.href);
-    url.searchParams.set("tab", DETAIL_TABS.has(tab) ? tab : DEFAULT_TAB);
+    const targetTab = DETAIL_TABS.has(tab) ? tab : DEFAULT_TAB;
+    url.searchParams.set("tab", targetTab);
+    if (targetTab !== "rollouts") {
+      url.searchParams.delete("step");
+      url.searchParams.delete("rollout");
+    }
     return `${url.pathname}${url.search}${url.hash}`;
   }
 
   function locationKey() {
     return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  }
+
+  function clearPendingRolloutLink() {
+    pendingRolloutLink = null;
+    syncRolloutUrl();
   }
 
   let {
@@ -233,6 +244,16 @@
     runId;
     if (embedded || typeof window === "undefined") return;
     activeTab = parseTabFromUrl();
+    const params = new URLSearchParams(location.search);
+    const step = params.get("step");
+    const rollout = params.get("rollout");
+    const parsedRollout = rollout === null || rollout.trim() === "" ? null : Number(rollout);
+    pendingRolloutLink =
+      step !== null &&
+      (rollout === null ||
+        (Number.isFinite(parsedRollout) && Number.isInteger(parsedRollout)))
+        ? { step, rollout: parsedRollout }
+        : null;
   });
 
   $effect(() => {
@@ -317,6 +338,9 @@
   const BUCKET_COUNT = 12;
   let activeBucket = $state(null); // histogram bucket index, or null
   let activeSamplePos = $state(0); // position within the active bucket's list
+  let rolloutLinkCopied = $state(false);
+  let rolloutLinkCopyResetTimer = null;
+  let sampleViewerEl = $state(null);
 
   let sampleDist = $derived.by(() => {
     const samples = expandedRollout?.samples || [];
@@ -335,7 +359,7 @@
     rollouts.forEach((positions, r) => {
       let b = count === 1 ? 0 : Math.floor(((scores[r] - lo) / span) * count);
       b = Math.max(0, Math.min(count - 1, b));
-      buckets[b].push({ positions, score: scores[r] });
+      buckets[b].push({ positions, score: scores[r], rollout: r });
     });
     const maxCount = Math.max(...buckets.map((b) => b.length), 1);
     return {
@@ -417,10 +441,30 @@
       sample,
       samples: entry.positions.map((p) => expandedRollout.samples[p]),
       score: entry.score,
+      rollout: entry.rollout,
       image: sampleImage(sample),
       pos: activeSamplePos,
       count: list.length,
     };
+  });
+
+  function syncRolloutUrl() {
+    if (embedded || typeof window === "undefined") return;
+    if (pendingRolloutLink || activeTab !== "rollouts") return;
+    const url = new URL(window.location.href);
+    if (expandedRolloutId === null) url.searchParams.delete("step");
+    else url.searchParams.set("step", String(expandedRolloutId));
+    if (expandedRolloutId === null || !activeSample) url.searchParams.delete("rollout");
+    else url.searchParams.set("rollout", String(activeSample.rollout));
+    const target = `${url.pathname}${url.search}${url.hash}`;
+    if (target !== locationKey()) history.replaceState({}, "", target);
+  }
+
+  $effect(() => {
+    expandedRolloutId;
+    activeSample?.rollout;
+    activeTab;
+    syncRolloutUrl();
   });
 
   function onSampleKeydown(e) {
@@ -484,6 +528,29 @@
     URL.revokeObjectURL(url);
   }
 
+  async function copyRolloutLink() {
+    if (!activeSample) return;
+    const url = new URL(`/training/${encodeURIComponent(runId)}`, location.origin);
+    url.searchParams.set("tab", "rollouts");
+    url.searchParams.set("step", String(expandedRolloutId));
+    url.searchParams.set("rollout", String(activeSample.rollout));
+    try {
+      await navigator.clipboard.writeText(url.toString());
+    } catch {
+      return;
+    }
+    rolloutLinkCopied = true;
+    if (rolloutLinkCopyResetTimer) clearTimeout(rolloutLinkCopyResetTimer);
+    rolloutLinkCopyResetTimer = setTimeout(() => {
+      rolloutLinkCopied = false;
+      rolloutLinkCopyResetTimer = null;
+    }, 1000);
+  }
+
+  onDestroy(() => {
+    if (rolloutLinkCopyResetTimer) clearTimeout(rolloutLinkCopyResetTimer);
+  });
+
   function downloadAllTrajectories() {
     if (!expandedRollout?.samples?.length) return;
     const rollout = expandedRolloutId ?? 0;
@@ -521,7 +588,21 @@
 
       // Reveal the first rollout
       if (wasEmpty && rolloutSummaries.length > 0 && expandedRolloutId === null) {
-        toggleRolloutDetail(rolloutSummaries[0].rollout_id);
+        const linkedRollout = pendingRolloutLink
+          ? rolloutSummaries.find(
+              (summary) => String(summary.rollout_id) === pendingRolloutLink.step,
+            )
+          : null;
+        if (pendingRolloutLink && !linkedRollout) clearPendingRolloutLink();
+        toggleRolloutDetail(
+          linkedRollout?.rollout_id ?? rolloutSummaries[0].rollout_id,
+        );
+      } else if (
+        wasEmpty &&
+        rolloutSummaries.length === 0 &&
+        pendingRolloutLink
+      ) {
+        clearPendingRolloutLink();
       }
     } catch (err) {
       if (signal?.aborted) return;
@@ -772,9 +853,38 @@
       const detail = await fetchRollout(runId, rolloutId);
       if (expandedRolloutId === rolloutId) {
         expandedRollout = detail;
+        expandedRolloutLoading = false;
         const d = sampleDist;
         const first = d ? d.buckets.findIndex((b) => b.length > 0) : -1;
-        if (first >= 0) openBucket(first);
+        let matched = false;
+        if (pendingRolloutLink) {
+          if (
+            pendingRolloutLink.step === String(rolloutId) &&
+            pendingRolloutLink.rollout !== null &&
+            d
+          ) {
+            for (let b = 0; b < d.buckets.length; b += 1) {
+              const pos = d.buckets[b].findIndex(
+                (entry) => entry.rollout === pendingRolloutLink.rollout,
+              );
+              if (pos >= 0) {
+                activeBucket = b;
+                activeSamplePos = pos;
+                matched = true;
+                break;
+              }
+            }
+          }
+          clearPendingRolloutLink();
+          if (matched) {
+            await tick();
+            sampleViewerEl?.scrollIntoView({ block: "start" });
+          } else if (first >= 0) {
+            openBucket(first);
+          }
+        } else if (first >= 0) {
+          openBucket(first);
+        }
       }
     } finally {
       if (expandedRolloutId === rolloutId) {
@@ -2108,7 +2218,7 @@
                       </div>
 
                       {#if activeSample}
-                        <div class="sample-viewer">
+                        <div class="sample-viewer" bind:this={sampleViewerEl}>
                           <div class="sample-viewer-header">
                             <div class="sample-viewer-nav">
                               <button
@@ -2138,6 +2248,18 @@
                                   ? ` · first of ${activeSample.samples.length} turns`
                                   : ""}
                               </span>
+                              <button
+                                class="sample-nav-btn"
+                                onclick={copyRolloutLink}
+                                aria-label="Copy link to rollout"
+                                title="Copy link"
+                              >
+                                {#if rolloutLinkCopied}
+                                  <Check size={14} class="text-(--color-icon-success)" />
+                                {:else}
+                                  <Link size={14} />
+                                {/if}
+                              </button>
                               <button
                                 class="sample-nav-btn"
                                 onclick={downloadSampleTrajectory}

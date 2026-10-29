@@ -175,7 +175,6 @@ def deploy_judge():
     print("deploying judges...")
     judge = Endpoint.launch(
         Qwen3_6_27B(),
-        unauthenticated=True,
         recreate_if_existing=True,
         endpoint_name="paint-flowers",
     )

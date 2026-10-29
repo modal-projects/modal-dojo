@@ -49,10 +49,7 @@ def build_server_cmd(
     if tp is not None:
         cmd.extend(["--tp", str(tp)])
     if dp is not None:
-        # SGLang's CLI flag is ``--dp-size`` (not ``--dp``); ``--enable-dp-attention``
-        # is required for DeepSeek-style MLA DP attention and is a no-op when
-        # ``dp_size == 1``.
-        cmd.extend(["--dp-size", str(dp), "--enable-dp-attention"])
+        cmd.extend(["--attn-dp-size", str(dp)])
 
     merged = {**DEFAULT_OPERATIONAL_ARGS, **(extra_server_args or {})}
     for key, value in merged.items():

@@ -381,6 +381,10 @@ def ship_recipe_callables(
 
     for attr, key in hooks.items():
         value = getattr(recipe, attr)
+        if attr == "custom_rm_function" and recipe._escape_hatch_values().get(key):
+            # Explicit native paths must not be replaced by preset callables.
+            setattr(recipe, attr, None)
+            continue
         if not callable(value):  # A str is an import path the user vouches for.
             continue
         image, path = ship_callable(
@@ -690,35 +694,74 @@ _SCHEDULER_SHAPE_FIELDS = (
 )
 
 
-def check_resume_scheduler_shape(recipe: Any, checkpoint_path: str) -> None:
-    """Fail fast when a resume would trip Megatron's OptimizerParamScheduler check.
+def check_resume_scheduler_shape(
+    recipe: Any, checkpoint_path: str | None = None
+) -> None:
+    """Reject incompatible scheduler state before loading model weights.
 
-    The LR schedule length is derived from these fields, so changing any of them
-    between the saved run and the resumed one fails ``load_state_dict`` only after
-    the whole cluster has started and loaded weights.
+    With no Megatron checkpoint path, check Miles' native LoRA adapter instead.
+    Its scheduler is restored even when optimizer saving/loading is disabled.
     """
     extra = recipe._escape_hatch_values()
-    if (
-        recipe.no_save_optim
-        or extra.get("override_opt_param_scheduler")
-        or extra.get("use_checkpoint_opt_param_scheduler")
+    if extra.get("override_opt_param_scheduler") or extra.get(
+        "use_checkpoint_opt_param_scheduler"
     ):
         return
-    common = os.path.join(checkpoint_path, "common.pt")
-    if not os.path.exists(common):
+    is_adapter = checkpoint_path is None
+    if not is_adapter and recipe.no_save_optim:
+        return
+    expected = {
+        field: extra.get(field, getattr(recipe, field, None))
+        for field in _SCHEDULER_SHAPE_FIELDS
+    }
+    if checkpoint_path is None:
+        if recipe.effective_num_epoch() is not None:
+            return
+        checkpoint_path = _lora_resume_adapter_dir(recipe, extra)
+        if checkpoint_path is None:
+            return
+        num_rollout, rollout_batch_size, n_samples, global_batch_size = (
+            expected[field] for field in _SCHEDULER_SHAPE_FIELDS
+        )
+        if (
+            None in (num_rollout, rollout_batch_size, n_samples)
+            or not global_batch_size
+        ):
+            return
+        train_iters = num_rollout * rollout_batch_size * n_samples // global_batch_size
+        lr_decay_iters = extra.get(
+            "lr_decay_iters", getattr(recipe, "lr_decay_iters", None)
+        )
+        if lr_decay_iters is None:
+            lr_decay_iters = train_iters
+        expected = {
+            "lr_decay_steps": lr_decay_iters * global_batch_size,
+            "wd_incr_steps": train_iters * global_batch_size,
+        }
+    state_path = os.path.join(
+        checkpoint_path, "training_state_rank0.pt" if is_adapter else "common.pt"
+    )
+    if not os.path.exists(state_path):
         return
     import torch
 
-    state = torch.load(common, map_location="cpu", weights_only=False)
-    saved_args = state.get("args")
-    if saved_args is None:
+    state = torch.load(state_path, map_location="cpu", weights_only=False)
+    if not isinstance(state, dict):
         return
-    mismatched = {}
-    for field in _SCHEDULER_SHAPE_FIELDS:
-        saved = getattr(saved_args, field, None)
-        current = extra.get(field, getattr(recipe, field, None))
-        if saved is not None and current is not None and saved != current:
-            mismatched[field] = (saved, current)
+    saved = (
+        state.get("opt_param_scheduler")
+        if is_adapter
+        else {field: getattr(state.get("args"), field, None) for field in expected}
+    )
+    if not isinstance(saved, dict):
+        return
+    mismatched = {
+        field: (saved[field], current)
+        for field, current in expected.items()
+        if saved.get(field) is not None
+        and current is not None
+        and saved[field] != current
+    }
     if mismatched:
         details = ", ".join(
             f"{field}: checkpoint={saved} recipe={current}"
@@ -733,11 +776,54 @@ def check_resume_scheduler_shape(recipe: Any, checkpoint_path: str) -> None:
         )
 
 
+def _lora_resume_adapter_dir(recipe: Any, extra: dict[str, Any]) -> str | None:
+    """Resolve an explicit adapter or the latest native LoRA save under ``load``."""
+    explicit = extra.get(
+        "lora_adapter_path", getattr(recipe, "lora_adapter_path", None)
+    )
+    if explicit:
+        return explicit
+    if not (extra.get("lora_rank", getattr(recipe, "lora_rank", None)) or 0) > 0:
+        return None
+    load = extra.get("load", getattr(recipe, "load", None))
+    if not load or os.path.exists(
+        os.path.join(load, "latest_checkpointed_iteration.txt")
+    ):
+        return None
+    try:
+        names = os.listdir(load)
+    except OSError:
+        return None
+    iterations = sorted(
+        name
+        for name in names
+        if name.startswith("iter_")
+        and name[len("iter_") :].isdigit()
+        and os.path.isdir(os.path.join(load, name, "adapter"))
+    )
+    return os.path.join(load, iterations[-1], "adapter") if iterations else None
+
+
 @contextmanager
-def resumed_recipe(recipe: Any, save_root: str, checkpoint: dict[str, Any] | None):
+def resumed_recipe(
+    recipe: Any,
+    save_root: str,
+    checkpoint: dict[str, Any] | None,
+    *,
+    overrides: dict[str, Any] | None = None,
+):
+    """Apply resume defaults, then framework overrides; restore fields on exit."""
+    overrides = overrides or {}
     original = {
         field: getattr(recipe, field)
-        for field in ("save", "load", "start_rollout_id", "ref_load", "no_load_optim")
+        for field in (
+            "save",
+            "load",
+            "start_rollout_id",
+            "ref_load",
+            "no_load_optim",
+            *overrides,
+        )
     }
     try:
         if checkpoint is not None:
@@ -769,6 +855,8 @@ def resumed_recipe(recipe: Any, save_root: str, checkpoint: dict[str, Any] | Non
                     "WARNING: no_save_optim=True — enabling no_load_optim for resume."
                 )
             recipe.no_load_optim = recipe.no_save_optim
+        for field, value in overrides.items():
+            setattr(recipe, field, value)
         yield
     finally:
         for field, value in original.items():

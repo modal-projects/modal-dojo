@@ -1,6 +1,6 @@
 [project]
 name = "modal-dojo"
-version = "0.1.0"
+version = "0.1.1"
 description = "Get started with LLM training on Modal."
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -16,10 +16,12 @@ dependencies = [
     "cloudpickle",
     "datasets",
     "httpx",
+    "packaging",
     "pydantic",
     "fastapi",
     "randomname",
     "rich",
+    "requests",
     "transformers>=5.12.1",
 ]
 

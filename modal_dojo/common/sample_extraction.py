@@ -631,6 +631,7 @@ def _sample_to_dict(
     image_store: RolloutImageStore | None = None,
     include_trajectory: bool = False,
     n_samples_per_prompt: int = 1,
+    reward_key: str | None = None,
 ) -> dict[str, Any]:
     """Best-effort extraction of (prompt, response, reward, metadata) from a
     slime Sample-like object. Duck-typed so we don't import slime here."""
@@ -709,7 +710,11 @@ def _sample_to_dict(
         metadata["_metadata_type"] = "image"
 
     response_text = _coerce_text(response)
-    # Score via gym Sample: numeric reward, else metadata["shaped_reward"] (OPD).
+    # Frameworks train on the configured scalar inside dictionary rewards.
+    # Do not guess a key: OPD dictionaries can instead hold teacher payloads.
+    if isinstance(reward, dict) and reward_key:
+        reward = reward.get(reward_key)
+    # Fall back to metadata["shaped_reward"] for non-scalar rewards (OPD).
     numeric_reward = (
         float(reward)
         if isinstance(reward, (int, float)) and not isinstance(reward, bool)

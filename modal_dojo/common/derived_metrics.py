@@ -98,12 +98,16 @@ class RunPricing:
         """From a run record's ``config["recipe"]`` and the billing rates."""
         from modal_dojo.train_recipes.gpu_allocation import resolve_gpu_allocation
 
-        try:
-            gpus = resolve_gpu_allocation(
-                SimpleNamespace(**recipe), warn=False
-            ).total_gpus
-        except Exception:  # noqa: BLE001 — an unresolvable allocation prices nothing
-            gpus = 0
+        allocated = recipe.get("allocated_gpus")
+        if type(allocated) is int and allocated > 0:
+            gpus = allocated
+        else:
+            try:
+                gpus = resolve_gpu_allocation(
+                    SimpleNamespace(**recipe), warn=False
+                ).total_gpus
+            except Exception:  # noqa: BLE001 — an unresolvable allocation prices nothing
+                gpus = 0
         gpu_type = str(recipe.get("gpu_type") or "")
         return cls(
             gpus=gpus,

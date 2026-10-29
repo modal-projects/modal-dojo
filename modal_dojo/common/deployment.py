@@ -73,9 +73,8 @@ def _modal_proxy_auth_headers() -> dict[str, str]:
 def _raise_for_proxy_auth(status_code: int, url: str) -> None:
     """Turn a 401 into an actionable proxy-auth hint.
 
-    SGLang endpoints are public by default (``unauthenticated=True``). When
-    an endpoint was served with ``unauthenticated=False``, a 401 almost
-    always means the ``MODAL_KEY`` / ``MODAL_SECRET`` proxy-auth token pair
+    Custom deployments require proxy auth by default (``unauthenticated=False``),
+    so a 401 almost always means the ``MODAL_KEY`` / ``MODAL_SECRET`` proxy-auth token pair
     is missing from the environment (so :func:`_modal_proxy_auth_headers`
     returned no headers) rather than a real authorization problem — surface
     that instead of a bare ``HTTPError``/``TimeoutError``. No-op for any
@@ -96,10 +95,8 @@ def _raise_for_proxy_auth(status_code: int, url: str) -> None:
         "https://modal.com/settings/proxy-auth-tokens and export MODAL_KEY (wk-…) "
         "and MODAL_SECRET (ws-…) in the shell that runs the eval/serve. For calls "
         "issued from remote workers (e.g. a custom rm/reward function), also "
-        "forward the pair into the worker via a modal.Secret. SGLang endpoints "
-        "are public by default; pass CustomDeployment.launch(..., "
-        "unauthenticated=False) to "
-        "require proxy auth."
+        "forward the pair into the worker via a modal.Secret, or pass "
+        "CustomDeployment.launch(..., unauthenticated=True) to serve it publicly."
     )
 
 
@@ -200,7 +197,7 @@ class CustomDeployment(BaseModel):
         recipe: VllmRecipe | SglangRecipe | None = None,
         app_name: str | None = None,
         served_model_name: str | None = None,
-        unauthenticated: bool = True,
+        unauthenticated: bool = False,
     ) -> "CustomDeployment":
         """Deploy ``model`` with an SGLang or vLLM serving recipe.
 

@@ -32,6 +32,7 @@ from modal_dojo import (
     Qwen3_ASR_1_7B_Recipe,
     TrainConfig,
 )
+from modal_dojo.common.config import modal_proxy_auth_headers
 
 # ## Deploy the base model
 #
@@ -47,7 +48,6 @@ def deploy_base_model():
     print("deploying base model deployment...")
     base_deployment = CustomDeployment.launch(
         model,
-        unauthenticated=True,
         app_name="audio-asr-baseline",
     )
     base_deployment.wait_until_ready()
@@ -142,6 +142,7 @@ def run_eval(deployment, max_concurrency: int = 2) -> float:
         buf.seek(0)
         resp = requests.post(
             f"{deployment.url}/v1/audio/transcriptions",
+            headers=modal_proxy_auth_headers(),
             files={"file": ("clip.wav", buf, "audio/wav")},
             data={
                 "model": deployment.served_model_name,
@@ -225,7 +226,6 @@ def deploy_trained_model(checkpoint):
     trained_deployment = CustomDeployment.launch(
         model,
         checkpoint,
-        unauthenticated=True,
         app_name="audio-asr-trained",
     )
     trained_deployment.wait_until_ready()

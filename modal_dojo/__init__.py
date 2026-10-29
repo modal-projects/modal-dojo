@@ -3,11 +3,21 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORTS = {
+    "Beam_1_0_501B_A23B_LoRA_256k_Recipe": (
+        "modal_dojo.train_recipes.miles_recipe",
+        "Beam_1_0_501B_A23B_LoRA_256k_Recipe",
+    ),
+    "Beam_1_0_501B_A23B": ("modal_dojo.common.models", "Beam_1_0_501B_A23B"),
+    "Beam_1_0_501B_A23B_LoRA": ("modal_dojo.common.models", "Beam_1_0_501B_A23B_LoRA"),
     "Checkpoint": ("modal_dojo.common.checkpoint", "Checkpoint"),
     "CheckpointType": ("modal_dojo.common.checkpoint", "CheckpointType"),
     "convert_megatron_checkpoint_to_hf": (
         "modal_dojo.common.checkpoint",
         "convert_megatron_checkpoint_to_hf",
+    ),
+    "convert_native_lora_checkpoint_to_peft": (
+        "modal_dojo.common.checkpoint",
+        "convert_native_lora_checkpoint_to_peft",
     ),
     "CustomDeployment": (
         "modal_dojo.common.deployment",
@@ -216,12 +226,16 @@ _EXPORTS = {
 }
 
 __all__ = [
+    "Beam_1_0_501B_A23B_LoRA_256k_Recipe",
+    "Beam_1_0_501B_A23B",
+    "Beam_1_0_501B_A23B_LoRA",
     "CustomDeployment",
     "DASHBOARD_OVERLAY_VOLUME_NAME",
     "DashboardComponent",
     "Checkpoint",
     "CheckpointType",
     "convert_megatron_checkpoint_to_hf",
+    "convert_native_lora_checkpoint_to_peft",
     "DashboardMetricConfig",
     "DatasetConfig",
     "Endpoint",

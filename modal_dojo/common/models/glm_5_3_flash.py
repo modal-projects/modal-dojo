@@ -11,4 +11,4 @@ class GLM_5_3_Flash(HFModelConfiguration):
 
 
 class GLM_5_3_Flash_LoRA(GLM_5_3_Flash):
-    """GLM-5.3-Flash with the experimental Miles bridge LoRA preset."""
+    """GLM-5.3-Flash with the Miles native LoRA preset."""
