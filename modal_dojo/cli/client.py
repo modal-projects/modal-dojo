@@ -10,11 +10,14 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from modal_dojo._dashboard_login import LOGIN_REQUIRED_HEADER
 from modal_dojo.common.config import (
-    get_dashboard_password,
+    get_cli_token_from_config,
     get_dashboard_url,
     modal_proxy_auth_headers,
+    save_cli_token_to_config,
 )
+from modal_dojo.common.dashboard import fetch_cli_token
 
 from .errors import CLIError, ExitCode
 
@@ -45,6 +48,26 @@ def _strip_proxy_auth_on_cross_origin_redirect(response: httpx.Response) -> None
         response.request.headers.pop("Modal-Secret", None)
 
 
+class _CliTokenAuth(httpx.Auth):
+    """Send the saved CLI token; when the dashboard rejects it, fetch it once."""
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    def auth_flow(self, request: httpx.Request):
+        if self._token:
+            request.headers["Authorization"] = f"Bearer {self._token}"
+        response = yield request
+        if response.status_code != 401 or LOGIN_REQUIRED_HEADER not in response.headers:
+            return
+        token = fetch_cli_token()
+        if token and token != self._token:
+            self._token = token
+            save_cli_token_to_config(token)
+            request.headers["Authorization"] = f"Bearer {token}"
+            yield request
+
+
 class DashboardClient:
     """Transport shared by dashboard-backed commands."""
 
@@ -72,14 +95,12 @@ class DashboardClient:
             )
 
         dashboard_password = (
-            os.environ.get(DASHBOARD_PASSWORD_ENV, "") or get_dashboard_password()
-            if password is None
-            else password
+            os.environ.get(DASHBOARD_PASSWORD_ENV, "") if password is None else password
         )
         auth = (
             httpx.BasicAuth("modal-dojo", dashboard_password)
             if dashboard_password
-            else None
+            else _CliTokenAuth(get_cli_token_from_config())
         )
         self._client = httpx.Client(
             base_url=configured_url.rstrip("/") + "/",
@@ -219,8 +240,8 @@ class DashboardClient:
                 error="authentication_failed",
                 exit_code=ExitCode.AUTH,
                 hint=(
-                    "Run `modal-dojo set-proxy-auth` for Modal proxy auth, "
-                    "or `modal-dojo set-password` for dashboard Basic Auth."
+                    "Run `modal-dojo set-proxy-auth` for Modal proxy auth, or "
+                    "`modal-dojo setup` so the CLI can fetch the dashboard's token."
                 ),
             )
         if status_code == 404:

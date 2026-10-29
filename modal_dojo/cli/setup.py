@@ -14,7 +14,7 @@ What this does:
    normal Secrets list in the UI). Credentials are auto-resolved from
    ``MODAL_TOKEN_*`` env vars or the active profile in ``~/.modal.toml``.
 
-2. On first deploy, creates the dashboard password.
+2. On first deploy, asks how to protect the dashboard (a password by default).
 3. Deploys the dashboard's ASGI app and orphan reconciler.
 4. Persists the FastAPI web URL to ``~/.modal-dojo.toml`` so other
    clients (e.g. the slime launcher) can find the dashboard.
@@ -67,13 +67,14 @@ def setup(
     interactive: bool = True,
     trajectory_viewer: str | Path | None = None,
     reset_trajectory_viewer: bool = False,
-    restart_containers: bool = False,
-    password_protected: bool | None = None,
+    password: bool | None = None,
+    always_restart: bool = False,
 ) -> str:
     """Deploy the modal-dojo dashboard, persist its URL, and return it.
 
-    ``restart_containers`` stops running containers instead of draining them,
-    so a password change takes effect immediately.
+    ``password=None`` keeps the current password setting. ``always_restart``
+    stops running containers instead of draining them, so a password change
+    takes effect immediately.
 
     ``interactive=False`` resolves Modal credentials silently (from env vars
     or ``~/.modal.toml``) and never prompts — used by the auto-deploy path in
@@ -86,7 +87,7 @@ def setup(
         get_dashboard_trajectory_viewer,
         require_migrated_config,
         get_dashboard_url,
-        get_dashboard_password,
+        get_dashboard_password_auth,
         get_dashboard_proxy_auth,
         save_dashboard_trajectory_viewer,
         save_dashboard_url,
@@ -106,6 +107,16 @@ def setup(
         raise ValueError(
             "Could not discover the dashboard. Check Modal credentials/network and rerun modal-dojo setup."
         ) from exc
+    attended = interactive and sys.stdin.isatty()
+    password_configured = _password_secret_exists()
+    if (
+        attended
+        and not password_configured
+        and password is None
+        and proxy_auth is ProxyAuthMode.UNSPECIFIED
+    ):
+        require_proxy, password = _choose_auth_mode()
+        proxy_auth = ProxyAuthMode.REQUIRE if require_proxy else ProxyAuthMode.DISABLE
     if proxy_auth is ProxyAuthMode.UNSPECIFIED:
         inherited = get_dashboard_proxy_auth(existing_url)
         if inherited is None and existing_url:
@@ -139,17 +150,24 @@ def setup(
         print(f"Using custom trajectory viewer: {trajectory_viewer_path}")
     # Must run before the reload below, which decides whether to mount the
     # Secret. The saved URL may be stale, so only a live dashboard counts.
-    password_state = ensure_dashboard_password(
-        interactive=interactive, existing_dashboard=bool(live_url)
+    password_on = _update_password(
+        password,
+        configured=password_configured,
+        live_url=live_url,
+        attended=attended,
+        require_proxy_auth=require_proxy_auth,
     )
-    if password_state == "created":
-        restart_containers = True
+    if password_on is not None:
+        always_restart = True
+    elif live_url and not always_restart:
+        # A caller forcing a restart just changed the Secret, so the running
+        # dashboard's answer would be stale.
+        password_on = get_dashboard_password_auth(live_url)
     dashboard = _load_dashboard_for_deploy(
         require_proxy_auth, trajectory_viewer=trajectory_viewer_path
     )
 
-    has_proxy_auth_token = ensure_proxy_auth(interactive=interactive)
-    if require_proxy_auth and not has_proxy_auth_token:
+    if require_proxy_auth and not ensure_proxy_auth(interactive=interactive):
         print(
             "WARNING: Dashboard proxy auth requires MODAL_KEY and MODAL_SECRET. "
             "Run `modal-dojo set-proxy-auth` or export both variables."
@@ -163,7 +181,7 @@ def setup(
         )
 
     with modal.enable_output():
-        dashboard.app.deploy(strategy="recreate" if restart_containers else "rolling")
+        dashboard.app.deploy(strategy="recreate" if always_restart else "rolling")
 
     web_url = dashboard.fastapi_app.get_web_url()
     if not web_url:
@@ -171,14 +189,14 @@ def setup(
             "Dashboard deployment returned no URL; previous saved URL retained."
         )
     save_dashboard_url(web_url, proxy_auth=require_proxy_auth)
-    # Modal labels the URL "(unauthenticated)"; say whether our password is on.
-    if password_protected is None:
-        if password_state == "existing":
-            password_protected = bool(get_dashboard_password()) or None
-        else:
-            password_protected = password_state == "created"
-    access = {True: " (password protected)", False: " (no password)", None: ""}
-    print(f"\nDashboard deployed: {web_url}{access[password_protected]}")
+    print(f"\nDashboard deployed: {web_url}")
+    # Modal labels the URL "(unauthenticated)" whenever proxy auth is off.
+    if password_on is not None:
+        print(
+            f"Auth: password {'on' if password_on else 'off'}, proxy auth "
+            f"{'on' if require_proxy_auth else 'off'}. Change it with "
+            "`modal-dojo setup --[no-]password --[no-]proxy-auth`."
+        )
     print(f"Saved dashboard URL to {CONFIG_PATH}")
     return web_url
 
@@ -203,62 +221,99 @@ def ensure_modal_setup() -> None:
     os.environ["MODAL_TOKEN_SECRET"] = token_secret
 
 
-def ensure_dashboard_password(
-    interactive: bool = True, existing_dashboard: bool = False
-) -> str:
-    """Create the password Secret if it doesn't exist; prompt or generate.
+_AUTH_MODES = {
+    "1": ("Password (recommended): open it in any browser", False, True),
+    "2": ("Password + Modal proxy auth: browsers can't open it", True, True),
+    "3": ("Modal proxy auth only: CLI and scripts only", True, False),
+    "4": ("None: anyone with the URL can open it", False, False),
+}
 
-    Returns ``"created"``, ``"existing"`` (an empty Secret is a deliberate
-    opt-out), or ``"missing"``. An unattended redeploy of a dashboard that is
-    already open only warns, so it doesn't lock out teammates.
-    """
-    from getpass import getpass
 
+def _choose_auth_mode() -> tuple[bool, bool]:
+    """Ask how to protect a new dashboard; return ``(proxy_auth, password)``."""
+    print("How should the dashboard be protected?")
+    for key, (label, _proxy, _password) in _AUTH_MODES.items():
+        print(f"  {key}) {label}")
+    while (choice := input("Choose [1]: ").strip() or "1") not in _AUTH_MODES:
+        print("Enter 1, 2, 3 or 4.")
+    _label, proxy, password = _AUTH_MODES[choice]
+    return proxy, password
+
+
+def _password_secret_exists() -> bool:
     import modal
     from modal.exception import NotFoundError
 
-    from modal_dojo.common.config import (
-        CONFIG_PATH,
-        DASHBOARD_PASSWORD_SECRET_NAME,
-        save_dashboard_password,
-    )
+    from modal_dojo.common.config import DASHBOARD_PASSWORD_SECRET_NAME
 
     try:
         modal.Secret.from_name(DASHBOARD_PASSWORD_SECRET_NAME).hydrate()
-        return "existing"
     except NotFoundError:
-        pass
+        return False
+    return True
 
-    attended = interactive and sys.stdin.isatty()
-    if existing_dashboard and not attended:
-        print(
-            "WARNING: the modal-dojo dashboard has no password, so anyone with "
-            "its URL can open it. Run `modal-dojo set-password` to add one."
-        )
-        return "missing"
 
-    password = ""
-    while attended:
-        password = getpass(
-            "Choose a dashboard password (press Enter to generate one): "
-        ).strip()
-        if not password or getpass("Confirm password: ").strip() == password:
-            break
+def _update_password(
+    password: bool | None,
+    *,
+    configured: bool,
+    live_url: str | None,
+    attended: bool,
+    require_proxy_auth: bool,
+) -> bool | None:
+    """Create or clear the password as requested; return it if it changed.
+
+    ``None`` keeps an existing setting and creates a password when none was
+    ever configured, except on an unattended redeploy of a live dashboard,
+    which would lock out teammates.
+    """
+    from modal_dojo.common.config import get_dashboard_password_auth
+
+    if password is None:
+        if configured:
+            return None
+        if live_url and not attended:
+            if not require_proxy_auth:
+                print(
+                    "WARNING: the modal-dojo dashboard has no password, so anyone "
+                    "with its URL can open it. Run `modal-dojo setup --password`."
+                )
+            return None
+        password = True
+    if not password:
+        _replace_password("")
+        return False
+    # Keep a configured password unless the live dashboard says it's off.
+    if configured and (
+        not live_url or get_dashboard_password_auth(live_url) is not False
+    ):
+        return None
+    _replace_password(_prompt_password() if attended else None)
+    return True
+
+
+def _prompt_password() -> str | None:
+    """Read a new password twice; ``None`` means generate one."""
+    from getpass import getpass
+
+    while True:
+        password = getpass("Dashboard password (press Enter to generate one): ").strip()
+        if not password:
+            return None
+        if getpass("Confirm password: ").strip() == password:
+            return password
         print("Passwords don't match. Try again.")
-    generated = not password
-    if generated:
-        password = secrets.token_urlsafe(12)
 
-    modal.Secret.objects.create(
-        DASHBOARD_PASSWORD_SECRET_NAME, {"DASHBOARD_PASSWORD": password}
-    )
-    save_dashboard_password(password)
-    print(f"\nDashboard password: {password if generated else '(set)'}")
-    print(
-        f"Saved to {CONFIG_PATH}. To change or turn it off, run "
-        "`modal-dojo set-password`.\n"
-    )
-    return "created"
+
+def _replace_password(password: str | None) -> None:
+    """Store ``password`` (generated when ``None``; ``""`` turns it off)."""
+    from modal_dojo._dashboard import set_dashboard_password
+    from modal_dojo.common.config import save_cli_token_to_config
+
+    new_password = secrets.token_urlsafe(12) if password is None else password
+    save_cli_token_to_config(set_dashboard_password(new_password))
+    if password is None:
+        print(f"\nDashboard password: {new_password}\n")
 
 
 def ensure_proxy_auth(interactive: bool = True, force: bool = False) -> bool:
@@ -356,31 +411,13 @@ def set_proxy_auth() -> bool:
 
 
 def set_password(password: str | None = None) -> None:
-    """Set or clear the dashboard password, then redeploy so it takes effect.
+    """Set a new dashboard password, then redeploy so it takes effect.
 
-    Pass an empty string to disable auth. When ``password`` is ``None`` we
-    prompt for it (hidden input). The deployed app reads the value from its
-    environment at startup, so we redeploy after updating the Secret.
+    When ``password`` is ``None`` we prompt for it (hidden input; Enter
+    generates one). The deployed app reads it at startup, so we redeploy.
     """
-    from getpass import getpass
-
-    from modal_dojo._dashboard import set_dashboard_password
-    from modal_dojo.common.config import save_dashboard_password
-
-    if password is None:
-        password = getpass("Dashboard password (leave empty to disable auth): ").strip()
-        if password:
-            confirm = getpass("Confirm password: ").strip()
-            if confirm != password:
-                print("Passwords don't match — aborting.")
-                return
-
-    set_dashboard_password(password)
-    save_dashboard_password(password)
-    if password:
-        print("Dashboard password set. Redeploying so it takes effect...")
-    else:
-        print("Dashboard password cleared (open access). Redeploying...")
+    _replace_password(password or _prompt_password())
+    print("Dashboard password set. Redeploying so it takes effect...")
 
     from modal_dojo.cli.output import print_warning
     from modal_dojo.common.trackio import (
@@ -391,8 +428,7 @@ def set_password(password: str | None = None) -> None:
     setup(
         interactive=False,
         proxy_auth=ProxyAuthMode.UNSPECIFIED,
-        restart_containers=True,
-        password_protected=bool(password),
+        always_restart=True,
     )
     try:
         trackio_url = lookup_trackio_url()

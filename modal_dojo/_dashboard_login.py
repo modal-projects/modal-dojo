@@ -50,6 +50,11 @@ def basic_auth_ok(authorization: str | None, password: str) -> bool:
     return password_matches(supplied, password)
 
 
+def bearer_token_ok(authorization: str | None, token: str) -> bool:
+    scheme, _, supplied = (authorization or "").partition(" ")
+    return scheme.lower() == "bearer" and password_matches(supplied.strip(), token)
+
+
 def _signature(expires_at: int, password: str) -> str:
     return hmac.new(
         password.encode("utf-8"),
