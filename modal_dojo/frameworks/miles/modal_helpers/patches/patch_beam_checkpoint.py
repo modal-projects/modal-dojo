@@ -3,7 +3,8 @@ image: radixark/miles:v0.1.2
 commit: https://github.com/radixark/miles/commit/819cfd23ab74de9975931597894500632dd708fc
 file: miles/backends/training_utils/checkpoint/io.py,
       miles/backends/megatron_utils/{megatron_config,model,checkpoint,lora/utils}.py,
-      miles/ray/rollout/rollout_executor.py, miles/rollout/data_source.py
+      miles/ray/rollout/rollout_executor.py, miles/rollout/data_source.py,
+      train_async.py
 
 Commit native adapter shards on every node, restore the optimizer and scheduler,
 and publish a resumable checkpoint only after rollout state has been saved.
@@ -126,6 +127,26 @@ def write_checkpoint_dir(*args, **kwargs):
 
     def _dojo_load(self, rollout_id: int | None = None) -> None:""",
         )
+    elif target == "train_async.py":
+        # The timing patch may wrap this call in a context manager first.
+        anchor = next(
+            line
+            for line in source.splitlines()
+            if line.strip() == "await rollout_executor.save(rollout_id)"
+        )
+        indent = anchor[: len(anchor) - len(anchor.lstrip())]
+        replace(
+            anchor,
+            "\n".join(
+                indent + line
+                for line in """# Publishing reloads the checkpoint volume. Agent subprocesses in
+# the prefetched rollout must close their trace files first. Keep
+# the completed future so normal consumption retains this batch.
+if not args.fully_async and rollout_data_next_future is not None:
+    await rollout_data_next_future
+await rollout_executor.save(rollout_id)""".splitlines()
+            ),
+        )
     elif target == "data_source.py":
         replace(
             "        state_dict = torch.load(path)",
@@ -154,6 +175,7 @@ def main() -> None:
         "backends/megatron_utils/checkpoint.py",
         "ray/rollout/rollout_executor.py",
         "rollout/data_source.py",
+        "../train_async.py",
     ):
         path = root / relative
         path.write_text(patch_source(path.read_text(), path.name))
