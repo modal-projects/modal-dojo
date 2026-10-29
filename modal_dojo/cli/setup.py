@@ -242,7 +242,7 @@ def _password_secret_exists() -> bool:
 
 
 def _update_password(
-    password: bool | None,
+    require_password: bool | None,
     *,
     configured: bool,
     live_url: str | None,
@@ -258,7 +258,7 @@ def _update_password(
     """
     from modal_dojo.common.config import get_dashboard_password_auth
 
-    if password is None:
+    if require_password is None:
         if configured:
             return None
         if live_url and not attended:
@@ -268,8 +268,8 @@ def _update_password(
                     "with its URL can open it. Run `modal-dojo setup --password`."
                 )
             return None
-        password = not require_proxy_auth
-    if not password:
+        require_password = not require_proxy_auth
+    if not require_password:
         _replace_password("")
         return False
     if configured and (
