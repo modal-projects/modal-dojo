@@ -20,9 +20,7 @@ Once deployed, open the dashboard any time with:
 modal-dojo open
 ```
 
-The first `modal-dojo setup` asks how to protect the dashboard: a password (the default), a password plus Modal proxy auth, proxy auth only, or nothing. With proxy auth on, Modal only lets in requests that carry a proxy-auth token, so a browser can't open the dashboard without extra tooling. If `.train()` deploys the dashboard first, it generates a password and prints it once. The `modal-dojo` CLI signs in on its own through your Modal account.
-
-To change the mode later, pass `--password`/`--no-password` and `--proxy-auth`/`--no-proxy-auth` to `modal-dojo setup`. To change the password:
+The first `modal-dojo setup` asks how to protect the dashboard, with a password as the default; if `.train()` deploys it first, it generates a password and prints it once. To change this later, pass `--[no-]password` or `--[no-]proxy-auth` to `modal-dojo setup`. To change the password:
 
 ```bash
 modal-dojo set-password

@@ -190,7 +190,6 @@ def setup(
         )
     save_dashboard_url(web_url, proxy_auth=require_proxy_auth)
     print(f"\nDashboard deployed: {web_url}")
-    # Modal labels the URL "(unauthenticated)" whenever proxy auth is off.
     if password_on is not None:
         print(
             f"Auth: password {'on' if password_on else 'off'}, proxy auth "
@@ -283,7 +282,6 @@ def _update_password(
     if not password:
         _replace_password("")
         return False
-    # Keep a configured password unless the live dashboard says it's off.
     if configured and (
         not live_url or get_dashboard_password_auth(live_url) is not False
     ):

@@ -596,11 +596,7 @@ def reconcile() -> None:
 
 @app.function(secrets=_function_secrets())
 def cli_token() -> str:
-    """Hand the CLI token to a machine that doesn't have it saved.
-
-    Calling this needs access to the Modal workspace, which can read the
-    password Secret anyway.
-    """
+    """Give the CLI its token; callers can already read the Secret."""
     return os.environ.get("DASHBOARD_CLI_TOKEN", "")
 
 
