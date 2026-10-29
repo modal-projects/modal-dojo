@@ -462,8 +462,25 @@ def open_dashboard() -> str | None:
         return None
 
     print(f"Opening dashboard: {web_url}")
-    webbrowser.open(web_url)
+    webbrowser.open(_login_link(web_url) or web_url)
     return web_url
+
+
+def _login_link(web_url: str) -> str | None:
+    """A short-lived URL that logs the browser in, or ``None`` if unavailable."""
+    from urllib.parse import urljoin
+
+    from modal_dojo.common.config import DASHBOARD_LOGIN_LINK_PATH
+
+    from .client import DashboardClient
+    from .errors import CLIError
+
+    try:
+        with DashboardClient() as client:
+            path = client.get_json(DASHBOARD_LOGIN_LINK_PATH)
+    except CLIError:
+        return None
+    return urljoin(web_url, path) if isinstance(path, str) else None
 
 
 def ensure_dashboard_deployed() -> str | None:

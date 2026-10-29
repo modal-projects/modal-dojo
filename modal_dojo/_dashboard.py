@@ -52,6 +52,7 @@ from starlette.requests import Request
 from modal_dojo import _dashboard_login as _login
 from modal_dojo.common.advantage_distribution import AdvantageDistribution
 from modal_dojo.common.config import (
+    DASHBOARD_LOGIN_LINK_PATH,
     DASHBOARD_PASSWORD_AUTH_PATH,
     DASHBOARD_PASSWORD_SECRET_NAME,
     DASHBOARD_PROXY_AUTH_PATH,
@@ -676,11 +677,25 @@ def fastapi_app():
             headers={_login.LOGIN_REQUIRED_HEADER: _login.LOGIN_PATH},
         )
 
+    def _start_session(next_path: str) -> RedirectResponse:
+        response = RedirectResponse(next_path, status_code=303)
+        response.set_cookie(
+            _login.SESSION_COOKIE,
+            _login.make_session_token(dashboard_password),
+            max_age=_login.SESSION_TTL_SECONDS,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+        )
+        return response
+
     @web.get(_login.LOGIN_PATH, include_in_schema=False)
-    async def login_page(next: str = "/"):
+    async def login_page(next: str = "/", token: str = ""):
         next_path = _login.safe_next_path(next)
         if not dashboard_password:
             return RedirectResponse(next_path, status_code=303)
+        if _login.login_link_token_ok(token, dashboard_password):
+            return _start_session(next_path)
         return HTMLResponse(
             _login.render_login_page(next_path=next_path),
             headers=_login.LOGIN_PAGE_HEADERS,
@@ -699,16 +714,7 @@ def fastapi_app():
                 status_code=401,
                 headers=_login.LOGIN_PAGE_HEADERS,
             )
-        response = RedirectResponse(next_path, status_code=303)
-        response.set_cookie(
-            _login.SESSION_COOKIE,
-            _login.make_session_token(dashboard_password),
-            max_age=_login.SESSION_TTL_SECONDS,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-        )
-        return response
+        return _start_session(next_path)
 
     @web.get(_login.LOGOUT_PATH, include_in_schema=False)
     async def logout():
@@ -725,6 +731,16 @@ def fastapi_app():
     @web.get(DASHBOARD_PASSWORD_AUTH_PATH)
     async def password_auth_status() -> bool:
         return bool(dashboard_password)
+
+    @web.get(DASHBOARD_LOGIN_LINK_PATH)
+    async def login_link():
+        """A path that logs a browser in for the next minute (modal-dojo open)."""
+        if not dashboard_password:
+            path = "/"
+        else:
+            token = _login.make_login_link_token(dashboard_password)
+            path = f"{_login.LOGIN_PATH}?{urlencode({'token': token})}"
+        return JSONResponse(path, headers={"Cache-Control": "no-store"})
 
     @web.get(DASHBOARD_VERSION_PATH)
     async def version() -> str:

@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 
 from modal_dojo import _dashboard
 from modal_dojo import _dashboard_login as login
+from modal_dojo.cli import setup as cli_setup
+from modal_dojo.cli.errors import CLIError
 from modal_dojo.common import config
 
 PASSWORD = "correct horse"
@@ -43,6 +45,7 @@ def test_open_dashboard_needs_no_login(dashboard):
     with dashboard(password="") as client:
         assert client.get("/", headers=HTML).text == "spa"
         assert client.get("/login?next=/runs").headers["location"] == "/runs"
+        assert client.get(config.DASHBOARD_LOGIN_LINK_PATH).json() == "/"
 
 
 def test_unauthenticated_requests(dashboard):
@@ -115,3 +118,54 @@ def test_session_token():
     )
     assert not login.session_token_ok(f"{int(expires) + 1}.{signature}", PASSWORD)
     assert not login.session_token_ok("9999999999.é", PASSWORD, now=0)
+
+
+def test_login_link_token():
+    token = login.make_login_link_token(PASSWORD, now=1000)
+
+    assert login.login_link_token_ok(token, PASSWORD, now=1000)
+    assert not login.login_link_token_ok(
+        token, PASSWORD, now=1001 + login.LOGIN_LINK_TTL_SECONDS
+    )
+    # Neither kind of token passes for the other.
+    assert not login.session_token_ok(token, PASSWORD, now=1000)
+    session = login.make_session_token(PASSWORD, now=1000)
+    assert not login.login_link_token_ok(session, PASSWORD, now=1000)
+
+
+def test_login_link(dashboard, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_CLI_TOKEN", "cli-token")
+    cli = {"Authorization": "Bearer cli-token"}
+    with dashboard() as client:
+        assert client.get(config.DASHBOARD_LOGIN_LINK_PATH).status_code == 401
+        link = client.get(config.DASHBOARD_LOGIN_LINK_PATH, headers=cli).json()
+        assert client.get("/login?token=forged", headers=HTML).status_code == 200
+
+        assert client.get(link).headers["location"] == "/"
+        assert client.get("/", headers=HTML).text == "spa"
+
+
+@pytest.mark.parametrize("link", ["/login?token=abc", None])
+def test_open_uses_a_login_link(monkeypatch, capsys, link):
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            pass
+
+        def get_json(self, _path):
+            if link is None:
+                raise CLIError("Dashboard authentication was rejected.", error="x")
+            return link
+
+    opened = []
+    monkeypatch.setattr(cli_setup, "deployed_dashboard_url", lambda: "https://d.test")
+    monkeypatch.setattr(config, "get_dashboard_url", lambda: "https://d.test")
+    monkeypatch.setattr("modal_dojo.cli.client.DashboardClient", FakeClient)
+    monkeypatch.setattr(cli_setup.webbrowser, "open", opened.append)
+
+    cli_setup.open_dashboard()
+
+    assert opened == [f"https://d.test{link}" if link else "https://d.test"]
+    assert "token" not in capsys.readouterr().out

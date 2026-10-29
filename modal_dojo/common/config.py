@@ -26,6 +26,7 @@ _dashboard_requires_proxy_auth = False
 _dashboard_trajectory_viewer: str | None = None
 DASHBOARD_PROXY_AUTH_PATH = "/api/proxy-auth"
 DASHBOARD_PASSWORD_AUTH_PATH = "/api/password-auth"
+DASHBOARD_LOGIN_LINK_PATH = "/api/login-link"
 DASHBOARD_VERSION_PATH = "/api/version"
 
 # Holds DASHBOARD_PASSWORD and DASHBOARD_CLI_TOKEN. Created by ``modal-dojo
