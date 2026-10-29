@@ -87,7 +87,6 @@ def setup(
         get_dashboard_trajectory_viewer,
         require_migrated_config,
         get_dashboard_url,
-        get_dashboard_password_auth,
         get_dashboard_proxy_auth,
         save_dashboard_trajectory_viewer,
         save_dashboard_url,
@@ -150,19 +149,15 @@ def setup(
         print(f"Using custom trajectory viewer: {trajectory_viewer_path}")
     # Must run before the reload below, which decides whether to mount the
     # Secret. The saved URL may be stale, so only a live dashboard counts.
-    password_on = _update_password(
+    password_changed = _update_password(
         password,
         configured=password_configured,
         live_url=live_url,
         attended=attended,
         require_proxy_auth=require_proxy_auth,
     )
-    if password_on is not None:
+    if password_changed is not None:
         always_restart = True
-    elif live_url and not always_restart:
-        # A caller forcing a restart just changed the Secret, so the running
-        # dashboard's answer would be stale.
-        password_on = get_dashboard_password_auth(live_url)
     dashboard = _load_dashboard_for_deploy(
         require_proxy_auth, trajectory_viewer=trajectory_viewer_path
     )
@@ -190,12 +185,6 @@ def setup(
         )
     save_dashboard_url(web_url, proxy_auth=require_proxy_auth)
     print(f"\nDashboard deployed: {web_url}")
-    if password_on is not None:
-        print(
-            f"Auth: password {'on' if password_on else 'off'}, proxy auth "
-            f"{'on' if require_proxy_auth else 'off'}. Change it with "
-            "`modal-dojo setup --[no-]password --[no-]proxy-auth`."
-        )
     print(f"Saved dashboard URL to {CONFIG_PATH}")
     return web_url
 

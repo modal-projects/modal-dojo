@@ -129,13 +129,11 @@ def stub_deploy(monkeypatch):
         live_url=None,
         update=Mock(return_value=None),
         choose=Mock(return_value=(True, True)),
-        password_auth=Mock(return_value=None),
         app=Mock(),
     )
     monkeypatch.setattr(cli_setup, "deployed_dashboard_url", lambda: mocks.live_url)
     monkeypatch.setattr(cli_setup, "_update_password", mocks.update)
     monkeypatch.setattr(cli_setup, "_choose_auth_mode", mocks.choose)
-    monkeypatch.setattr(config, "get_dashboard_password_auth", mocks.password_auth)
     monkeypatch.setattr(cli_setup, "ensure_proxy_auth", lambda **_k: True)
     dashboard = SimpleNamespace(
         app=mocks.app,
@@ -165,24 +163,11 @@ def test_first_interactive_setup_asks_for_the_auth_mode(stub_deploy, monkeypatch
 
 
 @pytest.mark.parametrize(
-    ("changed", "live", "restart", "line", "strategy"),
-    [
-        (True, None, False, "Auth: password on, proxy auth off.", "recreate"),
-        (None, False, False, "Auth: password off, proxy auth off.", "rolling"),
-        (None, None, False, None, "rolling"),
-        # set-password changed the Secret, so the running dashboard is stale.
-        (None, False, True, None, "recreate"),
-    ],
+    ("changed", "strategy"), [(True, "recreate"), (None, "rolling")]
 )
-def test_auth_line_reflects_the_live_dashboard(
-    stub_deploy, capsys, changed, live, restart, line, strategy
-):
-    stub_deploy.live_url = "https://dash.test"
+def test_password_change_restarts_containers(stub_deploy, changed, strategy):
     stub_deploy.update.return_value = changed
-    stub_deploy.password_auth.return_value = live
 
-    cli_setup.setup(interactive=False, always_restart=restart)
+    cli_setup.setup(interactive=False)
 
-    out = capsys.readouterr().out
-    assert (line in out) if line else ("Auth:" not in out)
     assert stub_deploy.app.deploy.call_args.kwargs["strategy"] == strategy
