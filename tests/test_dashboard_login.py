@@ -75,6 +75,8 @@ def test_login_logout(dashboard):
         assert client.get("/", headers=HTML).text == "spa"
 
         client.get("/logout")
+        assert client.get("/", headers=HTML).text == "spa"
+        client.post("/logout")
         assert client.get("/", headers=HTML).status_code == 303
 
 

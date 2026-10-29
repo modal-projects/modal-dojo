@@ -716,7 +716,8 @@ def fastapi_app():
             )
         return _start_session(next_path)
 
-    @web.get(_login.LOGOUT_PATH, include_in_schema=False)
+    # POST so another site can't sign you out with a link or image.
+    @web.post(_login.LOGOUT_PATH, include_in_schema=False)
     async def logout():
         response = RedirectResponse(_login.LOGIN_PATH, status_code=303)
         response.delete_cookie(
