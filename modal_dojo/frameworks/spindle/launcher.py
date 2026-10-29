@@ -6,7 +6,6 @@ import asyncio
 import copy
 import logging
 import secrets
-import subprocess
 import sys
 import threading
 import uuid
@@ -14,26 +13,11 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.common.modal_lifecycle import stop_app_by_name
 
 logger = logging.getLogger(__name__)
 # tinker-cookbook hooks are process-wide.
 _active_run = threading.Lock()
-
-
-def _stop_app(name: str, environment: str | None) -> None:
-    import modal
-
-    try:
-        app = modal.App.lookup(name, environment_name=environment)
-    except modal.exception.NotFoundError:
-        return
-    command = [sys.executable, "-m", "modal", "app", "stop", "--yes", app.app_id]
-    if environment:
-        command.extend(["--env", environment])
-    result = subprocess.run(command, capture_output=True, text=True)
-    output = result.stderr or result.stdout
-    if result.returncode and "App is already stopped" not in output:
-        raise RuntimeError(f"Could not stop {name}: {output}")
 
 
 @asynccontextmanager
@@ -130,7 +114,7 @@ async def deployment(config, *, metric_tags=None, run=None):
         errors = []
         for name in names:
             try:
-                await asyncio.to_thread(_stop_app, name, environment)
+                await asyncio.to_thread(stop_app_by_name, name, environment)
             except Exception as exc:
                 errors.append(exc)
                 logger.exception("Could not stop Spindle app %s", name)
