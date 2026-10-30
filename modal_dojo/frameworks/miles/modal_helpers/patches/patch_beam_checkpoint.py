@@ -135,6 +135,12 @@ def write_checkpoint_dir(*args, **kwargs):
             if line.strip() == "await rollout_executor.save(rollout_id)"
         )
         indent = anchor[: len(anchor) - len(anchor.lstrip())]
+        # The prefetch drain is rollout work, not checkpoint I/O. Insert it
+        # outside the timing wrapper installed earlier in the image build.
+        timed_anchor = f"{indent[:-4]}with _tg_time_phase('checkpoint_save'):\n{anchor}"
+        if timed_anchor in source:
+            anchor = timed_anchor
+            indent = indent[:-4]
         replace(
             anchor,
             "\n".join(
@@ -143,9 +149,12 @@ def write_checkpoint_dir(*args, **kwargs):
 # the prefetched rollout must close their trace files first. Keep
 # the completed future so normal consumption retains this batch.
 if not args.fully_async and rollout_data_next_future is not None:
-    await rollout_data_next_future
-await rollout_executor.save(rollout_id)""".splitlines()
-            ),
+    from modal_dojo.common.timing_recorder import time_phase
+    with time_phase("wait_for_next_rollout"):
+        await rollout_data_next_future""".splitlines()
+            )
+            + "\n"
+            + anchor,
         )
     elif target == "data_source.py":
         replace(

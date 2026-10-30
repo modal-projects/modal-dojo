@@ -1,5 +1,8 @@
-import yaml
+import asyncio
+from types import SimpleNamespace
+
 import pytest
+import yaml
 
 from modal_dojo.common.framework import Framework
 from modal_dojo.common.launcher_helpers import configured_recipe_save
@@ -7,6 +10,74 @@ from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.run import TrainingRun, set_checkpoint_location
 from modal_dojo.frameworks.miles.modal_helpers.utils import prepare_miles_config
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+
+
+@pytest.mark.parametrize("instrumented", [False, True])
+@pytest.mark.parametrize("pending", [False, True])
+@pytest.mark.parametrize("fully_async", [False, True])
+def test_beam_prefetch_wait_is_outside_checkpoint_timing(
+    monkeypatch, instrumented, pending, fully_async
+):
+    from modal_dojo.common import timing_recorder as timing
+    from modal_dojo.common.derived_metrics import driver_step_seconds
+    from modal_dojo.frameworks.miles.modal_helpers.patches.patch_beam_checkpoint import (
+        patch_source,
+    )
+
+    source = """async def save(args, rollout_executor, rollout_data_next_future):
+    rollout_id = 1
+    await rollout_executor.save(rollout_id)
+    return rollout_data_next_future
+"""
+    if instrumented:
+        source = source.replace(
+            "    await rollout_executor.save(rollout_id)",
+            "    with _tg_time_phase('checkpoint_save'):\n"
+            "        await rollout_executor.save(rollout_id)",
+        )
+    patched = patch_source(source, "train_async.py")
+    assert patch_source(patched, "train_async.py") == patched
+    env = {"_tg_time_phase": timing.time_phase}
+    exec(compile(patched, "train_async.py", "exec"), env)
+
+    clock = [0.0]
+    monkeypatch.setenv("MODAL_DOJO_SUBSTEP_TIMING", "on")
+    monkeypatch.setattr(timing.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(timing.RoleRecorder, "_publish", lambda *a, **kw: None)
+
+    class Future:
+        consumed = False
+
+        def __await__(self):
+            clock[0] += 600.0
+            self.consumed = True
+            return iter(())
+
+    future = Future() if pending else None
+    should_wait = pending and not fully_async
+
+    class Executor:
+        async def save(self, rollout_id):
+            assert rollout_id == 1
+            assert not should_wait or future.consumed
+            clock[0] += 5.0
+
+    with timing.recording_lane("driver", 1) as recorder:
+        with timing.time_phase("train_models"):
+            clock[0] += 10.0
+        result = asyncio.run(
+            env["save"](SimpleNamespace(fully_async=fully_async), Executor(), future)
+        )
+    assert result is future  # Normal loop consumption must still receive the batch.
+    phases = recorder.phases
+    if should_wait:
+        assert phases["wait_for_next_rollout"]["busy_duration_s"] == 600.0
+    else:
+        assert "wait_for_next_rollout" not in phases
+    if instrumented:
+        assert phases["checkpoint_save"]["busy_duration_s"] == 5.0
+    measured = driver_step_seconds({"1": {"roles": {"driver": {"phases": phases}}}})
+    assert measured == {2: 610.0 if should_wait else 10.0}
 
 
 def test_explicitly_disabled_saving_omits_both_flags():
