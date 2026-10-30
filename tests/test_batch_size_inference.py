@@ -196,19 +196,19 @@ def test_set_recipe_value_updates_field_then_materialized_hatch():
     set_recipe_value(recipe, "max_tokens_per_gpu", 1234)
     assert recipe.max_tokens_per_gpu == 1234
 
-    recipe.extra_config = {"micro_batch_size": 16, "use_dynamic_batch_size": False}
-    set_recipe_value(recipe, "micro_batch_size", 8)
-    assert recipe.extra_config["micro_batch_size"] == 8
+    recipe.extra_config = {"seq_length": 16, "use_dynamic_batch_size": False}
+    set_recipe_value(recipe, "seq_length", 8)
+    assert recipe.extra_config["seq_length"] == 8
 
     tmpdir = tempfile.mkdtemp()
     prepare_launch_config(recipe, None, tmpdir, yaml_config_fields=("extra_config",))
     assert isinstance(recipe.extra_config, str)
-    set_recipe_value(recipe, "micro_batch_size", 4)
+    set_recipe_value(recipe, "seq_length", 4)
     with open(recipe.extra_config) as f:
-        assert yaml.safe_load(f)["micro_batch_size"] == 4
-    assert recipe._escape_hatch_values()["micro_batch_size"] == 4
-    assert "micro_batch_size" in recipe._escape_hatch_keys()
-    assert "--micro-batch-size" not in " ".join(recipe.cli_args(None))
+        assert yaml.safe_load(f)["seq_length"] == 4
+    assert recipe._escape_hatch_values()["seq_length"] == 4
+    assert "seq_length" in recipe._escape_hatch_keys()
+    assert "--seq-length" not in " ".join(recipe.cli_args(None))
     os.remove(recipe.extra_config)
 
 
