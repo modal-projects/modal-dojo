@@ -395,3 +395,17 @@ def test_run_record_folds_escape_hatch_into_the_flags_it_overrides() -> None:
     assert params["micro_batch_size"] == 1
     assert "custom_config_path" not in params
     assert "extra_config" not in params
+
+
+def test_cli_args_emit_an_escape_hatch_field_as_its_own_flag_once() -> None:
+    import modal_dojo
+
+    recipe = modal_dojo.SlimeRecipe(
+        rollout_max_response_len=4096,
+        extra_config={"rollout_max_response_len": 2048, "not_a_recipe_field": 7},
+    )
+    args = recipe.cli_args()
+    assert args.count("--rollout-max-response-len") == 1
+    assert args[args.index("--rollout-max-response-len") + 1] == "2048"
+    assert "--not-a-recipe-field" not in args
+    assert "--custom-config-path" in args

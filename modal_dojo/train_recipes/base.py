@@ -305,18 +305,29 @@ class BaseTrainRecipe(ABC, metaclass=_UnwrapDojoErrorMeta):
         return stored if isinstance(stored, dict) else {}
 
     def _emit_fields(self, fields: dict[str, Any]) -> dict[str, Any]:
-        """Drop launcher-only fields and let the escape hatch win over same-named flags.
+        """Drop launcher-only fields and reconcile the escape hatch with the flags.
 
         The escape hatch is an explicit per-recipe override, but the frameworks
         resolve ``--<flag>`` CLI args *over* the YAML custom-config — so a key a
         recipe sets in both places would be clobbered by the field's own flag
         (e.g. a ``qkv_format="thd"`` default overriding an ``extra_config``
-        ``"bshd"``). Drop any such flag so the YAML value stands.
+        ``"bshd"``). A hatch key that names a recipe field is emitted as that
+        field's flag carrying the hatch value, so the framework sees one value;
+        any other same-named flag is dropped so the YAML value stands.
         """
         out = {k: v for k, v in fields.items() if k not in self._SKIP_FIELDS}
         hatch = self._ESCAPE_HATCH_FIELD
+        flags = {f.name for f in _dc.fields(self)} - self._SKIP_FIELDS - {hatch}
+        values = self._escape_hatch_values()
         for key in self._escape_hatch_keys():
-            if key != hatch:
+            if key == hatch:
+                continue
+            value = values.get(key)
+            if key in flags and (
+                not isinstance(value, dict) or key in JSON_CONFIG_FIELDS
+            ):
+                out[key] = value
+            else:
                 out.pop(key, None)
         if hatch in out:
             out[self._ESCAPE_HATCH_FLAG] = out.pop(hatch)
