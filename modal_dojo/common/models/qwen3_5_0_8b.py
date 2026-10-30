@@ -25,7 +25,7 @@ class Qwen3_5_0_8B(HFModelConfiguration):
         disable_bias_linear=True,
         qk_layernorm=True,
         untie_embeddings_and_output_weights=False,
-        megatron_spec=["slime_plugins.models.qwen3_5", "get_qwen3_5_spec"],
+        megatron_spec=["miles_plugins.models.qwen3_5", "get_qwen3_5_spec"],
         apply_layernorm_1p=True,
         use_gated_attention=True,
         attention_output_gate=True,

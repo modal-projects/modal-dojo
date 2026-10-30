@@ -7,10 +7,6 @@ Wrap Miles' driver loop, rollout worker and actor with measured substep timing.
 The image/revision above validates the Beam executor-based driver; legacy driver
 support is retained for other recipe images.
 
-Slime has the same script over its own source: the lanes, phase names and record
-format are the two frameworks' shared contract, so a change to one belongs in
-the other (``frameworks/slime/modal_helpers/patches/patch_substep_timing.py``).
-
 Puts each phase of the training loop inside ``with _tg_rec.phase(...)``. The
 driver's phases all sit in one loop body, with a local (``_tg_rec``) recorder.
 The rollout worker and the actor measure work further down the call stack, so
@@ -296,7 +292,7 @@ _ASYNC_PHASE_WRAPS = [
         "                await save_training_model(critic_model, rollout_id, force_sync)\n",
         "checkpoint_save",
     ),
-    # As in slime's async loop: the prefetched future is consumed before the
+    # As in miles' async loop: the prefetched future is consumed before the
     # weight update, and measured apart from it. The future here is the *next*
     # rollout's generation, not this one's, so it is its own phase.
     (

@@ -11,9 +11,7 @@ from modal_dojo.common.launcher_helpers import resumed_recipe
 from modal_dojo.common.models import Qwen3_5_4B
 from modal_dojo.common.train import TrainConfig
 from modal_dojo.frameworks.miles.launcher import build_miles_app
-from modal_dojo.frameworks.slime.launcher import build_slime_app
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 _RECIPE_KW = dict(
     gpu_type="H100",
@@ -60,7 +58,7 @@ def _config(recipe, checkpoint_type: CheckpointType | None) -> TrainConfig:
 @pytest.mark.parametrize(
     "recipe",
     [
-        pytest.param(SlimeRecipe(**_RECIPE_KW), id="slime"),
+        pytest.param(MilesRecipe(**_RECIPE_KW), id="miles"),
         pytest.param(MilesRecipe(), id="miles"),
     ],
 )
@@ -85,7 +83,7 @@ def test_megatron_resume_starts_new_run_from_weights(recipe) -> None:
 
 def test_explicit_start_rollout_id_wins_over_resume_from_checkpoint_default() -> None:
     config = _config(
-        SlimeRecipe(**_RECIPE_KW, start_rollout_id=5), CheckpointType.megatron
+        MilesRecipe(**_RECIPE_KW, start_rollout_id=5), CheckpointType.megatron
     )
     prepared = config._prepare_recipe()
 
@@ -96,7 +94,7 @@ def test_explicit_start_rollout_id_wins_over_resume_from_checkpoint_default() ->
 @pytest.mark.parametrize(
     "recipe",
     [
-        pytest.param(SlimeRecipe(**_RECIPE_KW, load="/checkpoints/run"), id="slime"),
+        pytest.param(MilesRecipe(**_RECIPE_KW, load="/checkpoints/run"), id="miles"),
         pytest.param(MilesRecipe(load="/checkpoints/run"), id="miles"),
     ],
 )
@@ -114,7 +112,7 @@ def test_recipe_load_without_resume_from_checkpoint_continues_with_adam(recipe) 
 
 def test_resume_from_checkpoint_wins_over_recipe_load() -> None:
     config = _config(
-        SlimeRecipe(**_RECIPE_KW, load="/checkpoints/other"),
+        MilesRecipe(**_RECIPE_KW, load="/checkpoints/other"),
         CheckpointType.megatron,
     )
 
@@ -122,7 +120,7 @@ def test_resume_from_checkpoint_wins_over_recipe_load() -> None:
 
 
 def test_config_summary_records_resume_from_checkpoint() -> None:
-    config = _config(SlimeRecipe(**_RECIPE_KW), CheckpointType.megatron)
+    config = _config(MilesRecipe(**_RECIPE_KW), CheckpointType.megatron)
 
     summary = config._build_config_summary("run-id")
 
@@ -133,7 +131,7 @@ def test_config_summary_records_resume_from_checkpoint() -> None:
 
 
 def test_hf_export_is_not_a_training_resume_checkpoint() -> None:
-    config = _config(SlimeRecipe(**_RECIPE_KW), CheckpointType.hf)
+    config = _config(MilesRecipe(**_RECIPE_KW), CheckpointType.hf)
 
     with pytest.raises(
         DojoConfigError,
@@ -144,32 +142,14 @@ def test_hf_export_is_not_a_training_resume_checkpoint() -> None:
 
 def test_launchers_do_not_replace_model_path_with_checkpoint() -> None:
     assert "model.model_path = checkpoint.path" not in inspect.getsource(
-        build_slime_app
+        build_miles_app
     )
     assert "model.model_path = checkpoint.path" not in inspect.getsource(
         build_miles_app
     )
 
 
-def test_slime_conversion_uses_wrapper_with_expected_environment() -> None:
-    source = inspect.getsource(build_slime_app)
-
-    assert (
-        "modal_dojo.frameworks.slime.modal_helpers.convert_hf_to_torch_dist" in source
-    )
-    assert (
-        'convert_script = f"{SLIME_ROOT}/tools/convert_hf_to_torch_dist.py"'
-        not in source
-    )
-    assert (
-        'if any(arg.startswith("--pipeline-model-parallel-size ") '
-        "for arg in extra_args):\n"
-        '            env["SKIP_PP_AUTOINFLATE"] = "1"'
-    ) in source
-    assert 'if num_nodes > 1:\n            env["SKIP_RELEASE_RENAME"] = "1"' in source
-
-
-@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize("recipe_cls", [MilesRecipe])
 @pytest.mark.parametrize("no_save_optim", [False, True])
 def test_internal_resume_uses_saved_optimizer_and_restores_recipe(
     recipe_cls, no_save_optim
@@ -200,7 +180,7 @@ def test_internal_resume_uses_saved_optimizer_and_restores_recipe(
     assert recipe.no_load_optim is not no_save_optim
 
 
-@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize("recipe_cls", [MilesRecipe])
 def test_internal_resume_after_epoch_save_under_num_epoch(recipe_cls) -> None:
     recipe = recipe_cls(num_rollout=1, extra_config={"num_epoch": 3})
     checkpoint = {
@@ -232,7 +212,7 @@ def test_miles_conversion_uses_wrapper_with_expected_environment() -> None:
 @pytest.mark.parametrize(
     "recipe",
     [
-        pytest.param(SlimeRecipe(**_RECIPE_KW), id="slime"),
+        pytest.param(MilesRecipe(**_RECIPE_KW), id="miles"),
         pytest.param(MilesRecipe(), id="miles"),
     ],
 )

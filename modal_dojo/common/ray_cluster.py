@@ -4,7 +4,7 @@
   Ray head/worker processes on a single container.
 - `ModalRayCluster`: a base class that stitches those primitives together with
   Modal cluster discovery, the Ray `JobSubmissionClient`, dashboard port
-  forwarding, and a worker keep-alive loop. Framework launchers (slime,
+  forwarding, and a worker keep-alive loop. Framework launchers (miles,
   verl, …) subclass or compose this.
 """
 

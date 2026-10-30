@@ -21,7 +21,7 @@ train_dataset = HarborDataset(dataset_name="harbor/hello-world", split="train")
 eval_dataset = HarborDataset(dataset_name="harbor/hello-world", split="eval")
 ```
 
-If you use a recipe with a defined `eval_interval`, you must pass in an `eval_dataset` to your `TrainConfig` separately. This will supply an additional dataset so Slime or Miles can use it internally for evaluations:
+If you use a recipe with a defined `eval_interval`, you must pass in an `eval_dataset` to your `TrainConfig` separately. This will supply an additional dataset so Miles can use it internally for evaluations:
 
 ```python
 from modal_dojo import TrainConfig

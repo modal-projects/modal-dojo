@@ -43,7 +43,6 @@ Repo: https://github.com/modal-projects/modal-dojo
 
 - [Getting started with RL](https://dojo.modal.dev/tutorials/rl_basics)
 - [Painting flowers with code](https://dojo.modal.dev/tutorials/paint_flowers)
-- [Training multi-turn coding agents](https://dojo.modal.dev/tutorials/coding_agent)
 - [Efficient inference using on-policy distillation](https://dojo.modal.dev/tutorials/on_policy_distillation)
 - [On-policy distillation across model families](https://dojo.modal.dev/tutorials/cross_tok_distill)
 - [Use fewer tokens without lobotomizing your model](https://dojo.modal.dev/tutorials/fewer_tokens)
@@ -124,7 +123,6 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [Qwen3_5_0_8B_Recipe](https://dojo.modal.dev/reference/qwen3_5_0_8b_recipe)
 - [Qwen3_5_2B_Recipe](https://dojo.modal.dev/reference/qwen3_5_2b_recipe)
 - [Qwen3_5_4B_Miles_Recipe](https://dojo.modal.dev/reference/qwen3_5_4b_miles_recipe)
-- [Qwen3_5_4B_Recipe](https://dojo.modal.dev/reference/qwen3_5_4b_recipe)
 - [Qwen3_5_9B_Recipe](https://dojo.modal.dev/reference/qwen3_5_9b_recipe)
 - [Qwen3_6_27B_Recipe](https://dojo.modal.dev/reference/qwen3_6_27b_recipe)
 - [Qwen3_6_35B_Recipe](https://dojo.modal.dev/reference/qwen3_6_35b_recipe)
@@ -132,7 +130,6 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [Qwen3_8B_Recipe](https://dojo.modal.dev/reference/qwen3_8b_recipe)
 - [Qwen3_ASR_1_7B_Recipe](https://dojo.modal.dev/reference/qwen3_asr_1_7b_recipe)
 - [Qwen3_VL_8B_Recipe](https://dojo.modal.dev/reference/qwen3_vl_8b_recipe)
-- [SlimeRecipe](https://dojo.modal.dev/reference/slimerecipe)
 
 ### Training
 

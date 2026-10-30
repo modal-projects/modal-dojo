@@ -1,6 +1,6 @@
 """MilesRecipe hook stashing: the four intercepted log/megatron hooks ride
 inside ``extra_config`` under ``modal_dojo_*`` keys. ``extra_config`` is
-dict-only (matching ``SlimeRecipe``) so the keys are always stashable.
+dict-only (matching ``MilesRecipe``) so the keys are always stashable.
 """
 
 from types import SimpleNamespace
@@ -21,7 +21,7 @@ def test_str_hook_is_stashed_in_extra_config() -> None:
 
 
 def test_yaml_path_extra_config_is_rejected() -> None:
-    # dict-only, matching SlimeRecipe: a YAML *path* can't stash the
+    # dict-only, matching MilesRecipe: a YAML *path* can't stash the
     # modal_dojo_* hook keys and its native keys would clobber the wrapper
     # CLI flags at runtime.
     with pytest.raises(ValueError, match="extra_config"):

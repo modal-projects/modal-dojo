@@ -1,8 +1,8 @@
-"""Per-sample execution-trace capture for slime rollouts.
+"""Per-sample execution-trace capture for miles rollouts.
 
-Covers the pure, slime-free seams of the dashboard trajectory-timeline feature:
+Covers the pure, miles-free seams of the dashboard trajectory-timeline feature:
 
-  * :func:`_normalize_trace` — coercing slime's (version-varying) trace shapes
+  * :func:`_normalize_trace` — coercing miles' (version-varying) trace shapes
     into ``{name, start, end, attributes, parent}`` spans: rebasing times to 0,
     dropping payload-bearing attributes, and handling instant events; and
   * the capture gate in :func:`report_rollout_samples` — off by default, and
@@ -12,7 +12,8 @@ Covers the pure, slime-free seams of the dashboard trajectory-timeline feature:
 from types import SimpleNamespace
 
 from modal_dojo.common.sample import Sample, TraceSpan
-from modal_dojo.frameworks.slime import phase_reporting as pr
+from modal_dojo.common import sample_extraction as se
+from modal_dojo.frameworks.miles import phase_reporting as pr
 
 
 # ── _normalize_trace ─────────────────────────────────────────────────────────
@@ -20,7 +21,7 @@ from modal_dojo.frameworks.slime import phase_reporting as pr
 
 def test_normalize_rebases_times_to_zero():
     """Absolute (epoch-ish) span times are rebased so the first span starts at 0."""
-    trace = pr._normalize_trace(
+    trace = se._normalize_trace(
         [
             {"name": "generate", "start": 1000.0, "end": 1002.5},
             {"name": "reward", "start": 1002.5, "end": 1003.0},
@@ -42,7 +43,7 @@ def test_normalize_drops_payload_attributes_keeps_scalars():
     """Only small scalars survive — long strings / lists / dicts are stripped so
     a trace can't smuggle the response or tool payloads that already live on the
     Sample."""
-    trace = pr._normalize_trace(
+    trace = se._normalize_trace(
         [
             {
                 "name": "generate",
@@ -52,7 +53,7 @@ def test_normalize_drops_payload_attributes_keeps_scalars():
                     "tokens": 128,
                     "cached": True,
                     "temp": 0.7,
-                    "text": "x" * (pr._TRACE_ATTR_STR_MAX + 1),
+                    "text": "x" * (se._TRACE_ATTR_STR_MAX + 1),
                     "logits": [1, 2, 3],
                     "nested": {"a": 1},
                     "short": "ok",
@@ -70,7 +71,7 @@ def test_normalize_drops_payload_attributes_keeps_scalars():
 
 def test_normalize_instant_event_has_no_end():
     """A span with no end (only a start/ts) is an instant event: end -> None."""
-    trace = pr._normalize_trace(
+    trace = se._normalize_trace(
         [
             {"name": "anchor", "start": 5.0, "end": 5.0},  # zero-width -> instant
             {"name": "mark", "ts": 6.0, "parent": "anchor"},  # only a timestamp
@@ -87,10 +88,10 @@ def test_normalize_instant_event_has_no_end():
 
 
 def test_normalize_accepts_dict_wrapped_and_name_keyed_shapes():
-    """slime may hand us a list, a {'spans': [...]} dict, or a name-keyed dict."""
+    """miles may hand us a list, a {'spans': [...]} dict, or a name-keyed dict."""
     spans = [{"name": "g", "start": 0.0, "end": 1.0}]
-    assert pr._normalize_trace({"spans": spans}) == pr._normalize_trace(spans)
-    keyed = pr._normalize_trace({"g": {"start": 2.0, "end": 3.0}})
+    assert se._normalize_trace({"spans": spans}) == se._normalize_trace(spans)
+    keyed = se._normalize_trace({"g": {"start": 2.0, "end": 3.0}})
     assert keyed == [
         {"name": "g", "start": 0.0, "end": 1.0, "attributes": {}, "parent": None}
     ]
@@ -100,15 +101,15 @@ def test_normalize_caps_span_count():
     raw = [
         {"name": f"s{i}", "start": float(i), "end": float(i) + 0.1} for i in range(500)
     ]
-    trace = pr._normalize_trace(raw)
-    assert len(trace) == pr._TRACE_MAX_SPANS
+    trace = se._normalize_trace(raw)
+    assert len(trace) == se._TRACE_MAX_SPANS
 
 
 def test_normalize_empty_inputs_return_none():
-    assert pr._normalize_trace(None) is None
-    assert pr._normalize_trace([]) is None
-    assert pr._normalize_trace({}) is None
-    assert pr._normalize_trace([{"no_timing": 1}]) is None
+    assert se._normalize_trace(None) is None
+    assert se._normalize_trace([]) is None
+    assert se._normalize_trace({}) is None
+    assert se._normalize_trace([{"no_timing": 1}]) is None
 
 
 # ── _extract_trace ───────────────────────────────────────────────────────────
@@ -116,11 +117,11 @@ def test_normalize_empty_inputs_return_none():
 
 def test_extract_trace_from_attr_metadata_and_dict():
     span = [{"name": "g", "start": 0.0}]
-    assert pr._extract_trace(SimpleNamespace(trace=span)) is span
-    assert pr._extract_trace(SimpleNamespace(metadata={"trace": span})) is span
-    assert pr._extract_trace({"trace": span}) is span
-    assert pr._extract_trace({"metadata": {"trace": span}}) is span
-    assert pr._extract_trace(SimpleNamespace(prompt="x")) is None
+    assert se._extract_trace(SimpleNamespace(trace=span)) is span
+    assert se._extract_trace(SimpleNamespace(metadata={"trace": span})) is span
+    assert se._extract_trace({"trace": span}) is span
+    assert se._extract_trace({"metadata": {"trace": span}}) is span
+    assert se._extract_trace(SimpleNamespace(prompt="x")) is None
 
 
 # ── inference metadata ───────────────────────────────────────────────────────
@@ -138,7 +139,7 @@ def test_sample_to_dict_extracts_prefix_cache_info():
         ),
     )
 
-    recorded = pr._sample_to_dict(sample)
+    recorded = se._sample_to_dict(sample)
 
     assert recorded["metadata"]["inference"] == {
         "tokens_in": 1_000,
@@ -162,7 +163,7 @@ def test_sample_to_dict_100_percent_cache_hit():
         ),
     )
 
-    recorded = pr._sample_to_dict(sample)
+    recorded = se._sample_to_dict(sample)
 
     assert recorded["metadata"]["inference"] == {
         "tokens_in": 500,
@@ -182,7 +183,7 @@ def test_sample_to_dict_no_inference_without_prefix_cache_info():
         response_length=4,
     )
 
-    recorded = pr._sample_to_dict(sample)
+    recorded = se._sample_to_dict(sample)
 
     assert "inference" not in recorded["metadata"]
 
@@ -200,7 +201,7 @@ def _fake_sample(i: int):
 
 
 def test_report_rollout_disabled_by_default(monkeypatch):
-    monkeypatch.delenv(pr.CAPTURE_TRACE_ENV, raising=False)
+    monkeypatch.delenv(se.CAPTURE_TRACE_ENV, raising=False)
     captured = {}
     monkeypatch.setattr(pr, "_enqueue_rollout", lambda p: captured.update(p))
     pr.report_rollout_samples(0, SimpleNamespace(), [_fake_sample(0)], {}, None)
@@ -208,8 +209,8 @@ def test_report_rollout_disabled_by_default(monkeypatch):
 
 
 def test_report_rollout_traces_only_first_n(monkeypatch):
-    monkeypatch.setenv(pr.CAPTURE_TRACE_ENV, "1")
-    monkeypatch.setenv(pr.TRACE_SAMPLE_LIMIT_ENV, "2")
+    monkeypatch.setenv(se.CAPTURE_TRACE_ENV, "1")
+    monkeypatch.setenv(se.TRACE_SAMPLE_LIMIT_ENV, "2")
     captured = {}
     monkeypatch.setattr(pr, "_enqueue_rollout", lambda p: captured.update(p))
     samples = [_fake_sample(i) for i in range(5)]
@@ -221,8 +222,8 @@ def test_report_rollout_traces_only_first_n(monkeypatch):
 
 
 def test_trace_sample_limit_default_on_bad_env(monkeypatch):
-    monkeypatch.setenv(pr.TRACE_SAMPLE_LIMIT_ENV, "not-an-int")
-    assert pr._trace_sample_limit() == pr._TRACE_SAMPLE_LIMIT_DEFAULT
+    monkeypatch.setenv(se.TRACE_SAMPLE_LIMIT_ENV, "not-an-int")
+    assert se._trace_sample_limit() == se._TRACE_SAMPLE_LIMIT_DEFAULT
 
 
 # ── Sample model round-trip ──────────────────────────────────────────────────

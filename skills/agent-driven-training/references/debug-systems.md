@@ -72,7 +72,7 @@ High expected cache reuse assumes a warm workload with shared history. New prefi
 
 ## Final-step evaluation
 
-When the final step matches `eval_interval`, Slime may spend many minutes in
+When the final step matches `eval_interval`, Miles may spend many minutes in
 `evaluate_rollouts` or appear to remain in `weight_sync` while held-out
 generation completes. Before stopping it, confirm whether logs show live
 SGLang generation and whether the Modal app still has an active task. If both

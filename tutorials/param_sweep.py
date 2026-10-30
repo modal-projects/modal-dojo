@@ -1,5 +1,5 @@
 # ---
-# order: 10
+# order: 9
 # ---
 #
 # # Massively-parallel hyperparameter sweeps
@@ -15,7 +15,7 @@ from datasets import load_dataset
 from modal_dojo import (
     DatasetConfig,
     Qwen3_5_4B,
-    Qwen3_5_4B_Recipe,
+    Qwen3_5_4B_Miles_Recipe,
     TrainConfig,
     TrainingGroup,
     TrainingRun,
@@ -72,7 +72,7 @@ async def letter_rm(args, sample, **kwargs) -> float:
 base = TrainConfig(
     model=model,
     dataset=train_dataset,
-    recipe=Qwen3_5_4B_Recipe(
+    recipe=Qwen3_5_4B_Miles_Recipe(
         custom_rm_function=letter_rm,
     ),
 )

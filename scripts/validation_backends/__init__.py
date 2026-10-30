@@ -29,14 +29,8 @@ def build_recipe_and_dataset(
     """The model's base recipe and the dataset it validates against.
 
     Each framework is imported inside its own branch rather than at module
-    scope so validating a slime model never imports the miles recipes: a broken
-    miles backend must not be able to take down the slime validation that gates
-    PRs.
+    scope so validating one framework never imports the other's recipes.
     """
-    if framework is Framework.SLIME:
-        from .slime import build_slime_validation
-
-        return build_slime_validation(model_config, step_count, loss_type=loss_type)
     if framework is Framework.MILES:
         from .miles import build_miles_validation
 

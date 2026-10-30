@@ -1,5 +1,5 @@
 # ---
-# order: 11
+# order: 10
 # ---
 #
 # # Frontier-scale training
@@ -24,7 +24,7 @@ from modal_dojo import (
     GLM_4_7,
     TrainConfig,
 )
-from modal_dojo.train_recipes.slime_recipe import GLM_4_7_Recipe
+from modal_dojo.train_recipes.miles_recipe import GLM_4_7_Recipe
 
 # ## Set up
 #

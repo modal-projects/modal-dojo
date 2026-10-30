@@ -1,12 +1,12 @@
 """The multimodal passthrough: a dataset names its media column, the recipe
-forwards it to slime as --multimodal-keys. Modality-agnostic (image/audio/video).
+forwards it to miles as --multimodal-keys. Modality-agnostic (image/audio/video).
 """
 
 import json
 
 import pytest
 
-from modal_dojo import HuggingFaceDataset, MultimodalDataset, SlimeRecipe
+from modal_dojo import HuggingFaceDataset, MultimodalDataset, MilesRecipe
 
 _RECIPE_KW = dict(
     gpu_type="H100",
@@ -34,7 +34,7 @@ def test_multimodal_keys_emitted(modality):
     ds = MultimodalDataset(rows=rows, modality=modality)
     assert ds.multimodal_keys == {modality: f"{modality}s"}
 
-    flags = _flags(SlimeRecipe(**_RECIPE_KW).cli_args(dataset=ds))
+    flags = _flags(MilesRecipe(**_RECIPE_KW).cli_args(dataset=ds))
     assert json.loads(flags["--multimodal-keys"]) == {modality: f"{modality}s"}
     assert flags["--input-key"] == "prompt"
     assert flags["--label-key"] == "label"
@@ -68,7 +68,7 @@ def test_text_dataset_unaffected():
         input_format="text",
     )
     assert getattr(ds, "multimodal_keys", None) is None
-    assert "--multimodal-keys" not in SlimeRecipe(**_RECIPE_KW).cli_args(dataset=ds)
+    assert "--multimodal-keys" not in MilesRecipe(**_RECIPE_KW).cli_args(dataset=ds)
 
 
 @pytest.mark.parametrize(

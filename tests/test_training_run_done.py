@@ -14,7 +14,7 @@ from modal_dojo.common.run import (
 def _run(status: TrainingRunStatus) -> TrainingRun:
     return TrainingRun(
         training_run_id="run-1",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
         status=status,
     )

@@ -925,8 +925,7 @@ class MilesRecipe(BaseTrainRecipe):
         if self.loss_type == "sft_loss" and not self.sft_supported:
             raise DojoConfigError(
                 f"{type(self).__name__} requires loss_mask_type='qwen3_5' for "
-                "SFT, but Miles only supports qwen/qwen3/distill_qwen. Use a "
-                "Slime recipe for SFT on this model."
+                "SFT, but Miles only supports qwen/qwen3/distill_qwen."
             )
         _apply_loss_type_fields(
             fields,
@@ -979,6 +978,57 @@ class MilesRecipe(BaseTrainRecipe):
         from modal_dojo.train_recipes.miles_recipe.qwen3_5_4b import (
             Qwen3_5_4B_Miles_Recipe,
         )
+        from modal_dojo.train_recipes.miles_recipe.glm_4_7 import GLM_4_7_Recipe
+        from modal_dojo.train_recipes.miles_recipe.qwen3_0_6b import (
+            Qwen3_0_6B_Recipe,
+        )
+        from modal_dojo.train_recipes.miles_recipe.qwen3_1_7b import (
+            Qwen3_1_7B_Recipe,
+        )
+        from modal_dojo.train_recipes.miles_recipe.qwen3_4b import Qwen3_4B_Recipe
+        from modal_dojo.train_recipes.miles_recipe.qwen3_5_0_8b import (
+            Qwen3_5_0_8B_Recipe,
+        )
+        from modal_dojo.train_recipes.miles_recipe.qwen3_5_2b import (
+            Qwen3_5_2B_Recipe,
+        )
+        from modal_dojo.train_recipes.miles_recipe.qwen3_5_9b import (
+            Qwen3_5_9B_Recipe,
+        )
+        from modal_dojo.train_recipes.miles_recipe.qwen3_6_27b import (
+            Qwen3_6_27B_Recipe,
+        )
+        from modal_dojo.train_recipes.miles_recipe.qwen3_6_35b import (
+            Qwen3_6_35B_Recipe,
+        )
+        from modal_dojo.train_recipes.miles_recipe.qwen3_8b import Qwen3_8B_Recipe
+        from modal_dojo.train_recipes.miles_recipe.qwen3_8_27b import (
+            Qwen3_8_27B_Recipe,
+        )
+        from modal_dojo.train_recipes.miles_recipe.qwen3_asr_1_7b import (
+            Qwen3_ASR_1_7B_Recipe,
+        )
+        from modal_dojo.train_recipes.miles_recipe.qwen3_vl_8b import (
+            Qwen3_VL_8B_Recipe,
+        )
+
+        _ported = {
+            "zai-org/GLM-4.7": GLM_4_7_Recipe,
+            "Qwen/Qwen3-0.6B": Qwen3_0_6B_Recipe,
+            "Qwen/Qwen3-1.7B": Qwen3_1_7B_Recipe,
+            "Qwen/Qwen3-4B": Qwen3_4B_Recipe,
+            "Qwen/Qwen3.5-0.8B": Qwen3_5_0_8B_Recipe,
+            "Qwen/Qwen3.5-2B": Qwen3_5_2B_Recipe,
+            "Qwen/Qwen3.5-9B": Qwen3_5_9B_Recipe,
+            "Qwen/Qwen3.6-27B": Qwen3_6_27B_Recipe,
+            "Qwen/Qwen3.6-35B-A3B": Qwen3_6_35B_Recipe,
+            "Qwen/Qwen3-8B": Qwen3_8B_Recipe,
+            "Qwen/Qwen3.8-27B": Qwen3_8_27B_Recipe,
+            "Qwen/Qwen3-ASR-1.7B": Qwen3_ASR_1_7B_Recipe,
+            "Qwen/Qwen3-VL-8B-Instruct": Qwen3_VL_8B_Recipe,
+        }
+        if recipe_cls := _ported.get(model_config.model_name):
+            return recipe_cls()
 
         from modal_dojo.common.models.beam import Beam_1_0_501B_A23B_LoRA
         from modal_dojo.train_recipes.miles_recipe.beam_256k import (

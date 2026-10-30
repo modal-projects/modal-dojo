@@ -28,7 +28,6 @@ from scripts.tutorial_index import TutorialEntry, load_tutorial_index
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TUTORIAL_SRC_ROOT = REPO_ROOT / "tutorials"
 MODEL_PACKAGE_ROOT = REPO_ROOT / "modal_dojo" / "common" / "models"
-SLIME_RECIPE_PACKAGE_ROOT = REPO_ROOT / "modal_dojo" / "train_recipes" / "slime_recipe"
 MILES_RECIPE_PACKAGE_ROOT = REPO_ROOT / "modal_dojo" / "train_recipes" / "miles_recipe"
 
 VALIDATION_BACKEND_ROOT = REPO_ROOT / "scripts" / "validation_backends"
@@ -48,15 +47,9 @@ SHARED_VALIDATION_HARNESS_PATHS = frozenset(
 )
 
 # Per-framework harness paths invalidate only the models that train on that
-# framework. Without this split, adding a miles model would make every
-# miles-only change re-validate the whole slime set.
+# framework. Without this split, every
+# framework-only change would re-validate every model.
 FRAMEWORK_VALIDATION_HARNESS_PATHS: dict[str, frozenset[Path]] = {
-    "slime": frozenset(
-        {
-            REPO_ROOT / "modal_dojo" / "frameworks" / "slime" / "launcher.py",
-            VALIDATION_BACKEND_ROOT / "slime.py",
-        }
-    ),
     "miles": frozenset(
         {
             REPO_ROOT / "modal_dojo" / "frameworks" / "miles" / "launcher.py",
@@ -106,16 +99,11 @@ def _base_recipe_for(framework, model_config):
     """The framework's base recipe for a model, importing only that framework.
 
     Same rule as ``validation_backends.build_recipe_and_dataset``: each
-    framework is imported inside its own branch, so indexing the slime models
-    that gate PRs never imports the miles recipes — a broken miles recipe must
-    not be able to fail every pull request.
+    framework is imported inside its own branch, so indexing one framework
+    never imports the other's recipes.
     """
     from modal_dojo.common.models.validation import Framework
 
-    if framework is Framework.SLIME:
-        from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
-
-        return SlimeRecipe.get_base_recipe(model_config)
     if framework is Framework.MILES:
         from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
@@ -210,11 +198,6 @@ def _classes_for_path(path: Path) -> set[str]:
     if path.is_relative_to(MODEL_PACKAGE_ROOT):
         if path.name in {"base.py", "__init__.py"}:
             return set(_package_public_definitions(str(MODEL_PACKAGE_ROOT)))
-        return _parse_public_definitions(path)
-
-    if path.is_relative_to(SLIME_RECIPE_PACKAGE_ROOT):
-        if path.name in {"recipe.py", "__init__.py"}:
-            return set(_package_public_definitions(str(SLIME_RECIPE_PACKAGE_ROOT)))
         return _parse_public_definitions(path)
 
     if path.is_relative_to(MILES_RECIPE_PACKAGE_ROOT):

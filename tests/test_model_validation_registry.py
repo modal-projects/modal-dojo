@@ -31,14 +31,13 @@ def _diff_touching(*repo_relative_paths: str) -> str:
 ALL_CONFIGS = _ValidationConfig.select()
 
 
-def test_registry_has_both_frameworks_represented():
-    frameworks = {config.framework for config in VALIDATION_CONFIGS}
-    assert frameworks == set(Framework)
+def test_registry_covers_the_active_framework():
+    assert {config.framework for config in VALIDATION_CONFIGS} == {Framework.MILES}
 
 
 @pytest.mark.parametrize(
     "name",
-    ["Qwen3.5-4B-SFT", "Moonlight-16B-A3B-Instruct-SFT"],
+    ["Moonlight-16B-A3B-Instruct-SFT"],
 )
 def test_sft_validation_entry_builds_sft_recipe(name):
     config = _ValidationConfig.find(name)
@@ -64,7 +63,7 @@ def test_registry_uses_the_packages_one_framework_enum():
 
     assert Framework is CanonicalFramework
     recipe, dataset = build_recipe_and_dataset(
-        CanonicalFramework.SLIME, Qwen3_0_6B(), step_count=1
+        CanonicalFramework.MILES, Qwen3_0_6B(), step_count=1
     )
     assert recipe is not None and dataset is not None
 
@@ -238,16 +237,16 @@ def test_validation_dataset_unpickles_without_the_scripts_directory(config, tmp_
 
 
 def test_framework_harness_change_only_revalidates_that_framework():
-    """A miles-only change must not re-run the slime set, and vice versa."""
-    slime_models = {c.name for c in _ValidationConfig.select(Framework.SLIME)}
+    """A miles-only change re-runs only the miles set."""
+    miles_models = {c.name for c in _ValidationConfig.select(Framework.MILES)}
     miles_models = {c.name for c in _ValidationConfig.select(Framework.MILES)}
 
-    slime_paths = FRAMEWORK_VALIDATION_HARNESS_PATHS["slime"]
-    diff = _diff_touching(*(str(p.relative_to(REPO_ROOT)) for p in slime_paths))
+    miles_paths = FRAMEWORK_VALIDATION_HARNESS_PATHS["miles"]
+    diff = _diff_touching(*(str(p.relative_to(REPO_ROOT)) for p in miles_paths))
     selected = set(affected_models(diff))
 
-    assert selected == slime_models
-    assert not selected & (miles_models - slime_models)
+    assert selected == miles_models
+    assert not selected & (miles_models - miles_models)
 
 
 def test_shared_harness_change_revalidates_every_registered_model():

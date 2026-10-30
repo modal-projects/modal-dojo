@@ -10,9 +10,6 @@ import pytest
 
 from modal_dojo.common.metrics import apply_metric_image
 from modal_dojo.common.wandb import WandbConfig, preflight_wandb
-from modal_dojo.frameworks.slime.launcher import (
-    _preflight_wandb as _slime_preflight_wandb,
-)
 
 _CFG = WandbConfig(project="qwen3-asr-rl", modal_wandb_secret_name="wandb-secret")
 
@@ -79,34 +76,6 @@ def test_preflight_returns_entity(monkeypatch):
     module.teardown.assert_called_once_with()
 
 
-def test_slime_preflight_delegates_to_common(monkeypatch):
-    """The slime launcher's _preflight_wandb delegates to the common function."""
-    monkeypatch.setenv("WANDB_API_KEY", "fake-key")
-
-    class _FakeRun:
-        entity = "slime-team"
-        project = "qwen3-asr-rl"
-        id = "xyz789"
-
-    class _FakeApi:
-        def __init__(self, **_):
-            pass
-
-        def run(self, path):
-            return types.SimpleNamespace(delete=lambda: None)
-
-    _stub_wandb(
-        monkeypatch,
-        login=lambda **_: None,
-        init=lambda **_: _FakeRun(),
-        finish=lambda: None,
-        Settings=lambda **_: {},
-        Api=_FakeApi,
-    )
-    entity = _slime_preflight_wandb(_CFG)
-    assert entity == "slime-team"
-
-
 def test_wandb_config_uses_the_provider_neutral_recipe_field():
     from modal_dojo import MetricConfig, Qwen3_4B_Recipe
     from modal_dojo.common.launcher_helpers import build_app_tags
@@ -122,7 +91,7 @@ def test_wandb_config_uses_the_provider_neutral_recipe_field():
     assert "--use-wandb" in recipe.cli_args()
     assert "label" not in metric.metadata(run_id="run-1")
     tags = build_app_tags(
-        framework="slime",
+        framework="miles",
         model=types.SimpleNamespace(model_name="Qwen/Qwen3-4B"),
         recipe_app_tags={},
         metrics=metric,

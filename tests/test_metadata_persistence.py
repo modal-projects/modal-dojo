@@ -51,7 +51,7 @@ def test_training_lifecycle_persists_terminal_state(
     model_config = {"model_name": "Qwen/Qwen3-4B", "model_path": None}
     run = run_mod.TrainingRun(
         training_run_id="lifecycle",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={"metrics": metrics},
     )
     run_mod.set_checkpoint_location(
@@ -285,10 +285,10 @@ def test_remote_save_from_unmounted_container():
         # covered by the fast parametrized tests above, so we don't pay for N
         # real Modal apps to re-check it.
         rid = "ci-remote-save-probe"  # fixed id → overwrites, no junk accrual
-        TrainingRun(training_run_id=rid, framework=Framework.SLIME, config={}).save()
+        TrainingRun(training_run_id=rid, framework=Framework.MILES, config={}).save()
         save_train_result_blob(
             train_result_payload(
-                app_name=rid, framework=Framework.SLIME, training_run_id=rid
+                app_name=rid, framework=Framework.MILES, training_run_id=rid
             )
         )
         return "ok"
@@ -299,7 +299,7 @@ def test_remote_save_from_unmounted_container():
 
 
 def test_terminal_save_failure_preserves_training_error(monkeypatch, fake_volume):
-    record = run_mod.TrainingRun(training_run_id="run", framework="slime", config={})
+    record = run_mod.TrainingRun(training_run_id="run", framework="miles", config={})
     monkeypatch.setattr(
         launcher_helpers,
         "build_terminal_run_record",

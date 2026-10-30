@@ -297,7 +297,7 @@ def _install_shim_with_contextvar_trackio(monkeypatch):
 def test_trackio_adapter_logs_from_a_thread_started_after_init(monkeypatch):
     """`wandb.run is not None` must imply `wandb.log()` works, in any thread.
 
-    Slime's SGLang engine-metrics loop is a daemon thread that guards on
+    Miles' SGLang engine-metrics loop is a daemon thread that guards on
     `wandb.run` and then logs. trackio keeps its run in a ContextVar, which a
     thread started after init() cannot see, so routing through the module-level
     trackio.log() raised "Call trackio.init() before trackio.log()" there.
@@ -325,7 +325,7 @@ def test_trackio_adapter_logs_from_a_thread_started_after_init(monkeypatch):
 
 
 def test_trackio_adapter_preserves_native_train_and_eval_metric_names(monkeypatch):
-    """Slime names its per-eval-dataset series ``eval/<subset>``.
+    """Miles names its per-eval-dataset series ``eval/<subset>``.
 
     The adapter is the only thing between ``wandb.log`` and Trackio, so a
     rewritten or collapsed key here silently merges every eval subset into one

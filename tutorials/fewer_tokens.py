@@ -1,5 +1,5 @@
 # ---
-# order: 5
+# order: 4
 # ---
 #
 # # Use fewer tokens without lobotomizing your model
@@ -25,7 +25,7 @@ from modal_dojo import (
     Endpoint,
     HuggingFaceDataset,
     Qwen3_5_4B,
-    Qwen3_5_4B_Recipe,
+    Qwen3_5_4B_Miles_Recipe,
     TrainConfig,
 )
 
@@ -197,7 +197,7 @@ config = TrainConfig(
     model=model,
     dataset=train_dataset,
     eval_dataset=eval_dataset,
-    recipe=Qwen3_5_4B_Recipe(
+    recipe=Qwen3_5_4B_Miles_Recipe(
         num_rollout=10,
         rollout_batch_size=16,
         n_samples_per_prompt=8,

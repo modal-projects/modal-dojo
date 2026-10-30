@@ -1,7 +1,7 @@
 """Weights & Biases run metadata.
 
 Pure data — each framework config writes its own converter from this to its
-specific CLI flags (e.g. SlimeRecipe emits `--wandb-project`).
+specific CLI flags (e.g. MilesRecipe emits `--wandb-project`).
 """
 
 from __future__ import annotations

@@ -12,7 +12,6 @@ from modal_dojo.common.launcher_helpers import (
 )
 from modal_dojo.common.launcher_helpers import ship_recipe_callables
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 _WRAPPED_HOOKS = (
@@ -84,7 +83,7 @@ def test_ship_callable_flattens_sibling_file(tmp_path: Path) -> None:
     ]
 
 
-@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize("recipe_cls", [MilesRecipe])
 def test_recipe_hooks_ship_closures_to_framework_destinations(recipe_cls):
     captured = "closure value"
 
@@ -105,7 +104,7 @@ def test_recipe_hooks_ship_closures_to_framework_destinations(recipe_cls):
         RecordingImage(),
         recipe,
         caller_script=str(Path(__file__).resolve()),
-        reward_post_process_in_config=recipe_cls is SlimeRecipe,
+        reward_post_process_in_config=recipe_cls is MilesRecipe,
     )
 
     shipped = set()
@@ -123,7 +122,7 @@ def test_recipe_hooks_ship_closures_to_framework_destinations(recipe_cls):
         config["custom_rm_path"],
         config["custom_generate_function_path"],
         fields["rollout_function_path"],
-        config[reward_key] if recipe_cls is SlimeRecipe else fields[reward_key],
+        config[reward_key] if recipe_cls is MilesRecipe else fields[reward_key],
         *(
             config[f"modal_dojo_{name}_path"]
             for name in _WRAPPED_HOOKS

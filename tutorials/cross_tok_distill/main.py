@@ -1,5 +1,5 @@
 # ---
-# order: 4
+# order: 3
 # deps: bfcl-eval, jsonschema
 # ---
 #
@@ -44,7 +44,7 @@ from modal_dojo import (
     TrainConfig,
 )
 from modal_dojo.common.models.base import HFModelConfiguration, ToolCall
-from modal_dojo.train_recipes.slime_recipe import Qwen3_6_35B_Recipe
+from modal_dojo.train_recipes.miles_recipe import Qwen3_6_35B_Recipe
 
 # ## Deploy the base models
 #
@@ -264,7 +264,7 @@ CURRICULUM_TAIL_MIN = 1
 
 
 def curriculum_rollout(args, rollout_id, data_source, evaluation=False):
-    from slime.rollout.sglang_rollout import generate_rollout
+    from miles.rollout.sglang_rollout import generate_rollout
 
     if evaluation:
         return generate_rollout(args, rollout_id, data_source, evaluation=True)
@@ -461,7 +461,7 @@ def run_baseline_evals(base_student_deployment, teacher_deployment):
 
 # ## Creating a reward function
 #
-# Slime folds the reverse-KL loss from OPD into the GRPO advantage:
+# Miles folds the reverse-KL loss from OPD into the GRPO advantage:
 #
 # $$
 # A_t = A_t^{\mathrm{GRPO}} + \lambda
@@ -553,8 +553,8 @@ async def cross_tokenizer_reward(args, sample, **kwargs):
 #
 # The MAU log-probability is the joint probability in log space, or the sum of its
 # constituent token logprobs (or the log of the product of token probabilities).
-# To integrate with slime's per-token KL, we distribute the teacher's MAU logprob
-# sum equally across student tokens in the MAU, so that slime's per-token summation
+# To integrate with miles' per-token KL, we distribute the teacher's MAU logprob
+# sum equally across student tokens in the MAU, so that miles' per-token summation
 # reconstructs the correct MAU-level reverse KL.
 
 MAX_TURNS = 16
@@ -596,9 +596,9 @@ def align_cross_tokenizer(
 
 
 async def tool_step_generate(args, sample, sampling_params):
-    from slime.rollout.sglang_rollout import GenerateState
-    from slime.utils.http_utils import post
-    from slime.utils.types import Sample
+    from miles.rollout.sglang_rollout import GenerateState
+    from miles.utils.http_utils import post
+    from miles.utils.types import Sample
 
     state = GenerateState(args)
     url = f"http://{args.sglang_router_ip}:{args.sglang_router_port}/generate"
@@ -1054,7 +1054,7 @@ if __name__ == "__main__":
 # 1. Augment the training dataset with more long-context tasks from BFCL's Long-Context Multi-Turn category.
 # 2. Experiment with different student and teacher model configurations.
 # 3. Add in privledged information to the teacher model for an even stronger distillation signal.
-# 4. Extend Slime's OPD loss to include top-k logprobs from the teacher model.
+# 4. Extend Miles' OPD loss to include top-k logprobs from the teacher model.
 # 5. Try a different cross-tokenizer alignment strategy than averaging logprobs for reverse-KL
 # such as [f-divergence](https://neurips.cc/virtual/2025/loc/san-diego/poster/119176).
 # 6. Increase the `--opd-kl-coef` value from 0.3 to see if a stronger reverse-KL signal improves training.

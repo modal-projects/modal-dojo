@@ -95,32 +95,28 @@ VALIDATION_CONFIGS: set[_ValidationConfig] = {
     _ValidationConfig(
         "Muse-Spark-Open", Muse_Spark_Open, Framework.MILES, timeout_s=24 * 60 * 60
     ),
-    _ValidationConfig("GLM-4.7", GLM_4_7, Framework.SLIME, timeout_s=2 * 60 * 60),
+    _ValidationConfig("GLM-4.7", GLM_4_7, Framework.MILES, timeout_s=2 * 60 * 60),
     _ValidationConfig(
         "GLM-5.3-Flash-LoRA", GLM_5_3_Flash_LoRA, Framework.MILES, timeout_s=3 * 60 * 60
     ),
-    _ValidationConfig("Qwen3-0.6B", Qwen3_0_6B, Framework.SLIME),
-    _ValidationConfig("Qwen3-1.7B", Qwen3_1_7B, Framework.SLIME),
-    _ValidationConfig("Qwen3-4B", Qwen3_4B, Framework.SLIME),
-    _ValidationConfig("Qwen3-8B", Qwen3_8B, Framework.SLIME),
-    _ValidationConfig("Qwen3-ASR-1.7B", Qwen3_ASR_1_7B, Framework.SLIME),
-    _ValidationConfig("Qwen3-VL-8B-Instruct", Qwen3_VL_8B, Framework.SLIME),
-    _ValidationConfig("Qwen3.5-0.8B", Qwen3_5_0_8B, Framework.SLIME),
-    _ValidationConfig("Qwen3.5-2B", Qwen3_5_2B, Framework.SLIME),
-    _ValidationConfig("Qwen3.5-4B", Qwen3_5_4B, Framework.SLIME),
+    _ValidationConfig("Qwen3-0.6B", Qwen3_0_6B, Framework.MILES),
+    _ValidationConfig("Qwen3-1.7B", Qwen3_1_7B, Framework.MILES),
+    _ValidationConfig("Qwen3-4B", Qwen3_4B, Framework.MILES),
+    _ValidationConfig("Qwen3-8B", Qwen3_8B, Framework.MILES),
+    _ValidationConfig("Qwen3-ASR-1.7B", Qwen3_ASR_1_7B, Framework.MILES),
+    _ValidationConfig("Qwen3-VL-8B-Instruct", Qwen3_VL_8B, Framework.MILES),
+    _ValidationConfig("Qwen3.5-0.8B", Qwen3_5_0_8B, Framework.MILES),
+    _ValidationConfig("Qwen3.5-2B", Qwen3_5_2B, Framework.MILES),
+    _ValidationConfig("Qwen3.5-4B", Qwen3_5_4B, Framework.MILES),
+    _ValidationConfig("Qwen3.5-9B", Qwen3_5_9B, Framework.MILES, timeout_s=2 * 60 * 60),
     _ValidationConfig(
-        "Qwen3.5-4B-SFT", Qwen3_5_4B, Framework.SLIME, loss_type="sft_loss"
-    ),
-    _ValidationConfig("Qwen3.5-4B-Miles", Qwen3_5_4B, Framework.MILES),
-    _ValidationConfig("Qwen3.5-9B", Qwen3_5_9B, Framework.SLIME, timeout_s=2 * 60 * 60),
-    _ValidationConfig(
-        "Qwen3.6-27B", Qwen3_6_27B, Framework.SLIME, timeout_s=2 * 60 * 60
+        "Qwen3.6-27B", Qwen3_6_27B, Framework.MILES, timeout_s=2 * 60 * 60
     ),
     _ValidationConfig(
-        "Qwen3.6-35B-A3B", Qwen3_6_35B, Framework.SLIME, timeout_s=2 * 60 * 60
+        "Qwen3.6-35B-A3B", Qwen3_6_35B, Framework.MILES, timeout_s=2 * 60 * 60
     ),
     _ValidationConfig(
-        "Qwen3.8-27B", Qwen3_8_27B, Framework.SLIME, timeout_s=2 * 60 * 60
+        "Qwen3.8-27B", Qwen3_8_27B, Framework.MILES, timeout_s=2 * 60 * 60
     ),
     _ValidationConfig(
         "Moonlight-16B-A3B-Instruct",

@@ -9,7 +9,7 @@
 
   // The run-summary block shared by the list drawer and the detail page's
   // Summary tab, so both render identical metadata: status, stage, model,
-  // dataset, recipe, timing, the full Slime parameter dump, and the tuned
+  // dataset, recipe, timing, the full Miles parameter dump, and the tuned
   // recipe fields.
   let { run, getStatus, showFrameworkStatus, modelName, fmtDuration } = $props();
 

@@ -12,7 +12,7 @@ from modal_dojo.common.run_summary import (
 def _run(**overrides):
     run = {
         "training_run_id": "run-1",
-        "framework": "slime",
+        "framework": "miles",
         "status": "running",
         "modal_app_id": "ap-123",
         "created_at": 100,
@@ -370,7 +370,7 @@ def test_build_current_summary_joins_result_and_derives_public_fields():
     assert summary.display_stage == "Generating rollouts"
     assert summary.model == "Qwen/Qwen3-4B"
     assert summary.dataset == "openai/gsm8k"
-    assert summary.recipe == "slime"
+    assert summary.recipe == "miles"
     assert summary.group_id == "sweep-a"
     assert summary.framework_progress.current == 4
     assert summary.framework_progress.is_active is True

@@ -1,4 +1,4 @@
-"""Mirror the scalars Slime and Miles log through ``wandb`` into the dashboard.
+"""Mirror the scalars Miles logs through ``wandb`` into the dashboard.
 
 A ``.pth`` in the training image imports this module in every interpreter, and
 ``bootstrap()`` picks the ``wandb`` surface from ``MODAL_DOJO_METRIC_PROVIDER``:
@@ -46,7 +46,7 @@ _PTH_LINE = (
 class DashboardMetricConfig(MetricConfig):
     """Log framework metrics to the Modal Dojo dashboard only.
 
-    Slime and Miles keep calling ``wandb.*``; a W&B-shaped shim routes the
+    Miles keeps calling ``wandb.*``; a W&B-shaped shim routes the
     scalars to the dashboard's Metrics tab. No W&B account, API key or Trackio
     server is involved.
 
@@ -368,7 +368,7 @@ def generate_id() -> str:
 
 
 def install_wandb_shim() -> None:
-    """Expose the dashboard as the W&B subset used by Slime and Miles."""
+    """Expose the dashboard as the W&B subset used by Miles."""
     modules: dict[str, Any] = {}
     for name in (
         "wandb",

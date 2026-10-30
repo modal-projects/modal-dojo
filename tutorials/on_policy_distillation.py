@@ -1,5 +1,5 @@
 # ---
-# order: 3
+# order: 2
 # deps: ifbench @ git+https://github.com/allenai/IFBench.git@fcd289db21d43aaa96c6d9291d32561cd6e19305
 # ---
 #
@@ -49,7 +49,7 @@ from modal_dojo import (
     DatasetConfig,
     Endpoint,
     Qwen3_5_4B,
-    Qwen3_5_4B_Recipe,
+    Qwen3_5_4B_Miles_Recipe,
     Qwen3_5_9B,
     TrainConfig,
 )
@@ -267,7 +267,7 @@ def run_baseline_evals(base_student_deployment, teacher_deployment):
 
 
 async def ifbench_opd_rm(args, sample, **kwargs):
-    from slime.rollout.on_policy_distillation import reward_func as _opd_reward
+    from miles.rollout.on_policy_distillation import reward_func as _opd_reward
 
     teacher_response = await _opd_reward(args, sample, **kwargs)
 
@@ -282,7 +282,7 @@ async def ifbench_opd_rm(args, sample, **kwargs):
 
 
 def ifbench_opd_post_process(args, samples, **kwargs):
-    from slime.rollout.on_policy_distillation import post_process_rewards as _opd_post
+    from miles.rollout.on_policy_distillation import post_process_rewards as _opd_post
 
     _, _ = _opd_post(args, samples, **kwargs)
 
@@ -300,7 +300,7 @@ def build_config(teacher_deployment):
     return TrainConfig(
         model=student_model,
         dataset=train_dataset,
-        recipe=Qwen3_5_4B_Recipe(
+        recipe=Qwen3_5_4B_Miles_Recipe(
             num_rollout=10,
             save_interval=10,
             rollout_batch_size=16,

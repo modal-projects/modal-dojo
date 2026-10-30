@@ -227,7 +227,7 @@ class ValidationResult:
     substep_times: dict[str, dict[str, dict[str, float | int | bool | None]]] | None = (
         None
     )
-    framework: str = Framework.SLIME.value
+    framework: str = Framework.MILES.value
     recipe_name: str | None = None
     docker_image: str | None = None
 
@@ -289,7 +289,7 @@ class ValidationResult:
             total_duration_s=data["total_duration_s"],
             step_times=data.get("step_times"),
             substep_times=data.get("substep_times"),
-            framework=data.get("framework", Framework.SLIME.value),
+            framework=data.get("framework", Framework.MILES.value),
             recipe_name=data.get("recipe_name"),
             docker_image=data.get("docker_image"),
         )

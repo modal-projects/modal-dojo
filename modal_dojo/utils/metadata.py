@@ -31,7 +31,7 @@ class MetadataStore(Enum):
     TRAIN_RESULTS_SUMMARY = "train-results-summary"
     TRAINING_ROLLOUTS = "training-rollouts"
     TRAINING_ROLLOUTS_SUMMARY = "training-rollouts-summary"
-    # Per-step, per-group advantage distributions. slime only logs the mean
+    # Per-step, per-group advantage distributions. miles only logs the mean
     # advantage per step; this store keeps the full per-sample distribution so
     # the dashboard can render per-group spread. Written one shard file per
     # data-parallel rank (keyed ``{run}__{rollout:08d}__dp{dp:03d}``) so

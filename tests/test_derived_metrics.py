@@ -205,7 +205,7 @@ def _save_run() -> None:
     TrainingRun(
         training_run_id=RUN_ID,
         modal_app_id="ap-priced",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={
             "model": {"model_name": "Qwen/Qwen3-4B"},
             "recipe": {
@@ -354,7 +354,7 @@ def test_reading_a_finished_run_backfills_and_persists_dojo_metrics(
     TrainingRun(
         training_run_id=RUN_ID,
         modal_app_id="ap-priced",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={
             "model": {"model_name": "Qwen/Qwen3-4B"},
             "recipe": {

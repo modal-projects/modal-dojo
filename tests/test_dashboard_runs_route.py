@@ -39,7 +39,7 @@ def _save_records() -> None:
     TrainingRun(
         training_run_id="run-route-1",
         modal_app_id="ap-route",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={
             "model": {"model_name": "Qwen/Qwen3-4B"},
             "dataset": {"hf_repo": "openai/gsm8k"},
@@ -53,7 +53,7 @@ def _save_records() -> None:
     save_train_result_blob(
         train_result_payload(
             app_name="route-app",
-            framework=Framework.SLIME,
+            framework=Framework.MILES,
             training_run_id="run-route-1",
             checkpoint_dir="/checkpoints/run-route-1",
         )
@@ -103,7 +103,7 @@ def test_runs_route_returns_typed_joined_summaries(fake_volume, monkeypatch, tmp
     assert summary["status"] == "running"
     assert summary["model"] == "Qwen/Qwen3-4B"
     assert summary["dataset"] == "openai/gsm8k"
-    assert summary["recipe"] == "slime"
+    assert summary["recipe"] == "miles"
     assert summary["group_id"] == "route-group"
     assert summary["display_status"] == "completed"
     assert summary["display_stage"] == ""
@@ -270,7 +270,7 @@ def test_runs_route_unions_repeated_facet_values(fake_volume, monkeypatch, tmp_p
     ).save()
 
     with _client(monkeypatch, tmp_path) as client:
-        both = client.get("/api/runs?recipe=slime&recipe=miles")
+        both = client.get("/api/runs?recipe=miles&recipe=miles")
 
     # ``recipe`` is a filter-chip facet as well as a filterable column, so a
     # multi-select must not narrow to whichever repeated value is read first.
@@ -451,7 +451,7 @@ def _save_timing_run(run_id: str = "timing-run") -> None:
     TrainingRun(
         training_run_id=run_id,
         modal_app_id="ap-timing",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
     ).save()
     metadata.vol_put(

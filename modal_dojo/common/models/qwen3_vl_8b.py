@@ -6,8 +6,8 @@ tower (a ViT with patch size 16, depth 27) is loaded by SGLang straight from the
 HF checkpoint. The architecture below (from ``config.json`` → ``text_config``)
 drives Megatron *training*.
 
-The class holds only the model's specs. Framework wiring (the slime MB→HF
-converters that map the vision tower for export) lives in the slime layer instead,
+The class holds only the model's specs. Framework wiring (the miles MB→HF
+converters that map the vision tower for export) lives in the miles layer instead,
 since it's meaningless for other backends.
 """
 

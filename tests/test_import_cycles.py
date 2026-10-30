@@ -32,7 +32,7 @@ import pytest
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PKG_ROOT = REPO_ROOT / "modal_dojo"
 
-# Modules that import slime / Megatron-LM / miles / torch at module scope, or
+# Modules that import miles / Megatron-LM / torch at module scope, or
 # read a file that only exists in the training image. They cannot be imported
 # outside that image, so their import is only checked for *cycles* and not for
 # success. Entries must still name real modules, or the staleness test below
@@ -42,9 +42,6 @@ REMOTE_ONLY = frozenset(
         "modal_dojo.common.megatron_patches.patch_checkpoint_save",
         "modal_dojo.common.megatron_patches.patch_dist_ckpt_nofork",
         "modal_dojo.common.megatron_patches.patch_dist_ckpt_quantized",
-        "modal_dojo.common.megatron_patches.patch_gdn_packed_seq",
-        "modal_dojo.common.megatron_patches.patch_torch_load",
-        "modal_dojo.common.megatron_patches.patch_validation",
         "modal_dojo.frameworks.miles.modal_helpers.convert_native_lora_to_peft",
         "modal_dojo.frameworks.miles.modal_helpers.hf_block_dequant",
         "modal_dojo.frameworks.miles.modal_helpers.hf_mxfp4_dequant",
@@ -53,12 +50,9 @@ REMOTE_ONLY = frozenset(
         "modal_dojo.frameworks.miles.modal_helpers.patches.patch_gemma4_vl_rollout_text",
         "modal_dojo.frameworks.miles.modal_helpers.patches.patch_router_startup_timeout",
         "modal_dojo.frameworks.miles.modal_helpers.patches.patch_sglang_abort",
-        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_advantages",
-        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_bridge_provider_per_token_loss",
-        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_megatron_bridge",
-        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_stop_token_diagnostic",
-        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_zero_std_metrics",
-        "modal_dojo.frameworks.slime.opd_reward",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_qwen3_asr_export",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_qwen3_vl_export",
+        "modal_dojo.frameworks.miles.modal_helpers.patches.patch_zero_std_metrics",
     }
 )
 
@@ -127,7 +121,7 @@ def test_module_imports_alone(
         )
 
     if module in REMOTE_ONLY:
-        # Expected: needs slime / Megatron-LM / miles / torch from the training image.
+        # Expected: needs miles / Megatron-LM / torch from the training image.
         # Checked for cycles above, which is all this test can assert here.
         return
 
@@ -145,7 +139,7 @@ def test_discovery_covers_the_package() -> None:
     """A walk that silently stops short would make every check above vacuous."""
     assert "modal_dojo" in MODULES
     assert "modal_dojo.common.config" in MODULES  # nested module
-    assert "modal_dojo.frameworks.slime.launcher" in MODULES  # deeply nested
+    assert "modal_dojo.frameworks.miles.launcher" in MODULES  # deeply nested
 
     subpackages = {
         f"modal_dojo.{path.name}"

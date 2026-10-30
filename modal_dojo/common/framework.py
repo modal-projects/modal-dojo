@@ -42,7 +42,7 @@ def resolve_caller_module(
     """Return the first stack frame's module whose name is outside this package.
 
     Framework configs (e.g. `TrainConfig.build_app`) delegate to launcher
-    factories (e.g. `build_slime_app`) on behalf of user tutorials, so the
+    factories (e.g. `build_miles_app`) on behalf of user tutorials, so the
     immediate caller of the factory is a framework module — not the tutorial.
     `cloudpickle.register_pickle_by_value(module)` needs the tutorial module
     to inline the user's inline classes; walking past framework frames
@@ -88,6 +88,7 @@ def resolve_caller_module(
 class Framework(str, Enum):
     # ``str`` mixin so a Framework serializes straight to its value in plain
     # ``json.dumps`` (dashboard blobs do not coerce enums), matching the
-    # SlimeStatus/MilesStatus convention.
-    SLIME = "slime"
+    # MilesStatus convention.
     MILES = "miles"
+    # Historical runs persisted with framework="slime" still deserialize.
+    SLIME = "slime"

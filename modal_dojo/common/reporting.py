@@ -1,10 +1,10 @@
 """HTTP queue / URL / token plumbing + run-context helpers for in-container
 dashboard reporting.
 
-Shared by the slime and miles frameworks (both expose it through their
+Shared by the miles framework (it exposes it through its
 ``phase_reporting`` modules). Everything here is duck-typed and
 dependency-light so it stays importable inside the training container without
-slime/miles/torch present.
+miles/torch present.
 """
 
 from __future__ import annotations

@@ -35,19 +35,14 @@ from modal_dojo.train_recipes.miles_recipe.moonlight_16b_a3b import (
 from modal_dojo.train_recipes.miles_recipe.qwen3_5_4b import (
     Qwen3_5_4B_Miles_Recipe,
 )
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
-from modal_dojo.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
-from modal_dojo.train_recipes.slime_recipe.qwen3_5_0_8b import (
+from modal_dojo.train_recipes.miles_recipe.qwen3_4b import Qwen3_4B_Recipe
+from modal_dojo.train_recipes.miles_recipe.qwen3_5_0_8b import (
     Qwen3_5_0_8B_Recipe,
 )
 
-_RECIPE_PACKAGES = (
-    "modal_dojo.train_recipes.slime_recipe",
-    "modal_dojo.train_recipes.miles_recipe",
-)
+_RECIPE_PACKAGES = ("modal_dojo.train_recipes.miles_recipe",)
 
 _BASE_RECIPE = {
-    Framework.SLIME: SlimeRecipe.get_base_recipe,
     Framework.MILES: MilesRecipe.get_base_recipe,
 }
 
@@ -61,11 +56,11 @@ def _dataset() -> HuggingFaceDataset:
     )
 
 
-def _config(recipe: SlimeRecipe) -> TrainConfig:
+def _config(recipe: MilesRecipe) -> TrainConfig:
     return TrainConfig(dataset=_dataset(), model=Qwen3_4B(), recipe=recipe)
 
 
-def _model_recipe_classes() -> list[type[SlimeRecipe | MilesRecipe]]:
+def _model_recipe_classes() -> list[type[MilesRecipe]]:
     classes = []
     for package_name in _RECIPE_PACKAGES:
         package = importlib.import_module(package_name)
@@ -78,7 +73,7 @@ def _model_recipe_classes() -> list[type[SlimeRecipe | MilesRecipe]]:
                 for _, recipe_cls in inspect.getmembers(module, inspect.isclass)
                 if recipe_cls.__module__ == module.__name__
                 and "Recipe" in recipe_cls.__name__
-                and issubclass(recipe_cls, (SlimeRecipe, MilesRecipe))
+                and issubclass(recipe_cls, (MilesRecipe, MilesRecipe))
             )
     return classes
 
@@ -89,7 +84,7 @@ def _model_recipe_classes() -> list[type[SlimeRecipe | MilesRecipe]]:
     ids=lambda recipe_cls: recipe_cls.__name__,
 )
 def test_model_recipes_only_override_framework_defaults(
-    recipe_cls: type[SlimeRecipe | MilesRecipe],
+    recipe_cls: type[MilesRecipe],
 ) -> None:
     baseline_cls = recipe_cls.__mro__[1]  # mro[1] corresponds to the parent class
     defaults = {}
@@ -151,15 +146,15 @@ def test_registered_recipe_batch_sizes_divide_data_parallel(
         assert convert_nodes * convert_nproc <= world
 
 
-def test_slime_recipe_is_constructible_without_kwargs() -> None:
-    SlimeRecipe()
-    assert SlimeRecipe(num_rollout=7)._fields()["save_interval"] == 7
-    assert "--save-interval" not in SlimeRecipe(save=None).cli_args()
-    assert "--save-interval" in SlimeRecipe().cli_args()
+def test_miles_recipe_is_constructible_without_kwargs() -> None:
+    MilesRecipe()
+    assert MilesRecipe(num_rollout=7)._fields()["save_interval"] == 7
+    assert "--save-interval" not in MilesRecipe(save=None).cli_args()
+    assert "--save-interval" in MilesRecipe().cli_args()
 
 
 def test_generic_recipe_uses_framework_defaults_for_known_model() -> None:
-    config = _config(SlimeRecipe())
+    config = _config(MilesRecipe())
 
     recipe = config._prepare_recipe()
     assert recipe.gpu_type == "H100"
@@ -179,7 +174,7 @@ def test_miles_recipe_uses_shared_sampling_defaults() -> None:
     assert recipe.rollout_batch_size == 2
 
 
-@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize("recipe_cls", [MilesRecipe])
 def test_save_interval_follows_extra_config_num_rollout(recipe_cls, tmp_path) -> None:
     recipe = recipe_cls(num_rollout=1, extra_config={"num_rollout": 10})
     assert recipe._fields()["save_interval"] == 10
@@ -221,7 +216,7 @@ def test_prepare_recipe_does_not_mutate_stored_launch_callables() -> None:
     def custom_rm_function(*args: Any, **kwargs: Any) -> float:
         return 1.0
 
-    recipe = SlimeRecipe(
+    recipe = MilesRecipe(
         image_overlay=image_overlay,
         custom_rm_function=custom_rm_function,
     )
@@ -238,9 +233,7 @@ def test_prepare_recipe_does_not_mutate_stored_launch_callables() -> None:
     assert second.custom_rm_function is custom_rm_function
 
 
-@pytest.mark.parametrize(
-    ("recipe_cls", "framework"), [(SlimeRecipe, "slime"), (MilesRecipe, "miles")]
-)
+@pytest.mark.parametrize(("recipe_cls", "framework"), [(MilesRecipe, "miles")])
 def test_sft_loss_emits_native_sft_flags(recipe_cls, framework) -> None:
     recipe = recipe_cls(global_batch_size=8, n_samples_per_prompt=4, num_epoch=3)
     assert "--loss-type" not in recipe.cli_args(dataset=_dataset())
@@ -263,7 +256,7 @@ def test_sft_loss_emits_native_sft_flags(recipe_cls, framework) -> None:
     assert recipe.train_async is (recipe_cls is MilesRecipe)
 
 
-@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize("recipe_cls", [MilesRecipe])
 def test_extra_config_num_epoch_skips_rollout_save_interval(recipe_cls) -> None:
     recipe = recipe_cls(
         loss_type="sft_loss",
@@ -275,10 +268,9 @@ def test_extra_config_num_epoch_skips_rollout_save_interval(recipe_cls) -> None:
     assert "--num-rollout" not in args
 
 
-def test_sft_qwen35_emits_loss_mask_type_qwen3_5() -> None:
-    assert "--loss-mask-type" not in Qwen3_5_0_8B_Recipe().cli_args(dataset=_dataset())
-    sft_args = Qwen3_5_0_8B_Recipe(loss_type="sft_loss").cli_args(dataset=_dataset())
-    assert dict(zip(sft_args, sft_args[1:]))["--loss-mask-type"] == "qwen3_5"
+def test_sft_qwen35_raises() -> None:
+    with pytest.raises(DojoConfigError, match="qwen3_5"):
+        Qwen3_5_0_8B_Recipe(loss_type="sft_loss").cli_args(dataset=_dataset())
 
 
 def test_sft_none_global_batch_size_uses_rollout_batch_size() -> None:
@@ -297,7 +289,7 @@ def test_miles_qwen35_sft_raises() -> None:
 
 
 def test_sft_extra_config_batch_keeps_rollout_in_sync() -> None:
-    recipe = SlimeRecipe(
+    recipe = MilesRecipe(
         loss_type="sft_loss",
         global_batch_size=4,
         extra_config={"global_batch_size": 8},
@@ -307,7 +299,7 @@ def test_sft_extra_config_batch_keeps_rollout_in_sync() -> None:
 
 
 def test_sft_extra_config_conflicting_batches_raise() -> None:
-    recipe = SlimeRecipe(
+    recipe = MilesRecipe(
         loss_type="sft_loss",
         extra_config={"global_batch_size": 8, "rollout_batch_size": 4},
     )
@@ -315,7 +307,7 @@ def test_sft_extra_config_conflicting_batches_raise() -> None:
         recipe.cli_args(dataset=_dataset())
 
 
-@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize("recipe_cls", [MilesRecipe])
 @pytest.mark.parametrize(
     ("field_loss", "hatch_loss", "expectation"),
     [
@@ -345,7 +337,7 @@ def test_extra_config_loss_type_raises(
         recipe.cli_args(dataset=_dataset())
 
 
-@pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
+@pytest.mark.parametrize("recipe_cls", [MilesRecipe])
 @pytest.mark.parametrize(
     ("colocate", "expectation"),
     [
@@ -387,7 +379,7 @@ def test_run_record_folds_escape_hatch_into_the_flags_it_overrides() -> None:
     import modal_dojo
     from modal_dojo.common.launcher_utils import serialize_recipe_params
 
-    recipe = modal_dojo.SlimeRecipe(
+    recipe = modal_dojo.MilesRecipe(
         extra_config={"rollout_max_response_len": 2048, "micro_batch_size": 1}
     )
     params = serialize_recipe_params(recipe)
@@ -400,7 +392,7 @@ def test_run_record_folds_escape_hatch_into_the_flags_it_overrides() -> None:
 def test_cli_args_emit_an_escape_hatch_field_as_its_own_flag_once() -> None:
     import modal_dojo
 
-    recipe = modal_dojo.SlimeRecipe(
+    recipe = modal_dojo.MilesRecipe(
         rollout_max_response_len=4096,
         extra_config={"rollout_max_response_len": 2048, "not_a_recipe_field": 7},
     )

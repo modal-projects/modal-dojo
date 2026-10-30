@@ -1,5 +1,5 @@
 ---
-order: 8
+order: 7
 github: https://github.com/modal-projects/sf3
 ---
 

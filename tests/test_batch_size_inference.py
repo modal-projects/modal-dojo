@@ -30,7 +30,6 @@ from modal_dojo.common.memory_estimate import maybe_warn_gpu_oom
 from modal_dojo.common.models.qwen3_4b import Qwen3_4B
 from modal_dojo.common.ray_cluster import ModalRayJobResult
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
 @pytest.mark.parametrize(
@@ -84,7 +83,7 @@ def _per_rank(recipe) -> int:
 
 
 def test_resolve_knob_dynamic_auto_starts_at_full_per_rank_batch():
-    recipe = SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe = MilesRecipe.get_base_recipe(Qwen3_4B())
     recipe.max_tokens_per_gpu = "auto"
     assert auto_batch_size_enabled(recipe)
     knob, initial, floor = resolve_batch_size_knob(recipe)
@@ -125,21 +124,20 @@ def test_resolve_knob_fixed_micro_batch_uses_field_or_hatch():
     )
     assert resolve_batch_size_knob(recipe) == ("micro_batch_size", 16, 1)
 
-    slime = SlimeRecipe.get_base_recipe(Qwen3_4B())
-    slime.extra_config = {"use_dynamic_batch_size": False, "micro_batch_size": "auto"}
-    assert resolve_batch_size_knob(slime) == ("micro_batch_size", _per_rank(slime), 1)
-    assert auto_batch_size_enabled(slime)
-    slime.extra_config = {"use_dynamic_batch_size": False, "micro_batch_size": 4}
-    assert not auto_batch_size_enabled(slime)
+    recipe = MilesRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {"use_dynamic_batch_size": False, "micro_batch_size": "auto"}
+    assert resolve_batch_size_knob(recipe) == ("micro_batch_size", _per_rank(recipe), 1)
+    assert auto_batch_size_enabled(recipe)
+    recipe.extra_config = {"use_dynamic_batch_size": False, "micro_batch_size": 4}
+    assert not auto_batch_size_enabled(recipe)
     with pytest.raises(DojoConfigError, match='needs micro_batch_size="auto"'):
-        resolve_batch_size_knob(slime)
+        resolve_batch_size_knob(recipe)
 
 
 def _all_recipe_classes():
     import modal_dojo.train_recipes.miles_recipe  # noqa: F401  (registers subclasses)
-    import modal_dojo.train_recipes.slime_recipe  # noqa: F401
 
-    seen, stack = [], [SlimeRecipe, MilesRecipe]
+    seen, stack = [], [MilesRecipe]
     while stack:
         cls = stack.pop()
         seen.append(cls)
@@ -162,9 +160,9 @@ def test_recipes_accept_auto_literal_only_for_known_knobs():
     with pytest.raises(ValidationError):
         MilesRecipe(max_tokens_per_gpu="automatic")
     with pytest.raises(ValidationError):
-        SlimeRecipe.get_base_recipe(Qwen3_4B()).__class__(
+        MilesRecipe.get_base_recipe(Qwen3_4B()).__class__(
             **{
-                **SlimeRecipe.get_base_recipe(Qwen3_4B()).__dict__,
+                **MilesRecipe.get_base_recipe(Qwen3_4B()).__dict__,
                 "max_tokens_per_gpu": "big",
             }
         )
@@ -173,17 +171,20 @@ def test_recipes_accept_auto_literal_only_for_known_knobs():
 def test_validate_rejects_auto_on_the_knob_the_batching_mode_ignores():
     with pytest.raises(DojoConfigError, match="reads max_tokens_per_gpu"):
         validate_batch_size_inference(MilesRecipe(micro_batch_size="auto"))
-    slime = SlimeRecipe.get_base_recipe(Qwen3_4B())
-    slime.extra_config = {"use_dynamic_batch_size": False, "max_tokens_per_gpu": "auto"}
+    recipe = MilesRecipe.get_base_recipe(Qwen3_4B())
+    recipe.extra_config = {
+        "use_dynamic_batch_size": False,
+        "max_tokens_per_gpu": "auto",
+    }
     with pytest.raises(DojoConfigError, match="reads micro_batch_size"):
-        validate_batch_size_inference(slime)
-    validate_batch_size_inference(SlimeRecipe.get_base_recipe(Qwen3_4B()))
+        validate_batch_size_inference(recipe)
+    validate_batch_size_inference(MilesRecipe.get_base_recipe(Qwen3_4B()))
     validate_batch_size_inference(MilesRecipe(max_tokens_per_gpu="auto"))
 
 
 def test_gpu_oom_warning_is_skipped_while_inferring():
     model = Qwen3_4B()
-    recipe = SlimeRecipe.get_base_recipe(model)
+    recipe = MilesRecipe.get_base_recipe(model)
     recipe.max_tokens_per_gpu = "auto"
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -191,23 +192,23 @@ def test_gpu_oom_warning_is_skipped_while_inferring():
 
 
 def test_set_recipe_value_updates_field_then_materialized_hatch():
-    recipe = SlimeRecipe.get_base_recipe(Qwen3_4B())
+    recipe = MilesRecipe.get_base_recipe(Qwen3_4B())
     set_recipe_value(recipe, "max_tokens_per_gpu", 1234)
     assert recipe.max_tokens_per_gpu == 1234
 
-    recipe.extra_config = {"micro_batch_size": 16, "use_dynamic_batch_size": False}
-    set_recipe_value(recipe, "micro_batch_size", 8)
-    assert recipe.extra_config["micro_batch_size"] == 8
+    recipe.extra_config = {"seq_length": 16, "use_dynamic_batch_size": False}
+    set_recipe_value(recipe, "seq_length", 8)
+    assert recipe.extra_config["seq_length"] == 8
 
     tmpdir = tempfile.mkdtemp()
     prepare_launch_config(recipe, None, tmpdir, yaml_config_fields=("extra_config",))
     assert isinstance(recipe.extra_config, str)
-    set_recipe_value(recipe, "micro_batch_size", 4)
+    set_recipe_value(recipe, "seq_length", 4)
     with open(recipe.extra_config) as f:
-        assert yaml.safe_load(f)["micro_batch_size"] == 4
-    assert recipe._escape_hatch_values()["micro_batch_size"] == 4
-    assert "micro_batch_size" in recipe._escape_hatch_keys()
-    assert "--micro-batch-size" not in " ".join(recipe.cli_args(None))
+        assert yaml.safe_load(f)["seq_length"] == 4
+    assert recipe._escape_hatch_values()["seq_length"] == 4
+    assert "seq_length" in recipe._escape_hatch_keys()
+    assert "--seq-length" not in " ".join(recipe.cli_args(None))
     os.remove(recipe.extra_config)
 
 

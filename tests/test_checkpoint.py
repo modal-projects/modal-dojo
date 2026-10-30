@@ -246,15 +246,15 @@ def _complete_iter_files(name: str) -> list[_DirEntry]:
 def _run_with_checkpoint_location() -> TrainingRun:
     run = TrainingRun(
         training_run_id="run-1",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
-        app_name="slime",
+        app_name="miles",
         source_model=Qwen3_5_4B(),
     )
     set_checkpoint_location(
         run,
         checkpoint_dir="/checkpoints/run-1",
-        checkpoints_volume_name="slime-slime4brecipe-checkpoints",
+        checkpoints_volume_name="miles-miles4brecipe-checkpoints",
         checkpoints_mount_path="/checkpoints",
     )
     return run
@@ -316,7 +316,7 @@ def test_run_hides_checkpoints_without_tracker(monkeypatch, fake_volume) -> None
 def test_listing_without_checkpoint_location_is_empty(fake_volume) -> None:
     run = TrainingRun(
         training_run_id="run-1",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
     )
 
@@ -328,7 +328,7 @@ def test_latest_checkpoint_sees_location_written_after_launch(
 ) -> None:
     live = TrainingRun(
         training_run_id="run-1",
-        framework=Framework.SLIME,
+        framework=Framework.MILES,
         config={},
     )
     _run_with_checkpoint_location().save()

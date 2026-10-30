@@ -2,7 +2,7 @@
 reporting.
 
 Split out of :mod:`.phase_reporting` (which re-exports these). The pure payload
-builder (:func:`_advantage_samples_payload`, shared with slime) lives in
+builder (:func:`_advantage_samples_payload`) lives in
 :mod:`modal_dojo.common.reporting`;
 :func:`report_advantage_distribution` lazily imports torch / miles so this
 module stays importable outside the training container.

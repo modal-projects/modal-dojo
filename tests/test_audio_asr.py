@@ -14,14 +14,14 @@ from modal_dojo.common.models.qwen3_asr_1_7b import (
     _prompt_user_text,
     render_prompt,
 )
-from modal_dojo.frameworks.slime.audio_transcription_rollout import _audio_ref
+from modal_dojo.frameworks.miles.audio_transcription_rollout import _audio_ref
 
 _PLACEHOLDER = Qwen3_ASR_1_7B.audio_placeholder
 _DATA_URI = "data:audio/wav;base64," + base64.b64encode(b"RIFFxxxx").decode()
 
 
 def _audio_prompt(text="Transcribe the speech."):
-    """A slime conversation-list prompt: one audio item + one text item."""
+    """A miles conversation-list prompt: one audio item + one text item."""
     content = [{"type": "audio", "audio": _DATA_URI}, {"type": "text", "text": text}]
     return [{"role": "user", "content": content}]
 

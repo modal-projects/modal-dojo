@@ -15,21 +15,21 @@ While the model and dataset dictate what will be trained, the recipe dictates ho
 - Etc.
 
 ```python
-from modal_dojo import Qwen3_5_4B_Recipe
+from modal_dojo import Qwen3_5_4B_Miles_Recipe
 
-recipe = Qwen3_5_4B_Recipe()
+recipe = Qwen3_5_4B_Miles_Recipe()
 ```
 
-We provide optimized recipes for all supported models in the Modal Dojo, but note that they are easily extensible to fit whatever use case you may have. Under the hood, each recipe is backed by one of two backend frameworks: [Miles](https://github.com/radixark/miles) or [Slime](https://github.com/THUDM/slime). All recipes allow you to specify framework-native parameters using the corresponding recipe fields.
+We provide optimized recipes for all supported models in the Modal Dojo, but note that they are easily extensible to fit whatever use case you may have. Under the hood, each recipe is backed by [Miles](https://github.com/radixark/miles). All recipes allow you to specify framework-native parameters using the corresponding recipe fields.
 
-This guide will focus on the most important ones. However, you can see the full lists for each of the base classes (i.e., [MilesRecipe](https://dojo.modal.dev/reference/milesrecipe) and [SlimeRecipe](https://dojo.modal.dev/reference/slimerecipe)).
+This guide will focus on the most important ones. However, you can see the full list for the base class: [MilesRecipe](https://dojo.modal.dev/reference/milesrecipe).
 
 See [this guide](https://dojo.modal.dev/guides/metric) for more details on logging integrations.
 
 ## Hardware and parallelism
 
 ```python
-recipe = Qwen3_5_4B_Recipe(
+recipe = Qwen3_5_4B_Miles_Recipe(
     # ...
     gpu_type="B300",
     actor_num_nodes=1,
@@ -45,7 +45,7 @@ Each recipe automatically provisions the smallest cluster shape that will work, 
 Actor parameters pertain to your training cluster, and rollout parameters your rollout cluster. When `colocate` is set to `True`, these are one and the same. When set to `False`, this will create a separate cluster for inference (i.e., disaggregated, async RL), so be sure you have the budget for it!
 
 ```python
-Qwen3_5_4B_Recipe(
+Qwen3_5_4B_Miles_Recipe(
     # ...
     gpu_type="B300",
     colocate=False,
@@ -129,7 +129,7 @@ The four most important parameters to specify are:
 Note that the latter three are [related](https://miles.radixark.com/docs/user-guide/concepts#the-four-knob-invariant).
 
 ```python
-Qwen3_5_4B_Recipe(
+Qwen3_5_4B_Miles_Recipe(
     # ...
     num_rollout=10,
     rollout_batch_size=8,
@@ -155,7 +155,7 @@ async def my_custom_rm(args, sample, **kwargs) -> float:
     return 1 if response.content == sample.label else 0
 
 
-recipe = Qwen3_5_4B_Recipe(
+recipe = Qwen3_5_4B_Miles_Recipe(
     # ...
     custom_rm_function=my_custom_rm,
 )
@@ -171,9 +171,9 @@ Note that in SFT, the model simply trains on the dataset's conversations, so nei
 
 ```python
 async def my_custom_generate(args, sample, sampling_params):
-    from slime.rollout.sglang_rollout import GenerateState
-    from slime.utils.http_utils import post
-    from slime.utils.types import Sample
+    from miles.rollout.sglang_rollout import GenerateState
+    from miles.utils.http_utils import post
+    from miles.utils.types import Sample
 
     # step 1
 
@@ -221,7 +221,7 @@ async def my_custom_generate(args, sample, sampling_params):
     return sample
 
 
-recipe = Qwen3_5_4B_Recipe(
+recipe = Qwen3_5_4B_Miles_Recipe(
     custom_generate_function=my_custom_generate,
 )
 ```
@@ -238,7 +238,7 @@ If the function generates the prompts (i.e., no initial dataset), you must use t
 Since the containers use [Modal Images](https://modal.com/docs/guide/images) under the hood, you can easily use external packages by extending the base image:
 
 ```python
-recipe = Qwen3_5_4B_Recipe(
+recipe = Qwen3_5_4B_Miles_Recipe(
     # ...
     image_overlay=lambda image: image.pip_install("syllables==1.1.5"),
 )

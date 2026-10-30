@@ -32,13 +32,10 @@ from modal_dojo.common.run import TrainingRun, metric_run_id_for_attempt
 from modal_dojo.common.status import (
     FrameworkStatus,
     MilesStatus,
-    SlimeStatus,
 )
 from modal_dojo.frameworks.miles import build_miles_app
-from modal_dojo.frameworks.slime import build_slime_app
 from modal_dojo.train_recipes.base import BaseTrainRecipe
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 from modal_dojo.utils.metadata import MetadataStore, vol_put
 
 
@@ -164,20 +161,20 @@ def _confirm_launch_warnings(caught: list[warnings.WarningMessage]) -> None:
 
 
 _STAGE_LABELS: dict[str, str] = {
-    SlimeStatus.INITIALIZING.value: "Initializing",
-    SlimeStatus.DOWNLOAD_MODEL.value: "Downloading model",
-    SlimeStatus.CONVERT_MODEL.value: "Converting model",
-    SlimeStatus.PREPARE_DATASET.value: "Preparing dataset",
-    SlimeStatus.ROLLOUT_INITIALIZING.value: "Initializing rollouts",
-    SlimeStatus.ROLLOUT_LOGGING.value: "Generating rollouts",
-    SlimeStatus.EVAL_ROLLOUT_LOGGING.value: "Evaluating rollouts",
-    SlimeStatus.COMPUTE_LOG_PROBS.value: "Computing log probs",
-    SlimeStatus.OPTIMIZER_STEP.value: "Optimizer step",
-    SlimeStatus.WEIGHT_SYNC.value: "Weight sync",
-    SlimeStatus.OFFLOAD_ROLLOUT.value: "Offload rollout",
-    SlimeStatus.OFFLOAD_TRAIN.value: "Offload train",
-    SlimeStatus.CHECKPOINT_SAVE.value: "Saving checkpoint",
-    SlimeStatus.TRAINING.value: "Training",
+    MilesStatus.INITIALIZING.value: "Initializing",
+    MilesStatus.DOWNLOAD_MODEL.value: "Downloading model",
+    MilesStatus.CONVERT_MODEL.value: "Converting model",
+    MilesStatus.PREPARE_DATASET.value: "Preparing dataset",
+    MilesStatus.ROLLOUT_INITIALIZING.value: "Initializing rollouts",
+    MilesStatus.ROLLOUT_LOGGING.value: "Generating rollouts",
+    MilesStatus.EVAL_ROLLOUT_LOGGING.value: "Evaluating rollouts",
+    MilesStatus.COMPUTE_LOG_PROBS.value: "Computing log probs",
+    MilesStatus.OPTIMIZER_STEP.value: "Optimizer step",
+    MilesStatus.WEIGHT_SYNC.value: "Weight sync",
+    MilesStatus.OFFLOAD_ROLLOUT.value: "Offload rollout",
+    MilesStatus.OFFLOAD_TRAIN.value: "Offload train",
+    MilesStatus.CHECKPOINT_SAVE.value: "Saving checkpoint",
+    MilesStatus.TRAINING.value: "Training",
 }
 
 
@@ -398,7 +395,7 @@ class TrainConfig:
     # ── Composed configs (required) ─────────────────────────────────────────
     dataset: DatasetConfig
     model: ModelConfig
-    recipe: SlimeRecipe | MilesRecipe
+    recipe: MilesRecipe
     eval_dataset: DatasetConfig | None = None
     resume_from_checkpoint: Checkpoint | None = None
     # Whether a run outlives the local client. The app itself is always started
@@ -435,7 +432,7 @@ class TrainConfig:
             self.model.model_path or "",
         )
 
-    def _prepare_recipe(self) -> SlimeRecipe | MilesRecipe:
+    def _prepare_recipe(self) -> MilesRecipe:
         if self.resume_from_checkpoint is None:
             recipe = _dc.replace(self.recipe)
         else:
@@ -468,32 +465,17 @@ class TrainConfig:
                 name=training_run_id,
                 group_id=self.group_id,
             )
-        if isinstance(recipe, SlimeRecipe):
-            return build_slime_app(
-                training_run_id=training_run_id,
-                slime=recipe,
-                model=self.model,
-                dataset=self.dataset,
-                eval_dataset=self.eval_dataset,
-                checkpoint=self.resume_from_checkpoint,
-                name=training_run_id,
-                group_id=self.group_id,
-            )
         raise DojoConfigError(f"Unknown training recipe: {type(recipe).__name__}")
 
     # ── Run-record helpers ─────────────────────────────────────────────────
 
     @property
     def framework(self) -> Framework:
-        if isinstance(self.recipe, SlimeRecipe):
-            return Framework.SLIME
         if isinstance(self.recipe, MilesRecipe):
             return Framework.MILES
         raise DojoConfigError(f"Unknown training recipe: {type(self.recipe).__name__}")
 
     def _initializing_status(self) -> FrameworkStatus:
-        if self.framework is Framework.SLIME:
-            return SlimeStatus.INITIALIZING
         if self.framework is Framework.MILES:
             return MilesStatus.INITIALIZING
         raise DojoConfigError(f"Unknown training framework: {self.framework}")
@@ -531,7 +513,7 @@ class TrainConfig:
             "global_batch_size": getattr(recipe, "global_batch_size", None),
         }
 
-        if isinstance(recipe, SlimeRecipe | MilesRecipe):
+        if isinstance(recipe, MilesRecipe):
             from modal_dojo.common.launcher_utils import (
                 serialize_recipe_params,
             )
@@ -735,9 +717,8 @@ class TrainConfig:
                         )
                         needs_conversion = megatron_to_hf_mode != "bridge"
                         download_status, convert_status = (
-                            (SlimeStatus.DOWNLOAD_MODEL, SlimeStatus.CONVERT_MODEL)
-                            if isinstance(self.recipe, SlimeRecipe)
-                            else (MilesStatus.DOWNLOAD_MODEL, MilesStatus.CONVERT_MODEL)
+                            MilesStatus.DOWNLOAD_MODEL,
+                            MilesStatus.CONVERT_MODEL,
                         )
                         _set_status(download_status, is_active=False)
                         app.download.remote(

@@ -4,8 +4,8 @@ from modal_dojo.common import ids
 from modal_dojo.common.dataset import DatasetConfig, HuggingFaceDataset
 from modal_dojo.common.models import ModelConfig, Qwen3_4B
 from modal_dojo.common.train import TrainConfig
-from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
-from modal_dojo.train_recipes.slime_recipe.qwen3_4b import Qwen3_4B_Recipe
+from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+from modal_dojo.train_recipes.miles_recipe.qwen3_4b import Qwen3_4B_Recipe
 
 
 def test_create_hash_has_word_word_hash_shape() -> None:
@@ -70,7 +70,7 @@ def test_train_config_generates_fresh_run_id_per_call(monkeypatch) -> None:
 
     assert first != second
     assert len(calls) == 2
-    assert [parts[2] for parts in calls] == ["Qwen3_4B_Recipe:slime"] * 2
+    assert [parts[2] for parts in calls] == ["Qwen3_4B_Recipe:miles"] * 2
     assert all(parts[3] == "" for parts in calls)
 
 
@@ -94,7 +94,7 @@ def test_the_wandb_run_id_is_the_whole_training_run_id() -> None:
             input_format="text",
         ),
         model=Qwen3_4B(),
-        recipe=SlimeRecipe(
+        recipe=MilesRecipe(
             gpu_type="H100",
             colocate=True,
             tensor_model_parallel_size=1,

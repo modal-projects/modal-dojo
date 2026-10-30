@@ -8,15 +8,15 @@ The [observability dashboard](https://dojo.modal.dev/guides/dashboard) captures 
 
 ## Dashboard only
 
-This is the default: `SlimeRecipe` and `MilesRecipe` start with `metrics=DashboardMetricConfig()` (a few model recipes override it, e.g. `Qwen3_6_27B_Recipe_Agentic` ships with Trackio), which sends the framework's metrics to the dashboard and nowhere else — no account, API key, or extra server. Set it explicitly to name the project or group:
+This is the default: `MilesRecipe` starts with `metrics=DashboardMetricConfig()` (a few model recipes override it, e.g. `Qwen3_6_27B_Recipe_Agentic` ships with Trackio), which sends the framework's metrics to the dashboard and nowhere else — no account, API key, or extra server. Set it explicitly to name the project or group:
 
 ```python
-from modal_dojo import DashboardMetricConfig, Qwen3_5_4B, Qwen3_5_4B_Recipe, TrainConfig
+from modal_dojo import DashboardMetricConfig, Qwen3_5_4B, Qwen3_5_4B_Miles_Recipe, TrainConfig
 
 config = TrainConfig(
     model=Qwen3_5_4B(),
     dataset=my_dataset,
-    recipe=Qwen3_5_4B_Recipe(
+    recipe=Qwen3_5_4B_Miles_Recipe(
         # ...
         metrics=DashboardMetricConfig(project="my-rl-project"),  # optional; this is the default provider
     ),
@@ -42,12 +42,12 @@ modal secret create wandb-secret WANDB_API_KEY=<your-api-key>
 Then, just pass it in your [training recipe](https://dojo.modal.dev/guides/recipe):
 
 ```python
-from modal_dojo import Qwen3_5_4B, Qwen3_5_4B_Recipe, TrainConfig, WandbConfig
+from modal_dojo import Qwen3_5_4B, Qwen3_5_4B_Miles_Recipe, TrainConfig, WandbConfig
 
 config = TrainConfig(
     model=Qwen3_5_4B(),
     dataset=my_dataset,
-    recipe=Qwen3_5_4B_Recipe(
+    recipe=Qwen3_5_4B_Miles_Recipe(
         # ...
         metrics=WandbConfig(
             project="my-rl-project",
@@ -90,12 +90,12 @@ Note that unlike the main dashboard, this will not redeploy the Trackio dashboar
 Simply specify a `space_id` and optionally a `bucket_id`:
 
 ```python
-from modal_dojo import Qwen3_5_4B, Qwen3_5_4B_Recipe, TrainConfig, TrackioConfig
+from modal_dojo import Qwen3_5_4B, Qwen3_5_4B_Miles_Recipe, TrainConfig, TrackioConfig
 
 config = TrainConfig(
     model=Qwen3_5_4B(),
     dataset=my_dataset,
-    recipe=Qwen3_5_4B_Recipe(
+    recipe=Qwen3_5_4B_Miles_Recipe(
         # ...
         metrics=TrackioConfig(
             project="my-rl-project",
