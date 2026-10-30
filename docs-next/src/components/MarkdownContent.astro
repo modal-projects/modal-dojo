@@ -145,19 +145,29 @@ const isCliIndex = slug === 'reference/cli';
   (() => {
     const models = [...document.querySelectorAll('details[data-model]')];
     if (models.length === 0) return;
+    const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
-    const wanted = new URL(location.href).searchParams.get('model')?.toLowerCase();
+    const wanted = slug(new URL(location.href).searchParams.get('model') ?? '');
     const target = wanted
       ? models.find((d) => d.dataset.model === wanted) ??
         models.find((d) => d.dataset.model.startsWith(wanted))
       : undefined;
     if (target) {
       target.open = true;
-      target.scrollIntoView({ block: 'start' });
+      target.closest('tr')?.previousElementSibling?.scrollIntoView({ block: 'center' });
+    }
+
+    for (const row of document.querySelectorAll('tr.model-row')) {
+      row.addEventListener('click', (event) => {
+        if (event.target.closest('a')) return;
+        const details = document.getElementById(`model-${row.dataset.model}`);
+        if (details) details.open = !details.open;
+      });
     }
 
     for (const details of models) {
       details.addEventListener('toggle', () => {
+        details.closest('tr')?.previousElementSibling?.classList.toggle('open', details.open);
         const url = new URL(location.href);
         if (details.open) {
           url.searchParams.set('model', details.dataset.model);

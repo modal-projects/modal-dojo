@@ -30,28 +30,34 @@ FRAMEWORK_BASES = frozenset({*BASE_RECIPES, "MilesConfig"})
 MODEL_CONFIGS = {name.lower(): getattr(models, name) for name in models.__all__}
 FAMILY_RE = re.compile(r"^([A-Za-z]+(?:\d+(?:\.\d+)*|\d+)?)")
 HF_URL = "https://huggingface.co"
-
-
 DOCS_URL = "https://dojo.modal.dev"
 TUTORIALS = {"Qwen/Qwen3-ASR-1.7B": "audio_asr"}
 
 
 @dataclass(frozen=True)
-class ModelLink:
-    display_name: str
-    href: str
+class RecipeRow:
+    hf_id: str
     config: str
-    recipes: tuple[str, ...]
+    recipe: str
+    framework: str
+    method: str
+    context: str
+    response: str
+    gpus: str
+
+    @property
+    def display_name(self) -> str:
+        return self.hf_id.rsplit("/", 1)[-1]
 
     @property
     def slug(self) -> str:
-        return self.display_name.lower()
+        return re.sub(r"[^a-z0-9]+", "-", self.recipe.removesuffix("_Recipe").lower())
 
 
 @dataclass(frozen=True)
 class FamilyRow:
     family: str
-    models: tuple[ModelLink, ...]
+    rows: tuple[RecipeRow, ...]
 
 
 def model_key(recipe_name: str) -> str:
@@ -65,12 +71,32 @@ def family_of(hf_id: str) -> str:
     return family.title() if family.islower() else family
 
 
-def model_link(hf_id: str, config: str, recipes: tuple[str, ...]) -> ModelLink:
-    return ModelLink(
-        display_name=hf_id.rsplit("/", 1)[-1],
-        href=f"{HF_URL}/{hf_id}",
+def tokens(n: int | None) -> str:
+    if not n:
+        return "—"
+    return f"{n // 1024}K" if n % 1024 == 0 else str(n)
+
+
+def recipe_row(
+    hf_id: str, config: str, name: str, recipe: Any, module_path: str
+) -> RecipeRow:
+    r = recipe()
+    lora_rank = getattr(r, "lora_rank", None)
+    gpus = f"{r.actor_num_nodes}×{r.actor_num_gpus_per_node} {r.gpu_type}"
+    if not r.colocate and r.rollout_num_gpus:
+        gpus += f" + {r.rollout_num_gpus} rollout"
+    return RecipeRow(
+        hf_id=hf_id,
         config=config,
-        recipes=recipes,
+        recipe=name,
+        framework=module_path.rsplit(".", 1)[-1].removesuffix("_recipe").title(),
+        method=f"LoRA r{lora_rank}" if lora_rank else "Full",
+        context=tokens(
+            getattr(r, "seq_length", None)
+            or getattr(r, "rollout_max_context_len", None)
+        ),
+        response=tokens(r.rollout_max_response_len),
+        gpus=gpus,
     )
 
 
@@ -109,16 +135,16 @@ def collect_model_preset_names() -> frozenset[str]:
 
 
 def collect_models() -> tuple[FamilyRow, ...]:
-    families: dict[str, set[str]] = defaultdict(set)
-    recipes: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    families: dict[str, list[RecipeRow]] = defaultdict(list)
     unmatched: list[str] = []
-    for recipe_name, _recipe, config, module_path in iter_registered_recipes():
+    for recipe_name, recipe, config, module_path in iter_registered_recipes():
         model_name = getattr(config, "model_name", None)
         if not model_name:
             unmatched.append(f"{module_path}.{recipe_name}")
             continue
-        families[family_of(model_name)].add(model_name)
-        recipes[model_name].append((config.__name__, recipe_name))
+        families[family_of(model_name)].append(
+            recipe_row(model_name, config.__name__, recipe_name, recipe, module_path)
+        )
     if unmatched:
         raise SystemExit(
             "No ModelConfig found for these recipes:\n  "
@@ -129,45 +155,37 @@ def collect_models() -> tuple[FamilyRow, ...]:
     return tuple(
         FamilyRow(
             family=family,
-            models=tuple(
-                model_link(
-                    hf_id,
-                    config=recipes[hf_id][0][0],
-                    recipes=tuple(recipe for _, recipe in recipes[hf_id]),
-                )
-                for hf_id in sorted(ids, key=lambda name: name.rsplit("/", 1)[-1])
-            ),
+            rows=tuple(sorted(rows, key=lambda r: (r.display_name, r.recipe))),
         )
-        for family, ids in sorted(families.items())
+        for family, rows in sorted(families.items())
     )
 
 
-def render_snippet(model: ModelLink) -> list[str]:
-    tutorial = TUTORIALS.get(model.href.removeprefix(f"{HF_URL}/"))
+def render_snippet(row: RecipeRow) -> list[str]:
+    tutorial = TUTORIALS.get(row.hf_id)
     if tutorial:
         return [
             f"See the [{tutorial} tutorial]({DOCS_URL}/tutorials/{tutorial}) "
             "for a runnable example.",
         ]
-    recipe = model.recipes[0]
     return [
         "```python",
         "from modal_dojo import (",
         "    HuggingFaceDataset,",
         "    TrainConfig,",
-        f"    {model.config},",
-        f"    {recipe},",
+        f"    {row.config},",
+        f"    {row.recipe},",
         ")",
         "",
         "config = TrainConfig(",
-        f"    model={model.config}(),",
+        f"    model={row.config}(),",
         "    dataset=HuggingFaceDataset(",
         '        hf_repo="zhuzilin/dapo-math-17k",',
         '        input_column="prompt",',
         '        output_column="label",',
         '        input_format="messages",',
         "    ),",
-        f'    recipe={recipe}(rm_type="deepscaler"),',
+        f'    recipe={row.recipe}(rm_type="deepscaler"),',
         ")",
         "",
         'if __name__ == "__main__":',
@@ -177,36 +195,62 @@ def render_snippet(model: ModelLink) -> list[str]:
     ]
 
 
-def render_model(model: ModelLink) -> list[str]:
-    links = [f"[{model.href.removeprefix(f'{HF_URL}/')}]({model.href})"]
-    if len(model.recipes) > 1:
-        links.append("other recipes: " + ", ".join(f"`{r}`" for r in model.recipes[1:]))
+def render_row(family: str, row: RecipeRow) -> list[str]:
+    cells = [
+        family,
+        f'<a href="{HF_URL}/{row.hf_id}">{row.display_name}</a>',
+        row.framework,
+        row.method,
+        row.context,
+        row.response,
+        row.gpus,
+    ]
     return [
-        f'<details id="model-{model.slug}" data-model="{model.slug}">',
-        f"<summary>{model.display_name}</summary>",
+        f'<tr class="model-row" data-model="{row.slug}">'
+        + "".join(f"<td>{cell}</td>" for cell in cells)
+        + "</tr>",
+        f'<tr class="model-code"><td colspan="{len(cells)}">',
+        f'<details id="model-{row.slug}" data-model="{row.slug}">',
+        f"<summary>Run {row.recipe}</summary>",
         "",
-        " · ".join(links),
-        "",
-        *render_snippet(model),
+        *render_snippet(row),
         "",
         "</details>",
+        "</td></tr>",
     ]
 
 
 def render_section(families: tuple[FamilyRow, ...]) -> str:
+    header = "".join(
+        f"<th>{h}</th>"
+        for h in (
+            "Family",
+            "Model",
+            "Framework",
+            "Training",
+            "Context",
+            "Max response",
+            "GPUs",
+        )
+    )
     body: list[str] = []
-    for row in families:
-        body.extend(["", f"**{row.family}**", ""])
-        for model in row.models:
-            body.extend(render_model(model))
+    for family in families:
+        for i, row in enumerate(family.rows):
+            body.extend(render_row(family.family if i == 0 else "", row))
     return "\n".join(
         [
             BEGIN_MARKER,
             BANNER,
             "",
-            f"Expand a model for a runnable snippet, or link to it with "
-            f"`{DOCS_URL}/?model=<name>`.",
+            "Click a row for a runnable snippet. Link to one with "
+            f"`{DOCS_URL}/?model=<name>`, e.g. `?model=beam`.",
+            "",
+            "<table>",
+            f"<thead><tr>{header}</tr></thead>",
+            "<tbody>",
             *body,
+            "</tbody>",
+            "</table>",
             END_MARKER,
         ]
     )
@@ -238,7 +282,7 @@ def main() -> None:
     args = parser.parse_args()
     families = collect_models()
     current, updated = rendered_readme(args.readme, families)
-    count = sum(len(row.models) for row in families)
+    count = len({row.hf_id for family in families for row in family.rows})
     if args.check:
         if current != updated:
             raise SystemExit(
