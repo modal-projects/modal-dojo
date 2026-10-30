@@ -172,21 +172,40 @@ export default defineConfig({
       title: 'Modal Dojo',
       favicon: '/modal-logo.svg',
       description:
-        'Open-source Python SDK for GRPO and RL post-training of LLMs on Modal GPU clusters — tutorials, API reference, and runnable examples.',
+        'Open-source Python SDK for distributed LLM post-training — GRPO, PPO, RL, and fine-tuning — on Modal GPU clusters.',
       tagline:
         'GRPO, PPO, custom reward and generate functions — runnable on Modal in minutes.',
       head: [
         {
           tag: 'meta',
-          attrs: { property: 'og:image', content: 'https://dojo.modal.dev/og-image.png' },
+          attrs: { property: 'og:image', content: 'https://dojo.modal.dev/og-image.gif' },
         },
         {
           tag: 'meta',
-          attrs: { property: 'og:image:width', content: '2400' },
+          attrs: { property: 'og:image:type', content: 'image/gif' },
         },
         {
           tag: 'meta',
-          attrs: { property: 'og:image:height', content: '1260' },
+          attrs: { property: 'og:image:width', content: '800' },
+        },
+        {
+          tag: 'meta',
+          attrs: { property: 'og:image:height', content: '473' },
+        },
+        {
+          tag: 'meta',
+          attrs: {
+            property: 'og:image:alt',
+            content: 'Modal Dojo agent-driven training demo',
+          },
+        },
+        {
+          tag: 'meta',
+          attrs: {
+            name: 'keywords',
+            content:
+              'LLM training, GRPO, PPO, reinforcement learning, fine-tuning, post-training, distributed training, Modal',
+          },
         },
         {
           tag: 'meta',
@@ -194,7 +213,14 @@ export default defineConfig({
         },
         {
           tag: 'meta',
-          attrs: { name: 'twitter:image', content: 'https://dojo.modal.dev/og-image.png' },
+          attrs: { name: 'twitter:image', content: 'https://dojo.modal.dev/og-image.gif' },
+        },
+        {
+          tag: 'meta',
+          attrs: {
+            name: 'twitter:image:alt',
+            content: 'Modal Dojo agent-driven training demo',
+          },
         },
         {
           tag: 'meta',
@@ -205,16 +231,34 @@ export default defineConfig({
           attrs: { type: 'application/ld+json' },
           content: JSON.stringify({
             '@context': 'https://schema.org',
-            '@type': 'WebSite',
-            name: 'Modal Dojo',
-            url: 'https://dojo.modal.dev',
-            description:
-              'Open-source Python SDK for GRPO and RL post-training of LLMs on Modal GPU clusters.',
-            publisher: {
-              '@type': 'Organization',
-              name: 'Modal Labs',
-              url: 'https://modal.com',
-            },
+            '@graph': [
+              {
+                '@type': 'WebSite',
+                name: 'Modal Dojo',
+                url: 'https://dojo.modal.dev',
+                description:
+                  'Open-source Python SDK for distributed LLM post-training on Modal GPU clusters.',
+                publisher: {
+                  '@type': 'Organization',
+                  name: 'Modal Labs',
+                  url: 'https://modal.com',
+                },
+              },
+              {
+                '@type': 'SoftwareSourceCode',
+                name: 'Modal Dojo',
+                description:
+                  'Open-source Python SDK for distributed LLM post-training — GRPO, PPO, RL, and fine-tuning — on Modal GPU clusters.',
+                codeRepository: 'https://github.com/modal-projects/modal-dojo',
+                programmingLanguage: 'Python',
+                runtimePlatform: 'Modal',
+                author: {
+                  '@type': 'Organization',
+                  name: 'Modal Labs',
+                  url: 'https://modal.com',
+                },
+              },
+            ],
           }),
         },
       ],
