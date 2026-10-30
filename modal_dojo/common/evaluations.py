@@ -1,40 +1,37 @@
-"""Run [Modal Evals](https://modal.com/evaluations) evaluations against Dojo
-deployments.
+"""Score training checkpoints with [Modal Evals](https://modal.com/evaluations).
 
-Modal Evals publishes evaluations (typed tasks, an async trial function, and a
-report) and runs them as jobs against a target: a Modal Endpoint, or an
-OpenAI-compatible URL. This module turns Dojo deployment handles into targets,
-submits jobs, and reads their results.
+``TrainConfig(..., modal_evals=ModalEvalsConfig(checkpoint_interval=N))``
+publishes the dataset's ``eval_rows()`` (or ``eval_dataset.rows()``) as a
+private Modal Evals evaluation when the run launches, then evaluates every Nth
+checkpoint: a watcher serves it on a Modal Endpoint, runs the evaluation
+against it, and stops the Endpoint.
 
-The integration is internal-only while the ``modal-evals`` SDK is unpublished.
-Install it from a modal-labs/modal checkout::
+Modal Evals is internal-only while the ``modal-evals`` SDK is unpublished, so
+this needs the modal-labs workspace and the SDK installed from a
+modal-labs/modal checkout::
 
     uv pip install --no-sources <modal>/flash_eval/modal_evals
-
-Example::
-
-    import modal_dojo as dojo
-
-    endpoint = dojo.Endpoint.launch(...)
-    job = dojo.run_evaluation("terminal-bench-2-1", endpoint, wait=True)
-    print(job.mean("reward"))
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import threading
 import time
 import uuid
 from collections.abc import Coroutine, Iterable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
+
+from pydantic import ConfigDict, Field
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.errors import DojoConfigError
 
 if TYPE_CHECKING:
-    from modal_evals import Task, TaskData
     from modal_evals.client import FlashEvalClient
     from modal_evals.proto import flash_eval_api_pb2
     from modal_evals.results import JobResults
@@ -43,12 +40,17 @@ if TYPE_CHECKING:
     from modal_dojo.common.dataset import DatasetConfig
     from modal_dojo.common.deployment import CustomDeployment
     from modal_dojo.common.endpoint import Endpoint
+    from modal_dojo.common.models import ModelConfig
+    from modal_dojo.common.train import TrainConfig
 
     EvaluationTargetLike = (
         Endpoint | CustomDeployment | FlashEndpointTarget | CustomTarget | RecipeTarget
     )
 
 T = TypeVar("T")
+
+Scorer = Literal["exact_match", "contains", "boxed_math"]
+MODAL_EVALS_WORKSPACE = "modal-labs"
 
 INSTALL_HINT = (
     "Modal Evals is not installed. It is internal-only until modal-evals is "
@@ -202,7 +204,6 @@ async def _release_id(
     return matches[0].release_id
 
 
-@exclude_from_api_reference
 @dataclass(frozen=True)
 class EvaluationJob:
     """A Modal Evals job.
@@ -307,7 +308,6 @@ class EvaluationJob:
         return sum(values) / len(values)
 
 
-@exclude_from_api_reference
 def run_evaluation(
     evaluation: str,
     target: EvaluationTargetLike,
@@ -407,45 +407,381 @@ def run_evaluation(
     return job
 
 
-@exclude_from_api_reference
-def dataset_tasks(
+@dataclass(frozen=True)
+class EvaluationRelease:
+    """A published Modal Evals release.
+
+    Attributes:
+        release_id: Release ID (``er-...``).
+        evaluation_key: Evaluation the release belongs to.
+        task_count: Tasks the release published.
+        environment: Modal environment it was published to, or the default one.
+        server: Modal Evals API URL, or the default one.
+    """
+
+    release_id: str
+    evaluation_key: str
+    task_count: int
+    environment: str | None = None
+    server: str | None = None
+
+    def run(self, target: EvaluationTargetLike, **kwargs: Any) -> EvaluationJob:
+        """Run this release against ``target``; takes the keyword arguments of
+        :func:`run_evaluation`."""
+        kwargs.setdefault("environment", self.environment)
+        kwargs.setdefault("server", self.server)
+        return run_evaluation(self.release_id, target, **kwargs)
+
+
+def publish_dataset_evaluation(
     dataset: DatasetConfig,
-    task_data: type[TaskData],
+    key: str | None = None,
     *,
-    columns: Mapping[str, str] | None = None,
+    scorer: Scorer = "exact_match",
+    display_name: str | None = None,
+    description: str | None = None,
     key_column: str | None = None,
     limit: int | None = None,
-) -> list[Task[Any]]:
-    """Modal Evals tasks from a Dojo dataset's rows, for an evaluation's
-    ``@evaluation.tasks()`` function.
+    max_concurrency: int = 16,
+    environment: str | None = None,
+    server: str | None = None,
+) -> EvaluationRelease:
+    """Publish a dataset's ``eval_rows()`` as a private Modal Evals evaluation.
+
+    Each row becomes a task holding its ``input_key()`` column (a prompt or a
+    list of chat messages) and ``label_key()`` column. A trial sends the
+    messages to the target as one chat completion and scores the reply:
+    ``exact_match`` and ``contains`` compare text, ``boxed_math`` compares the
+    last ``\\boxed{}`` or number. A new evaluation is private to ``environment``;
+    publishing again under the same key adds a release.
 
     Args:
-        dataset:
-            Dataset whose ``rows()`` become tasks.
-        task_data:
-            The evaluation's ``TaskData`` subclass. Each field reads the row
-            column of the same name unless ``columns`` maps it.
-        columns:
-            Field name to row column, such as
-            ``{"prompt": dataset.input_key()}``.
-        key_column:
-            Column holding each task's key; defaults to ``row-<index>``.
-        limit:
-            Most rows to read.
+        dataset: Dataset whose ``eval_rows()`` become tasks.
+        key: Evaluation key, lowercase words joined by hyphens; defaults to
+            ``dojo-<hash>`` of the tasks and scorer, so the same rows reuse
+            one evaluation.
+        scorer: How a reply is scored against the row's label.
+        display_name: Name shown in the Modal dashboard; defaults to ``key``.
+        description: Description shown in the Modal dashboard; defaults to
+            one naming the dataset.
+        key_column: Column holding each task's key; defaults to ``row-<index>``.
+        limit: Most rows to publish.
+        max_concurrency: Trials at once by default.
+        environment: Modal environment to publish to.
+        server: Modal Evals API URL.
+
+    Raises:
+        ValueError: The dataset has no label column or no rows.
     """
     _require_modal_evals()
-    from modal_evals import Task
+    from modal_dojo.evaluation_runner.dataset import build_evaluation, task_from_row
 
-    columns = dict(columns or {})
-    tasks: list[Task[Any]] = []
-    for index, row in enumerate(dataset.rows()):
+    label_key = dataset.label_key()
+    if label_key is None:
+        raise ValueError(
+            f"{type(dataset).__name__} has no label_key() to score against."
+        )
+    input_key = dataset.input_key()
+    tasks = []
+    for index, row in enumerate(dataset.eval_rows() or ()):
         if limit is not None and index >= limit:
             break
-        values = {
-            field: row[columns.get(field, field)]
-            for field in task_data.model_fields
-            if columns.get(field, field) in row
-        }
-        key = str(row[key_column]) if key_column else f"row-{index:06d}"
-        tasks.append(Task(key, task_data(**values)))
-    return tasks
+        tasks.append(
+            task_from_row(
+                index,
+                row,
+                input_key=input_key,
+                label_key=label_key,
+                scorer=scorer,
+                key_column=key_column,
+            )
+        )
+    if not tasks:
+        raise ValueError(f"{type(dataset).__name__} has no eval rows to publish.")
+    key = key or _content_key(tasks, scorer)
+    evaluation = build_evaluation(
+        key,
+        tasks,
+        display_name=display_name or key,
+        description=description
+        or f"{len(tasks)} rows of {type(dataset).__name__}, scored by {scorer}.",
+        max_concurrency=max_concurrency,
+    )
+    return _LOOP.run(_publish(evaluation, environment, server))
+
+
+async def _publish(
+    evaluation: Any, environment: str | None, server: str | None
+) -> EvaluationRelease:
+    from modal_evals.images import build_image, runner_image
+    from modal_evals.params_contract import validate_params_contract
+    from modal_evals.proto import flash_eval_api_pb2
+    from modal_evals.publish import evaluation_definition_to_proto
+    from modal_evals.task_snapshots import build_task_snapshot
+
+    definition = evaluation.definition()
+    validate_params_contract(definition.params_schema, definition.params_defaults)
+    built = await build_task_snapshot(await definition.materialize_tasks())
+    client = await _client(server)
+    try:
+        environment_id = await client.environment_id(environment)
+        build = await client.begin_release(environment_id, environment=environment)
+        image_id = await build_image(
+            runner_image(
+                definition.runner.entrypoint,
+                package=definition.runner.package,
+                files=definition.runner.files,
+                base_image=definition.runner.base_image,
+                global_namespace=build.global_image,
+            ),
+            app=build.app,
+        )
+        request = flash_eval_api_pb2.PublishEvaluationReleaseRequest(
+            environment_id=environment_id,
+            definition=evaluation_definition_to_proto(
+                definition.published_definition(image_id)
+            ),
+            task_snapshot=flash_eval_api_pb2.TaskSnapshot(
+                digest=built.snapshot.digest, task_count=built.snapshot.task_count
+            ),
+        )
+        await client.upload_task_snapshot(built, environment=environment)
+        response = await client.publish_release(request)
+    finally:
+        await client.close()
+    return EvaluationRelease(
+        release_id=response.release_id,
+        evaluation_key=response.evaluation_key,
+        task_count=built.snapshot.task_count,
+        environment=environment,
+        server=server,
+    )
+
+
+def _content_key(tasks: list[Any], scorer: str) -> str:
+    payload = json.dumps(
+        [scorer, [(task.key, task.data.model_dump(mode="json")) for task in tasks]],
+        sort_keys=True,
+    )
+    return f"dojo-{hashlib.sha256(payload.encode()).hexdigest()[:16]}"
+
+
+@exclude_from_api_reference
+@pydantic_dataclass(config=ConfigDict(extra="forbid"))
+class ModalEvalConfig:
+    """Score every Nth checkpoint of a training run with Modal Evals.
+
+    The run's ``eval_dataset`` (or ``dataset``) ``eval_rows()`` are published
+    as a private evaluation at launch. Internal-only: launching needs the
+    modal-labs workspace and the ``modal-evals`` SDK.
+
+    Args:
+        every_n_checkpoints:
+            Evaluate each committed checkpoint whose 1-based position is a
+            multiple of this.
+        scorer:
+            ``exact_match`` or ``contains`` compare the reply with the row's
+            label; ``boxed_math`` compares the last ``\\boxed{}`` or number.
+        max_rows:
+            Most eval rows to publish.
+        temperature:
+            Sampling temperature of each chat completion.
+        max_tokens:
+            Most tokens in each reply.
+        evaluate_final:
+            Also evaluate the last checkpoint once training ends.
+    """
+
+    every_n_checkpoints: int = Field(ge=1)
+    scorer: Scorer = "exact_match"
+    max_rows: int | None = Field(default=None, ge=1)
+    temperature: float = Field(default=0.0, ge=0, le=2)
+    max_tokens: int = Field(default=2048, ge=1)
+    evaluate_final: bool = True
+
+
+def _workspace_name() -> str:
+    async def lookup() -> str:
+        from google.protobuf.empty_pb2 import Empty
+        from modal.client import _Client
+
+        client = await _Client.from_env()
+        return (await client.stub.WorkspaceNameLookup(Empty())).workspace_name
+
+    return _LOOP.run(lookup())
+
+
+def prepare_modal_eval(train_config: TrainConfig) -> EvaluationRelease:
+    """Check that the run may use Modal Evals and publish its evaluation."""
+    config = train_config.modal_eval
+    assert config is not None
+    _require_modal_evals()
+    workspace = _workspace_name()
+    if workspace != MODAL_EVALS_WORKSPACE:
+        raise DojoConfigError(
+            f"TrainConfig.modal_eval needs the {MODAL_EVALS_WORKSPACE} workspace, "
+            f"not {workspace!r}: Modal Evals is internal-only for now."
+        )
+    dataset = train_config.eval_dataset or train_config.dataset
+    return publish_dataset_evaluation(
+        dataset, scorer=config.scorer, limit=config.max_rows
+    )
+
+
+def _watcher_image() -> Any:
+    import modal
+
+    return (
+        modal.Image.debian_slim(python_version="3.12")
+        .uv_pip_install(
+            "modal==1.6.1",
+            "click>=8.2,<9",
+            "cloudpickle",
+            "datasets",
+            "httpx",
+            "packaging",
+            "pydantic>=2,<3",
+            "fastapi",
+            "randomname",
+            "rich",
+            "requests",
+            "grpcio==1.84.0",
+            "jsonschema~=4.24",
+            "protobuf~=5.29",
+            "referencing~=0.37",
+            "typing-extensions>=4.4",
+        )
+        .add_local_python_source("modal_dojo", "modal_evals", copy=True)
+    )
+
+
+def start_modal_eval(
+    train_config: TrainConfig, training_run_id: str, release: EvaluationRelease
+) -> None:
+    """Spawn the detached Function that evaluates the run's checkpoints."""
+    import modal
+
+    config = train_config.modal_eval
+    assert config is not None
+    app = modal.App(f"modal-dojo-evals-{training_run_id}")
+    watch = app.function(image=_watcher_image(), timeout=24 * 60 * 60, serialized=True)(
+        watch_checkpoints
+    )
+    with app.run(detach=True):
+        watch.spawn(
+            training_run_id=training_run_id,
+            release_id=release.release_id,
+            config=config,
+            model=train_config.model,
+            environment=release.environment,
+        )
+
+
+def due_checkpoints(
+    names: list[str],
+    evaluated: set[str],
+    config: ModalEvalConfig,
+    *,
+    finished: bool,
+) -> list[str]:
+    """The checkpoints, by name, to evaluate now, oldest first."""
+    due = [
+        name
+        for position, name in enumerate(names, 1)
+        if position % config.every_n_checkpoints == 0
+    ]
+    if finished and config.evaluate_final and names and names[-1] not in due:
+        due.append(names[-1])
+    return [name for name in due if name not in evaluated]
+
+
+def watch_checkpoints(
+    *,
+    training_run_id: str,
+    release_id: str,
+    config: ModalEvalConfig,
+    model: ModelConfig,
+    environment: str | None,
+    poll_seconds: float = 60.0,
+) -> None:
+    """Evaluate a run's due checkpoints until it ends."""
+    from modal_dojo.common.run import TrainingRun
+
+    while True:
+        run = TrainingRun.from_id(training_run_id)
+        finished = run.done()
+        checkpoints = {checkpoint.name: checkpoint for checkpoint in run.checkpoints()}
+        evaluated = {str(record.get("iteration")) for record in run.evaluations()}
+        for name in due_checkpoints(
+            list(checkpoints), evaluated, config, finished=finished
+        ):
+            evaluate_checkpoint(
+                training_run_id=training_run_id,
+                checkpoint=checkpoints[name],
+                release_id=release_id,
+                config=config,
+                model=model,
+                environment=environment,
+            )
+        if finished:
+            return
+        time.sleep(poll_seconds)
+
+
+def evaluate_checkpoint(
+    *,
+    training_run_id: str,
+    checkpoint: Any,
+    release_id: str,
+    config: ModalEvalConfig,
+    model: ModelConfig,
+    environment: str | None,
+) -> dict[str, Any]:
+    """Serve ``checkpoint``, run the evaluation against it, record the outcome
+    in the run's ``metadata["modal_evals"]``, and stop the Endpoint."""
+    from modal_dojo.common.endpoint import Endpoint
+
+    record: dict[str, Any] = {
+        "iteration": checkpoint.name,
+        "job_id": "",
+        "status": "failed",
+        "score": None,
+        "url": None,
+    }
+    endpoint = None
+    try:
+        endpoint = Endpoint.launch(model, checkpoint, environment=environment)
+        endpoint.wait_until_ready()
+        job = run_evaluation(
+            release_id,
+            endpoint,
+            params={"temperature": config.temperature, "max_tokens": config.max_tokens},
+            name=f"{training_run_id} {checkpoint.name}",
+            tags={"training_run_id": training_run_id, "checkpoint": checkpoint.name},
+            environment=environment,
+        )
+        record["job_id"] = job.job_id
+        results = job.wait()
+        record["status"] = results.job.status
+        record["url"] = results.output_volume.url
+        try:
+            record["score"] = job.mean("score", results)
+        except ValueError:
+            pass
+    except Exception as exc:
+        record["error"] = f"{type(exc).__name__}: {exc}"[:500]
+    finally:
+        if endpoint is not None:
+            endpoint.stop()
+    _record_evaluation(training_run_id, record)
+    return record
+
+
+def _record_evaluation(training_run_id: str, record: dict[str, Any]) -> None:
+    from modal_dojo.common.run import TrainingRun
+
+    run = TrainingRun.from_id(training_run_id)
+    metadata = dict(run.metadata or {})
+    metadata["modal_evals"] = [*run.evaluations(), record]
+    run.metadata = metadata
+    run.save()

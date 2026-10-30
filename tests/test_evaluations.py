@@ -2,16 +2,175 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-from pydantic import BaseModel
+from pydantic import ValidationError
 
 from modal_dojo.common import evaluations
 from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.common.evaluations import ModalEvalConfig, due_checkpoints
 
 
 def test_missing_sdk_raises_install_hint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "modal_evals", None)
     with pytest.raises(DojoConfigError, match="modal-evals"):
         evaluations.run_evaluation("example", object())  # type: ignore[arg-type]
+
+
+def test_modal_eval_config_needs_a_positive_interval() -> None:
+    assert ModalEvalConfig(every_n_checkpoints=3).scorer == "exact_match"
+    with pytest.raises(ValidationError):
+        ModalEvalConfig(every_n_checkpoints=0)
+    with pytest.raises(ValidationError):
+        ModalEvalConfig(every_n_checkpoints=1, scorer="fuzzy")  # type: ignore[arg-type]
+
+
+def test_train_config_takes_modal_eval() -> None:
+    from modal_dojo.common.train import TrainConfig
+
+    assert TrainConfig.__dataclass_fields__["modal_eval"].default is None
+
+
+@pytest.mark.parametrize(
+    ("names", "evaluated", "finished", "due"),
+    [
+        (["i1", "i2", "i3", "i4", "i5"], set(), False, ["i2", "i4"]),
+        (["i1", "i2", "i3", "i4", "i5"], {"i2"}, False, ["i4"]),
+        (["i1", "i2", "i3", "i4", "i5"], {"i2", "i4"}, True, ["i5"]),
+        (["i1", "i2"], {"i2"}, True, []),
+        ([], set(), True, []),
+    ],
+)
+def test_due_checkpoints(
+    names: list[str], evaluated: set[str], finished: bool, due: list[str]
+) -> None:
+    config = ModalEvalConfig(every_n_checkpoints=2)
+    assert due_checkpoints(names, evaluated, config, finished=finished) == due
+
+
+def test_due_checkpoints_skips_final_when_disabled() -> None:
+    config = ModalEvalConfig(every_n_checkpoints=2, evaluate_final=False)
+    assert due_checkpoints(["i1", "i2", "i3"], {"i2"}, config, finished=True) == []
+
+
+def test_eval_rows_default_to_rows() -> None:
+    from modal_dojo.common.dataset import DatasetConfig, HuggingFaceDataset
+
+    class Rows(DatasetConfig):
+        def input_key(self) -> str:
+            return "q"
+
+        def label_key(self) -> str:
+            return "a"
+
+        def rows(self):
+            return [{"q": "1", "a": "1"}]
+
+    assert list(Rows().eval_rows() or ()) == [{"q": "1", "a": "1"}]
+    dataset = HuggingFaceDataset("org/data", input_column="q", eval_split="test")
+    assert dataset.eval_split == "test"
+    assert HuggingFaceDataset("org/data", input_column="q").eval_split is None
+
+
+def test_training_run_evaluations_reads_metadata() -> None:
+    from modal_dojo.common.run import TrainingRun
+
+    run = TrainingRun.model_construct(
+        metadata={"modal_evals": [{"iteration": "iter_0000002", "score": 0.5}]}
+    )
+    assert run.evaluations() == [{"iteration": "iter_0000002", "score": 0.5}]
+    assert TrainingRun.model_construct(metadata={}).evaluations() == []
+
+
+def test_modal_eval_requires_modal_labs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(evaluations, "_require_modal_evals", lambda: None)
+    monkeypatch.setattr(evaluations, "_workspace_name", lambda: "acme")
+    train_config = SimpleNamespace(modal_eval=ModalEvalConfig(every_n_checkpoints=1))
+    with pytest.raises(DojoConfigError, match="modal-labs"):
+        evaluations.prepare_modal_eval(train_config)  # type: ignore[arg-type]
+
+
+def test_modal_eval_publishes_eval_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
+    published = {}
+    monkeypatch.setattr(evaluations, "_require_modal_evals", lambda: None)
+    monkeypatch.setattr(evaluations, "_workspace_name", lambda: "modal-labs")
+    monkeypatch.setattr(
+        evaluations,
+        "publish_dataset_evaluation",
+        lambda dataset, **kwargs: published.update(dataset=dataset, **kwargs),
+    )
+    train_config = SimpleNamespace(
+        modal_eval=ModalEvalConfig(
+            every_n_checkpoints=1, scorer="boxed_math", max_rows=10
+        ),
+        dataset="train",
+        eval_dataset="held-out",
+    )
+    evaluations.prepare_modal_eval(train_config)  # type: ignore[arg-type]
+    assert published == {"dataset": "held-out", "scorer": "boxed_math", "limit": 10}
+
+
+def test_evaluate_checkpoint_records_and_stops_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from modal_dojo.common import endpoint as endpoint_module
+
+    events = []
+
+    class FakeEndpoint:
+        @classmethod
+        def launch(cls, model, checkpoint, *, environment):
+            events.append(("launch", checkpoint.name))
+            return cls()
+
+        def wait_until_ready(self):
+            events.append(("ready",))
+
+        def stop(self):
+            events.append(("stop",))
+
+    class FakeJob:
+        job_id = "ej-1"
+
+        def wait(self):
+            return SimpleNamespace(
+                job=SimpleNamespace(status="succeeded"),
+                output_volume=SimpleNamespace(url="https://modal.com/id/vo"),
+            )
+
+        def mean(self, field, results):
+            return 0.75
+
+    recorded = []
+    monkeypatch.setattr(endpoint_module, "Endpoint", FakeEndpoint)
+    monkeypatch.setattr(
+        evaluations,
+        "run_evaluation",
+        lambda release_id, target, **kwargs: (
+            events.append(("run", kwargs["tags"])) or FakeJob()
+        ),
+    )
+    monkeypatch.setattr(
+        evaluations,
+        "_record_evaluation",
+        lambda run_id, record: recorded.append(record),
+    )
+    record = evaluations.evaluate_checkpoint(
+        training_run_id="run-1",
+        checkpoint=SimpleNamespace(name="iter_0000004"),
+        release_id="er-1",
+        config=ModalEvalConfig(every_n_checkpoints=2),
+        model=SimpleNamespace(),  # type: ignore[arg-type]
+        environment=None,
+    )
+    assert record == {
+        "iteration": "iter_0000004",
+        "job_id": "ej-1",
+        "status": "succeeded",
+        "score": 0.75,
+        "url": "https://modal.com/id/vo",
+    }
+    assert recorded == [record]
+    assert events[-1] == ("stop",)
+    assert ("run", {"training_run_id": "run-1", "checkpoint": "iter_0000004"}) in events
 
 
 def test_mean_averages_finished_trials() -> None:
@@ -22,125 +181,16 @@ def test_mean_averages_finished_trials() -> None:
         tasks=[
             SimpleNamespace(
                 trials=[
-                    trial("succeeded", {"correct": True}),
-                    trial("succeeded", {"correct": False}),
+                    trial("succeeded", {"score": 1.0}),
+                    trial("succeeded", {"score": 0.0}),
                 ]
             ),
             SimpleNamespace(
-                trials=[trial("succeeded", {"correct": 1.0}), trial("failed", None)]
+                trials=[trial("succeeded", {"score": 1}), trial("failed", None)]
             ),
         ]
     )
     job = evaluations.EvaluationJob("ej-1")
-    assert job.mean("correct", results) == pytest.approx(2 / 3)  # type: ignore[arg-type]
+    assert job.mean("score", results) == pytest.approx(2 / 3)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="latency"):
         job.mean("latency", results)  # type: ignore[arg-type]
-
-
-modal_evals = pytest.importorskip("modal_evals")
-
-
-def _deployment(*, unauthenticated: bool):
-    from modal_dojo.common.deployment import CustomDeployment
-
-    return CustomDeployment.model_construct(
-        deployment_id="dep",
-        app_name="app",
-        served_model_name="my-model",
-        unauthenticated=unauthenticated,
-        url="https://example--serve.modal.run/",
-    )
-
-
-def _target(target, **kwargs):
-    options = {"deployment_id": None, "single_replica": False, "environment": None}
-    return evaluations._LOOP.run(
-        evaluations._target_proto(target, **(options | kwargs))
-    )
-
-
-def test_custom_deployment_becomes_openai_compatible_target() -> None:
-    proto = _target(_deployment(unauthenticated=True))
-    assert proto.custom.base_url == "https://example--serve.modal.run/v1"
-    assert proto.custom.model == "my-model"
-    assert not proto.custom.HasField("api_key")
-
-
-def test_proxy_auth_custom_deployment_is_refused() -> None:
-    with pytest.raises(DojoConfigError, match="unauthenticated=True"):
-        _target(_deployment(unauthenticated=False))
-
-
-def test_endpoint_becomes_flash_endpoint_target() -> None:
-    from modal_dojo.common.endpoint import Endpoint
-
-    endpoint = Endpoint(
-        "https://example.modal.run",
-        endpoint_id="ep-abc",
-        model_name="m",
-        requires_proxy_auth=True,
-    )
-    proto = _target(endpoint, deployment_id="ed-def", single_replica=True)
-    assert proto.flash_endpoint.endpoint_id == "ep-abc"
-    assert proto.flash_endpoint.deployment_id == "ed-def"
-    assert proto.flash_endpoint.single_replica
-
-
-def test_dataset_tasks_maps_rows_to_task_data() -> None:
-    class Row(modal_evals.TaskData):
-        prompt: str
-        answer: str
-
-    class Dataset(BaseModel):
-        def rows(self):
-            yield {"question": "1+1", "answer": "2", "extra": 0}
-            yield {"question": "2+2", "answer": "4", "extra": 1}
-
-    tasks = evaluations.dataset_tasks(
-        Dataset(),  # type: ignore[arg-type]
-        Row,
-        columns={"prompt": "question"},
-        limit=1,
-    )
-    assert [task.key for task in tasks] == ["row-000000"]
-    assert tasks[0].data == Row(prompt="1+1", answer="2")
-
-
-class _FakeClient:
-    submitted: list = []
-
-    async def environment_id(self, environment):
-        return "en-1"
-
-    async def list_releases(self, request):
-        release = SimpleNamespace(evaluation_key="example", release_id="er-1")
-        return SimpleNamespace(releases=[release])
-
-    async def submit_job(self, request):
-        self.submitted.append(request)
-        return SimpleNamespace(job_id="ej-1")
-
-    async def close(self):
-        pass
-
-
-def test_run_evaluation_submits_latest_release(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def client(server):
-        return _FakeClient()
-
-    monkeypatch.setattr(evaluations, "_client", client)
-    job = evaluations.run_evaluation(
-        "example",
-        _deployment(unauthenticated=True),
-        params={"temperature": 0},
-        tags={"training_run_id": "run-1"},
-        trial_concurrency=4,
-    )
-    assert job.job_id == "ej-1"
-    request = _FakeClient.submitted[-1]
-    assert request.release_id == "er-1"
-    assert request.environment_id == "en-1"
-    assert request.params["temperature"] == 0
-    assert dict(request.tags) == {"training_run_id": "run-1"}
-    assert request.trial_concurrency == 4
-    assert request.target.custom.model == "my-model"

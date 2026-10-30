@@ -14,6 +14,7 @@ from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.checkpoint import Checkpoint, CheckpointType
 from modal_dojo.common.dataset import DatasetConfig, OnlineRollout
+from modal_dojo.common.evaluations import ModalEvalConfig
 from modal_dojo.common.errors import (
     DojoConfigError,
     DojoError,
@@ -378,6 +379,10 @@ class TrainConfig:
             Model identity and weight download behavior.
         recipe:
             Training framework, Modal resources, and framework arguments.
+        modal_eval:
+            Score every Nth checkpoint with Modal Evals on the
+            ``eval_dataset`` (or ``dataset``) ``eval_rows()``. Internal-only:
+            needs the modal-labs workspace and the ``modal-evals`` SDK.
         resume_from_checkpoint:
             Start a new run from this Megatron checkpoint's weights with a
             fresh optimizer and LR schedule; ``recipe.num_rollout`` counts
@@ -400,6 +405,7 @@ class TrainConfig:
     model: ModelConfig
     recipe: SlimeRecipe | MilesRecipe
     eval_dataset: DatasetConfig | None = None
+    modal_eval: ModalEvalConfig | None = None
     resume_from_checkpoint: Checkpoint | None = None
     # Whether a run outlives the local client. The app itself is always started
     # detached (the CLI's ``modal run --detach`` only detaches the entrypoint,
@@ -660,6 +666,15 @@ class TrainConfig:
             maybe_warn_gpu_oom(self.recipe, self.model)
             _warn_routing_replay_with_custom_rollout(self.recipe)
         _confirm_launch_warnings(caught)
+        modal_eval_release = None
+        if self.modal_eval is not None:
+            from modal_dojo.common.evaluations import prepare_modal_eval
+
+            modal_eval_release = prepare_modal_eval(self)
+            print(
+                f"Modal Evals: published {modal_eval_release.task_count} eval rows as "
+                f"{modal_eval_release.evaluation_key} ({modal_eval_release.release_id})"
+            )
         training_run_id = self._generate_training_run_id()
         ensure_dashboard_deployed()
         framework_status_url = get_framework_status_url() or ""
@@ -798,6 +813,13 @@ class TrainConfig:
             print(
                 f"WARNING: training was launched, but Modal client cleanup failed: {launch_error}"
             )
+        if modal_eval_release is not None:
+            from modal_dojo.common.evaluations import start_modal_eval
+
+            try:
+                start_modal_eval(self, training_run_id, modal_eval_release)
+            except Exception as exc:
+                print(f"WARNING: Modal Evals checkpoint watcher did not start: {exc}")
         print(
             f"Launched training {run_record.training_run_id}: "
             f"app={run_record.modal_app_id}, function_call={run_record.function_call_id}"
