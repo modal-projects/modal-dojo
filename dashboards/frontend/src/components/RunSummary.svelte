@@ -48,6 +48,7 @@
   $effect(() => {
     run?.run_id;
     paramFilter = "";
+    showAllTags = false;
     copiedRecipeJson = false;
     copyFailed = false;
     if (copyResetTimer) {
@@ -74,6 +75,18 @@
     (run?.modal_app_id ? `https://modal.com/id/${run.modal_app_id}` : ""),
   );
   let groupTags = $derived(getGroupTags(run));
+  // Sweep runs carry dozens of tuned fields; show a handful until asked.
+  const TAG_PREVIEW = 6;
+  let showAllTags = $state(false);
+  let hiddenTagCount = $derived(
+    showAllTags ? 0 : Math.max((groupTags?.tags.length || 0) - TAG_PREVIEW, 0),
+  );
+  let shownAxes = $derived(
+    showAllTags ? groupTags?.axes || [] : (groupTags?.axes || []).slice(0, TAG_PREVIEW),
+  );
+  let shownTags = $derived(
+    showAllTags ? groupTags?.tags || [] : (groupTags?.tags || []).slice(0, TAG_PREVIEW),
+  );
   let metricLinks = $derived(
     normalizeMetricLinks(
       run?.metric_links?.length ? run.metric_links : run?.wandb_links,
@@ -374,9 +387,12 @@
           <div class="kv">
             <span class="kv-key">Customized params</span>
             <div class="flex flex-wrap gap-[6px] min-w-0">
-              {#each groupTags.axes as axis (axis)}
+              {#each shownAxes as axis (axis)}
                 <span class="[border:1px_solid_var(--color-c-gray-10,#2f2f2f)] rounded-[999px] text-(--text) bg-[color-mix(in_srgb,var(--panel-alt)_74%,black)] p-[2px_8px] kv-value-mono">{axis}</span>
               {/each}
+              {#if groupTags.axes.length > shownAxes.length}
+                <span class="p-[2px_4px] text-(--muted) kv-value-mono">+{groupTags.axes.length - shownAxes.length}</span>
+              {/if}
             </div>
           </div>
         {/if}
@@ -384,12 +400,21 @@
           <div class="kv items-start!">
             <span class="kv-key">This run differs by</span>
             <div class="grid gap-[6px] min-w-0">
-              {#each groupTags.tags as tag (tag.key)}
+              {#each shownTags as tag (tag.key)}
                 <div class="grid grid-cols-[minmax(0,1fr)_max-content] gap-[8px] items-baseline min-w-0">
                   <span class="text-(--muted) [overflow-wrap:anywhere] kv-value-mono">{tag.key}</span>
                   <span class="text-(--text) text-[12px] leading-[16px] [overflow-wrap:anywhere]">{formatTagValue(tag.value)}</span>
                 </div>
               {/each}
+              {#if hiddenTagCount || (showAllTags && groupTags.tags.length > TAG_PREVIEW)}
+                <button
+                  type="button"
+                  class="justify-self-start cursor-pointer border-0 bg-transparent p-0 text-[12px] leading-[16px] text-(--muted) hover:text-(--text)"
+                  onclick={() => (showAllTags = !showAllTags)}
+                >
+                  {showAllTags ? "show fewer" : `show all ${groupTags.tags.length}`}
+                </button>
+              {/if}
             </div>
           </div>
         {/if}
