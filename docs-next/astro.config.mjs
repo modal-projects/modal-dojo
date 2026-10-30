@@ -200,7 +200,7 @@ export default defineConfig({
           tag: 'meta',
           attrs: {
             property: 'og:image:alt',
-            content: 'Modal Dojo agent-driven training demo',
+            content: 'Modal Dojo',
           },
         },
         {
@@ -211,7 +211,7 @@ export default defineConfig({
           tag: 'meta',
           attrs: {
             name: 'twitter:image:alt',
-            content: 'Modal Dojo agent-driven training demo',
+            content: 'Modal Dojo',
           },
         },
         {
