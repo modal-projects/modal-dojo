@@ -63,19 +63,11 @@
         </span>
       </a>
     {/each}
-  </nav>
-
-  <div
-    class={[
-      "[border-top:1px_solid_rgba(255,255,255,0.1)] py-[8px] max-[900px]:hidden",
-      collapsed ? "mx-[-8px] px-[8px]" : "mx-[-20px] px-[20px]",
-    ]}
-  >
     {#if passwordProtected}
-      <form method="post" action="/logout">
+      <form method="post" action="/logout" class="mt-auto max-[900px]:mt-0">
         <button
           type="submit"
-          class="nav-item w-full overflow-hidden whitespace-nowrap"
+          class="nav-item w-full overflow-hidden whitespace-nowrap max-[900px]:p-[10px_8px] max-[900px]:min-h-[44px]"
           aria-label="Log out"
           title={collapsed ? "Log out" : undefined}
         >
@@ -84,7 +76,7 @@
           </span>
           <span
             class={[
-              "transition-opacity duration-150 ease-out",
+              "transition-opacity duration-150 ease-out max-[900px]:hidden",
               collapsed ? "opacity-0" : "opacity-100",
             ]}
           >
@@ -93,6 +85,14 @@
         </button>
       </form>
     {/if}
+  </nav>
+
+  <div
+    class={[
+      "[border-top:1px_solid_rgba(255,255,255,0.1)] py-[8px] max-[900px]:hidden",
+      collapsed ? "mx-[-8px] px-[8px]" : "mx-[-20px] px-[20px]",
+    ]}
+  >
     <button
       type="button"
       class="nav-item w-full"

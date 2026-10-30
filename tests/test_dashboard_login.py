@@ -147,7 +147,9 @@ def test_login_link(dashboard, monkeypatch):
         assert client.get("/", headers=HTML).text == "spa"
 
 
-@pytest.mark.parametrize("link", ["/login?token=abc", None])
+@pytest.mark.parametrize(
+    "link", ["/login?token=abc", None, OSError("disk full"), "//evil.test/login"]
+)
 def test_open_uses_a_login_link(monkeypatch, capsys, link):
     class FakeClient:
         def __enter__(self):
@@ -159,6 +161,8 @@ def test_open_uses_a_login_link(monkeypatch, capsys, link):
         def get_json(self, _path):
             if link is None:
                 raise CLIError("Dashboard authentication was rejected.", error="x")
+            if isinstance(link, Exception):
+                raise link
             return link
 
     opened = []
@@ -169,5 +173,8 @@ def test_open_uses_a_login_link(monkeypatch, capsys, link):
 
     cli_setup.open_dashboard()
 
-    assert opened == [f"https://d.test{link}" if link else "https://d.test"]
+    if link == "/login?token=abc":
+        assert opened == ["https://d.test/login?token=abc"]
+    else:
+        assert opened == ["https://d.test"]
     assert "token" not in capsys.readouterr().out
