@@ -172,10 +172,14 @@ export default defineConfig({
       title: 'Modal Dojo',
       favicon: '/modal-logo.svg',
       description:
-        'Open-source Python SDK for distributed LLM post-training — GRPO, PPO, RL, and fine-tuning — on Modal GPU clusters.',
+        'An open-source library that gives you the building blocks, tuned defaults, and observability you need for easy, production-grade post-training: supervised fine-tuning (SFT) and reinforcement learning (RL) on Modal GPU clusters.',
       tagline:
         'GRPO, PPO, custom reward and generate functions — runnable on Modal in minutes.',
       head: [
+        {
+          tag: 'meta',
+          attrs: { property: 'og:type', content: 'website' },
+        },
         {
           tag: 'meta',
           attrs: { property: 'og:image', content: 'https://dojo.modal.dev/og-image.gif' },
@@ -201,18 +205,6 @@ export default defineConfig({
         },
         {
           tag: 'meta',
-          attrs: {
-            name: 'keywords',
-            content:
-              'LLM training, GRPO, PPO, reinforcement learning, fine-tuning, post-training, distributed training, Modal',
-          },
-        },
-        {
-          tag: 'meta',
-          attrs: { name: 'twitter:card', content: 'summary_large_image' },
-        },
-        {
-          tag: 'meta',
           attrs: { name: 'twitter:image', content: 'https://dojo.modal.dev/og-image.gif' },
         },
         {
@@ -224,7 +216,7 @@ export default defineConfig({
         },
         {
           tag: 'meta',
-          attrs: { name: 'twitter:site', content: '@modal_labs' },
+          attrs: { name: 'twitter:site', content: '@modal' },
         },
         {
           tag: 'script',
@@ -233,30 +225,32 @@ export default defineConfig({
             '@context': 'https://schema.org',
             '@graph': [
               {
+                '@type': 'Organization',
+                '@id': 'https://modal.com/#organization',
+                name: 'Modal',
+                url: 'https://modal.com/',
+                logo: 'https://modal.com/assets/favicon.svg',
+                sameAs: [
+                  'https://github.com/modal-labs',
+                  'https://www.youtube.com/@ModalLabs',
+                  'https://www.linkedin.com/company/modal-labs/',
+                  'https://x.com/modal',
+                ],
+              },
+              {
                 '@type': 'WebSite',
                 name: 'Modal Dojo',
                 url: 'https://dojo.modal.dev',
-                description:
-                  'Open-source Python SDK for distributed LLM post-training on Modal GPU clusters.',
-                publisher: {
-                  '@type': 'Organization',
-                  name: 'Modal Labs',
-                  url: 'https://modal.com',
-                },
+                publisher: { '@id': 'https://modal.com/#organization' },
               },
               {
                 '@type': 'SoftwareSourceCode',
                 name: 'Modal Dojo',
                 description:
-                  'Open-source Python SDK for distributed LLM post-training — GRPO, PPO, RL, and fine-tuning — on Modal GPU clusters.',
+                  'An open-source library that gives you the building blocks, tuned defaults, and observability you need for easy, production-grade post-training: supervised fine-tuning (SFT) and reinforcement learning (RL).',
                 codeRepository: 'https://github.com/modal-projects/modal-dojo',
                 programmingLanguage: 'Python',
-                runtimePlatform: 'Modal',
-                author: {
-                  '@type': 'Organization',
-                  name: 'Modal Labs',
-                  url: 'https://modal.com',
-                },
+                author: { '@id': 'https://modal.com/#organization' },
               },
             ],
           }),
