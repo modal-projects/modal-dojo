@@ -179,7 +179,7 @@ _LOCKS: dict[str, threading.Lock] = {}
 hpsv3_app = modal.App(HPSV3_APP)
 HPS_IMAGE = modal.Image.debian_slim(python_version="3.12").uv_pip_install(
     "hpsv3==1.0.0",
-    "matplotlib==3.11.2",
+    "matplotlib==3.11.1",
     "tensorboard==2.21.0",
 )
 

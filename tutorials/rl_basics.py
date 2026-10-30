@@ -219,7 +219,7 @@ config = TrainConfig(
         apply_chat_template_kwargs='{"enable_thinking": false}',
         custom_rm_function=haiku_rm,
         image_overlay=lambda image: image.run_commands(
-            "uv pip install --system 'aiohttp==3.14.5' 'nltk==3.10.4'",
+            "uv pip install --system 'aiohttp==3.14.5' 'nltk==3.10.3'",
             "python -c \"import nltk; nltk.download('cmudict', quiet=True)\"",
         ),
     ),
@@ -290,7 +290,7 @@ def continue_training(checkpoint):
             global_batch_size=16,
             apply_chat_template_kwargs='{"enable_thinking": false}',
             image_overlay=lambda image: image.run_commands(
-                "uv pip install --system 'aiohttp==3.14.5' 'nltk==3.10.4'",
+                "uv pip install --system 'aiohttp==3.14.5' 'nltk==3.10.3'",
                 "python -c \"import nltk; nltk.download('cmudict', quiet=True)\"",
             ),
         ),
