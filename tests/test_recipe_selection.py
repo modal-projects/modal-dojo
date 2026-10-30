@@ -381,3 +381,17 @@ def test_glm53_tito_without_session_server_raises(kwargs: dict[str, Any]) -> Non
 )
 def test_glm53_tito_session_server_valid_combinations(kwargs: dict[str, Any]) -> None:
     GLM_5_3_Flash_LoRA_Recipe(loss_type="sft_loss", **kwargs)
+
+
+def test_run_record_folds_escape_hatch_into_the_flags_it_overrides() -> None:
+    import modal_dojo
+    from modal_dojo.common.launcher_utils import serialize_recipe_params
+
+    recipe = modal_dojo.SlimeRecipe(
+        extra_config={"rollout_max_response_len": 2048, "micro_batch_size": 1}
+    )
+    params = serialize_recipe_params(recipe)
+    assert params["rollout_max_response_len"] == 2048
+    assert params["micro_batch_size"] == 1
+    assert "custom_config_path" not in params
+    assert "extra_config" not in params
