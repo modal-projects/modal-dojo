@@ -1494,7 +1494,7 @@ requires-dist = [
     { name = "randomname", specifier = "~=0.2.1" },
     { name = "requests", specifier = "~=2.34.2" },
     { name = "rich", specifier = "~=15.0.0" },
-    { name = "transformers", specifier = "~=5.20" },
+    { name = "transformers", specifier = "~=5.20.2" },
 ]
 
 [package.metadata.requires-dev]

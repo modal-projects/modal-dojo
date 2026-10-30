@@ -22,7 +22,7 @@ dependencies = [
     "randomname~=0.2.1",
     "rich~=15.0.0",
     "requests~=2.34.2",
-    "transformers~=5.20",
+    "transformers~=5.20.2",
 ]
 
 [build-system]
