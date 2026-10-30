@@ -182,40 +182,6 @@ export default defineConfig({
         },
         {
           tag: 'meta',
-          attrs: { property: 'og:image', content: 'https://dojo.modal.dev/og-image.gif' },
-        },
-        {
-          tag: 'meta',
-          attrs: { property: 'og:image:type', content: 'image/gif' },
-        },
-        {
-          tag: 'meta',
-          attrs: { property: 'og:image:width', content: '800' },
-        },
-        {
-          tag: 'meta',
-          attrs: { property: 'og:image:height', content: '473' },
-        },
-        {
-          tag: 'meta',
-          attrs: {
-            property: 'og:image:alt',
-            content: 'Modal Dojo agent-driven training demo',
-          },
-        },
-        {
-          tag: 'meta',
-          attrs: { name: 'twitter:image', content: 'https://dojo.modal.dev/og-image.gif' },
-        },
-        {
-          tag: 'meta',
-          attrs: {
-            name: 'twitter:image:alt',
-            content: 'Modal Dojo agent-driven training demo',
-          },
-        },
-        {
-          tag: 'meta',
           attrs: { name: 'twitter:site', content: '@modal' },
         },
         {
