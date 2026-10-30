@@ -1,0 +1,58 @@
+name: Reap stale work
+on:
+  workflow_dispatch:
+    inputs:
+      debugOnly:
+        description: "Run workflow without taking action"
+        required: true
+        default: false
+        type: boolean
+  schedule:
+    - cron: "30 15 * * *"
+
+permissions:
+  actions: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+    group: stale
+    cancel-in-progress: true
+
+jobs:
+  stale-prs:
+    name: Close stale PRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@b5d41d4e1d5dceea10e7104786b73624c18a190f # v10
+        with:
+          # # Execution
+          # aim to close inactive PRs in 10 days
+          # by first marking with a label
+          days-before-pr-stale: 5
+          stale-pr-label: stale
+          # and then closing on a later run
+          days-before-pr-close: 5
+          # close no more than 20, starting with the oldest
+          ascending: true
+          operations-per-run: 75  # note: multiple ops per close
+          # but do not delete branches
+          delete-branch: false
+          # # Communication
+          stale-pr-message: |
+            This PR is stale because it has been open 5 days with no activity.
+            This PR will be closed in 5 days.
+            If you wish to keep the PR open, add a comment or update the content.
+            To exempt this PR from closure, convert to draft or add the `do-not-stale` label.
+          close-pr-message: |
+            This PR was closed because it has been stalled for 10 days with no activity.
+            Reopen from the branch if you're still interested in merging this change.
+          # # Exemptions
+          # do not close draft PRs
+          exempt-draft-pr: true
+          # escape hatch via label
+          exempt-pr-labels: do-not-stale
+          # do not close issues
+          days-before-issue-stale: -1
+          # dry run unless manually dispatched and opted in
+          debug-only: ${{ github.event_name != 'workflow_dispatch' || inputs.debugOnly }}
