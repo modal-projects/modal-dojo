@@ -32,10 +32,20 @@ FAMILY_RE = re.compile(r"^([A-Za-z]+(?:\d+(?:\.\d+)*|\d+)?)")
 HF_URL = "https://huggingface.co"
 
 
+DOCS_URL = "https://dojo.modal.dev"
+TUTORIALS = {"Qwen/Qwen3-ASR-1.7B": "audio_asr"}
+
+
 @dataclass(frozen=True)
 class ModelLink:
     display_name: str
     href: str
+    config: str
+    recipes: tuple[str, ...]
+
+    @property
+    def slug(self) -> str:
+        return self.display_name.lower()
 
 
 @dataclass(frozen=True)
@@ -55,9 +65,13 @@ def family_of(hf_id: str) -> str:
     return family.title() if family.islower() else family
 
 
-def model_link(hf_id: str) -> ModelLink:
-    display_name = hf_id.rsplit("/", 1)[-1]
-    return ModelLink(display_name=display_name, href=f"{HF_URL}/{hf_id}")
+def model_link(hf_id: str, config: str, recipes: tuple[str, ...]) -> ModelLink:
+    return ModelLink(
+        display_name=hf_id.rsplit("/", 1)[-1],
+        href=f"{HF_URL}/{hf_id}",
+        config=config,
+        recipes=recipes,
+    )
 
 
 def iter_registered_recipes() -> Iterator[tuple[str, Any, Any, str]]:
@@ -96,6 +110,7 @@ def collect_model_preset_names() -> frozenset[str]:
 
 def collect_models() -> tuple[FamilyRow, ...]:
     families: dict[str, set[str]] = defaultdict(set)
+    recipes: dict[str, list[tuple[str, str]]] = defaultdict(list)
     unmatched: list[str] = []
     for recipe_name, _recipe, config, module_path in iter_registered_recipes():
         model_name = getattr(config, "model_name", None)
@@ -103,6 +118,7 @@ def collect_models() -> tuple[FamilyRow, ...]:
             unmatched.append(f"{module_path}.{recipe_name}")
             continue
         families[family_of(model_name)].add(model_name)
+        recipes[model_name].append((config.__name__, recipe_name))
     if unmatched:
         raise SystemExit(
             "No ModelConfig found for these recipes:\n  "
@@ -114,7 +130,11 @@ def collect_models() -> tuple[FamilyRow, ...]:
         FamilyRow(
             family=family,
             models=tuple(
-                model_link(hf_id)
+                model_link(
+                    hf_id,
+                    config=recipes[hf_id][0][0],
+                    recipes=tuple(recipe for _, recipe in recipes[hf_id]),
+                )
                 for hf_id in sorted(ids, key=lambda name: name.rsplit("/", 1)[-1])
             ),
         )
@@ -122,21 +142,71 @@ def collect_models() -> tuple[FamilyRow, ...]:
     )
 
 
+def render_snippet(model: ModelLink) -> list[str]:
+    tutorial = TUTORIALS.get(model.href.removeprefix(f"{HF_URL}/"))
+    if tutorial:
+        return [
+            f"See the [{tutorial} tutorial]({DOCS_URL}/tutorials/{tutorial}) "
+            "for a runnable example.",
+        ]
+    recipe = model.recipes[0]
+    return [
+        "```python",
+        "from modal_dojo import (",
+        "    HuggingFaceDataset,",
+        "    TrainConfig,",
+        f"    {model.config},",
+        f"    {recipe},",
+        ")",
+        "",
+        "config = TrainConfig(",
+        f"    model={model.config}(),",
+        "    dataset=HuggingFaceDataset(",
+        '        hf_repo="zhuzilin/dapo-math-17k",',
+        '        input_column="prompt",',
+        '        output_column="label",',
+        '        input_format="messages",',
+        "    ),",
+        f'    recipe={recipe}(rm_type="deepscaler"),',
+        ")",
+        "",
+        'if __name__ == "__main__":',
+        "    run = config.launch()",
+        "    print(run.training_run_id)",
+        "```",
+    ]
+
+
+def render_model(model: ModelLink) -> list[str]:
+    links = [f"[{model.href.removeprefix(f'{HF_URL}/')}]({model.href})"]
+    if len(model.recipes) > 1:
+        links.append("other recipes: " + ", ".join(f"`{r}`" for r in model.recipes[1:]))
+    return [
+        f'<details id="model-{model.slug}" data-model="{model.slug}">',
+        f"<summary>{model.display_name}</summary>",
+        "",
+        " · ".join(links),
+        "",
+        *render_snippet(model),
+        "",
+        "</details>",
+    ]
+
+
 def render_section(families: tuple[FamilyRow, ...]) -> str:
-    rows = []
+    body: list[str] = []
     for row in families:
-        items = "".join(
-            f"<li>[{model.display_name}]({model.href})</li>" for model in row.models
-        )
-        rows.append(f"| {row.family} | <ul>{items}</ul> |")
+        body.extend(["", f"**{row.family}**", ""])
+        for model in row.models:
+            body.extend(render_model(model))
     return "\n".join(
         [
             BEGIN_MARKER,
             BANNER,
             "",
-            "| Family | Models |",
-            "|---|---|",
-            *rows,
+            f"Expand a model for a runnable snippet, or link to it with "
+            f"`{DOCS_URL}/?model=<name>`.",
+            *body,
             END_MARKER,
         ]
     )

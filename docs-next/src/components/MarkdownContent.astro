@@ -141,6 +141,37 @@ const isCliIndex = slug === 'reference/cli';
   })();
 </script>
 
+<script is:inline>
+  (() => {
+    const models = [...document.querySelectorAll('details[data-model]')];
+    if (models.length === 0) return;
+
+    const wanted = new URL(location.href).searchParams.get('model')?.toLowerCase();
+    const target = wanted
+      ? models.find((d) => d.dataset.model === wanted) ??
+        models.find((d) => d.dataset.model.startsWith(wanted))
+      : undefined;
+    if (target) {
+      target.open = true;
+      target.scrollIntoView({ block: 'start' });
+    }
+
+    for (const details of models) {
+      details.addEventListener('toggle', () => {
+        const url = new URL(location.href);
+        if (details.open) {
+          url.searchParams.set('model', details.dataset.model);
+        } else if (url.searchParams.get('model') === details.dataset.model) {
+          url.searchParams.delete('model');
+        } else {
+          return;
+        }
+        history.replaceState(null, '', url);
+      });
+    }
+  })();
+</script>
+
 <style>
   .sl-anchor-link {
     position: relative;
