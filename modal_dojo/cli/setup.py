@@ -473,11 +473,12 @@ def _login_link(web_url: str) -> str | None:
     from modal_dojo.common.config import DASHBOARD_LOGIN_LINK_PATH
 
     from .client import DashboardClient
+    from .errors import CLIError
 
     try:
         with DashboardClient() as client:
             path = client.get_json(DASHBOARD_LOGIN_LINK_PATH)
-    except Exception:
+    except (CLIError, OSError):
         return None
     if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
         return None
