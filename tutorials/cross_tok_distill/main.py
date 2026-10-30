@@ -952,10 +952,10 @@ def build_config(teacher_deployment):
             custom_reward_post_process_function=cross_tokenizer_post_process,
             rollout_function=curriculum_rollout,
             image_overlay=lambda img: img.pip_install(
-                "modal~=1.6.1",
-                "huggingface_hub~=1.12.0",
-                "aiohttp~=3.13.0",
-                "jsonschema~=4.23.0",
+                "modal==1.6.1",
+                "huggingface_hub==1.12.2",
+                "aiohttp==3.13.5",
+                "jsonschema==4.23.0",
                 "bfcl-eval==2026.3.23",
             ).add_local_file(
                 str(Path(__file__).with_name("env.py")),

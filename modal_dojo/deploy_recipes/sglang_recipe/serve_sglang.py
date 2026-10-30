@@ -54,7 +54,7 @@ def build_sglang_serve_app(
         .entrypoint([])
         .run_commands("rm -rf /root/.cache/huggingface")
         # pydantic_core in the nightly image needs typing_extensions>=4.13 (Sentinel)
-        .uv_pip_install("typing_extensions>=4.13")
+        .uv_pip_install("typing_extensions==4.16.0")
     )
     # Brand-new model architectures (e.g. deepseek_v4 on older SGLang tags)
     # aren't in released transformers yet; install from git so AutoConfig
@@ -64,7 +64,7 @@ def build_sglang_serve_app(
     if recipe.install_transformers_from_git:
         image = image.run_commands(
             "uv pip install --python $(command -v python) --no-build-isolation "
-            "'transformers @ git+https://github.com/huggingface/transformers.git'"
+            "'transformers @ git+https://github.com/huggingface/transformers.git@66f51e76efd8542232b8bdd40ade7d1edbaac46f'"
         )
     image = image.env(image_env).add_local_python_source("modal_dojo", copy=True)
 
