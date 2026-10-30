@@ -14,13 +14,13 @@ modal-dojo setup
 
 Note that you'll have to rerun this command when you bump your `modal-dojo` version.
 
-Once deployed, open the dashboard any time with:
+Once deployed, open the dashboard any time with the command below, which also logs you in:
 
 ```bash
 modal-dojo open
 ```
 
-By default, the dashboard is deployed without authentication. To put it behind HTTP Basic Auth, set a password:
+The first `modal-dojo setup` asks how to protect the dashboard, with a password as the default; if `.train()` deploys it first, it generates a password and prints it once. To change this later, pass `--[no-]password` or `--[no-]proxy-auth` to `modal-dojo setup`. To change the password:
 
 ```bash
 modal-dojo set-password

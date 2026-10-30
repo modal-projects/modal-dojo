@@ -45,6 +45,11 @@ function runQueryParams({ limit, offset, query, facets }) {
   return search ? `?${search}` : "";
 }
 
+export async function fetchPasswordAuth() {
+  const res = await fetch(`${SERVER}/password-auth`);
+  return res.ok && (await res.json()) === true;
+}
+
 export async function fetchRuns({ signal, limit, offset, query, facets } = {}) {
   const search = runQueryParams({ limit, offset, query, facets });
   const response = await fetch(`${SERVER}/runs${search}`, { signal });

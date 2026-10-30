@@ -17,6 +17,7 @@ LOGIN_PATH = "/login"
 LOGOUT_PATH = "/logout"
 SESSION_COOKIE = "modal_dojo_session"
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
+LOGIN_LINK_TTL_SECONDS = 60
 FAILED_LOGIN_DELAY_SECONDS = 1.0
 # Tells the frontend a 401 means "log in again".
 LOGIN_REQUIRED_HEADER = "X-Modal-Dojo-Login"
@@ -30,6 +31,7 @@ LOGIN_PAGE_PATHS = frozenset(
 )
 
 _SESSION_CONTEXT = b"modal-dojo-session:v1:"
+_LOGIN_LINK_CONTEXT = b"modal-dojo-login-link:v1:"
 
 
 def password_matches(supplied: str, password: str) -> bool:
@@ -50,21 +52,26 @@ def basic_auth_ok(authorization: str | None, password: str) -> bool:
     return password_matches(supplied, password)
 
 
-def _signature(expires_at: int, password: str) -> str:
+def bearer_token_ok(authorization: str | None, token: str) -> bool:
+    scheme, _, supplied = (authorization or "").partition(" ")
+    return scheme.lower() == "bearer" and password_matches(supplied.strip(), token)
+
+
+def _signature(expires_at: int, password: str, context: bytes) -> str:
     return hmac.new(
         password.encode("utf-8"),
-        _SESSION_CONTEXT + str(expires_at).encode(),
+        context + str(expires_at).encode(),
         hashlib.sha256,
     ).hexdigest()
 
 
-def make_session_token(password: str, *, now: float | None = None) -> str:
-    expires_at = int(now if now is not None else time.time()) + SESSION_TTL_SECONDS
-    return f"{expires_at}.{_signature(expires_at, password)}"
+def _make_token(password: str, ttl: int, context: bytes, now: float | None) -> str:
+    expires_at = int(now if now is not None else time.time()) + ttl
+    return f"{expires_at}.{_signature(expires_at, password, context)}"
 
 
-def session_token_ok(
-    token: str | None, password: str, *, now: float | None = None
+def _token_ok(
+    token: str | None, password: str, context: bytes, now: float | None
 ) -> bool:
     if not token or not password:
         return False
@@ -75,8 +82,29 @@ def session_token_ok(
     if expires_at < (now if now is not None else time.time()):
         return False
     return hmac.compare_digest(
-        signature.encode("utf-8"), _signature(expires_at, password).encode()
+        signature.encode("utf-8"),
+        _signature(expires_at, password, context).encode(),
     )
+
+
+def make_session_token(password: str, *, now: float | None = None) -> str:
+    return _make_token(password, SESSION_TTL_SECONDS, _SESSION_CONTEXT, now)
+
+
+def session_token_ok(
+    token: str | None, password: str, *, now: float | None = None
+) -> bool:
+    return _token_ok(token, password, _SESSION_CONTEXT, now)
+
+
+def make_login_link_token(password: str, *, now: float | None = None) -> str:
+    return _make_token(password, LOGIN_LINK_TTL_SECONDS, _LOGIN_LINK_CONTEXT, now)
+
+
+def login_link_token_ok(
+    token: str | None, password: str, *, now: float | None = None
+) -> bool:
+    return _token_ok(token, password, _LOGIN_LINK_CONTEXT, now)
 
 
 def safe_next_path(next_path: str | None) -> str:

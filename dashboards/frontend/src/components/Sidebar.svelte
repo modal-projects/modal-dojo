@@ -1,5 +1,6 @@
 <script>
-  import { PanelLeftClose, PanelLeftOpen } from "lucide-svelte";
+  import { LogOut, PanelLeftClose, PanelLeftOpen } from "lucide-svelte";
+  import { fetchPasswordAuth } from "../lib/api.js";
 
   let {
     navItems,
@@ -14,6 +15,14 @@
   const isMac =
     typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
   const hotkeyLabel = isMac ? "⌘B" : "Ctrl+B";
+
+  // Only a password-protected dashboard has a session to end.
+  let passwordProtected = $state(false);
+  $effect(() => {
+    fetchPasswordAuth()
+      .then((value) => (passwordProtected = value))
+      .catch(() => {});
+  });
 </script>
 
 <aside
@@ -54,6 +63,28 @@
         </span>
       </a>
     {/each}
+    {#if passwordProtected}
+      <form method="post" action="/logout" class="mt-auto max-[900px]:mt-0">
+        <button
+          type="submit"
+          class="nav-item w-full overflow-hidden whitespace-nowrap max-[900px]:p-[10px_8px] max-[900px]:min-h-[44px]"
+          aria-label="Log out"
+          title={collapsed ? "Log out" : undefined}
+        >
+          <span class="inline-flex items-center flex-[0_0_auto] opacity-[0.6]">
+            <LogOut size={14} strokeWidth={2.1} />
+          </span>
+          <span
+            class={[
+              "transition-opacity duration-150 ease-out max-[900px]:hidden",
+              collapsed ? "opacity-0" : "opacity-100",
+            ]}
+          >
+            Log out
+          </span>
+        </button>
+      </form>
+    {/if}
   </nav>
 
   <div

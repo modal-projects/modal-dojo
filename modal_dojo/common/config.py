@@ -25,11 +25,12 @@ MODAL_CONFIG_PATH = Path(
 _dashboard_requires_proxy_auth = False
 _dashboard_trajectory_viewer: str | None = None
 DASHBOARD_PROXY_AUTH_PATH = "/api/proxy-auth"
+DASHBOARD_PASSWORD_AUTH_PATH = "/api/password-auth"
+DASHBOARD_LOGIN_LINK_PATH = "/api/login-link"
 DASHBOARD_VERSION_PATH = "/api/version"
 
-# Holds DASHBOARD_PASSWORD. An empty value means the dashboard is open (no
-# auth) — that's the default so existing deployments keep working untouched.
-# Set a real value via ``modal-dojo set-password``.
+# Holds DASHBOARD_PASSWORD and DASHBOARD_CLI_TOKEN. Created by ``modal-dojo
+# setup`` on first deploy; an empty password means the dashboard is open.
 DASHBOARD_PASSWORD_SECRET_NAME = "_training-gym-dashboard-password"
 
 
@@ -112,6 +113,33 @@ def save_dashboard_url(url: str, *, proxy_auth: bool | None = None) -> None:
     if proxy_auth is not None:
         dashboard["proxy_auth"] = proxy_auth
     config["dashboard"] = dashboard
+    _write_config(_render(config).encode())
+
+
+def get_cli_token_from_config() -> str:
+    """Return the dashboard CLI token saved in the config, or ``""``."""
+    dashboard = load_config().get("dashboard")
+    if isinstance(dashboard, dict):
+        token = dashboard.get("cli_token")
+        if isinstance(token, str):
+            return token
+    return ""
+
+
+def save_cli_token_to_config(token: str) -> None:
+    """Persist (or, given ``""``, forget) the dashboard CLI token."""
+    config = load_config()
+    dashboard = config.get("dashboard")
+    if not isinstance(dashboard, dict):
+        dashboard = {}
+    if token:
+        dashboard["cli_token"] = token
+    else:
+        dashboard.pop("cli_token", None)
+    if dashboard:
+        config["dashboard"] = dashboard
+    else:
+        config.pop("dashboard", None)
     _write_config(_render(config).encode())
 
 
@@ -205,10 +233,6 @@ def get_dashboard_proxy_auth(
                 if isinstance(value, bool):
                     if value:
                         print("The deployed dashboard uses proxy authentication.")
-                    else:
-                        print(
-                            "The deployed dashboard does not use proxy authentication."
-                        )
                     return value
         except HTTPError as exc:
             if exc.code in {401, 403}:
@@ -219,16 +243,27 @@ def get_dashboard_proxy_auth(
         except (JSONDecodeError, OSError, URLError, UnicodeDecodeError):
             pass
 
-    if persisted is not None:
-        print("Unable to reach existing dashboard.")
-        if persisted:
-            print("The last deploy from this computer used proxy authentication.")
-        else:
-            print(
-                "The last deploy from this computer did not use proxy authentication."
-            )
+    if persisted:
+        print(
+            "Unable to reach existing dashboard; the last deploy from this "
+            "computer used proxy authentication."
+        )
 
     return persisted
+
+
+def get_dashboard_password_auth(url: str) -> bool | None:
+    """Ask the live dashboard whether it requires a password; ``None`` if unknown."""
+    request = Request(
+        url.strip().rstrip("/") + DASHBOARD_PASSWORD_AUTH_PATH,
+        headers=modal_proxy_auth_headers(),
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            value = loads(response.read())
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, bool) else None
 
 
 PROXY_AUTH_SECTION = "proxy_auth"

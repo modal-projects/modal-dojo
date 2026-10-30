@@ -510,6 +510,14 @@ def serialize_recipe_params(
         ).items()
     }
 
+    # The escape hatch rides along as one inline-YAML flag whose keys override
+    # same-named fields; record each key as the flag it stands for so two runs
+    # that set a value in different places compare equal.
+    hatch = result.pop(
+        getattr(recipe, "_ESCAPE_HATCH_FLAG", "custom_config_path"), None
+    )
+    if isinstance(hatch, dict):
+        result.update(hatch)
     # These launcher decisions are not CLI flags, but pricing and run inspection
     # must retain what was actually allocated, including debug-only jobs.
     allocation = getattr(recipe, "gpu_allocation", None)

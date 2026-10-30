@@ -24,7 +24,10 @@ class Qwen3_8_27B_Recipe(SlimeRecipe):
     )
 
     gpu_type: str = "B300"
-    actor_num_gpus_per_node: int = 8
+    colocate: bool = False
+    async_mode: bool = True
+    actor_num_gpus_per_node: int = 4
+    rollout_num_gpus: int | None = 4
     rollout_num_gpus_per_engine: int = 4
     tensor_model_parallel_size: int = 2
     context_parallel_size: int = 1
@@ -38,6 +41,7 @@ class Qwen3_8_27B_Recipe(SlimeRecipe):
     sglang_speculative_num_draft_tokens: int | None = None
 
     sglang_mamba_scheduler_strategy: str | None = "extra_buffer"
+    sglang_cuda_graph_backend_prefill: str | None = "disabled"
     sglang_mem_fraction_static: float = 0.6
     sglang_max_running_requests: int | None = 32
     sglang_tool_call_parser: str | None = "qwen3_coder"

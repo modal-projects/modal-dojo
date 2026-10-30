@@ -1695,18 +1695,18 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "click", specifier = ">=8.2,<9" },
-    { name = "cloudpickle" },
-    { name = "datasets" },
-    { name = "fastapi" },
-    { name = "httpx" },
+    { name = "click", specifier = "~=8.5.0" },
+    { name = "cloudpickle", specifier = "~=3.1.2" },
+    { name = "datasets", specifier = "~=5.1.0" },
+    { name = "fastapi", specifier = "~=0.162.0" },
+    { name = "httpx", specifier = "~=0.28.1" },
     { name = "modal", specifier = "==1.6.1" },
     { name = "modal-spindle", marker = "python_full_version == '3.12.*' and extra == 'spindle'", git = "https://github.com/modal-projects/spindle.git?rev=99075245e9d576d9173a2f5dce876208ff6f7746" },
-    { name = "packaging" },
-    { name = "pydantic" },
-    { name = "randomname" },
-    { name = "requests" },
-    { name = "rich" },
+    { name = "packaging", specifier = "~=26.3" },
+    { name = "pydantic", specifier = "~=2.14.1" },
+    { name = "randomname", specifier = "~=0.2.1" },
+    { name = "requests", specifier = "~=2.34.2" },
+    { name = "rich", specifier = "~=15.0.0" },
     { name = "synchronicity", specifier = ">=0.12.5,<1" },
     { name = "tinker", marker = "extra == 'spindle'", specifier = "==0.34.0" },
     { name = "tinker-cookbook", marker = "extra == 'spindle'", git = "https://github.com/thinking-machines-lab/tinker-cookbook.git?rev=ad3b5c541cd383b05d1c301e8ccc2d9cc0c5f774" },
@@ -1716,20 +1716,20 @@ requires-dist = [
 provides-extras = ["spindle"]
 
 [package.metadata.requires-dev]
-ci = [{ name = "pygithub", specifier = ">=2.9.1" }]
+ci = [{ name = "pygithub", specifier = "~=2.10.0" }]
 dev = [
-    { name = "ipykernel", specifier = ">=6.29.0" },
-    { name = "pre-commit", specifier = ">=4.5.1" },
-    { name = "pytest", specifier = ">=9.0.3" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "ruff", specifier = ">=0.15.17" },
-    { name = "uv", specifier = ">=0.11.0" },
+    { name = "ipykernel", specifier = "~=7.4.0" },
+    { name = "pre-commit", specifier = "~=4.7.0" },
+    { name = "pytest", specifier = "~=9.1.1" },
+    { name = "pyyaml", specifier = "~=6.0.3" },
+    { name = "ruff", specifier = "~=0.17.2" },
+    { name = "uv", specifier = "~=0.13.5" },
 ]
 docs = [
-    { name = "mkdocs-gen-files", specifier = ">=0.6.1" },
-    { name = "mkdocs-material", specifier = ">=9.7.6" },
-    { name = "properdocs", specifier = ">=1.6.7" },
-    { name = "pymdown-extensions", specifier = ">=10.21.2" },
+    { name = "mkdocs-gen-files", specifier = "~=0.6.1" },
+    { name = "mkdocs-material", specifier = "~=9.7.7" },
+    { name = "properdocs", specifier = "~=1.6.7" },
+    { name = "pymdown-extensions", specifier = "~=12.3" },
 ]
 
 [[package]]

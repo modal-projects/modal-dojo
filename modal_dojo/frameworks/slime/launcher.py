@@ -467,7 +467,7 @@ def build_slime_app(
         resolve_trackio_destination(slime.metrics)
     image = apply_metric_image(image, slime.metrics)
     image = image.add_local_python_source("modal_dojo", copy=True)
-    image = image.uv_pip_install("randomname")
+    image = image.uv_pip_install("randomname==0.2.1")
     image = mount_tools_dir(image)
     image = mount_caller_source(image, caller_script)
 
