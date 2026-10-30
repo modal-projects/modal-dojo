@@ -268,6 +268,12 @@ class TrainingRun(BaseModel):
             *location, training_run_id=self.training_run_id, app_name=self.app_name
         )
 
+    def evaluations(self) -> list[dict[str, Any]]:
+        """Modal Evals results of this run's checkpoints, oldest first: each
+        has ``iteration``, ``job_id``, ``status``, ``score`` and ``url``."""
+        records = (self.metadata or {}).get("modal_evals")
+        return [dict(record) for record in records] if isinstance(records, list) else []
+
     def latest_checkpoint(self) -> "Checkpoint | None":
         checkpoints = self.checkpoints()
         return checkpoints[-1] if checkpoints else None

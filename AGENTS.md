@@ -102,6 +102,10 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
 
 `scripts/api_reference_manifest.py` contains a curated list of public classes. `scripts/generate_api_reference.py` introspects each class (fields, types, defaults, methods) and generates Starlight markdown pages. Run via `scripts/generate_all.py`.
 
+### Modal Evals
+
+`TrainConfig(eval=ModalEvalConfig(every_n_checkpoints=N))` scores every Nth committed checkpoint with [Modal Evals](https://modal.com/evaluations) (`common/evaluations.py`). At launch it checks that the workspace is modal-labs and publishes the `eval_dataset` (or `dataset`) `eval_rows()` as a private evaluation keyed `dojo-<hash>`. `eval_rows()` defaults to `rows()`; `HuggingFaceDataset(eval_split=...)` reads another split. Trials score each reply with the run's reward function: `ModalEvalConfig.reward_function`, defaulting to `recipe.custom_rm_function`. It is cloudpickled by value into each task and called like training calls it, as `reward(args, sample)` with `sample.response` and `sample.label`. The trial code is `evaluation_runner/dataset.py`, and the runner Image carries all of `modal_dojo`. A detached CPU `watch_checkpoints` Function serves each due checkpoint with `Endpoint.launch`, submits a job against its `FlashEndpointTarget`, records `{iteration, job_id, status, score, url}` in `TrainingRun.metadata["modal_evals"]` (read with `TrainingRun.evaluations()`), and stops the Endpoint. This needs the unpublished `modal-evals` SDK (`uv pip install --no-sources <modal>/flash_eval/modal_evals`), so it stays internal-only. The SDK tests live in `tests/test_evaluations_sdk.py` and skip without it. The legacy `common/eval.py` evals remain.
+
 ### Dashboard
 
 `dashboards/app.py` is a Modal app with a Svelte frontend (built at image-build time). Training runs and evals write metadata to a shared Modal Volume (`modal-dojo-metadata`) via `modal_dojo.utils.metadata`. The ASGI endpoint serves the pre-built SPA + JSON APIs (`/api/runs`, `/api/train-results`, `/api/evals`) that read summary JSON from the volume on demand.

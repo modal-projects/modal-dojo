@@ -52,6 +52,7 @@ _EXPORTS = {
     "Sample": ("modal_dojo.common.sample", "Sample"),
     "extract_code": ("modal_dojo.common.eval", "extract_code"),
     "HarborEval": ("modal_dojo.common.eval", "HarborEval"),
+    "ModalEvalConfig": ("modal_dojo.common.evaluations", "ModalEvalConfig"),
     "DeepSeek_V4_1_Flash": (
         "modal_dojo.common.models",
         "DeepSeek_V4_1_Flash",
@@ -264,6 +265,7 @@ __all__ = [
     "Sample",
     "extract_code",
     "HarborEval",
+    "ModalEvalConfig",
     "HFModelConfiguration",
     "HuggingFaceDataset",
     "MultimodalDataset",
