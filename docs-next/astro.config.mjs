@@ -239,6 +239,7 @@ export default defineConfig({
               },
               {
                 '@type': 'WebSite',
+                '@id': 'https://dojo.modal.dev/#website',
                 name: 'Modal Dojo',
                 url: 'https://dojo.modal.dev',
                 publisher: { '@id': 'https://modal.com/#organization' },
