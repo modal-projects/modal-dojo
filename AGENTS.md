@@ -102,6 +102,10 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
 
 `scripts/api_reference_manifest.py` contains a curated list of public classes. `scripts/generate_api_reference.py` introspects each class (fields, types, defaults, methods) and generates Starlight markdown pages. Run via `scripts/generate_all.py`.
 
+### Modal Evals
+
+`common/evaluations.py` runs published [Modal Evals](https://modal.com/evaluations) evaluations against Dojo deployments: `run_evaluation(key, Endpoint | CustomDeployment)` submits a job and returns an `EvaluationJob` (`wait()`, `results()`, `mean(field)`), and `dataset_tasks(dataset, TaskData)` turns `dataset.rows()` into tasks for an evaluation's `@evaluation.tasks()`. It needs the unpublished `modal-evals` SDK (`uv pip install --no-sources <modal>/flash_eval/modal_evals`), so it stays internal-only and excluded from the API reference; the legacy `common/eval.py` evals remain until the SDK is distributable. Custom targets authenticate with a bearer token only, so `CustomDeployment`s must be launched with `unauthenticated=True`.
+
 ### Dashboard
 
 `dashboards/app.py` is a Modal app with a Svelte frontend (built at image-build time). Training runs and evals write metadata to a shared Modal Volume (`modal-dojo-metadata`) via `modal_dojo.utils.metadata`. The ASGI endpoint serves the pre-built SPA + JSON APIs (`/api/runs`, `/api/train-results`, `/api/evals`) that read summary JSON from the volume on demand.
