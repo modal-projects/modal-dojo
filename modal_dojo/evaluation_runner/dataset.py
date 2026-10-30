@@ -1,65 +1,41 @@
 """A Modal Evals evaluation built from a Dojo dataset's rows.
 
-Each task holds one row's chat messages and label. The trial sends the
-messages to the target as one chat completion and scores the reply with the
-scorer the task names.
+Each task holds one row's chat messages, its label, and the training run's
+reward function, cloudpickled. The trial sends the messages to the target as
+one chat completion and scores the reply with that reward function, called as
+training calls it: ``reward(args, sample)`` with ``sample.response`` and
+``sample.label``.
 """
 
 from __future__ import annotations
 
+import base64
+import functools
+import inspect
 import json
-import re
 import time
 from collections.abc import Callable, Sequence
-from typing import Annotated, Any, Literal
+from types import SimpleNamespace
+from typing import Annotated, Any
 
+import cloudpickle
 import httpx
 import modal
 import modal_evals as evals
 from pydantic import Field
 
-Scorer = Literal["exact_match", "contains", "boxed_math"]
-
-_BOXED = re.compile(r"\\boxed\{([^{}]*)\}")
-_NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
-
-
-def _normalize(text: str) -> str:
-    return " ".join(text.strip().casefold().split())
-
-
-def _final_answer(text: str) -> str:
-    if boxed := _BOXED.findall(text):
-        return boxed[-1]
-    if numbers := _NUMBER.findall(text):
-        return numbers[-1]
-    return text
-
-
-def _number(text: str) -> float | None:
-    try:
-        return float(text.replace(",", "").strip())
-    except ValueError:
-        return None
-
-
-def _math(response: str, label: str) -> float:
-    answer, expected = _final_answer(response), _final_answer(label)
-    answer_number, expected_number = _number(answer), _number(expected)
-    if answer_number is not None and expected_number is not None:
-        return float(abs(answer_number - expected_number) < 1e-6)
-    return float(_normalize(answer) == _normalize(expected))
-
-
-SCORERS: dict[str, Callable[[str, str], float]] = {
-    "exact_match": lambda response, label: float(
-        _normalize(response) == _normalize(label)
-    ),
-    "contains": lambda response, label: float(
-        _normalize(label) in _normalize(response)
-    ),
-    "boxed_math": _math,
-}
+RUNNER_DEPENDENCIES = (
+    "click>=8.2,<9",
+    "cloudpickle",
+    "datasets",
+    "httpx",
+    "packaging",
+    "pydantic>=2,<3",
+    "fastapi",
+    "randomname",
+    "rich",
+    "requests",
+)
 
 
 class DatasetParams(evals.Params):
@@ -70,7 +46,7 @@ class DatasetParams(evals.Params):
 class DatasetTask(evals.TaskData):
     messages: str
     label: str
-    scorer: Scorer
+    reward: str
 
 
 class DatasetResult(evals.TrialResult):
@@ -79,12 +55,38 @@ class DatasetResult(evals.TrialResult):
     response: str
 
 
+def pickle_reward(reward: Callable[..., Any]) -> str:
+    return base64.b64encode(cloudpickle.dumps(reward)).decode("ascii")
+
+
+@functools.cache
+def _reward(payload: str) -> Callable[..., Any]:
+    return cloudpickle.loads(base64.b64decode(payload))
+
+
+async def score(
+    reward: Callable[..., Any], messages: Any, response: str, label: str
+) -> float:
+    sample = SimpleNamespace(
+        prompt=messages, response=response, label=label, metadata={}, status=None
+    )
+    value = reward(SimpleNamespace(), sample)
+    if inspect.isawaitable(value):
+        value = await value
+    if isinstance(value, dict):
+        value = value.get("reward", value.get("score"))
+    if not isinstance(value, (bool, int, float)):
+        raise TypeError(f"The reward function returned {value!r}, not a number")
+    return float(value)
+
+
 async def run(
     ctx: evals.TrialContext[DatasetParams, DatasetTask],
 ) -> DatasetResult:
     base_url = ctx.target.base_url.rstrip("/")
     if not base_url.endswith("/v1"):
         base_url = f"{base_url}/v1"
+    messages = json.loads(ctx.task.data.messages)
     started = time.monotonic()
     async with httpx.AsyncClient(timeout=None) as client:
         response = await client.post(
@@ -92,7 +94,7 @@ async def run(
             headers=dict(ctx.target.headers),
             json={
                 "model": ctx.target.model,
-                "messages": json.loads(ctx.task.data.messages),
+                "messages": messages,
                 "temperature": ctx.params.temperature,
                 "max_tokens": ctx.params.max_tokens,
             },
@@ -105,7 +107,9 @@ async def run(
         )
     content = response.json()["choices"][0]["message"].get("content") or ""
     return DatasetResult(
-        score=SCORERS[ctx.task.data.scorer](content, ctx.task.data.label),
+        score=await score(
+            _reward(ctx.task.data.reward), messages, content, ctx.task.data.label
+        ),
         latency=(time.monotonic() - started) * 1000,
         response=content,
     )
@@ -119,7 +123,11 @@ def build_evaluation(
     description: str,
     max_concurrency: int,
 ) -> evals.Evaluation:
-    """An evaluation of ``tasks`` whose trials run :func:`run`."""
+    """An evaluation of ``tasks`` whose trials run :func:`run`.
+
+    The runner Image carries all of ``modal_dojo`` and its dependencies, so a
+    reward function that uses them unpickles there.
+    """
     evaluation = evals.Evaluation(
         key, display_name=display_name, description=description
     )
@@ -131,11 +139,11 @@ def build_evaluation(
     evaluation.tasks()(list_tasks)
     evaluation.trial(
         image=modal.Image.debian_slim(python_version="3.12").uv_pip_install(  # pyright: ignore[reportArgumentType]
-            "httpx~=0.28"
+            *RUNNER_DEPENDENCIES
         ),
         timeout=600,
         max_concurrency=max_concurrency,
-        package=__name__.rpartition(".")[0],
+        package=__name__.partition(".")[0],
     )(run)
     evaluation.report(
         evals.Card("score", label="Score"),
@@ -150,7 +158,7 @@ def task_from_row(
     *,
     input_key: str,
     label_key: str,
-    scorer: Scorer,
+    reward: str,
     key_column: str | None = None,
 ) -> evals.Task[DatasetTask]:
     prompt = row[input_key]
@@ -161,6 +169,6 @@ def task_from_row(
     return evals.Task(
         key,
         DatasetTask(
-            messages=json.dumps(messages), label=str(row[label_key]), scorer=scorer
+            messages=json.dumps(messages), label=str(row[label_key]), reward=reward
         ),
     )

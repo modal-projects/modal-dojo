@@ -70,7 +70,7 @@ class DatasetConfig(ABC):
         raise NotImplementedError(f"{type(self).__name__} has no rows()")
 
     def eval_rows(self) -> Iterable[DatasetRow] | None:
-        """Examples, shaped like ``rows()``, that ``TrainConfig.modal_eval``
+        """Examples, shaped like ``rows()``, that ``TrainConfig.eval``
         scores checkpoints on; defaults to ``rows()``."""
         return self.rows()
 
@@ -186,7 +186,7 @@ class HuggingFaceDataset(DatasetConfig):
     Attributes:
         hf_repo: Hugging Face dataset repository ID.
         hf_split: Source dataset split.
-        eval_split: Split that ``eval_rows()`` reads for ``TrainConfig.modal_eval``;
+        eval_split: Split that ``eval_rows()`` reads for ``TrainConfig.eval``;
             defaults to ``hf_split``.
         hf_config: Source dataset configuration name.
         input_column: Source prompt column.

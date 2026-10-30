@@ -16,17 +16,17 @@ def test_missing_sdk_raises_install_hint(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_modal_eval_config_needs_a_positive_interval() -> None:
-    assert ModalEvalConfig(every_n_checkpoints=3).scorer == "exact_match"
+    assert ModalEvalConfig(every_n_checkpoints=3).reward_function is None
     with pytest.raises(ValidationError):
         ModalEvalConfig(every_n_checkpoints=0)
     with pytest.raises(ValidationError):
-        ModalEvalConfig(every_n_checkpoints=1, scorer="fuzzy")  # type: ignore[arg-type]
+        ModalEvalConfig(every_n_checkpoints=1, scorer="exact_match")  # type: ignore[call-arg]
 
 
-def test_train_config_takes_modal_eval() -> None:
+def test_train_config_takes_eval() -> None:
     from modal_dojo.common.train import TrainConfig
 
-    assert TrainConfig.__dataclass_fields__["modal_eval"].default is None
+    assert TrainConfig.__dataclass_fields__["eval"].default is None
 
 
 @pytest.mark.parametrize(
@@ -83,13 +83,27 @@ def test_training_run_evaluations_reads_metadata() -> None:
 def test_modal_eval_requires_modal_labs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(evaluations, "_require_modal_evals", lambda: None)
     monkeypatch.setattr(evaluations, "_workspace_name", lambda: "acme")
-    train_config = SimpleNamespace(modal_eval=ModalEvalConfig(every_n_checkpoints=1))
+    train_config = SimpleNamespace(eval=ModalEvalConfig(every_n_checkpoints=1))
     with pytest.raises(DojoConfigError, match="modal-labs"):
-        evaluations.prepare_modal_eval(train_config)  # type: ignore[arg-type]
+        evaluations.prepare_eval(train_config)  # type: ignore[arg-type]
 
 
-def test_modal_eval_publishes_eval_dataset(monkeypatch: pytest.MonkeyPatch) -> None:
-    published = {}
+async def _reward(args, sample, **kwargs) -> float:
+    return float(sample.response == sample.label)
+
+
+def _train_config(recipe_reward=None, **eval):
+    return SimpleNamespace(
+        eval=ModalEvalConfig(every_n_checkpoints=1, max_rows=10, **eval),
+        recipe=SimpleNamespace(custom_rm_function=recipe_reward),
+        dataset="train",
+        eval_dataset="held-out",
+    )
+
+
+@pytest.fixture
+def published(monkeypatch: pytest.MonkeyPatch) -> dict:
+    published: dict = {}
     monkeypatch.setattr(evaluations, "_require_modal_evals", lambda: None)
     monkeypatch.setattr(evaluations, "_workspace_name", lambda: "modal-labs")
     monkeypatch.setattr(
@@ -97,15 +111,29 @@ def test_modal_eval_publishes_eval_dataset(monkeypatch: pytest.MonkeyPatch) -> N
         "publish_dataset_evaluation",
         lambda dataset, **kwargs: published.update(dataset=dataset, **kwargs),
     )
-    train_config = SimpleNamespace(
-        modal_eval=ModalEvalConfig(
-            every_n_checkpoints=1, scorer="boxed_math", max_rows=10
-        ),
-        dataset="train",
-        eval_dataset="held-out",
-    )
-    evaluations.prepare_modal_eval(train_config)  # type: ignore[arg-type]
-    assert published == {"dataset": "held-out", "scorer": "boxed_math", "limit": 10}
+    return published
+
+
+def test_modal_eval_scores_with_the_recipe_reward(published: dict) -> None:
+    evaluations.prepare_eval(_train_config(_reward))  # type: ignore[arg-type]
+    assert published == {
+        "dataset": "held-out",
+        "reward_function": _reward,
+        "limit": 10,
+    }
+
+
+def test_modal_eval_reward_function_overrides_the_recipe(published: dict) -> None:
+    def other(args, sample):
+        return 0.0
+
+    evaluations.prepare_eval(_train_config(_reward, reward_function=other))  # type: ignore[arg-type]
+    assert published["reward_function"] is other
+
+
+def test_modal_eval_needs_a_reward_function(published: dict) -> None:
+    with pytest.raises(DojoConfigError, match="custom_rm_function"):
+        evaluations.prepare_eval(_train_config(None))  # type: ignore[arg-type]
 
 
 def test_evaluate_checkpoint_records_and_stops_endpoint(

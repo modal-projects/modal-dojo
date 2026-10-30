@@ -23,7 +23,8 @@ import time
 import uuid
 from collections.abc import Coroutine, Iterable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import ConfigDict, Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
@@ -49,7 +50,6 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 
-Scorer = Literal["exact_match", "contains", "boxed_math"]
 MODAL_EVALS_WORKSPACE = "modal-labs"
 
 INSTALL_HINT = (
@@ -437,7 +437,7 @@ def publish_dataset_evaluation(
     dataset: DatasetConfig,
     key: str | None = None,
     *,
-    scorer: Scorer = "exact_match",
+    reward_function: Callable[..., Any],
     display_name: str | None = None,
     description: str | None = None,
     key_column: str | None = None,
@@ -450,17 +450,17 @@ def publish_dataset_evaluation(
 
     Each row becomes a task holding its ``input_key()`` column (a prompt or a
     list of chat messages) and ``label_key()`` column. A trial sends the
-    messages to the target as one chat completion and scores the reply:
-    ``exact_match`` and ``contains`` compare text, ``boxed_math`` compares the
-    last ``\\boxed{}`` or number. A new evaluation is private to ``environment``;
+    messages to the target as one chat completion and scores the reply with
+    ``reward_function(args, sample)``, as training calls a
+    ``custom_rm_function``. A new evaluation is private to ``environment``;
     publishing again under the same key adds a release.
 
     Args:
         dataset: Dataset whose ``eval_rows()`` become tasks.
         key: Evaluation key, lowercase words joined by hyphens; defaults to
-            ``dojo-<hash>`` of the tasks and scorer, so the same rows reuse
+            ``dojo-<hash>`` of the tasks, so the same rows and reward reuse
             one evaluation.
-        scorer: How a reply is scored against the row's label.
+        reward_function: Scores a reply; cloudpickled by value into each task.
         display_name: Name shown in the Modal dashboard; defaults to ``key``.
         description: Description shown in the Modal dashboard; defaults to
             one naming the dataset.
@@ -474,7 +474,15 @@ def publish_dataset_evaluation(
         ValueError: The dataset has no label column or no rows.
     """
     _require_modal_evals()
-    from modal_dojo.evaluation_runner.dataset import build_evaluation, task_from_row
+    from modal_dojo.common.launcher_helpers import resolve_caller_context
+    from modal_dojo.evaluation_runner.dataset import (
+        build_evaluation,
+        pickle_reward,
+        task_from_row,
+    )
+
+    resolve_caller_context()
+    reward = pickle_reward(reward_function)
 
     label_key = dataset.label_key()
     if label_key is None:
@@ -492,19 +500,20 @@ def publish_dataset_evaluation(
                 row,
                 input_key=input_key,
                 label_key=label_key,
-                scorer=scorer,
+                reward=reward,
                 key_column=key_column,
             )
         )
     if not tasks:
         raise ValueError(f"{type(dataset).__name__} has no eval rows to publish.")
-    key = key or _content_key(tasks, scorer)
+    key = key or _content_key(tasks)
     evaluation = build_evaluation(
         key,
         tasks,
         display_name=display_name or key,
         description=description
-        or f"{len(tasks)} rows of {type(dataset).__name__}, scored by {scorer}.",
+        or f"{len(tasks)} rows of {type(dataset).__name__}, scored by "
+        f"{getattr(reward_function, '__name__', 'the reward function')}.",
         max_concurrency=max_concurrency,
     )
     return _LOOP.run(_publish(evaluation, environment, server))
@@ -558,9 +567,9 @@ async def _publish(
     )
 
 
-def _content_key(tasks: list[Any], scorer: str) -> str:
+def _content_key(tasks: list[Any]) -> str:
     payload = json.dumps(
-        [scorer, [(task.key, task.data.model_dump(mode="json")) for task in tasks]],
+        [(task.key, task.data.model_dump(mode="json")) for task in tasks],
         sort_keys=True,
     )
     return f"dojo-{hashlib.sha256(payload.encode()).hexdigest()[:16]}"
@@ -572,16 +581,17 @@ class ModalEvalConfig:
     """Score every Nth checkpoint of a training run with Modal Evals.
 
     The run's ``eval_dataset`` (or ``dataset``) ``eval_rows()`` are published
-    as a private evaluation at launch. Internal-only: launching needs the
+    as a private evaluation at launch, scored with the run's reward function. Internal-only: launching needs the
     modal-labs workspace and the ``modal-evals`` SDK.
 
     Args:
         every_n_checkpoints:
             Evaluate each committed checkpoint whose 1-based position is a
             multiple of this.
-        scorer:
-            ``exact_match`` or ``contains`` compare the reply with the row's
-            label; ``boxed_math`` compares the last ``\\boxed{}`` or number.
+        reward_function:
+            Scores each reply as ``reward(args, sample)`` with
+            ``sample.response`` and ``sample.label``; defaults to the recipe's
+            ``custom_rm_function``.
         max_rows:
             Most eval rows to publish.
         temperature:
@@ -593,7 +603,7 @@ class ModalEvalConfig:
     """
 
     every_n_checkpoints: int = Field(ge=1)
-    scorer: Scorer = "exact_match"
+    reward_function: Callable[..., Any] | None = None
     max_rows: int | None = Field(default=None, ge=1)
     temperature: float = Field(default=0.0, ge=0, le=2)
     max_tokens: int = Field(default=2048, ge=1)
@@ -611,20 +621,28 @@ def _workspace_name() -> str:
     return _LOOP.run(lookup())
 
 
-def prepare_modal_eval(train_config: TrainConfig) -> EvaluationRelease:
+def prepare_eval(train_config: TrainConfig) -> EvaluationRelease:
     """Check that the run may use Modal Evals and publish its evaluation."""
-    config = train_config.modal_eval
+    config = train_config.eval
     assert config is not None
     _require_modal_evals()
     workspace = _workspace_name()
     if workspace != MODAL_EVALS_WORKSPACE:
         raise DojoConfigError(
-            f"TrainConfig.modal_eval needs the {MODAL_EVALS_WORKSPACE} workspace, "
+            f"TrainConfig.eval needs the {MODAL_EVALS_WORKSPACE} workspace, "
             f"not {workspace!r}: Modal Evals is internal-only for now."
+        )
+    reward = config.reward_function or getattr(
+        train_config.recipe, "custom_rm_function", None
+    )
+    if not callable(reward):
+        raise DojoConfigError(
+            "TrainConfig.eval scores with the recipe's custom_rm_function; "
+            "set it, or pass ModalEvalConfig(reward_function=...)."
         )
     dataset = train_config.eval_dataset or train_config.dataset
     return publish_dataset_evaluation(
-        dataset, scorer=config.scorer, limit=config.max_rows
+        dataset, reward_function=reward, limit=config.max_rows
     )
 
 
@@ -655,13 +673,13 @@ def _watcher_image() -> Any:
     )
 
 
-def start_modal_eval(
+def start_eval(
     train_config: TrainConfig, training_run_id: str, release: EvaluationRelease
 ) -> None:
     """Spawn the detached Function that evaluates the run's checkpoints."""
     import modal
 
-    config = train_config.modal_eval
+    config = train_config.eval
     assert config is not None
     app = modal.App(f"modal-dojo-evals-{training_run_id}")
     watch = app.function(image=_watcher_image(), timeout=24 * 60 * 60, serialized=True)(

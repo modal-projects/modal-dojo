@@ -56,28 +56,28 @@ def test_endpoint_becomes_flash_endpoint_target() -> None:
     assert proto.flash_endpoint.single_replica
 
 
-@pytest.mark.parametrize(
-    ("scorer", "response", "label", "score"),
-    [
-        ("exact_match", "  Paris ", "paris", 1.0),
-        ("exact_match", "Paris, France", "paris", 0.0),
-        ("contains", "The capital is Paris.", "paris", 1.0),
-        ("boxed_math", "so the total is \\boxed{1,000}", "1000", 1.0),
-        ("boxed_math", "#### 42", "The answer is 42", 1.0),
-        ("boxed_math", "I think 41", "42", 0.0),
-    ],
-)
-def test_scorers(scorer: str, response: str, label: str, score: float) -> None:
-    from modal_dojo.evaluation_runner.dataset import SCORERS
+async def _reward(args, sample, **kwargs) -> float:
+    return float(sample.response.strip() == sample.label)
 
-    assert SCORERS[scorer](response, label) == score
+
+def test_score_calls_rewards_as_training_does() -> None:
+    from modal_dojo.evaluation_runner.dataset import (
+        pickle_reward,
+        score,
+        _reward as load,
+    )
+
+    reward = load(pickle_reward(_reward))
+    assert evaluations._LOOP.run(score(reward, [], " 2 ", "2")) == 1.0
+    assert evaluations._LOOP.run(score(lambda a, s: {"reward": 0.5}, [], "", "")) == 0.5
+    assert evaluations._LOOP.run(score(lambda a, s: True, [], "", "")) == 1.0
 
 
 def test_task_from_row_wraps_prompts_as_messages() -> None:
     from modal_dojo.evaluation_runner.dataset import task_from_row
 
     task = task_from_row(
-        3, {"q": "1+1?", "a": 2}, input_key="q", label_key="a", scorer="boxed_math"
+        3, {"q": "1+1?", "a": 2}, input_key="q", label_key="a", reward="r"
     )
     assert task.key == "row-000003"
     assert json.loads(task.data.messages) == [{"role": "user", "content": "1+1?"}]
@@ -88,7 +88,7 @@ def test_task_from_row_wraps_prompts_as_messages() -> None:
         {"id": "q-7", "q": messages, "a": "x"},
         input_key="q",
         label_key="a",
-        scorer="exact_match",
+        reward="r",
         key_column="id",
     )
     assert task.key == "q-7"
@@ -120,16 +120,16 @@ def test_publish_dataset_evaluation_builds_private_release(
         return evaluations.EvaluationRelease("er-1", evaluation.key, task_count=2)
 
     monkeypatch.setattr(evaluations, "_publish", publish)
-    evaluations.publish_dataset_evaluation(_Dataset(), scorer="boxed_math", limit=2)  # type: ignore[arg-type]
+    evaluations.publish_dataset_evaluation(_Dataset(), reward_function=_reward, limit=2)  # type: ignore[arg-type]
     definition, tasks = published[-1]
     assert definition.key.startswith("dojo-")
     assert definition.runner.entrypoint == "modal_dojo.evaluation_runner.dataset:run"
-    assert definition.runner.package == "modal_dojo.evaluation_runner"
+    assert definition.runner.package == "modal_dojo"
     assert [task.key for task in tasks] == ["row-000000", "row-000001"]
 
-    evaluations.publish_dataset_evaluation(_Dataset(), scorer="boxed_math", limit=2)  # type: ignore[arg-type]
+    evaluations.publish_dataset_evaluation(_Dataset(), reward_function=_reward, limit=2)  # type: ignore[arg-type]
     assert published[-1][0].key == definition.key
-    evaluations.publish_dataset_evaluation(_Dataset(), scorer="contains", limit=2)  # type: ignore[arg-type]
+    evaluations.publish_dataset_evaluation(_Dataset(), reward_function=_reward, limit=3)  # type: ignore[arg-type]
     assert published[-1][0].key != definition.key
 
 
@@ -142,7 +142,7 @@ def test_publish_requires_a_label() -> None:
             return None
 
     with pytest.raises(ValueError, match="label_key"):
-        evaluations.publish_dataset_evaluation(Unlabeled())  # type: ignore[arg-type]
+        evaluations.publish_dataset_evaluation(Unlabeled(), reward_function=_reward)  # type: ignore[arg-type]
 
 
 class _FakeClient:
