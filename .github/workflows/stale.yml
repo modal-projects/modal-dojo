@@ -54,5 +54,6 @@ jobs:
           exempt-pr-labels: do-not-stale
           # do not close issues
           days-before-issue-stale: -1
+          days-before-issue-close: -1
           # dry run unless manually dispatched and opted in
           debug-only: ${{ github.event_name != 'workflow_dispatch' || inputs.debugOnly }}
