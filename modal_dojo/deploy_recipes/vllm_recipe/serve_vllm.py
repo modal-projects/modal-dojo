@@ -50,7 +50,10 @@ def build_vllm_serve_app(
     startup_timeout = recipe.startup_timeout
 
     image = (
-        Image.from_registry("nvidia/cuda:12.8.0-devel-ubuntu22.04", add_python="3.12")
+        Image.from_registry(
+            "nvidia/cuda:12.8.0-devel-ubuntu22.04@sha256:54f18e2a8e1b3d03f77b9a6dc905533da46ac93a5513f10e8ba8e560db9fa5ab",
+            add_python="3.12",
+        )
         .entrypoint([])
         .uv_pip_install(
             f"vllm=={vllm_version}",

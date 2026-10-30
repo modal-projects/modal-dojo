@@ -29,7 +29,7 @@ _PATCHES = (
 )
 
 # Includes K3 support in Miles, Megatron, and SGLang.
-_DOCKER_IMAGE = "radixark/miles:dev-202609251434"
+_DOCKER_IMAGE = "radixark/miles:dev-202610180955@sha256:61ddd6ad0d6991b5aa58028937289f588c35e1fa461f16752de88ba93064203d"
 
 # Reuse compiled kernels only within the same image version.
 _KERNEL_CACHE_ROOT = f"/checkpoints/.kernel-cache/{_DOCKER_IMAGE.split(':')[-1]}"
@@ -52,7 +52,6 @@ class Kimi_K3_LoRA_Recipe(MilesRecipe):
 
     model_config_class: ClassVar[type[ModelConfig]] = Kimi_K3
 
-    docker_image: str = _DOCKER_IMAGE
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "B300"
     # Host backups hold frozen weights for eight ranks per node.
