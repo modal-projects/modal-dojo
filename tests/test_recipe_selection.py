@@ -379,7 +379,7 @@ def test_run_record_folds_escape_hatch_into_the_flags_it_overrides() -> None:
     import modal_dojo
     from modal_dojo.common.launcher_utils import serialize_recipe_params
 
-    recipe = modal_dojo.SlimeRecipe(
+    recipe = modal_dojo.MilesRecipe(
         extra_config={"rollout_max_response_len": 2048, "micro_batch_size": 1}
     )
     params = serialize_recipe_params(recipe)
@@ -392,7 +392,7 @@ def test_run_record_folds_escape_hatch_into_the_flags_it_overrides() -> None:
 def test_cli_args_emit_an_escape_hatch_field_as_its_own_flag_once() -> None:
     import modal_dojo
 
-    recipe = modal_dojo.SlimeRecipe(
+    recipe = modal_dojo.MilesRecipe(
         rollout_max_response_len=4096,
         extra_config={"rollout_max_response_len": 2048, "not_a_recipe_field": 7},
     )
