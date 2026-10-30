@@ -197,7 +197,7 @@ config = TrainConfig(
         custom_rm_function=pick_and_place_rm,
         image_overlay=lambda image: (
             image.apt_install("libosmesa6")
-            .uv_pip_install("mujoco", "numpy", "pillow")
+            .uv_pip_install("mujoco==3.17.0", "numpy==2.5.4", "pillow==13.0.0")
             .add_local_file(sim.__file__, remote_path="/root/sim.py", copy=True)
         ),
     ),

@@ -47,7 +47,7 @@ def _data_dir() -> str:
         import bfcl_eval
     except ImportError as e:
         raise ImportError(
-            "This requires the `bfcl-eval` package (`uv pip install bfcl-eval`); "
+            "This requires the `bfcl-eval` package (`uv pip install bfcl-eval==2026.3.23`); "
             "see https://pypi.org/project/bfcl-eval/."
         ) from e
     return os.path.join(os.path.dirname(bfcl_eval.__file__), "data")

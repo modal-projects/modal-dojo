@@ -12,17 +12,17 @@ classifiers = [
 ]
 dependencies = [
     "modal==1.6.1",
-    "click>=8.2,<9",
-    "cloudpickle",
-    "datasets",
-    "httpx",
-    "packaging",
-    "pydantic",
-    "fastapi",
-    "randomname",
-    "rich",
-    "requests",
-    "transformers>=5.12.1",
+    "click==8.5.0",
+    "cloudpickle==3.1.2",
+    "datasets==5.1.0",
+    "httpx==0.28.1",
+    "packaging==26.3",
+    "pydantic==2.14.1",
+    "fastapi==0.162.0",
+    "randomname==0.2.1",
+    "rich==15.0.0",
+    "requests==2.34.2",
+    "transformers==5.20.2",
 ]
 
 [build-system]
@@ -51,21 +51,21 @@ Documentation = "https://dojo.modal.dev"
 
 [dependency-groups]
 ci = [
-    "pygithub>=2.9.1",
+    "pygithub==2.10.0",
 ]
 dev = [
-    "pre-commit>=4.5.1",
-    "pytest>=9.0.3",
-    "ruff>=0.15.17",
-    "ipykernel>=6.29.0",
-    "uv>=0.11.0",
-    "pyyaml>=6.0.3",
+    "pre-commit==4.7.0",
+    "pytest==9.1.1",
+    "ruff==0.17.2",
+    "ipykernel==7.4.0",
+    "uv==0.13.5",
+    "pyyaml==6.0.3",
 ]
 docs = [
-    "mkdocs-gen-files>=0.6.1",
-    "mkdocs-material>=9.7.6",
-    "properdocs>=1.6.7",
-    "pymdown-extensions>=10.21.2",
+    "mkdocs-gen-files==0.6.1",
+    "mkdocs-material==9.7.7",
+    "properdocs==1.6.7",
+    "pymdown-extensions==12.3",
 ]
 
 [tool.ruff]

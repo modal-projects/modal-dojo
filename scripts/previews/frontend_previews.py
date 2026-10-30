@@ -20,7 +20,7 @@ from astro_redirects import redirect_status, refresh_map_from_tarball  # noqa: E
 
 image = (
     modal.Image.debian_slim()
-    .pip_install("PyGithub~=2.6.1")
+    .pip_install("PyGithub==2.6.1")
     .add_local_dir(Path(__file__).resolve().parent / "nginx", NGINX_CONF_DIR)
     .add_local_file(_ASTRO_REDIRECTS, "/root/astro_redirects.py", copy=True)
 )

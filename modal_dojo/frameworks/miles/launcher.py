@@ -240,7 +240,7 @@ def _build_miles_base_image(
     image = image.add_local_python_source("modal_dojo", copy=True)
     # torchrun/Ray subprocesses do not inherit the Modal function wrapper's
     # injected SDK path. The cross-rank checkpoint commit hook imports it.
-    image = image.uv_pip_install("randomname", f"modal=={MODAL_VERSION}")
+    image = image.uv_pip_install("randomname==0.2.1", f"modal=={MODAL_VERSION}")
     image = mount_tools_dir(image)
     image = mount_caller_source(image, caller_script)
 

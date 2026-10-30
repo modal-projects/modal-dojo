@@ -181,7 +181,7 @@ def _build_image() -> modal.Image:
             "curl -fsSL https://deb.nodesource.com/setup_22.x | bash -",
             "apt-get install -y nodejs",
         )
-        .pip_install("fastapi[standard]==0.118.0", "modal")
+        .pip_install("fastapi[standard]==0.118.0", f"modal=={modal.__version__}")
         .add_local_dir(
             str(_frontend),
             remote_path="/app/frontend",

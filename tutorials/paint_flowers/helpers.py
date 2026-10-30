@@ -179,8 +179,8 @@ _LOCKS: dict[str, threading.Lock] = {}
 hpsv3_app = modal.App(HPSV3_APP)
 HPS_IMAGE = modal.Image.debian_slim(python_version="3.12").uv_pip_install(
     "hpsv3==1.0.0",
-    "matplotlib",
-    "tensorboard",
+    "matplotlib==3.11.2",
+    "tensorboard==2.21.0",
 )
 
 
@@ -228,7 +228,7 @@ def bake_reference_pool() -> None:
 def overlay_flower_image(image: modal.Image) -> modal.Image:
     return (
         image.uv_pip_install(
-            "modal~=1.6.1", "httpx~=0.28.1", "pillow~=11.1", "datasets"
+            "modal==1.6.1", "httpx==0.28.1", "pillow==11.3.0", "datasets==5.1.0"
         )
         .add_local_file(__file__, remote_path="/root/helpers.py", copy=True)
         .run_function(bake_reference_pool)
