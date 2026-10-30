@@ -42,8 +42,13 @@ def test_save_overrides_survive_yaml_materialization(tmp_path, enabled):
             prepare_miles_config(recipe, None, str(tmp_path))
             with open(recipe.extra_config) as f:
                 assert yaml.safe_load(f) == override
-        assert "--save" not in recipe.cli_args()
-        assert "--save-interval" not in recipe.cli_args()
+        args = recipe.cli_args()
+        if enabled:
+            assert args[args.index("--save") + 1] == "/checkpoints/override"
+            assert args[args.index("--save-interval") + 1] == "10"
+        else:
+            assert "--save" not in args
+            assert "--save-interval" not in args
 
 
 def test_run_without_checkpoint_keeps_original_model_source(fake_volume):
