@@ -16,7 +16,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-    group: stale
+    group: stale-${{ github.event_name }}
     cancel-in-progress: true
 
 jobs:
