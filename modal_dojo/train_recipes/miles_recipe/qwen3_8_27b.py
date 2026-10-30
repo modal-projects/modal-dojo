@@ -39,7 +39,6 @@ class Qwen3_8_27B_Recipe(MilesRecipe):
 
     tensor_model_parallel_size: int = 2
 
-
     sglang_mem_fraction_static: float = 0.6
 
     sglang_max_running_requests: int | None = 32
