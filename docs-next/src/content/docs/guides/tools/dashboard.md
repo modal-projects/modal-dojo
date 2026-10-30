@@ -14,7 +14,7 @@ modal-dojo setup
 
 Note that you'll have to rerun this command when you bump your `modal-dojo` version.
 
-Once deployed, open the dashboard any time with:
+Once deployed, open the dashboard any time with the command below, which also logs you in:
 
 ```bash
 modal-dojo open
