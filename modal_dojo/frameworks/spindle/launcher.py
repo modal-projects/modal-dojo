@@ -82,7 +82,7 @@ async def check_server(base_url: str, api_key: str, config) -> dict[str, str | N
 
 
 @asynccontextmanager
-async def deployment(config, *, metric_tags=None, run=None):
+async def deployment(config, *, run):
     """Deploy a uniquely named LoRA Spindle server, and stop all of it on exit."""
     import modal
     from modal.config import config as modal_config
@@ -145,28 +145,23 @@ async def deployment(config, *, metric_tags=None, run=None):
             except Exception:
                 logger.exception("Spindle deployment failed while cancelling")
             raise
-        from modal_dojo.common import COMMON_DOJO_TAGS
+        from modal_dojo.common.modal_urls import modal_app_dashboard_url
 
         trainer_app = await modal.App.lookup.aio(
             compiled.trainer_app_name, environment_name=environment
         )
-        await trainer_app.set_tags.aio(
-            {
-                **await trainer_app.get_tags.aio(),
-                **COMMON_DOJO_TAGS,
-                "_modal_framework": "spindle",
-                **({"training_run_id": run.training_run_id} if run else {}),
-                **(metric_tags or {}),
-            }
-        )
-        if run is not None:
-            from modal_dojo.common.modal_urls import modal_app_dashboard_url
-
-            run.modal_app_id = trainer_app.app_id
-            run.modal_app_url = modal_app_dashboard_url(trainer_app.app_id)
-            run.app_name = compiled.trainer_app_name
-            run.metadata["spindle_apps"] = names
-            await run.save(is_async=True)
+        # Spindle already tags its trainer as a training job; link the run
+        # only while Modal's 8-tag cap leaves room.
+        tags = await trainer_app.get_tags.aio()
+        if len(tags) < 8:
+            await trainer_app.set_tags.aio(
+                {**tags, "training_run_id": run.training_run_id}
+            )
+        run.modal_app_id = trainer_app.app_id
+        run.modal_app_url = modal_app_dashboard_url(trainer_app.app_id)
+        run.app_name = compiled.trainer_app_name
+        run.metadata["spindle_apps"] = names
+        await run.save(is_async=True)
         logger.info("Spindle deployment %s in %s", run_name, environment or "default")
         server = modal.Function.from_name(
             run_name, "server", environment_name=environment
@@ -221,18 +216,8 @@ async def train(config, *, api_key=None, deploy_config=None):
                 await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
             return reporter.run
 
-        from modal_dojo.common import modal_tag_value
-
-        metric_tags = {}
-        if config.wandb_project:
-            metric_tags = {
-                "_modal_metric_provider": "wandb",
-                "_modal_metric_project": modal_tag_value(config.wandb_project),
-            }
         async with DojoReporter(config, {}) as reporter:
-            async with deployment(
-                deploy_config, metric_tags=metric_tags, run=reporter.run
-            ) as (url, api_key):
+            async with deployment(deploy_config, run=reporter.run) as (url, api_key):
                 config = chz.replace(config, base_url=url)
                 reporter.run.metadata.update(await check_server(url, api_key, config))
                 await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
