@@ -96,6 +96,8 @@ async def deployment(config, *, metric_tags=None, run=None):
     recipe.platform["frontend"] = run_name
     environment = modal_config.get("environment")
     recipe.platform["modal"]["environment"] = environment
+    # Modal-owned workspaces block unauthenticated web endpoints.
+    recipe.platform["requires_proxy_auth"] = True
     # Validate existing credentials before creating apps or requesting GPUs.
     for key, required in (
         ("sampler_proxy", ["MODAL_PROXY_TOKEN_ID", "MODAL_PROXY_TOKEN_SECRET"]),

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from synchronicity import Synchronizer
 
 from modal_dojo._api_reference import exclude_from_api_reference
+from modal_dojo.common.config import modal_proxy_auth_headers
 from modal_dojo.common.errors import DojoConfigError
 
 if TYPE_CHECKING:
@@ -35,7 +36,8 @@ class _SpindleRecipe:
     As a fallback, ``deploy_config`` (a Spindle ``BaseConfig`` instance or
     subclass) deploys a fresh server in the active Modal environment and stops
     it on exit. This needs Python 3.12, ``uv sync --extra spindle-deploy`` and
-    a sampler proxy secret, and cannot resume across deployments.
+    a sampler proxy secret. Its API requires the same Modal proxy auth, and it
+    cannot resume across deployments.
     """
 
     def __init__(
@@ -126,6 +128,11 @@ def _validated_deploy_config(
         ) from exc
     if sys.version_info[:2] != (3, 12):
         raise DojoConfigError("Deploying Spindle requires Python 3.12")
+    if not modal_proxy_auth_headers():
+        raise DojoConfigError(
+            "A deployed Spindle requires Modal proxy auth: set MODAL_KEY/MODAL_SECRET "
+            "to a proxy token allowed for the active Modal environment"
+        )
     if isinstance(deploy_config, type) and issubclass(deploy_config, BaseConfig):
         deploy_config = deploy_config()
     if not isinstance(deploy_config, BaseConfig):
