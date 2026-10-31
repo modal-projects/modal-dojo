@@ -137,10 +137,15 @@ class DojoReporter:
         return self
 
     def _enqueue(self, endpoint, payload):
+        payload = {"training_run_id": self.run.training_run_id, **payload}
+        queue = self.queues[endpoint]
+        if endpoint == "framework-status" and not queue.empty():
+            # Each status write takes seconds; the dashboard merges updates
+            # into one snapshot, so merge any still-pending one here.
+            payload = {**queue.get_nowait(), **payload}
+            queue.task_done()
         try:
-            self.queues[endpoint].put_nowait(
-                {"training_run_id": self.run.training_run_id, **payload}
-            )
+            queue.put_nowait(payload)
         except asyncio.QueueFull:
             self.failures += 1
             logger.warning(
