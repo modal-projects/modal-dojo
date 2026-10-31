@@ -34,9 +34,15 @@ spindle = [
     "tml-renderers==0.2.0",
     "tinker-cookbook>=0.5.8.dev15,<0.6",
 ]
+# Adds deploying a Spindle server per run, the fallback to an existing server.
+spindle-deploy = [
+    "modal-dojo[spindle]",
+    "modal-spindle==0.1.4; python_version == '3.12'",
+]
 
-# Use `uv sync --extra spindle` from a checkout for the pinned experimental integration.
+# Use `uv sync --extra spindle` (or spindle-deploy) from a checkout for the pinned experimental integration.
 [tool.uv.sources]
+modal-spindle = { git = "https://github.com/modal-projects/spindle.git", rev = "9fd677db7b2a76a0f74434e00a62bcf6ed409ec4" }
 tinker-cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook.git", rev = "ad3b5c541cd383b05d1c301e8ccc2d9cc0c5f774" }
 
 [build-system]
