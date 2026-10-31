@@ -34,7 +34,7 @@ _training_rollout = ContextVar("spindle_training_rollout", default=False)
 
 
 class DojoReporter:
-    def __init__(self, config):
+    def __init__(self, config, server):
         self.config = config
         self.groups = []
         self.next_step = 0
@@ -77,6 +77,7 @@ class DojoReporter:
             metadata={
                 "log_path": config.log_path,
                 "driver": "local",
+                **server,
             },
         )
 
@@ -198,7 +199,7 @@ class DojoReporter:
                     strict=True,
                 )
             ):
-                # Retain all transitions and token scores for multi-turn episodes.
+                # Raw tokens and logprobs stay in the local trajectories jsonl.
                 samples.append(
                     TrainingRolloutSample(
                         rollout_index=len(samples),
@@ -211,8 +212,10 @@ class DojoReporter:
                             + sum(t["reward"] for t in trajectory["transitions"])
                         ),
                         metadata={
-                            "spindle_trajectory": trajectory,
                             "decoded_transitions": decoded,
+                            "transition_rewards": [
+                                t["reward"] for t in trajectory["transitions"]
+                            ],
                             "final_reward": final_reward,
                             "tags": record["tags"],
                             "metrics": group.get(

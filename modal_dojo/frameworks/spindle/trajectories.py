@@ -60,7 +60,6 @@ async def capture_trajectories(log_path: str, tokenizer, *, on_group=None):
             line = json.dumps(record, ensure_ascii=False)
             output.write(line + "\n")
             output.flush()
-            print(line, flush=True)
             if on_group is not None:
                 await on_group(record)
             return group

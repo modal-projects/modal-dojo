@@ -33,7 +33,6 @@
     asyncOverride = null,
     showOpenRollout = true,
     trainingType = null,
-    timingNote = null,
     attemptMarkers = [],
     // Wall-clock window `{ start, end }` (epoch seconds) to show; null shows
     // the whole timeline. With `onChangeTimeRange` the window is controlled
@@ -711,9 +710,6 @@
       <div class="lane-note">
         <span class="lane-note-mark">*</span>{APPROXIMATE_LANE_NOTE}
       </div>
-    {/if}
-    {#if timingNote}
-      <div class="lane-note">{timingNote}</div>
     {/if}
 
   {/if}
