@@ -3,6 +3,11 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORTS = {
+    "SpindleRecipe": ("modal_dojo.train_recipes.spindle_recipe", "SpindleRecipe"),
+    "DojoDatasetBuilder": (
+        "modal_dojo.frameworks.spindle.dataset",
+        "DojoDatasetBuilder",
+    ),
     "Beam_1_0_501B_A23B_LoRA_256k_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
         "Beam_1_0_501B_A23B_LoRA_256k_Recipe",
@@ -226,6 +231,8 @@ _EXPORTS = {
 }
 
 __all__ = [
+    "SpindleRecipe",
+    "DojoDatasetBuilder",
     "Beam_1_0_501B_A23B_LoRA_256k_Recipe",
     "Beam_1_0_501B_A23B",
     "Beam_1_0_501B_A23B_LoRA",

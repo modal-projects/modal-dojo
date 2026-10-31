@@ -12,6 +12,7 @@ classifiers = [
 ]
 dependencies = [
     "modal==1.6.1",
+    "synchronicity>=0.12.5,<1",
     "click~=8.5.0",
     "cloudpickle~=3.1.2",
     "datasets~=5.1.0",
@@ -22,8 +23,21 @@ dependencies = [
     "randomname~=0.2.1",
     "rich~=15.0.0",
     "requests~=2.34.2",
-    "transformers~=5.20.2",
+    # Qwen3.5 tokenizers need 5.3+; the optional tinker-cookbook extra supplies its own cap.
+    "transformers>=5.3.0",
 ]
+
+[project.optional-dependencies]
+# tinker-cookbook client for an existing Spindle server.
+spindle = [
+    "tinker==0.34.0",
+    "tml-renderers==0.2.0",
+    "tinker-cookbook>=0.5.8.dev15,<0.6",
+]
+
+# Use `uv sync --extra spindle` from a checkout for the pinned experimental integration.
+[tool.uv.sources]
+tinker-cookbook = { git = "https://github.com/thinking-machines-lab/tinker-cookbook.git", rev = "ad3b5c541cd383b05d1c301e8ccc2d9cc0c5f774" }
 
 [build-system]
 requires = ["hatchling"]

@@ -8,9 +8,9 @@ common sources like Hugging Face and Harbor.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from enum import Enum
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 import hashlib
 import json
 import random
@@ -19,6 +19,9 @@ import tomllib
 from pathlib import Path
 
 from modal_dojo.common.errors import DojoConfigError
+
+if TYPE_CHECKING:
+    from tinker_cookbook.rl.types import RLDatasetBuilder
 
 DatasetRow = dict[str, Any]
 
@@ -38,6 +41,13 @@ class DatasetConfig(ABC):
     """Dataset fields and materialization behavior shared across training frameworks."""
 
     _type: DatasetType = DatasetType.DEFAULT
+
+    def to_dataset_builder(self, **kwargs: Any) -> RLDatasetBuilder:
+        """Convert to tinker-cookbook RL; unsupported datasets fail before deployment."""
+        raise DojoConfigError(
+            f"{type(self).__name__} does not support tinker-cookbook RL. "
+            "Implement to_dataset_builder() or pass a tinker-cookbook RLDatasetBuilder."
+        )
 
     def cache_key(self) -> str | None:
         return None
@@ -230,6 +240,39 @@ class HuggingFaceDataset(DatasetConfig):
         self.prompt_template = prompt_template
         self.always_download = always_download
 
+    def to_dataset_builder(
+        self,
+        *,
+        model_name: str,
+        renderer_name: str,
+        batch_size: int,
+        group_size: int,
+        reward_fn: Callable[[str, Any], float],
+    ) -> RLDatasetBuilder:
+        """Build single-turn RL groups using reward_fn(response_text, label)."""
+        if self.input_format == "raw":
+            raise DojoConfigError("tinker-cookbook requires text or messages input")
+        if self.label_key() is None:
+            raise DojoConfigError(
+                "tinker-cookbook requires an output_column for rewards"
+            )
+        if not callable(reward_fn):
+            raise DojoConfigError(
+                "reward_fn must score (response_text, label) -> float"
+            )
+        if batch_size < 1 or group_size < 1:
+            raise DojoConfigError("batch_size and group_size must be positive")
+        from modal_dojo.frameworks.spindle.dataset_builders import HuggingFaceBuilder
+
+        return HuggingFaceBuilder(
+            dataset=self,
+            model_name=model_name,
+            renderer_name=renderer_name,
+            batch_size=batch_size,
+            group_size=group_size,
+            reward_fn=reward_fn,
+        )
+
     def cache_key(self) -> str | None:
         if self.always_download:
             return None
@@ -365,6 +408,43 @@ class HarborDataset(DatasetConfig):
         self.shuffle_tasks = shuffle_tasks
         self.shuffle_seed = shuffle_seed
         self.always_download = always_download
+
+    def to_dataset_builder(
+        self,
+        *,
+        model_name: str,
+        renderer_name: str,
+        batch_size: int,
+        group_size: int,
+        **kwargs: Any,
+    ) -> RLDatasetBuilder:
+        """Build tinker-cookbook Harbor environments from the selected task split."""
+        if batch_size < 1 or group_size < 1:
+            raise DojoConfigError("batch_size and group_size must be positive")
+        if self.system_prompt:
+            raise DojoConfigError(
+                "tinker-cookbook Harbor supplies its own system prompt"
+            )
+        import chz
+        from tinker_cookbook.recipes.harbor_rl.harbor_env import HarborDatasetBuilder
+        from modal_dojo.frameworks.spindle.dataset_builders import HarborBuilder
+
+        unknown = set(kwargs) - (
+            set(chz.chz_fields(HarborDatasetBuilder))
+            - {"tasks", "batch_size", "group_size", "model_name", "renderer_name"}
+        )
+        if unknown:
+            raise DojoConfigError(
+                f"Unknown tinker-cookbook Harbor options: {sorted(unknown)}"
+            )
+        return HarborBuilder(
+            dataset=self,
+            model_name=model_name,
+            renderer_name=renderer_name,
+            batch_size=batch_size,
+            group_size=group_size,
+            options=kwargs,
+        )
 
     def cache_key(self) -> str | None:
         if self.always_download:

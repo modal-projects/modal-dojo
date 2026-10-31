@@ -293,6 +293,11 @@ class TrainingRun(BaseModel):
     def model(self) -> "ModelConfig":
         """Build a ``ModelConfig`` whose path targets the latest megatron checkpoint."""
         self._reload()
+        if self.framework is Framework.SPINDLE:
+            # TODO(helena): Export the LoRA adapter and merge with tinker_cookbook.weights.build_hf_model.
+            raise ValueError(
+                "Spindle checkpoint conversion to a serving model is not supported in v0."
+            )
         raw = self.source_model
         if raw is None:
             raise ValueError("No source_model on this TrainingRun.")
