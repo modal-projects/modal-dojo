@@ -4,19 +4,9 @@ Usage (CLI):
     modal-dojo setup
 
 What this does:
-1. Provisions a ``_training-gym-modal-creds`` Modal Secret containing
-   ``MODAL_TOKEN_ID`` + ``MODAL_TOKEN_SECRET``. The deployed dashboard uses
-   these credentials to stream logs from *other* Modal apps (the user's
-   training runs) into the dashboard UI — container-default creds aren't
-   scoped to read cross-app logs, so a workspace token is required.
-
-   The underscore prefix marks the secret as auto-managed (hidden from the
-   normal Secrets list in the UI). Credentials are auto-resolved from
-   ``MODAL_TOKEN_*`` env vars or the active profile in ``~/.modal.toml``.
-
-2. On first deploy, asks how to protect the dashboard (a password by default).
-3. Deploys the dashboard's ASGI app and orphan reconciler.
-4. Persists the FastAPI web URL to ``~/.modal-dojo.toml`` so other
+1. On first deploy, asks how to protect the dashboard (a password by default).
+2. Deploys the dashboard's ASGI app and orphan reconciler.
+3. Persists the FastAPI web URL to ``~/.modal-dojo.toml`` so other
    clients (e.g. the slime launcher) can find the dashboard.
 """
 
@@ -166,13 +156,6 @@ def setup(
         print(
             "WARNING: Dashboard proxy auth requires MODAL_KEY and MODAL_SECRET. "
             "Run `modal-dojo set-proxy-auth` or export both variables."
-        )
-
-    if not dashboard.ensure_creds_secret(interactive=interactive):
-        print(
-            f"WARNING: continuing without the {dashboard.MODAL_CREDS_SECRET_NAME!r} "
-            "Modal Secret — the dashboard will not be able to stream Modal "
-            "app logs."
         )
 
     with modal.enable_output():
