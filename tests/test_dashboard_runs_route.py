@@ -381,13 +381,13 @@ def test_run_log_stream_events_always_include_json_data(
         stub=SimpleNamespace(AppGetLogs=fake_rpc),
     )
 
-    async def from_credentials(*_args, **_kwargs):
+    async def from_env(*_args, **_kwargs):
         return fake_modal_client
 
     async def no_sleep(_seconds):
         return None
 
-    monkeypatch.setattr("modal.client._Client.from_credentials", from_credentials)
+    monkeypatch.setattr("modal.client._Client.from_env", from_env)
     monkeypatch.setattr(_dashboard.asyncio, "sleep", no_sleep)
 
     with _client(monkeypatch, tmp_path) as client:
