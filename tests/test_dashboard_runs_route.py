@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timezone
 from queue import Queue
 from types import SimpleNamespace
 
@@ -352,43 +353,25 @@ def test_run_log_stream_events_always_include_json_data(
     monkeypatch.setenv("MODAL_TOKEN_ID", "test-token-id")
     monkeypatch.setenv("MODAL_TOKEN_SECRET", "test-token-secret")
 
-    batch = SimpleNamespace(
-        entry_id="entry-1",
-        task_id="task-1",
-        items=[
-            SimpleNamespace(data="first\n", timestamp=100.0),
-            SimpleNamespace(data="second\n", timestamp=101.0),
-        ],
-        app_done=True,
-    )
+    def _entry(message: str, ts: float) -> SimpleNamespace:
+        return SimpleNamespace(
+            message=message,
+            timestamp=datetime.fromtimestamp(ts, tz=timezone.utc),
+            source="stdout",
+            context_ids=["task-1"],
+        )
 
-    class FakeAppGetLogs:
-        def __init__(self):
-            self.calls = 0
+    async def stream():
+        yield _entry("first\n", 100.0)
+        yield _entry("second\n", 101.0)
 
-        def unary_stream(self, _request):
-            self.calls += 1
-
-            async def stream():
-                if self.calls == 1:
-                    raise RuntimeError("temporary failure")
-                yield batch
-
-            return stream()
-
-    fake_rpc = FakeAppGetLogs()
-    fake_modal_client = SimpleNamespace(
-        stub=SimpleNamespace(AppGetLogs=fake_rpc),
-    )
+    fake_app = SimpleNamespace(logs=SimpleNamespace(stream=lambda: stream()))
 
     async def from_credentials(*_args, **_kwargs):
-        return fake_modal_client
-
-    async def no_sleep(_seconds):
-        return None
+        return object()
 
     monkeypatch.setattr("modal.client._Client.from_credentials", from_credentials)
-    monkeypatch.setattr(_dashboard.asyncio, "sleep", no_sleep)
+    monkeypatch.setattr(_dashboard, "_app_handle", lambda *_a, **_k: fake_app)
 
     with _client(monkeypatch, tmp_path) as client:
         response = client.get("/api/runs/run-route-1/logs/stream?max_lines_per_sec=1")
@@ -396,15 +379,10 @@ def test_run_log_stream_events_always_include_json_data(
     assert response.status_code == 200
     blocks = [block for block in response.text.split("\n\n") if block]
     assert [block.splitlines()[0] for block in blocks] == [
-        "event: reconnect",
         'data: {"task_id": "task-1", "line": "first\\n", "ts": 100.0}',
         "event: dropped",
         "event: done",
     ]
-    reconnect_data = blocks[0].splitlines()[1]
-    assert json.loads(reconnect_data.removeprefix("data: ")) == {
-        "reason": "temporary failure"
-    }
     for block in blocks:
         data_line = next(
             line for line in block.splitlines() if line.startswith("data: ")
