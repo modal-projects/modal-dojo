@@ -69,6 +69,11 @@ class DatasetConfig(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} has no rows()")
 
+    def eval_rows(self) -> Iterable[DatasetRow] | None:
+        """Examples, shaped like ``rows()``, that ``TrainConfig.eval``
+        scores checkpoints on; defaults to ``rows()``."""
+        return self.rows()
+
     def write(self, path: str) -> None:
         """Materialize training data at ``path``."""
         with open(path, "w") as f:
@@ -181,6 +186,8 @@ class HuggingFaceDataset(DatasetConfig):
     Attributes:
         hf_repo: Hugging Face dataset repository ID.
         hf_split: Source dataset split.
+        eval_split: Split that ``eval_rows()`` reads for ``TrainConfig.eval``;
+            defaults to ``hf_split``.
         hf_config: Source dataset configuration name.
         input_column: Source prompt column.
         output_column: Source answer column.
@@ -195,6 +202,7 @@ class HuggingFaceDataset(DatasetConfig):
 
     hf_repo: str
     hf_split: str
+    eval_split: str | None
     hf_config: str | None
     input_column: str
     output_column: str | None
@@ -208,6 +216,7 @@ class HuggingFaceDataset(DatasetConfig):
         hf_repo: str,
         *,
         hf_split: str = "train",
+        eval_split: str | None = None,
         hf_config: str | None = None,
         input_column: str,
         output_column: str | None = None,
@@ -222,6 +231,7 @@ class HuggingFaceDataset(DatasetConfig):
             )
         self.hf_repo = hf_repo
         self.hf_split = hf_split
+        self.eval_split = eval_split
         self.hf_config = hf_config
         self.input_column = input_column
         self.output_column = output_column
@@ -262,13 +272,13 @@ class HuggingFaceDataset(DatasetConfig):
     def apply_chat_template(self) -> bool:
         return self.input_format != "raw"
 
-    def _load_hf_dataset(self):
+    def _load_hf_dataset(self, split: str | None = None):
         from datasets import load_dataset
 
         ds = load_dataset(
             self.hf_repo,
             self.hf_config,
-            split=self.hf_split,
+            split=split or self.hf_split,
         )
 
         if self.input_format == "text":
@@ -290,6 +300,11 @@ class HuggingFaceDataset(DatasetConfig):
     def rows(self) -> Iterable[DatasetRow]:
         for row in self._load_hf_dataset():
             yield dict(row)
+
+    def eval_rows(self) -> Iterable[DatasetRow] | None:
+        if self.eval_split is None:
+            return self.rows()
+        return (dict(row) for row in self._load_hf_dataset(self.eval_split))
 
     def write(self, path: str) -> None:
         ds = self._load_hf_dataset()
