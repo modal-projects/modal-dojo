@@ -26,6 +26,7 @@ _PATCHES = (
     "patch_ipc_bucket_empty_cache",
     "patch_checkpoint_local_dirs",
     "patch_lora_initial_offload",
+    "patch_k3_routed_experts_topk",
 )
 
 # Includes K3 support in Miles, Megatron, and SGLang.
