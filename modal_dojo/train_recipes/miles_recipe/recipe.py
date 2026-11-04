@@ -110,6 +110,11 @@ _HOOK_PATH_CONFIG_KEYS = {
     "custom_megatron_before_train_step_hook": "modal_dojo_custom_megatron_before_train_step_hook_path",
 }
 
+# Dojo's SFT rollout: Miles' own, plus pre-tokenized rows and chat_template masks.
+SFT_ROLLOUT_FUNCTION = "modal_dojo.frameworks.miles.sft_rollout.generate_rollout"
+SFT_LOSS_MASK_KEY = "modal_dojo_sft_loss_mask"
+CHAT_TEMPLATE_MASK = "chat_template"
+
 _HOOK_WRAPPER_PATHS = {
     "custom_rollout_log_function": "modal_dojo.frameworks.miles.phase_reporting.log_rollout_data",
     "custom_eval_rollout_log_function": "modal_dojo.frameworks.miles.phase_reporting.log_eval_rollout_data",
@@ -265,6 +270,12 @@ class MilesRecipe(BaseTrainRecipe):
             ``qwen3``, and ``distill_qwen`` (upstream default ``qwen``).
             Emitted only under ``sft_loss`` when not the default. Miles has
             no ``qwen3_5`` mask; presets that need it raise under SFT.
+            ``chat_template`` marks every assistant turn through the
+            tokenizer's own chat template, for any template that renders a
+            conversation's prefixes as prefixes of the whole. Whatever the
+            choice, a row whose ``metadata`` holds ``input_ids`` and
+            ``loss_mask`` trains on exactly those tokens, for models whose
+            prompt format is not a chat template.
         num_epoch:
             Passes over the dataset. Replaces ``num_rollout`` when set.
         use_tis:
@@ -581,7 +592,7 @@ class MilesRecipe(BaseTrainRecipe):
     entropy_coef: float = 0.0
     calculate_per_token_loss: bool = False
     loss_type: Literal["policy_loss", "sft_loss"] = "policy_loss"
-    loss_mask_type: Literal["qwen", "qwen3", "distill_qwen"] = "qwen"
+    loss_mask_type: Literal["qwen", "qwen3", "distill_qwen", "chat_template"] = "qwen"
     use_tis: bool = False
 
     # ── Dynamic sampling (DAPO) ────────────────────────────────────────────
@@ -740,6 +751,16 @@ class MilesRecipe(BaseTrainRecipe):
                 cfg[config_key] = self._callable_path(value)
         if cfg != (self.extra_config or {}):
             object.__setattr__(self, "extra_config", cfg)
+        return self
+
+    @model_validator(mode="after")
+    def _route_sft_loss_mask(self) -> "MilesRecipe":
+        """Hand Dojo's SFT rollout the mask Miles' ``--loss-mask-type`` cannot name."""
+        if self.loss_type != "sft_loss" or self.loss_mask_type != CHAT_TEMPLATE_MASK:
+            return self
+        cfg = dict(self.extra_config or {})
+        cfg[SFT_LOSS_MASK_KEY] = CHAT_TEMPLATE_MASK
+        object.__setattr__(self, "extra_config", cfg)
         return self
 
     @model_validator(mode="after")
@@ -922,17 +943,29 @@ class MilesRecipe(BaseTrainRecipe):
                     eval_dataset_path=eval_dataset_path,
                 )
             )
-        if self.loss_type == "sft_loss" and not self.sft_supported:
+        if (
+            self.loss_type == "sft_loss"
+            and not self.sft_supported
+            and self.loss_mask_type != CHAT_TEMPLATE_MASK
+        ):
             raise DojoConfigError(
                 f"{type(self).__name__} requires loss_mask_type='qwen3_5' for "
-                "SFT, but Miles only supports qwen/qwen3/distill_qwen. Use a "
+                "SFT, but Miles only supports qwen/qwen3/distill_qwen. Use "
+                "loss_mask_type='chat_template' (or pre-tokenized rows), or a "
                 "Slime recipe for SFT on this model."
             )
         _apply_loss_type_fields(
             fields,
             self._escape_hatch_values(),
-            sft_rollout_function="miles.rollout.sft_rollout.generate_rollout",
+            sft_rollout_function=SFT_ROLLOUT_FUNCTION,
         )
+        if fields.get("loss_mask_type") == CHAT_TEMPLATE_MASK:
+            # Dojo's rollout reads it from the run config instead.
+            fields["loss_mask_type"] = None
+        if self.loss_type == "sft_loss" and fields.get("lora_rank"):
+            # SFT starts no rollout engines, and Miles' native LoRA refuses to
+            # run uncolocated unless told the adapter is never synced.
+            fields["lora_train_only"] = True
         if self.metrics is not None:
             fields.update(self._metrics_to_fields(self.metrics))
         out = self._emit_fields(fields)

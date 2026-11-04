@@ -249,7 +249,9 @@ def test_sft_loss_emits_native_sft_flags(recipe_cls, framework) -> None:
     values = dict(zip(args, args[1:]))
     assert values["--loss-type"] == "sft_loss"
     assert values["--rollout-function-path"] == (
-        f"{framework}.rollout.sft_rollout.generate_rollout"
+        "modal_dojo.frameworks.miles.sft_rollout.generate_rollout"
+        if framework == "miles"
+        else f"{framework}.rollout.sft_rollout.generate_rollout"
     )
     assert values["--n-samples-per-prompt"] == "1"
     assert values["--rollout-batch-size"] == "8"
