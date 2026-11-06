@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 
 import httpx
 import pytest
@@ -51,10 +52,9 @@ def requests(monkeypatch):
             )
         return httpx.Response(200, json={"deployments": DEPLOYMENTS})
 
+    client = functools.partial(httpx.AsyncClient, transport=httpx.MockTransport(handle))
     monkeypatch.setattr(
-        launcher.httpx,
-        "AsyncClient",
-        functools.partial(httpx.AsyncClient, transport=httpx.MockTransport(handle)),
+        launcher, "httpx", SimpleNamespace(**{**vars(httpx), "AsyncClient": client})
     )
     monkeypatch.setattr(
         launcher, "modal_proxy_auth_headers", lambda: {"Modal-Key": "wk-test"}
@@ -91,3 +91,34 @@ def test_rejects_models_without_lora_deployment(requests, model_name):
 def test_explains_rejected_credentials(requests):
     with pytest.raises(DojoConfigError, match="proxy-tokens allow"):
         check("Qwen/Qwen3.5-2B", api_key="wrong")
+
+
+def test_rejected_server_fails_before_creating_a_dojo_run(requests, monkeypatch):
+    from modal_dojo.frameworks.spindle.reporting import DojoReporter
+
+    async def create_run(self):
+        raise AssertionError("created a Dojo run")
+
+    # Stand in for tinker-cookbook, which the default test env doesn't install.
+    rl = ModuleType("tinker_cookbook.rl")
+    rl.train = SimpleNamespace(tinker=None)
+    tokenizer_utils = ModuleType("tinker_cookbook.tokenizer_utils")
+    tokenizer_utils.get_tokenizer = lambda model_name: None
+    for module in (ModuleType("tinker_cookbook"), rl, tokenizer_utils):
+        monkeypatch.setitem(sys.modules, module.__name__, module)
+    monkeypatch.setattr(DojoReporter, "__aenter__", create_run)
+    config = SimpleNamespace(
+        base_url=URL,
+        model_name="Qwen/Qwen3.5-2B",
+        learning_rate=1e-5,
+        lora_rank=32,
+        loss_fn="importance_sampling",
+        max_tokens=64,
+        max_steps=10,
+        recipe_name="test",
+        renderer_name="qwen3_5_disable_thinking",
+        dataset_builder=object(),
+        log_path="/tmp/dojo-spindle-test",
+    )
+    with pytest.raises(DojoConfigError, match="rejected the request"):
+        asyncio.run(launcher.train(config, api_key="wrong"))

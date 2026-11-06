@@ -80,7 +80,6 @@ async def check_server(base_url: str, api_key: str, config) -> dict[str, str | N
 async def shared_server(config, api_key, *, run):
     """Use the long-lived server at ``config.base_url``; this run never stops it."""
     run.metadata.update(await check_server(config.base_url, api_key, config))
-    await run.save(is_async=True)
     yield config, api_key
 
 
@@ -96,11 +95,11 @@ async def train(config, *, api_key):
         )
     original_tinker = rl_train.tinker
     try:
-        # Fail before creating a Dojo run.
         tokenizer = get_tokenizer(config.model_name)
         reporter = DojoReporter(config)
         server = shared_server(config, api_key, run=reporter.run)
-        async with reporter, server as (config, api_key):
+        # The server is checked before the reporter creates a Dojo run.
+        async with server as (config, api_key), reporter:
             await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
         return reporter.run
     finally:
