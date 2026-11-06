@@ -16,9 +16,14 @@ from types import SimpleNamespace
 
 import httpx
 
+from modal_dojo.common.dataset import DatasetConfig
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.framework import Framework
 from modal_dojo.common.ids import create_hash
+from modal_dojo.common.launcher_utils import (
+    serialize_recipe_param_value,
+    serialize_recipe_value,
+)
 from modal_dojo.common.run import FrameworkStatusUpdate, TrainingRun, TrainingRunStatus
 from modal_dojo.common.status import SpindleStatus
 from modal_dojo.common.training_rollout import (
@@ -31,6 +36,23 @@ from .timing import timing_record
 
 logger = logging.getLogger(__name__)
 _training_rollout = ContextVar("spindle_training_rollout", default=False)
+
+
+def _recipe_fields(config, prefix=""):
+    """Every config field, with nested configs and datasets as dotted keys."""
+    fields = {}
+    names = getattr(config, "__chz_fields__", None) or vars(config)
+    for name in names:
+        if name.startswith("_"):
+            continue
+        value = getattr(config, name)
+        key = prefix + name
+        if hasattr(value, "__chz_fields__") or isinstance(value, DatasetConfig):
+            fields[key] = serialize_recipe_value(type(value))
+            fields.update(_recipe_fields(value, f"{key}."))
+        else:
+            fields[key] = serialize_recipe_param_value(name, value)
+    return fields
 
 
 class DojoReporter:
@@ -63,18 +85,7 @@ class DojoReporter:
             framework_status=SpindleStatus.INITIALIZING,
             config={
                 "model": {"model_name": config.model_name},
-                "recipe": {
-                    key: getattr(config, key)
-                    for key in (
-                        "learning_rate",
-                        "lora_rank",
-                        "loss_fn",
-                        "max_tokens",
-                        "max_steps",
-                        "recipe_name",
-                        "renderer_name",
-                    )
-                },
+                "recipe": _recipe_fields(config),
                 "dataset": {"type": type(config.dataset_builder).__name__},
             },
             source_model={"model_name": config.model_name},
