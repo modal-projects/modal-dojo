@@ -6,6 +6,7 @@ import asyncio
 import copy
 import logging
 import secrets
+import subprocess
 import sys
 import threading
 import uuid
@@ -190,14 +191,18 @@ async def deployment(config, deploy_config, *, run):
         run.metadata.update(await check_server(url, api_key, config))
         yield chz.replace(config, base_url=url), api_key
     finally:
-        # The event loop waits for its threads before exiting, so a second
-        # Ctrl-C cannot cut this short.
-        errors = await asyncio.to_thread(
-            _remove_deployment, names, api_secret, environment
+        # A process in its own session finishes even if a second Ctrl-C ends
+        # this one, when Python can no longer start threads.
+        cleanup = subprocess.Popen(
+            [sys.executable, "-m", __name__, environment or "", api_secret, *names],
+            start_new_session=True,
         )
-        if errors:
-            cleanup_error = ExceptionGroup(
-                "Spindle cleanup failed; see app names in logs", errors
+        while cleanup.poll() is None:
+            await asyncio.sleep(0.5)
+        if cleanup.returncode:
+            cleanup_error = RuntimeError(
+                f"Spindle cleanup failed; check {', '.join(names)} and "
+                f"secret {api_secret} in the logs above"
             )
             if active_error := sys.exception():
                 active_error.add_note(str(cleanup_error))
@@ -228,8 +233,13 @@ def _remove_deployment(names, api_secret, environment) -> list[Exception]:
     # Spindle keeps its state in Dicts named after the app that made them.
     prefixes = tuple(f"{app_id}-" for app_id in app_ids)
     try:
-        for store in modal.Dict.objects.list(environment_name=environment or ""):
-            if prefixes and store.name and store.name.startswith(prefixes):
+        stores = (
+            modal.Dict.objects.list(environment_name=environment or "")
+            if prefixes
+            else []
+        )
+        for store in stores:
+            if store.name and store.name.startswith(prefixes):
                 modal.Dict.objects.delete(
                     store.name, environment_name=environment, allow_missing=True
                 )
@@ -305,3 +315,10 @@ async def _run_tinker_cookbook(config, api_key, tokenizer, reporter):
             config.log_path, tokenizer, on_group=reporter.capture_group
         ):
             await rl_train.main(config)
+
+
+if __name__ == "__main__":
+    # The cleanup process that deployment() starts.
+    logging.basicConfig(level=logging.INFO)
+    environment, api_secret, *names = sys.argv[1:]
+    sys.exit(1 if _remove_deployment(names, api_secret, environment or None) else 0)
