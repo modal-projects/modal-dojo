@@ -82,15 +82,24 @@ async def check_server(base_url: str, api_key: str, config) -> dict[str, str | N
 
 
 @asynccontextmanager
-async def deployment(config, *, run):
+async def shared_server(config, api_key, *, run):
+    """Use the long-lived server at ``config.base_url``; this run never stops it."""
+    run.metadata.update(await check_server(config.base_url, api_key, config))
+    await run.save(is_async=True)
+    yield config, api_key
+
+
+@asynccontextmanager
+async def deployment(config, deploy_config, *, run):
     """Deploy a uniquely named LoRA Spindle server, and stop all of it on exit."""
+    import chz
     import modal
     from modal.config import config as modal_config
     from spindle.deployment_cli import deploy
     from spindle.deployments import DeploymentConfig
     from spindle.providers.modal.lora_pool import LoraPoolSpec
 
-    recipe = copy.deepcopy(config)
+    recipe = copy.deepcopy(deploy_config)
     run_name = "dojo-spindle-" + uuid.uuid4().hex[:12]
     recipe.name = run_name
     recipe.platform["frontend"] = run_name
@@ -161,7 +170,6 @@ async def deployment(config, *, run):
         run.modal_app_url = modal_app_dashboard_url(trainer_app.app_id)
         run.app_name = compiled.trainer_app_name
         run.metadata["spindle_apps"] = names
-        await run.save(is_async=True)
         logger.info("Spindle deployment %s in %s", run_name, environment or "default")
         server = modal.Function.from_name(
             run_name, "server", environment_name=environment
@@ -169,7 +177,9 @@ async def deployment(config, *, run):
         url = await server.get_web_url.aio()
         if not url:
             raise RuntimeError("Spindle deployed without an API URL")
-        yield url, api_key
+        run.metadata.update(await check_server(url, api_key, config))
+        await run.save(is_async=True)
+        yield chz.replace(config, base_url=url), api_key
     finally:
         errors = []
         for name in names:
@@ -196,7 +206,6 @@ async def deployment(config, *, run):
 
 async def train(config, *, api_key=None, deploy_config=None):
     """Train against ``config.base_url``, or a server deployed from ``deploy_config``."""
-    import chz
     from tinker_cookbook.rl import train as rl_train
     from tinker_cookbook.tokenizer_utils import get_tokenizer
 
@@ -210,17 +219,14 @@ async def train(config, *, api_key=None, deploy_config=None):
     try:
         # Fail before creating a Dojo run.
         tokenizer = get_tokenizer(config.model_name)
-        if deploy_config is None:
-            server = await check_server(config.base_url, api_key, config)
-            async with DojoReporter(config, server) as reporter:
-                await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
-            return reporter.run
-
-        async with DojoReporter(config, {}) as reporter:
-            async with deployment(deploy_config, run=reporter.run) as (url, api_key):
-                config = chz.replace(config, base_url=url)
-                reporter.run.metadata.update(await check_server(url, api_key, config))
-                await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
+        reporter = DojoReporter(config)
+        server = (
+            shared_server(config, api_key, run=reporter.run)
+            if deploy_config is None
+            else deployment(config, deploy_config, run=reporter.run)
+        )
+        async with reporter, server as (config, api_key):
+            await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
         return reporter.run
     finally:
         rl_train.tinker = original_tinker

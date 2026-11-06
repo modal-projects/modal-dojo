@@ -24,7 +24,7 @@ CONFIG = SimpleNamespace(
 
 def test_pending_status_updates_merge_into_latest_snapshot():
     async def pending_status():
-        reporter = DojoReporter(CONFIG, {})
+        reporter = DojoReporter(CONFIG)
         reporter._phase(SpindleStatus.TRAIN_STEP, is_active=True, progress_current=3)
         reporter._phase(SpindleStatus.SAVE_CHECKPOINT_AND_GET_SAMPLING_CLIENT)
         queue = reporter.queues["framework-status"]
@@ -38,7 +38,7 @@ def test_pending_status_updates_merge_into_latest_snapshot():
 
 def test_other_streams_keep_every_payload():
     async def pending_metrics():
-        reporter = DojoReporter(CONFIG, {})
+        reporter = DojoReporter(CONFIG)
         reporter._enqueue("metric-points", {"points": [1]})
         reporter._enqueue("metric-points", {"points": [2]})
         return reporter.queues["metric-points"].qsize()

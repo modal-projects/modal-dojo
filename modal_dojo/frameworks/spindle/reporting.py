@@ -34,7 +34,7 @@ _training_rollout = ContextVar("spindle_training_rollout", default=False)
 
 
 class DojoReporter:
-    def __init__(self, config, server):
+    def __init__(self, config):
         self.config = config
         self.groups = []
         self.next_step = 0
@@ -74,11 +74,7 @@ class DojoReporter:
             source_model={"model_name": config.model_name},
             created_at=now,
             started_at=now,
-            metadata={
-                "log_path": config.log_path,
-                "driver": "local",
-                **server,
-            },
+            metadata={"log_path": config.log_path, "driver": "local"},
         )
 
     async def __aenter__(self):
