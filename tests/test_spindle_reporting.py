@@ -56,3 +56,23 @@ def test_run_ids_match_other_frameworks():
     run_id = asyncio.run(new_run_id())
     assert not run_id.startswith("spindle-")
     assert re.fullmatch(r".+-[0-9a-f]{12}", run_id)
+
+
+def test_recipe_lists_every_config_field():
+    class Builder:
+        __chz_fields__ = {"batch_size": None, "group_size": None}
+        batch_size = 4
+        group_size = 8
+
+    config = SimpleNamespace(
+        **{**vars(CONFIG), "dataset_builder": Builder(), "wandb_api_key": "secret"}
+    )
+
+    async def recipe():
+        return DojoReporter(config).run.config["recipe"]
+
+    fields = asyncio.run(recipe())
+    assert set(vars(CONFIG)) <= set(fields)
+    assert fields["dataset_builder"].endswith("Builder")
+    assert fields["dataset_builder.group_size"] == 8
+    assert fields["wandb_api_key"] == "[redacted]"
