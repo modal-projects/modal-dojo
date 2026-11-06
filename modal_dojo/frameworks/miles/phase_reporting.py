@@ -114,6 +114,10 @@ def report_step_event(
         "event_ts": time.time(),
     }
     _enqueue(payload)
+    # POC (option E): also push checkpoint saves to Modal Evals.
+    from modal_dojo.common.eval_events import maybe_emit_checkpoint_saved
+
+    maybe_emit_checkpoint_saved(payload)
 
 
 def report_rollout_samples(

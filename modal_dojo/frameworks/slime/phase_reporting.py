@@ -303,6 +303,10 @@ def report_step_event(
         "rollout_id": rollout_id,
         "event_ts": time.time(),
     }
+    # POC (option E): also push checkpoint saves to Modal Evals.
+    from modal_dojo.common.eval_events import maybe_emit_checkpoint_saved
+
+    maybe_emit_checkpoint_saved(payload)
     if step_event:
         payload["step_event"] = step_event
     match step_event:

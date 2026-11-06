@@ -61,6 +61,8 @@ INSTALL_HINT = (
 _TERMINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 _POLL_SECONDS = 5.0
 _MAX_POLL_SECONDS = 30.0
+_COMMIT_WAIT_TRIES = 30
+_COMMIT_WAIT_SECONDS = 10.0
 
 
 def _require_modal_evals() -> None:
@@ -720,7 +722,7 @@ def watch_checkpoints(
     config: ModalEvalConfig,
     model: ModelConfig,
     environment: str | None,
-    poll_seconds: float = 60.0,
+    poll_seconds: float = 600.0,
 ) -> None:
     """Evaluate a run's due checkpoints until it ends."""
     from modal_dojo.common.run import TrainingRun
@@ -743,7 +745,17 @@ def watch_checkpoints(
             )
         if finished:
             return
-        time.sleep(poll_seconds)
+        # POC (option E): wake on the trainer's checkpoint_saved event instead
+        # of sleeping; fall back to polling every poll_seconds.
+        from modal_dojo.common.eval_events import wait_for_checkpoint_event
+
+        if wait_for_checkpoint_event(training_run_id, timeout=poll_seconds):
+            # The event fires before the commit: wait for it to land.
+            known = len(checkpoints)
+            for _ in range(_COMMIT_WAIT_TRIES):
+                if len(run.checkpoints()) > known:
+                    break
+                time.sleep(_COMMIT_WAIT_SECONDS)
 
 
 def evaluate_checkpoint(
