@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import httpx
@@ -75,6 +76,14 @@ async def check_server(base_url: str, api_key: str, config) -> dict[str, str | N
     }
 
 
+@asynccontextmanager
+async def shared_server(config, api_key, *, run):
+    """Use the long-lived server at ``config.base_url``; this run never stops it."""
+    run.metadata.update(await check_server(config.base_url, api_key, config))
+    await run.save(is_async=True)
+    yield config, api_key
+
+
 async def train(config, *, api_key):
     from tinker_cookbook.rl import train as rl_train
     from tinker_cookbook.tokenizer_utils import get_tokenizer
@@ -89,8 +98,9 @@ async def train(config, *, api_key):
     try:
         # Fail before creating a Dojo run.
         tokenizer = get_tokenizer(config.model_name)
-        server = await check_server(config.base_url, api_key, config)
-        async with DojoReporter(config, server) as reporter:
+        reporter = DojoReporter(config)
+        server = shared_server(config, api_key, run=reporter.run)
+        async with reporter, server as (config, api_key):
             await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
         return reporter.run
     finally:
