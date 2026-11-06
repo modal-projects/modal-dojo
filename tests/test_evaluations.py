@@ -136,29 +136,19 @@ def test_modal_eval_needs_a_reward_function(published: dict) -> None:
         evaluations.prepare_eval(_train_config(None))  # type: ignore[arg-type]
 
 
-def test_evaluate_checkpoint_records_and_stops_endpoint(
+def test_evaluate_checkpoint_passes_a_checkpoint_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from modal_dojo.common import endpoint as endpoint_module
+    from modal_dojo.common.checkpoint import Checkpoint, CheckpointType
+    from modal_dojo.common.checkpoint_target import CheckpointTarget
+    from modal_dojo.common.models import ModelConfig
 
-    events = []
-
-    class FakeEndpoint:
-        @classmethod
-        def launch(cls, model, checkpoint, *, environment):
-            events.append(("launch", checkpoint.name))
-            return cls()
-
-        def wait_until_ready(self):
-            events.append(("ready",))
-
-        def stop(self):
-            events.append(("stop",))
+    targets = []
 
     class FakeJob:
         job_id = "ej-1"
 
-        def wait(self):
+        def results(self):
             return SimpleNamespace(
                 job=SimpleNamespace(status="succeeded"),
                 output_volume=SimpleNamespace(url="https://modal.com/id/vo"),
@@ -168,13 +158,10 @@ def test_evaluate_checkpoint_records_and_stops_endpoint(
             return 0.75
 
     recorded = []
-    monkeypatch.setattr(endpoint_module, "Endpoint", FakeEndpoint)
     monkeypatch.setattr(
         evaluations,
         "run_evaluation",
-        lambda release_id, target, **kwargs: (
-            events.append(("run", kwargs["tags"])) or FakeJob()
-        ),
+        lambda release_id, target, **kwargs: targets.append(target) or FakeJob(),
     )
     monkeypatch.setattr(
         evaluations,
@@ -183,10 +170,17 @@ def test_evaluate_checkpoint_records_and_stops_endpoint(
     )
     record = evaluations.evaluate_checkpoint(
         training_run_id="run-1",
-        checkpoint=SimpleNamespace(name="iter_0000004"),
+        checkpoint=Checkpoint(
+            checkpoint_type=CheckpointType.megatron,
+            name="iter_0000004",
+            path="/checkpoints/run-1/iter_0000004",
+            timestamp=0.0,
+            checkpoints_volume_name="dojo-checkpoints",
+            checkpoints_mount_path="/checkpoints",
+        ),
         release_id="er-1",
         config=ModalEvalConfig(every_n_checkpoints=2),
-        model=SimpleNamespace(),  # type: ignore[arg-type]
+        model=ModelConfig(model_name="Qwen/Qwen3-4B"),
         environment=None,
     )
     assert record == {
@@ -197,8 +191,9 @@ def test_evaluate_checkpoint_records_and_stops_endpoint(
         "url": "https://modal.com/id/vo",
     }
     assert recorded == [record]
-    assert events[-1] == ("stop",)
-    assert ("run", {"training_run_id": "run-1", "checkpoint": "iter_0000004"}) in events
+    # The caller hands over weights, not a server (option D).
+    assert isinstance(targets[0], CheckpointTarget)
+    assert targets[0].path == "run-1/iter_0000004"
 
 
 def test_mean_averages_finished_trials() -> None:

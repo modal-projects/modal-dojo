@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from modal_evals.results import JobResults
     from modal_evals.targets import CustomTarget, FlashEndpointTarget, RecipeTarget
 
+    from modal_dojo.common.checkpoint_target import CheckpointTarget
     from modal_dojo.common.dataset import DatasetConfig
     from modal_dojo.common.deployment import CustomDeployment
     from modal_dojo.common.endpoint import Endpoint
@@ -45,7 +46,12 @@ if TYPE_CHECKING:
     from modal_dojo.common.train import TrainConfig
 
     EvaluationTargetLike = (
-        Endpoint | CustomDeployment | FlashEndpointTarget | CustomTarget | RecipeTarget
+        Endpoint
+        | CustomDeployment
+        | CheckpointTarget
+        | FlashEndpointTarget
+        | CustomTarget
+        | RecipeTarget
     )
 
 T = TypeVar("T")
@@ -370,6 +376,28 @@ def run_evaluation(
         The submitted job.
     """
     _require_modal_evals()
+    from modal_dojo.common.checkpoint_target import CheckpointTarget
+
+    if isinstance(target, CheckpointTarget):
+        # POC (option D): Modal Evals would serve the checkpoint server-side
+        # from target.to_request(). Until then, serve it here for the job.
+        with target.serve() as endpoint:
+            return run_evaluation(
+                evaluation,
+                endpoint,
+                params=params,
+                task_keys=task_keys,
+                trials_per_task=trials_per_task,
+                trial_concurrency=trial_concurrency,
+                timeout_multiplier=timeout_multiplier,
+                secrets=secrets,
+                name=name,
+                tags=tags,
+                environment=environment or target.environment,
+                server=server,
+                wait=True,
+                timeout=timeout,
+            )
     from google.protobuf.json_format import ParseDict
     from google.protobuf.struct_pb2 import Struct
     from modal_evals.proto import flash_eval_api_pb2
@@ -757,7 +785,7 @@ def evaluate_checkpoint(
 ) -> dict[str, Any]:
     """Serve ``checkpoint``, run the evaluation against it, record the outcome
     in the run's ``metadata["modal_evals"]``, and stop the Endpoint."""
-    from modal_dojo.common.endpoint import Endpoint
+    from modal_dojo.common.checkpoint_target import CheckpointTarget
 
     record: dict[str, Any] = {
         "iteration": checkpoint.name,
@@ -766,20 +794,21 @@ def evaluate_checkpoint(
         "score": None,
         "url": None,
     }
-    endpoint = None
     try:
-        endpoint = Endpoint.launch(model, checkpoint, environment=environment)
-        endpoint.wait_until_ready()
+        # POC (option D): the caller passes weights, not a server.
+        target = CheckpointTarget.from_checkpoint(
+            checkpoint, model, environment=environment
+        )
         job = run_evaluation(
             release_id,
-            endpoint,
+            target,
             params={"temperature": config.temperature, "max_tokens": config.max_tokens},
             name=f"{training_run_id} {checkpoint.name}",
             tags={"training_run_id": training_run_id, "checkpoint": checkpoint.name},
             environment=environment,
         )
         record["job_id"] = job.job_id
-        results = job.wait()
+        results = job.results()
         record["status"] = results.job.status
         record["url"] = results.output_volume.url
         try:
@@ -788,9 +817,6 @@ def evaluate_checkpoint(
             pass
     except Exception as exc:
         record["error"] = f"{type(exc).__name__}: {exc}"[:500]
-    finally:
-        if endpoint is not None:
-            endpoint.stop()
     _record_evaluation(training_run_id, record)
     return record
 
