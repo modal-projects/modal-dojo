@@ -13,12 +13,12 @@ from pathlib import Path
 import secrets
 import time
 from types import SimpleNamespace
-import uuid
 
 import httpx
 
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.framework import Framework
+from modal_dojo.common.ids import create_hash
 from modal_dojo.common.run import FrameworkStatusUpdate, TrainingRun, TrainingRunStatus
 from modal_dojo.common.status import SpindleStatus
 from modal_dojo.common.training_rollout import (
@@ -52,7 +52,13 @@ class DojoReporter:
         self.token = secrets.token_urlsafe(32)
         now = int(time.time())
         self.run = TrainingRun(
-            training_run_id="spindle-" + uuid.uuid4().hex[:12],
+            training_run_id=create_hash(
+                config.model_name,
+                config.load_checkpoint_path or "",
+                config.recipe_name,
+                "",
+                config.log_path,
+            ),
             framework=Framework.SPINDLE,
             framework_status=SpindleStatus.INITIALIZING,
             config={

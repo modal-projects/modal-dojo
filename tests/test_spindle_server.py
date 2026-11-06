@@ -119,6 +119,7 @@ def test_rejected_server_fails_before_creating_a_dojo_run(requests, monkeypatch)
         renderer_name="qwen3_5_disable_thinking",
         dataset_builder=object(),
         log_path="/tmp/dojo-spindle-test",
+        load_checkpoint_path=None,
     )
     with pytest.raises(DojoConfigError, match="rejected the request"):
         asyncio.run(launcher.train(config, api_key="wrong"))

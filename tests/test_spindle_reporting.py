@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from types import SimpleNamespace
 
 from modal_dojo.common.status import SpindleStatus
@@ -19,6 +20,7 @@ CONFIG = SimpleNamespace(
     renderer_name="qwen3_5_disable_thinking",
     dataset_builder=object(),
     log_path="/tmp/dojo-spindle-test",
+    load_checkpoint_path=None,
 )
 
 
@@ -44,3 +46,13 @@ def test_other_streams_keep_every_payload():
         return reporter.queues["metric-points"].qsize()
 
     assert asyncio.run(pending_metrics()) == 2
+
+
+def test_run_ids_match_other_frameworks():
+    async def new_run_id():
+        return DojoReporter(CONFIG).run.training_run_id
+
+    # Same create_hash names as Slime/Miles runs: <random words>-<12 hex>.
+    run_id = asyncio.run(new_run_id())
+    assert not run_id.startswith("spindle-")
+    assert re.fullmatch(r".+-[0-9a-f]{12}", run_id)
