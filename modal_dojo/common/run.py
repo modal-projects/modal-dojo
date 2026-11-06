@@ -274,6 +274,113 @@ class TrainingRun(BaseModel):
         records = (self.metadata or {}).get("modal_evals")
         return [dict(record) for record in records] if isinstance(records, list) else []
 
+    def evaluate(
+        self,
+        evaluation: str,
+        checkpoint: "Checkpoint | str | None" = None,
+        *,
+        params: dict[str, Any] | None = None,
+        environment: str | None = None,
+        wait: bool = True,
+        **run_kwargs: Any,
+    ) -> dict[str, Any]:
+        """POC (option C): evaluate one checkpoint of this run on demand.
+
+        The caller (a user, a notebook, or an agent) decides when to evaluate.
+        Serves the checkpoint on a Modal Endpoint, runs ``evaluation`` (a
+        catalog key such as ``terminal-bench-2-1``, or a release ID ``er-...``)
+        against it, records the outcome under ``metadata["modal_evals"]``, and
+        stops the Endpoint.
+
+        Args:
+            evaluation: Modal Evals evaluation key or release ID.
+            checkpoint: A ``Checkpoint``, a checkpoint name such as
+                ``iter_0000040``, ``"base"`` for the untrained source model
+                (the baseline), or ``None`` for the latest checkpoint.
+            params: Evaluation parameters, as the evaluation's ``Params``
+                declares.
+            environment: Modal environment to serve and evaluate in.
+            wait: Wait for the job and record its score. With ``False``,
+                the Endpoint is left running and the caller stops it.
+            **run_kwargs: Passed to ``run_evaluation`` (``task_keys``,
+                ``trials_per_task``, ``trial_concurrency``, ...).
+        """
+        from modal_dojo.common.endpoint import Endpoint
+        from modal_dojo.common.evaluations import _record_evaluation, run_evaluation
+
+        if checkpoint == "base":
+            target_checkpoint = None
+            label = "base"
+        else:
+            target_checkpoint = self._resolve_checkpoint(checkpoint)
+            label = target_checkpoint.name
+        record: dict[str, Any] = {
+            "iteration": label,
+            "evaluation": evaluation,
+            "job_id": "",
+            "status": "failed",
+            "score": None,
+            "url": None,
+        }
+        endpoint = Endpoint.launch(
+            self._source_model(), target_checkpoint, environment=environment
+        )
+        try:
+            endpoint.wait_until_ready()
+            job = run_evaluation(
+                evaluation,
+                endpoint,
+                params=params,
+                name=f"{self.training_run_id} {label}",
+                tags={"training_run_id": self.training_run_id, "checkpoint": label},
+                environment=environment,
+                **run_kwargs,
+            )
+            record["job_id"] = job.job_id
+            if not wait:
+                record["status"] = "running"
+                record["endpoint_id"] = endpoint.endpoint_id
+                return record
+            results = job.wait()
+            record["status"] = results.job.status
+            record["url"] = results.output_volume.url
+            try:
+                record["score"] = job.mean("score", results)
+            except ValueError:
+                pass
+        finally:
+            if wait:
+                endpoint.stop()
+        _record_evaluation(self.training_run_id, record)
+        return record
+
+    def _resolve_checkpoint(
+        self, checkpoint: "Checkpoint | str | None"
+    ) -> "Checkpoint":
+        from modal_dojo.common.checkpoint import Checkpoint
+
+        if isinstance(checkpoint, Checkpoint):
+            return checkpoint
+        checkpoints = self.checkpoints()
+        if not checkpoints:
+            raise ValueError(f"Run {self.training_run_id} has no checkpoints yet.")
+        if checkpoint is None:
+            return checkpoints[-1]
+        for candidate in checkpoints:
+            if candidate.name == checkpoint:
+                return candidate
+        names = ", ".join(c.name for c in checkpoints)
+        raise ValueError(f"No checkpoint {checkpoint!r}; this run has: {names}")
+
+    def _source_model(self) -> "ModelConfig":
+        self._reload()
+        raw = self.source_model
+        if isinstance(raw, ModelConfig):
+            return copy.copy(raw)
+        if isinstance(raw, dict):
+            return ModelConfig(**raw)
+        raise ValueError("source_model is not a ModelConfig or dict.")
+
     def latest_checkpoint(self) -> "Checkpoint | None":
         checkpoints = self.checkpoints()
         return checkpoints[-1] if checkpoints else None
