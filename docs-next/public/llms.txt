@@ -132,12 +132,14 @@ Repo: https://github.com/modal-projects/modal-dojo
 
 ### Training
 
+- [Backend](https://dojo.modal.dev/reference/backend)
 - [Checkpoint](https://dojo.modal.dev/reference/checkpoint)
 - [CheckpointType](https://dojo.modal.dev/reference/checkpointtype)
 - [DashboardComponent](https://dojo.modal.dev/reference/dashboardcomponent)
 - [DashboardMetricConfig](https://dojo.modal.dev/reference/dashboardmetricconfig)
 - [DojoConfigError](https://dojo.modal.dev/reference/dojoconfigerror)
 - [DojoError](https://dojo.modal.dev/reference/dojoerror)
+- [FlyteTrainingRun](https://dojo.modal.dev/reference/flytetrainingrun)
 - [GpuAllocationError](https://dojo.modal.dev/reference/gpuallocationerror)
 - [MetricConfig](https://dojo.modal.dev/reference/metricconfig)
 - [ModalCaptureError](https://dojo.modal.dev/reference/modalcaptureerror)
@@ -145,11 +147,14 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [TrackioConfig](https://dojo.modal.dev/reference/trackioconfig)
 - [TrainConfig](https://dojo.modal.dev/reference/trainconfig)
 - [TrainingGroup](https://dojo.modal.dev/reference/traininggroup)
+- [TrainingMode](https://dojo.modal.dev/reference/trainingmode)
 - [TrainingRun](https://dojo.modal.dev/reference/trainingrun)
 - [WandbConfig](https://dojo.modal.dev/reference/wandbconfig)
 - [convert_megatron_checkpoint_to_hf](https://dojo.modal.dev/reference/convert_megatron_checkpoint_to_hf)
 - [convert_native_lora_checkpoint_to_peft](https://dojo.modal.dev/reference/convert_native_lora_checkpoint_to_peft)
 - [extract_code](https://dojo.modal.dev/reference/extract_code)
+- [flyte_launch](https://dojo.modal.dev/reference/flyte_launch)
+- [flyte_train](https://dojo.modal.dev/reference/flyte_train)
 - [score_in_sandbox](https://dojo.modal.dev/reference/score_in_sandbox)
 
 ### Deployment
