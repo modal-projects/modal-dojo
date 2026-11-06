@@ -510,6 +510,15 @@ async def init_training_run_record(
         checkpoints_volume_name=checkpoints_volume_name,
         checkpoints_mount_path=checkpoints_mount_path,
     )
+    if (run_record.metadata or {}).get("eval_manifest"):
+        # POC (option B): hand the run to the Modal Evals-side scheduler.
+        from modal_dojo.common.eval_registration import register_volume, write_manifest
+
+        write_manifest(run_record.metadata, checkpoint_dir)
+        try:
+            register_volume(checkpoints_volume_name)
+        except Exception as exc:
+            print(f"WARNING: could not register {checkpoints_volume_name}: {exc}")
     attempt_count = mark_training_attempt_started(
         run_record, started_at=int(time.time())
     )

@@ -14,6 +14,7 @@ from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.checkpoint import Checkpoint, CheckpointType
 from modal_dojo.common.dataset import DatasetConfig, OnlineRollout
+from modal_dojo.common.eval_registration import EvalRegistration
 from modal_dojo.common.evaluations import ModalEvalConfig
 from modal_dojo.common.errors import (
     DojoConfigError,
@@ -406,6 +407,8 @@ class TrainConfig:
     recipe: SlimeRecipe | MilesRecipe
     eval_dataset: DatasetConfig | None = None
     eval: ModalEvalConfig | None = None
+    # POC (option B): declare evals; a Modal Evals-side scheduler runs them.
+    eval_registration: EvalRegistration | None = None
     resume_from_checkpoint: Checkpoint | None = None
     # Whether a run outlives the local client. The app itself is always started
     # detached (the CLI's ``modal run --detach`` only detaches the entrypoint,
@@ -700,6 +703,16 @@ class TrainConfig:
             started_at=created_at,
             metadata=self._build_run_metadata(),
         )
+        if self.eval_registration is not None:
+            from modal_dojo.common.eval_registration import (
+                MANIFEST_METADATA_KEY,
+                build_manifest,
+            )
+
+            run_record.metadata = {
+                **(run_record.metadata or {}),
+                MANIFEST_METADATA_KEY: build_manifest(self, training_run_id),
+            }
         try:
             run_record.save()
             vol_put(
