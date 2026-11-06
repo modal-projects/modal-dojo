@@ -190,19 +190,11 @@ async def deployment(config, deploy_config, *, run):
         run.metadata.update(await check_server(url, api_key, config))
         yield chz.replace(config, base_url=url), api_key
     finally:
-        errors = []
-        for name in names:
-            try:
-                await asyncio.to_thread(stop_app_by_name, name, environment)
-            except Exception as exc:
-                errors.append(exc)
-                logger.exception("Could not stop Spindle app %s", name)
-        try:
-            await modal.Secret.objects.delete.aio(
-                api_secret, environment_name=environment, allow_missing=True
-            )
-        except Exception as exc:
-            errors.append(exc)
+        # The event loop waits for its threads before exiting, so a second
+        # Ctrl-C cannot cut this short.
+        errors = await asyncio.to_thread(
+            _remove_deployment, names, api_secret, environment
+        )
         if errors:
             cleanup_error = ExceptionGroup(
                 "Spindle cleanup failed; see app names in logs", errors
@@ -211,6 +203,47 @@ async def deployment(config, deploy_config, *, run):
                 active_error.add_note(str(cleanup_error))
             else:
                 raise cleanup_error
+
+
+def _remove_deployment(names, api_secret, environment) -> list[Exception]:
+    """Stop the run's apps, then delete their Dicts and the API key secret."""
+    import modal
+
+    errors = []
+    app_ids = []
+    for name in names:
+        try:
+            app_ids.append(modal.App.lookup(name, environment_name=environment).app_id)
+        except modal.exception.NotFoundError:
+            pass
+        except Exception as exc:
+            errors.append(exc)
+            logger.exception("Could not look up Spindle app %s", name)
+    for name in names:
+        try:
+            stop_app_by_name(name, environment)
+        except Exception as exc:
+            errors.append(exc)
+            logger.exception("Could not stop Spindle app %s", name)
+    # Spindle keeps its state in Dicts named after the app that made them.
+    prefixes = tuple(f"{app_id}-" for app_id in app_ids)
+    try:
+        for store in modal.Dict.objects.list(environment_name=environment or ""):
+            if prefixes and store.name and store.name.startswith(prefixes):
+                modal.Dict.objects.delete(
+                    store.name, environment_name=environment, allow_missing=True
+                )
+    except Exception as exc:
+        errors.append(exc)
+        logger.exception("Could not delete Spindle's Dicts")
+    try:
+        modal.Secret.objects.delete(
+            api_secret, environment_name=environment, allow_missing=True
+        )
+    except Exception as exc:
+        errors.append(exc)
+        logger.exception("Could not delete Spindle secret %s", api_secret)
+    return errors
 
 
 async def train(config, *, api_key=None, deploy_config=None):
@@ -248,10 +281,10 @@ async def _run_tinker_cookbook(config, api_key, tokenizer, reporter):
     from .trajectories import capture_trajectories
 
     with reporter.tinker_cookbook_hooks(rl_train):
-        clients = []
 
         def service_client(**kwargs):
-            client = tinker.ServiceClient(
+            # rl_train.main opens this as a context manager, which closes it.
+            return tinker.ServiceClient(
                 **{
                     **kwargs,
                     "base_url": config.base_url,
@@ -260,8 +293,6 @@ async def _run_tinker_cookbook(config, api_key, tokenizer, reporter):
                     "default_headers_overrides": modal_proxy_auth_headers(),
                 }
             )
-            clients.append(client)
-            return client
 
         # Scope client routing to tinker-cookbook.
         rl_train.tinker = SimpleNamespace(
@@ -270,19 +301,7 @@ async def _run_tinker_cookbook(config, api_key, tokenizer, reporter):
                 "ServiceClient": service_client,
             }
         )
-        status = "errored"
-        try:
-            async with capture_trajectories(
-                config.log_path, tokenizer, on_group=reporter.capture_group
-            ):
-                await rl_train.main(config)
-            status = "success"
-        except asyncio.CancelledError:
-            status = "interrupted"
-            raise
-        finally:
-            for client in clients:
-                try:
-                    await asyncio.wait_for(client.close(status), timeout=30)
-                except Exception:
-                    logger.exception("Could not close tinker-cookbook's Spindle client")
+        async with capture_trajectories(
+            config.log_path, tokenizer, on_group=reporter.capture_group
+        ):
+            await rl_train.main(config)

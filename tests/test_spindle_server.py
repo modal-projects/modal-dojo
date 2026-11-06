@@ -147,3 +147,44 @@ def test_explains_servers_that_are_not_spindle(monkeypatch, response, match):
     )
     with pytest.raises(DojoConfigError, match=match):
         check("Qwen/Qwen3.5-2B")
+
+
+def test_removing_a_deployment_deletes_only_its_state(monkeypatch):
+    import modal
+
+    apps = {"dojo-spindle-x": "ap-front", "dojo-spindle-x-trainer": "ap-train"}
+    stores = ["ap-front-sessions", "ap-train-models", "ap-other-sessions", "notes"]
+    deleted = []
+
+    def lookup(name, environment_name=None):
+        if name not in apps:
+            raise modal.exception.NotFoundError(name)
+        return SimpleNamespace(app_id=apps[name])
+
+    def stop(name, environment):
+        if name == "dojo-spindle-x":
+            raise RuntimeError("stop failed")
+
+    monkeypatch.setattr(modal.App, "lookup", lookup)
+    monkeypatch.setattr(launcher, "stop_app_by_name", stop)
+    monkeypatch.setattr(
+        modal.Dict,
+        "objects",
+        SimpleNamespace(
+            list=lambda environment_name: [SimpleNamespace(name=n) for n in stores],
+            delete=lambda name, **kwargs: deleted.append(name),
+        ),
+    )
+    monkeypatch.setattr(
+        modal.Secret,
+        "objects",
+        SimpleNamespace(delete=lambda name, **kwargs: deleted.append(name)),
+    )
+    errors = launcher._remove_deployment(
+        ["dojo-spindle-x", "dojo-spindle-x-trainer", "dojo-spindle-x-pool"],
+        "dojo-spindle-x-api",
+        "dev",
+    )
+    # A failed stop doesn't skip the rest of the cleanup.
+    assert [str(error) for error in errors] == ["stop failed"]
+    assert deleted == ["ap-front-sessions", "ap-train-models", "dojo-spindle-x-api"]

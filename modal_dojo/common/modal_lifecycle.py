@@ -92,7 +92,10 @@ def stop_app_by_name(name: str, environment: str | None = None) -> None:
     command = [sys.executable, "-m", "modal", "app", "stop", "--yes", app.app_id]
     if environment:
         command.extend(["--env", environment])
-    result = subprocess.run(command, capture_output=True, text=True)
+    # Its own session keeps a terminal Ctrl-C from killing the stop midway.
+    result = subprocess.run(
+        command, capture_output=True, text=True, timeout=120, start_new_session=True
+    )
     output = result.stderr or result.stdout
     if result.returncode and "App is already stopped" not in output:
         raise RuntimeError(f"Could not stop {name}: {output}")
