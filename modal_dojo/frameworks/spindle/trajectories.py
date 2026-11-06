@@ -11,6 +11,31 @@ from pathlib import Path
 from typing import Any
 
 
+def _decode_turns(tokenizer, trajectory) -> list[dict[str, str]]:
+    """Each turn's new prompt tokens and its response.
+
+    A turn's prompt usually repeats the whole conversation so far; decoding
+    only what follows it keeps long multi-turn episodes linear in size.
+    """
+    turns = []
+    context: list[int] = []
+    for transition in trajectory.transitions:
+        prompt = transition.ob.to_ints()
+        shared = 0
+        for seen, token in zip(context, prompt):
+            if seen != token:
+                break
+            shared += 1
+        turns.append(
+            {
+                "prompt": tokenizer.decode(prompt[shared:]),
+                "response": tokenizer.decode(transition.ac.tokens),
+            }
+        )
+        context = prompt + list(transition.ac.tokens)
+    return turns
+
+
 def _jsonable(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
@@ -47,13 +72,7 @@ async def capture_trajectories(log_path: str, tokenizer, *, on_group=None):
                 "tags": env_group_builder.logging_tags(),
                 "trajectory_group": _jsonable(group),
                 "decoded": [
-                    [
-                        {
-                            "prompt": tokenizer.decode(transition.ob.to_ints()),
-                            "response": tokenizer.decode(transition.ac.tokens),
-                        }
-                        for transition in trajectory.transitions
-                    ]
+                    _decode_turns(tokenizer, trajectory)
                     for trajectory in group.trajectories_G
                 ],
             }

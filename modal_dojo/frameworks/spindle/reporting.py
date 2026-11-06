@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from contextvars import ContextVar
+from enum import Enum
 from functools import wraps
 import json
 import logging
@@ -21,6 +22,7 @@ from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.framework import Framework
 from modal_dojo.common.ids import create_hash
 from modal_dojo.common.launcher_utils import (
+    is_sensitive_recipe_field,
     serialize_recipe_param_value,
     serialize_recipe_value,
 )
@@ -51,8 +53,24 @@ def _recipe_fields(config, prefix=""):
             fields[key] = serialize_recipe_value(type(value))
             fields.update(_recipe_fields(value, f"{key}."))
         else:
-            fields[key] = serialize_recipe_param_value(name, value)
+            fields[key] = _field_value(name, value)
     return fields
+
+
+def _field_value(name, value):
+    """Plain values as is; objects such as evaluators or tasks as their type.
+
+    Their repr can hold every task's text and would skip redaction.
+    """
+    if is_sensitive_recipe_field(name) or isinstance(
+        value, str | int | float | bool | Enum | Path | dict | type(None)
+    ):
+        return serialize_recipe_param_value(name, value)
+    if isinstance(value, list | tuple | set):
+        return [_field_value(name, item) for item in value]
+    if callable(value) and hasattr(value, "__qualname__"):
+        return serialize_recipe_value(value)
+    return serialize_recipe_value(type(value))
 
 
 class DojoReporter:
@@ -224,13 +242,19 @@ class DojoReporter:
                         sample_index=len(samples),
                         group_index=group_index,
                         prompt=decoded[0]["prompt"] if decoded else "",
-                        response="\n\n".join(turn["response"] for turn in decoded),
+                        # Later turns' prompts hold only their new messages, so
+                        # this is the episode's transcript after the first prompt.
+                        response=decoded[0]["response"]
+                        + "".join(
+                            turn["prompt"] + turn["response"] for turn in decoded[1:]
+                        )
+                        if decoded
+                        else "",
                         score=float(
                             final_reward
                             + sum(t["reward"] for t in trajectory["transitions"])
                         ),
                         metadata={
-                            "decoded_transitions": decoded,
                             "transition_rewards": [
                                 t["reward"] for t in trajectory["transitions"]
                             ],
@@ -253,19 +277,7 @@ class DojoReporter:
         self._enqueue("training-rollouts", result.model_dump(mode="json"))
         self.groups.clear()
 
-    def log_metrics(self, metrics, step=None):
-        # Only training metrics establish a batch boundary.
-        if "progress/batch" not in metrics:
-            return
-        step = int(metrics["progress/batch"])
-        scalars = {
-            key: float(value)
-            for key, value in metrics.items()
-            if isinstance(value, (int, float)) and math.isfinite(value)
-        }
-        self.run.metrics = scalars
-        self.next_step = step + 1
-        self._flush_groups(step, scalars)
+    def _metric_point(self, step, scalars):
         self._enqueue(
             "metric-points",
             {
@@ -280,11 +292,31 @@ class DojoReporter:
                 "final": True,
             },
         )
+
+    def log_metrics(self, metrics, step=None):
+        scalars = {
+            key: float(value)
+            for key, value in metrics.items()
+            if isinstance(value, (int, float)) and math.isfinite(value)
+        }
+        # Only training metrics establish a batch boundary; the final weights'
+        # evaluation is logged after the last batch with just its step.
+        if "progress/batch" not in metrics:
+            if step is not None and scalars:
+                self.run.metrics = {**self.run.metrics, **scalars}
+                self._metric_point(step, scalars)
+            return
+        step = int(metrics["progress/batch"])
+        self.run.metrics = scalars
+        self.next_step = step + 1
+        self._flush_groups(step, scalars)
+        self._metric_point(step, scalars)
         self._phase(
             self.run.framework_status,
             is_active=True,
             progress_current=self.next_step,
-            progress_total=self.config.max_steps,
+            # tinker-cookbook stops at max_steps or when the dataset runs out.
+            progress_total=round(self.next_step / scalars["progress/done_frac"]),
             progress_unit="step",
             rollout_id=step,
         )

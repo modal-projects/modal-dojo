@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -13,7 +12,6 @@ import httpx
 from modal_dojo.common.config import modal_proxy_auth_headers
 from modal_dojo.common.errors import DojoConfigError
 
-logger = logging.getLogger(__name__)
 # tinker-cookbook hooks are process-wide.
 _active_run = threading.Lock()
 
@@ -124,10 +122,10 @@ async def _run_tinker_cookbook(config, api_key, tokenizer, reporter):
     from .trajectories import capture_trajectories
 
     with reporter.tinker_cookbook_hooks(rl_train):
-        clients = []
 
         def service_client(**kwargs):
-            client = tinker.ServiceClient(
+            # rl_train.main opens this as a context manager, which closes it.
+            return tinker.ServiceClient(
                 **{
                     **kwargs,
                     "base_url": config.base_url,
@@ -136,8 +134,6 @@ async def _run_tinker_cookbook(config, api_key, tokenizer, reporter):
                     "default_headers_overrides": modal_proxy_auth_headers(),
                 }
             )
-            clients.append(client)
-            return client
 
         # Scope client routing to tinker-cookbook.
         rl_train.tinker = SimpleNamespace(
@@ -146,19 +142,7 @@ async def _run_tinker_cookbook(config, api_key, tokenizer, reporter):
                 "ServiceClient": service_client,
             }
         )
-        status = "errored"
-        try:
-            async with capture_trajectories(
-                config.log_path, tokenizer, on_group=reporter.capture_group
-            ):
-                await rl_train.main(config)
-            status = "success"
-        except asyncio.CancelledError:
-            status = "interrupted"
-            raise
-        finally:
-            for client in clients:
-                try:
-                    await asyncio.wait_for(client.close(status), timeout=30)
-                except Exception:
-                    logger.exception("Could not close tinker-cookbook's Spindle client")
+        async with capture_trajectories(
+            config.log_path, tokenizer, on_group=reporter.capture_group
+        ):
+            await rl_train.main(config)
