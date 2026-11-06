@@ -40,7 +40,9 @@ async def check_server(base_url: str, api_key: str, config) -> dict[str, str | N
                 client.get("/api/v1/spindle/deployments"),
             )
         except httpx.TransportError as exc:
-            raise DojoConfigError(f"Could not reach Spindle at {base_url}: {exc}")
+            raise DojoConfigError(
+                f"Could not reach Spindle at {base_url}: {exc}"
+            ) from exc
     for response in (capabilities, deployments):
         if response.status_code in (401, 403):
             raise DojoConfigError(
@@ -50,8 +52,18 @@ async def check_server(base_url: str, api_key: str, config) -> dict[str, str | N
                 "server's environment (`modal workspace proxy-tokens allow "
                 "<wk-token-id> <environment>`)."
             )
-        response.raise_for_status()
-    served = deployments.json()["deployments"]
+        if not response.is_success:
+            raise DojoConfigError(
+                f"Spindle at {base_url} answered {response.request.url.path} with "
+                f"{response.status_code}; is it a Spindle server?"
+            )
+    try:
+        served = deployments.json()["deployments"]
+        info = capabilities.json()
+    except (ValueError, KeyError) as exc:
+        raise DojoConfigError(
+            f"Spindle at {base_url} sent an unexpected response: {exc!r}"
+        ) from exc
     lora = [
         deployment
         for deployment in served
@@ -73,7 +85,6 @@ async def check_server(base_url: str, api_key: str, config) -> dict[str, str | N
             f"max_tokens must leave room for prompts in {config.model_name}'s "
             f"{context}-token context"
         )
-    info = capabilities.json()
     return {
         "spindle_base_url": base_url,
         "spindle_version": info.get("spindle_version"),

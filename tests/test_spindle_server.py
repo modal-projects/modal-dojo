@@ -122,3 +122,27 @@ def test_rejected_server_fails_before_creating_a_dojo_run(requests, monkeypatch)
     )
     with pytest.raises(DojoConfigError, match="rejected the request"):
         asyncio.run(launcher.train(config, api_key="wrong"))
+
+
+@pytest.mark.parametrize(
+    ("response", "match"),
+    [
+        (
+            httpx.Response(404, text="Not Found"),
+            "answered /api/v1/spindle/deployments with 404",
+        ),
+        (httpx.Response(200, text="<html>login</html>"), "unexpected response"),
+    ],
+)
+def test_explains_servers_that_are_not_spindle(monkeypatch, response, match):
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/get_server_capabilities":
+            return httpx.Response(200, json={"spindle_version": "0.1.5"})
+        return response
+
+    client = functools.partial(httpx.AsyncClient, transport=httpx.MockTransport(handle))
+    monkeypatch.setattr(
+        launcher, "httpx", SimpleNamespace(**{**vars(httpx), "AsyncClient": client})
+    )
+    with pytest.raises(DojoConfigError, match=match):
+        check("Qwen/Qwen3.5-2B")

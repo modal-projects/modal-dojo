@@ -22,8 +22,8 @@ usually means "move this module-level import inside the function".
 from __future__ import annotations
 
 import concurrent.futures
-import pathlib
 import importlib.util
+import pathlib
 import subprocess
 import sys
 
