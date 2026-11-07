@@ -2,6 +2,8 @@
 order: 1
 ---
 
+<!-- Docs preview CI smoke check. -->
+
 # Migrating from Training Gym to Modal Dojo
 
 The Training Gym has been renamed to Modal Dojo. This guide will break down how to migrate your existing Training Gym setup to the new name, as well as some common things to be aware of.
