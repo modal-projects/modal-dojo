@@ -83,6 +83,8 @@ def _endpoint_info(
         )
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(exc.stderr.strip()) from exc
+    # Jupyter sets FORCE_COLOR=1, so Modal's Rich output includes ANSI codes
+    # even with --json and captured stdout. See https://github.com/modal-projects/modal-dojo/pull/787.
     return json.loads(Text.from_ansi(described.stdout).plain)
 
 
