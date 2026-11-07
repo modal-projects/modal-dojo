@@ -17,8 +17,11 @@ from nltk.corpus import cmudict
 
 import re
 import time
+from argparse import Namespace
+from typing import Protocol
 
 from modal_dojo import (
+    Checkpoint,
     Endpoint,
     HuggingFaceDataset,
     Qwen3_5_4B,
@@ -44,7 +47,7 @@ from modal_dojo import (
 model = Qwen3_5_4B()
 
 
-def deploy_base_model():
+def deploy_base_model() -> Endpoint:
     print("deploying base model endpoint...")
     base_deployment = Endpoint.launch(
         model,
@@ -54,6 +57,9 @@ def deploy_base_model():
     base_deployment.wait_until_ready()
     print(f"base model deployed to {base_deployment.url}")
     return base_deployment
+
+
+base_deployment = deploy_base_model()
 
 
 # ## Define a scoring function
@@ -104,11 +110,19 @@ def _count_syllables(text: str) -> int:
 def score_haiku(response: str) -> float:
     lines = [line.strip() for line in response.strip().split("\n") if line.strip()]
     if len(lines) != 3:
-        return -10
+        return -10.0
     total_diff = sum(
         abs(_count_syllables(line) - target) for line, target in zip(lines, [5, 7, 5])
     )
     return -float(total_diff)
+
+
+haiku = """
+morning code review
+the tests pass on the first try
+I do not trust it
+"""
+print(score_haiku(haiku))
 
 
 # ## Get the dataset
@@ -156,7 +170,7 @@ eval_dataset = HuggingFaceDataset(
 # so we loop over samples in parallel to speed up eval.
 
 
-def run_eval(deployment, max_concurrency: int = 2) -> float:
+def run_eval(deployment: Endpoint, max_concurrency: int = 2) -> float:
     from concurrent.futures import ThreadPoolExecutor
 
     deployment.wait_until_ready()
@@ -173,10 +187,13 @@ def run_eval(deployment, max_concurrency: int = 2) -> float:
     return sum(scores) / len(scores) if scores else float("nan")
 
 
-def run_baseline_evals(deployment):
+def run_baseline_evals(deployment: Endpoint) -> None:
     print("running base model evaluation...")
     base_mean = run_eval(deployment)
     print(f"average score: {base_mean:.1f}")
+
+
+run_baseline_evals(base_deployment)
 
 
 # ## Creating a reward function
@@ -185,7 +202,11 @@ def run_baseline_evals(deployment):
 # model's response and pass it to our existing score_haiku. Simple enough.
 
 
-async def haiku_rm(args, sample, **kwargs) -> float:
+class RolloutSample(Protocol):
+    response: str
+
+
+async def haiku_rm(args: Namespace, sample: RolloutSample, **kwargs: object) -> float:
     response = model.parse_response(sample.response)
     return score_haiku(response.content)
 
@@ -226,7 +247,7 @@ config = TrainConfig(
 )
 
 
-def train(config):
+def train(config: TrainConfig) -> Checkpoint:
     with config.launch() as run:
         print(f"run id: {run.training_run_id}")
         checkpoint = None
@@ -245,13 +266,16 @@ def train(config):
     return checkpoint
 
 
+checkpoint = train(config)
+
+
 # ## Serve and evaluate the trained checkpoint
 #
 # We'll get the latest checkpoint and create a new Endpoint so we may evaluate it.
 # Now, let's run the same eval as before.
 
 
-def deploy_trained_model(checkpoint):
+def deploy_trained_model(checkpoint: Checkpoint) -> Endpoint:
     print("deploying trained model endpoint...")
     trained_deployment = Endpoint.launch(
         model,
@@ -264,10 +288,16 @@ def deploy_trained_model(checkpoint):
     return trained_deployment
 
 
-def run_trained_evals(trained_deployment):
+trained_deployment = deploy_trained_model(checkpoint)
+
+
+def run_trained_evals(trained_deployment: Endpoint) -> None:
     print("running checkpoint evaluation...")
     trained_mean = run_eval(trained_deployment)
     print(f"average score: {trained_mean:.1f}")
+
+
+run_trained_evals(trained_deployment)
 
 
 # ## Continue training off the checkpoint
@@ -276,7 +306,7 @@ def run_trained_evals(trained_deployment):
 # Let's continue training, starting from the last checkpoint.
 
 
-def continue_training(checkpoint):
+def continue_training(checkpoint: Checkpoint) -> Checkpoint:
     new_config = TrainConfig(
         model=model,
         dataset=train_dataset,
@@ -314,12 +344,15 @@ def continue_training(checkpoint):
     return new_checkpoint
 
 
+new_checkpoint = continue_training(checkpoint)
+
+
 # ## Evals Evals Evals
 #
 # Once again, we'll create a new Endpoint for the new checkpoint and run evals on it.
 
 
-def deploy_continued_model(new_checkpoint):
+def deploy_continued_model(new_checkpoint: Checkpoint) -> Endpoint:
     print("deploying continued model endpoint...")
     new_deployment = Endpoint.launch(
         model,
@@ -332,18 +365,13 @@ def deploy_continued_model(new_checkpoint):
     return new_deployment
 
 
-def run_continued_evals(new_deployment):
+new_deployment = deploy_continued_model(new_checkpoint)
+
+
+def run_continued_evals(new_deployment: Endpoint) -> None:
     print("running new checkpoint evaluation...")
     new_mean = run_eval(new_deployment)
     print(f"average score: {new_mean:.1f}")
 
 
-if __name__ == "__main__":
-    base_deployment = deploy_base_model()
-    run_baseline_evals(base_deployment)
-    checkpoint = train(config)
-    trained_deployment = deploy_trained_model(checkpoint)
-    run_trained_evals(trained_deployment)
-    new_checkpoint = continue_training(checkpoint)
-    new_deployment = deploy_continued_model(new_checkpoint)
-    run_continued_evals(new_deployment)
+run_continued_evals(new_deployment)
