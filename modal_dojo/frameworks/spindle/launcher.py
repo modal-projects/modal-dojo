@@ -16,22 +16,20 @@ from modal_dojo.common.errors import DojoConfigError
 _active_run = threading.Lock()
 
 
-async def check_server(base_url: str, api_key: str, config) -> dict[str, str | None]:
+def check_server(base_url: str, api_key: str, config) -> dict[str, str | None]:
     """Fail unless the server has a LoRA deployment that fits ``config``.
 
     Returns the server's identity for the run record: the shared server is
     redeployed from Spindle main, so one config can run on several versions.
     """
-    async with httpx.AsyncClient(
+    with httpx.Client(
         base_url=base_url.rstrip("/"),
         headers={**modal_proxy_auth_headers(), "X-API-Key": api_key},
         timeout=30,
     ) as client:
         try:
-            capabilities, deployments = await asyncio.gather(
-                client.get("/api/v1/get_server_capabilities"),
-                client.get("/api/v1/spindle/deployments"),
-            )
+            capabilities = client.get("/api/v1/get_server_capabilities")
+            deployments = client.get("/api/v1/spindle/deployments")
         except httpx.TransportError as exc:
             raise DojoConfigError(
                 f"Could not reach Spindle at {base_url}: {exc}"
@@ -88,11 +86,14 @@ async def check_server(base_url: str, api_key: str, config) -> dict[str, str | N
 @asynccontextmanager
 async def shared_server(config, api_key, *, run):
     """Use the long-lived server at ``config.base_url``; this run never stops it."""
-    run.metadata.update(await check_server(config.base_url, api_key, config))
+    run.metadata.update(
+        await asyncio.to_thread(check_server, config.base_url, api_key, config)
+    )
     yield config, api_key
 
 
-async def train(config, *, api_key):
+async def train(config, *, api_key, run, dashboard_url, status_token):
+    """The RL loop, inside the Modal container ``launch()`` spawns."""
     from tinker_cookbook.rl import train as rl_train
     from tinker_cookbook.tokenizer_utils import get_tokenizer
 
@@ -104,13 +105,15 @@ async def train(config, *, api_key):
         )
     original_tinker = rl_train.tinker
     try:
-        tokenizer = get_tokenizer(config.model_name)
-        reporter = DojoReporter(config)
-        server = shared_server(config, api_key, run=reporter.run)
-        # The server is checked before the reporter creates a Dojo run.
-        async with server as (config, api_key), reporter:
-            await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
-        return reporter.run
+        # The reporter records any failure on the run launch() saved.
+        reporter = DojoReporter(
+            config, run, dashboard_url=dashboard_url, token=status_token
+        )
+        async with reporter:
+            tokenizer = await asyncio.to_thread(get_tokenizer, config.model_name)
+            async with shared_server(config, api_key, run=run) as (config, api_key):
+                await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
+        return run
     finally:
         rl_train.tinker = original_tinker
         _active_run.release()

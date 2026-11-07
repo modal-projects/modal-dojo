@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
-from synchronicity import Synchronizer
-
 from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.errors import DojoConfigError
 
@@ -18,15 +16,19 @@ if TYPE_CHECKING:
 SHARED_SPINDLE_URL = "https://modal-labs-spindle--prod.modal.run"
 
 
-class _SpindleRecipe:
-    """Run tinker-cookbook LoRA RL locally against a Spindle server.
+class SpindleRecipe:
+    """Run tinker-cookbook LoRA RL against a Spindle server, driven from Modal.
 
-    Requires ``uv sync --extra spindle``. Defaults to the shared Spindle
+    Requires ``uv sync --extra spindle``. Like Slime and Miles, ``launch()``
+    starts the RL loop in a detached Modal app and returns a ``TrainingRun``
+    handle; ``train()`` also waits for it. Defaults to the shared Spindle
     server; pass ``base_url`` (or set ``rl_config.base_url``) to use another.
     ``api_key`` defaults to ``TINKER_API_KEY``. Requests carry the Modal proxy
     token from ``MODAL_KEY``/``MODAL_SECRET``, which must be allowed for the
-    server's environment. Returns a ``TrainingRun`` with trajectories and
-    metrics in Dojo; checkpoints stay on the server.
+    server's environment. Trajectories and metrics go to Dojo; checkpoints
+    stay on the server, and tinker-cookbook's ``log_path`` is replaced by the
+    run's directory on the ``spindle-checkpoints`` volume, from which a
+    retried container resumes.
     """
 
     def __init__(
@@ -35,6 +37,10 @@ class _SpindleRecipe:
         *,
         base_url: str | None = None,
         api_key: str | None = None,
+        detach: bool = True,
+        max_retries: int = 3,
+        cpu: float = 4.0,
+        memory: int = 8192,
     ):
         try:
             import chz
@@ -69,7 +75,13 @@ class _SpindleRecipe:
             raise DojoConfigError("max_tokens must be positive")
         if rl_config.max_steps is not None and rl_config.max_steps <= 0:
             raise DojoConfigError("max_steps must be positive")
-        # The server checks the model, context window and LoRA rank at train time.
+        if max_retries < 0:
+            raise DojoConfigError("max_retries must be non-negative")
+        self.detach = detach
+        self.max_retries = max_retries
+        self.cpu = cpu
+        self.memory = memory
+        # launch() checks the model and context window against the server.
         self._rl_config = chz.replace(
             rl_config, base_url=base_url or rl_config.base_url or SHARED_SPINDLE_URL
         )
@@ -79,16 +91,27 @@ class _SpindleRecipe:
     def rl_config(self) -> Config:
         return self._rl_config
 
-    async def train(self) -> TrainingRun:
-        """Return a TrainingRun; use ``await recipe.train.aio()`` in async code."""
-        from modal_dojo.frameworks.spindle.launcher import train
+    def launch(self, *, show_output: bool = True) -> TrainingRun:
+        """Start training in a detached Modal app and return its handle."""
+        from modal_dojo.frameworks.spindle.app import launch
 
-        return await train(self.rl_config, api_key=self._api_key)
+        return launch(self, show_output=show_output)
+
+    def train(self, *, show_output: bool = True) -> TrainingRun:
+        """Launch, then wait for the finished TrainingRun.
+
+        Ctrl-C stops waiting; the run continues unless ``detach=False``.
+        """
+        from modal_dojo.common.modal_lifecycle import stop_app
+
+        run = self.launch(show_output=show_output)
+        try:
+            return run.result(stop_app_on_success=True)
+        except BaseException:
+            if not self.detach and run.modal_app_id:
+                stop_app(run.modal_app_id)
+            raise
 
 
-_synchronizer = Synchronizer()
-SpindleRecipe = _synchronizer.create_blocking(
-    _SpindleRecipe, name="SpindleRecipe", target_module=__name__
-)
 # Keep the experimental v0 out of the published API reference.
 exclude_from_api_reference(SpindleRecipe)
