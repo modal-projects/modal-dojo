@@ -1,0 +1,151 @@
+"""Run tinker-cookbook RL against a Spindle server."""
+
+from __future__ import annotations
+
+import asyncio
+import threading
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+
+import httpx
+
+from modal_dojo.common.config import modal_proxy_auth_headers
+from modal_dojo.common.errors import DojoConfigError
+
+# tinker-cookbook hooks are process-wide.
+_active_run = threading.Lock()
+
+
+def check_server(base_url: str, api_key: str, config) -> dict[str, str | None]:
+    """Fail unless the server has a LoRA deployment that fits ``config``.
+
+    Returns the server's identity for the run record: the shared server is
+    redeployed from Spindle main, so one config can run on several versions.
+    """
+    with httpx.Client(
+        base_url=base_url.rstrip("/"),
+        headers={**modal_proxy_auth_headers(), "X-API-Key": api_key},
+        timeout=30,
+    ) as client:
+        try:
+            capabilities = client.get("/api/v1/get_server_capabilities")
+            deployments = client.get("/api/v1/spindle/deployments")
+        except httpx.TransportError as exc:
+            raise DojoConfigError(
+                f"Could not reach Spindle at {base_url}: {exc}"
+            ) from exc
+    for response in (capabilities, deployments):
+        if response.status_code in (401, 403):
+            raise DojoConfigError(
+                f"Spindle at {base_url} rejected the request "
+                f"({response.status_code}). Check TINKER_API_KEY, and that the "
+                "Modal proxy token in MODAL_KEY/MODAL_SECRET is allowed for the "
+                "server's environment (`modal workspace proxy-tokens allow "
+                "<wk-token-id> <environment>`)."
+            )
+        if not response.is_success:
+            raise DojoConfigError(
+                f"Spindle at {base_url} answered {response.request.url.path} with "
+                f"{response.status_code}; is it a Spindle server?"
+            )
+    try:
+        served = deployments.json()["deployments"]
+        info = capabilities.json()
+    except (ValueError, KeyError) as exc:
+        raise DojoConfigError(
+            f"Spindle at {base_url} sent an unexpected response: {exc!r}"
+        ) from exc
+    lora = [
+        deployment
+        for deployment in served
+        if deployment["base_model"] == config.model_name
+        and deployment["parameterization"] == "lora"
+    ]
+    if not lora:
+        available = sorted(
+            {d["base_model"] for d in served if d["parameterization"] == "lora"}
+        )
+        raise DojoConfigError(
+            f"Spindle at {base_url} has no LoRA deployment of "
+            f"{config.model_name}; it serves {available}"
+        )
+    # Spindle routes a base model to its longest-context deployment.
+    context = max(deployment["max_context_length"] for deployment in lora)
+    if config.max_tokens >= context:
+        raise DojoConfigError(
+            f"max_tokens must leave room for prompts in {config.model_name}'s "
+            f"{context}-token context"
+        )
+    return {
+        "spindle_base_url": base_url,
+        "spindle_version": info.get("spindle_version"),
+        "spindle_commit": info.get("spindle_commit"),
+    }
+
+
+@asynccontextmanager
+async def shared_server(config, api_key, *, run):
+    """Use the long-lived server at ``config.base_url``; this run never stops it."""
+    run.metadata.update(
+        await asyncio.to_thread(check_server, config.base_url, api_key, config)
+    )
+    yield config, api_key
+
+
+async def train(config, *, api_key, run, dashboard_url, status_token):
+    """The RL loop, inside the Modal container ``launch()`` spawns."""
+    from tinker_cookbook.rl import train as rl_train
+    from tinker_cookbook.tokenizer_utils import get_tokenizer
+
+    from .reporting import DojoReporter
+
+    if not _active_run.acquire(blocking=False):
+        raise DojoConfigError(
+            "Only one SpindleRecipe may train per Python process at a time"
+        )
+    original_tinker = rl_train.tinker
+    try:
+        # The reporter records any failure on the run launch() saved.
+        reporter = DojoReporter(
+            config, run, dashboard_url=dashboard_url, token=status_token
+        )
+        async with reporter:
+            tokenizer = await asyncio.to_thread(get_tokenizer, config.model_name)
+            async with shared_server(config, api_key, run=run) as (config, api_key):
+                await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
+        return run
+    finally:
+        rl_train.tinker = original_tinker
+        _active_run.release()
+
+
+async def _run_tinker_cookbook(config, api_key, tokenizer, reporter):
+    import tinker
+    from tinker_cookbook.rl import train as rl_train
+    from .trajectories import capture_trajectories
+
+    with reporter.tinker_cookbook_hooks(rl_train):
+
+        def service_client(**kwargs):
+            # rl_train.main opens this as a context manager, which closes it.
+            return tinker.ServiceClient(
+                **{
+                    **kwargs,
+                    "base_url": config.base_url,
+                    "api_key": api_key,
+                    # tinker ignores the older default_headers name.
+                    "default_headers_overrides": modal_proxy_auth_headers(),
+                }
+            )
+
+        # Scope client routing to tinker-cookbook.
+        rl_train.tinker = SimpleNamespace(
+            **{
+                **vars(tinker),
+                "ServiceClient": service_client,
+            }
+        )
+        async with capture_trajectories(
+            config.log_path, tokenizer, on_group=reporter.capture_group
+        ):
+            await rl_train.main(config)

@@ -91,3 +91,4 @@ class Framework(str, Enum):
     # SlimeStatus/MilesStatus convention.
     SLIME = "slime"
     MILES = "miles"
+    SPINDLE = "spindle"

@@ -22,6 +22,7 @@ usually means "move this module-level import inside the function".
 from __future__ import annotations
 
 import concurrent.futures
+import importlib.util
 import pathlib
 import subprocess
 import sys
@@ -130,6 +131,13 @@ def test_module_imports_alone(
         # Expected: needs slime / Megatron-LM / miles / torch from the training image.
         # Checked for cycles above, which is all this test can assert here.
         return
+
+    if module == "modal_dojo.frameworks.spindle.dataset_builders" and (
+        importlib.util.find_spec("tinker_cookbook") is None
+    ):
+        pytest.skip(
+            "Install modal-dojo[spindle] to check optional tinker-cookbook builders"
+        )
 
     pytest.fail(f"importing {module} first fails:\n{stderr}")
 
