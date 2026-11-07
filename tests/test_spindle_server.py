@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import functools
 import sys
 from types import ModuleType, SimpleNamespace
@@ -52,9 +51,9 @@ def requests(monkeypatch):
             )
         return httpx.Response(200, json={"deployments": DEPLOYMENTS})
 
-    client = functools.partial(httpx.AsyncClient, transport=httpx.MockTransport(handle))
+    client = functools.partial(httpx.Client, transport=httpx.MockTransport(handle))
     monkeypatch.setattr(
-        launcher, "httpx", SimpleNamespace(**{**vars(httpx), "AsyncClient": client})
+        launcher, "httpx", SimpleNamespace(**{**vars(httpx), "Client": client})
     )
     monkeypatch.setattr(
         launcher, "modal_proxy_auth_headers", lambda: {"Modal-Key": "wk-test"}
@@ -64,7 +63,7 @@ def requests(monkeypatch):
 
 def check(model_name, max_tokens=64, api_key="tml-test"):
     config = SimpleNamespace(model_name=model_name, max_tokens=max_tokens)
-    return asyncio.run(launcher.check_server(URL, api_key, config))
+    return launcher.check_server(URL, api_key, config)
 
 
 def test_records_server_identity_with_proxy_auth(requests):
@@ -93,36 +92,28 @@ def test_explains_rejected_credentials(requests):
         check("Qwen/Qwen3.5-2B", api_key="wrong")
 
 
-def test_rejected_server_fails_before_creating_a_dojo_run(requests, monkeypatch):
-    from modal_dojo.frameworks.spindle.reporting import DojoReporter
+def test_rejected_server_fails_before_creating_a_run_or_app(requests, monkeypatch):
+    from modal_dojo.common import config as dojo_config
+    from modal_dojo.common.run import TrainingRun
+    from modal_dojo.frameworks.spindle import app
 
-    async def create_run(self):
-        raise AssertionError("created a Dojo run")
+    def created(*args, **kwargs):
+        raise AssertionError("created a Dojo run or Modal app")
 
-    # Stand in for tinker-cookbook, which the default test env doesn't install.
-    rl = ModuleType("tinker_cookbook.rl")
-    rl.train = SimpleNamespace(tinker=None)
-    tokenizer_utils = ModuleType("tinker_cookbook.tokenizer_utils")
-    tokenizer_utils.get_tokenizer = lambda model_name: None
-    for module in (ModuleType("tinker_cookbook"), rl, tokenizer_utils):
-        monkeypatch.setitem(sys.modules, module.__name__, module)
-    monkeypatch.setattr(DojoReporter, "__aenter__", create_run)
+    # The default test env has no tinker-cookbook, and so no chz.
+    monkeypatch.setitem(sys.modules, "chz", ModuleType("chz"))
+    monkeypatch.setattr(dojo_config, "require_migrated_config", lambda: None)
+    monkeypatch.setattr(TrainingRun, "save", created)
+    monkeypatch.setattr(app, "build_spindle_app", created)
     config = SimpleNamespace(
         base_url=URL,
         model_name="Qwen/Qwen3.5-2B",
-        learning_rate=1e-5,
-        lora_rank=32,
-        loss_fn="importance_sampling",
         max_tokens=64,
-        max_steps=10,
-        recipe_name="test",
-        renderer_name="qwen3_5_disable_thinking",
-        dataset_builder=object(),
-        log_path="/tmp/dojo-spindle-test",
         load_checkpoint_path=None,
     )
+    recipe = SimpleNamespace(rl_config=config, _api_key="wrong", deploy_config=None)
     with pytest.raises(DojoConfigError, match="rejected the request"):
-        asyncio.run(launcher.train(config, api_key="wrong"))
+        app.launch(recipe, show_output=False)
 
 
 @pytest.mark.parametrize(
@@ -141,9 +132,9 @@ def test_explains_servers_that_are_not_spindle(monkeypatch, response, match):
             return httpx.Response(200, json={"spindle_version": "0.1.5"})
         return response
 
-    client = functools.partial(httpx.AsyncClient, transport=httpx.MockTransport(handle))
+    client = functools.partial(httpx.Client, transport=httpx.MockTransport(handle))
     monkeypatch.setattr(
-        launcher, "httpx", SimpleNamespace(**{**vars(httpx), "AsyncClient": client})
+        launcher, "httpx", SimpleNamespace(**{**vars(httpx), "Client": client})
     )
     with pytest.raises(DojoConfigError, match=match):
         check("Qwen/Qwen3.5-2B")

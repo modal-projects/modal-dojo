@@ -11,28 +11,31 @@ import json
 import logging
 import math
 from pathlib import Path
-import secrets
 import time
 from types import SimpleNamespace
 
 import httpx
 
 from modal_dojo.common.dataset import DatasetConfig
-from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.framework import Framework
-from modal_dojo.common.ids import create_hash
+from modal_dojo.common.launcher_helpers import mark_run_failed, mark_run_stopped
 from modal_dojo.common.launcher_utils import (
     is_sensitive_recipe_field,
     serialize_recipe_param_value,
     serialize_recipe_value,
 )
-from modal_dojo.common.run import FrameworkStatusUpdate, TrainingRun, TrainingRunStatus
+from modal_dojo.common.run import (
+    FrameworkStatusUpdate,
+    TrainingRun,
+    TrainingRunStatus,
+    mark_training_attempt_finished,
+    mark_training_attempt_started,
+)
 from modal_dojo.common.status import SpindleStatus
 from modal_dojo.common.training_rollout import (
     TrainingRolloutResult,
     TrainingRolloutSample,
 )
-from modal_dojo.utils.metadata import MetadataStore, vol_put
 
 from .timing import timing_record
 
@@ -73,9 +76,31 @@ def _field_value(name, value):
     return serialize_recipe_value(type(value))
 
 
+def new_training_run(config, training_run_id):
+    """The run record ``launch()`` saves before the driver container starts."""
+    now = int(time.time())
+    return TrainingRun(
+        training_run_id=training_run_id,
+        framework=Framework.SPINDLE,
+        framework_status=SpindleStatus.INITIALIZING,
+        config={
+            "model": {"model_name": config.model_name},
+            "recipe": _recipe_fields(config),
+            "dataset": {"type": type(config.dataset_builder).__name__},
+        },
+        source_model={"model_name": config.model_name},
+        created_at=now,
+        started_at=now,
+        metadata={"log_path": config.log_path},
+    )
+
+
 class DojoReporter:
-    def __init__(self, config):
+    def __init__(self, config, run, *, dashboard_url, token):
         self.config = config
+        self.run = run
+        self.dashboard_url = dashboard_url.rstrip("/")
+        self.token = token
         self.groups = []
         self.next_step = 0
         # Preserve per-endpoint ordering without blocking other streams.
@@ -89,51 +114,15 @@ class DojoReporter:
             )
         }
         self.failures = 0
-        self.token = secrets.token_urlsafe(32)
-        now = int(time.time())
-        self.run = TrainingRun(
-            training_run_id=create_hash(
-                config.model_name,
-                config.load_checkpoint_path or "",
-                config.recipe_name,
-                "",
-                config.log_path,
-            ),
-            framework=Framework.SPINDLE,
-            framework_status=SpindleStatus.INITIALIZING,
-            config={
-                "model": {"model_name": config.model_name},
-                "recipe": _recipe_fields(config),
-                "dataset": {"type": type(config.dataset_builder).__name__},
-            },
-            source_model={"model_name": config.model_name},
-            created_at=now,
-            started_at=now,
-            metadata={"log_path": config.log_path, "driver": "local"},
-        )
 
     async def __aenter__(self):
-        from modal_dojo.cli.setup import ensure_dashboard_deployed
         from modal_dojo.common.config import modal_proxy_auth_headers
-        from modal_dojo.common.dashboard import deployed_dashboard_url
 
-        await asyncio.to_thread(ensure_dashboard_deployed)
-        url = await asyncio.to_thread(deployed_dashboard_url)
-        if not url:
-            raise DojoConfigError(
-                "Could not connect to Dojo. Run `modal-dojo setup` in the training "
-                "environment before launching Spindle."
-            )
-        self.run.metadata["dashboard_url"] = url.rstrip("/")
+        # A retried container resumes the same run.
+        mark_training_attempt_started(self.run, started_at=int(time.time()))
         await self.run.save(is_async=True)
-        await vol_put(
-            MetadataStore.FRAMEWORK_STATUS_TOKENS,
-            self.run.training_run_id,
-            {"token": self.token},
-            is_async=True,
-        )
         self.client = httpx.AsyncClient(
-            base_url=url.rstrip("/"),
+            base_url=self.dashboard_url,
             headers={
                 **modal_proxy_auth_headers(),
                 "Authorization": f"Bearer {self.token}",
@@ -152,8 +141,8 @@ class DojoReporter:
             response.raise_for_status()
         except BaseException as exc:
             await self.client.aclose()
-            self.run.status = TrainingRunStatus.FAILED
             self.run.error_message = f"Dojo reporting preflight failed: {exc}"
+            mark_run_failed(self.run, exc)
             self.run.ended_at = int(time.time())
             await self.run.save(is_async=True)
             raise
@@ -162,7 +151,7 @@ class DojoReporter:
             for endpoint, queue in self.queues.items()
         ]
         print(
-            f"Dojo run: {url.rstrip('/')}/training/{self.run.training_run_id}",
+            f"Dojo run: {self.dashboard_url}/training/{self.run.training_run_id}",
             flush=True,
         )
         return self
@@ -419,18 +408,20 @@ class DojoReporter:
             )
         finally:
             await self.client.aclose()
-        self.run.status = (
-            TrainingRunStatus.COMPLETED
-            if exc is None
-            else TrainingRunStatus.CANCELLED
-            if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt))
-            else TrainingRunStatus.FAILED
-        )
-        self.run.error_message = str(exc) if exc else None
-        self.run.ended_at = int(time.time())
-        self.run.duration_seconds = self.run.ended_at - self.run.started_at
+        ended_at = int(time.time())
         if exc is None:
-            self.run.completed_at = self.run.ended_at
+            self.run.status = TrainingRunStatus.COMPLETED
+            self.run.completed_at = ended_at
+            mark_training_attempt_finished(
+                self.run, status="completed", ended_at=ended_at
+            )
+        elif isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
+            # Stopping the Modal app cancels the driver.
+            mark_run_stopped(self.run)
+        else:
+            mark_run_failed(self.run, exc)
+        self.run.ended_at = ended_at
+        self.run.duration_seconds = ended_at - self.run.started_at
         self.run.metadata["reporting_failures"] = self.failures
         checkpoints = Path(self.config.log_path) / "checkpoints.jsonl"
         if checkpoints.exists():

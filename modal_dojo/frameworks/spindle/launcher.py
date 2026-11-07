@@ -6,7 +6,6 @@ import asyncio
 import copy
 import logging
 import secrets
-import subprocess
 import sys
 import threading
 import uuid
@@ -24,22 +23,20 @@ logger = logging.getLogger(__name__)
 _active_run = threading.Lock()
 
 
-async def check_server(base_url: str, api_key: str, config) -> dict[str, str | None]:
+def check_server(base_url: str, api_key: str, config) -> dict[str, str | None]:
     """Fail unless the server has a LoRA deployment that fits ``config``.
 
     Returns the server's identity for the run record: the shared server is
     redeployed from Spindle main, so one config can run on several versions.
     """
-    async with httpx.AsyncClient(
+    with httpx.Client(
         base_url=base_url.rstrip("/"),
         headers={**modal_proxy_auth_headers(), "X-API-Key": api_key},
         timeout=30,
     ) as client:
         try:
-            capabilities, deployments = await asyncio.gather(
-                client.get("/api/v1/get_server_capabilities"),
-                client.get("/api/v1/spindle/deployments"),
-            )
+            capabilities = client.get("/api/v1/get_server_capabilities")
+            deployments = client.get("/api/v1/spindle/deployments")
         except httpx.TransportError as exc:
             raise DojoConfigError(
                 f"Could not reach Spindle at {base_url}: {exc}"
@@ -96,7 +93,9 @@ async def check_server(base_url: str, api_key: str, config) -> dict[str, str | N
 @asynccontextmanager
 async def shared_server(config, api_key, *, run):
     """Use the long-lived server at ``config.base_url``; this run never stops it."""
-    run.metadata.update(await check_server(config.base_url, api_key, config))
+    run.metadata.update(
+        await asyncio.to_thread(check_server, config.base_url, api_key, config)
+    )
     yield config, api_key
 
 
@@ -151,6 +150,9 @@ async def deployment(config, deploy_config, *, run):
         compiled.inference_app_name,
         LoraPoolSpec(compiled.definition_id).app_name,
     ]
+    # Findable on the run even if the driver container is killed.
+    run.metadata.update(spindle_apps=names, spindle_api_secret=api_secret)
+    await run.save(is_async=True)
     await modal.Secret.objects.create.aio(
         api_secret, {"TINKER_API_KEY": api_key}, environment_name=environment
     )
@@ -165,8 +167,6 @@ async def deployment(config, deploy_config, *, run):
             except Exception:
                 logger.exception("Spindle deployment failed while cancelling")
             raise
-        from modal_dojo.common.modal_urls import modal_app_dashboard_url
-
         trainer_app = await modal.App.lookup.aio(
             compiled.trainer_app_name, environment_name=environment
         )
@@ -177,10 +177,7 @@ async def deployment(config, deploy_config, *, run):
             await trainer_app.set_tags.aio(
                 {**tags, "training_run_id": run.training_run_id}
             )
-        run.modal_app_id = trainer_app.app_id
-        run.modal_app_url = modal_app_dashboard_url(trainer_app.app_id)
-        run.app_name = compiled.trainer_app_name
-        run.metadata["spindle_apps"] = names
+        run.metadata["spindle_trainer_app_id"] = trainer_app.app_id
         logger.info("Spindle deployment %s in %s", run_name, environment or "default")
         server = modal.Function.from_name(
             run_name, "server", environment_name=environment
@@ -188,18 +185,10 @@ async def deployment(config, deploy_config, *, run):
         url = await server.get_web_url.aio()
         if not url:
             raise RuntimeError("Spindle deployed without an API URL")
-        run.metadata.update(await check_server(url, api_key, config))
+        run.metadata.update(await asyncio.to_thread(check_server, url, api_key, config))
         yield chz.replace(config, base_url=url), api_key
     finally:
-        # A process in its own session finishes even if a second Ctrl-C ends
-        # this one, when Python can no longer start threads.
-        cleanup = subprocess.Popen(
-            [sys.executable, "-m", __name__, environment or "", api_secret, *names],
-            start_new_session=True,
-        )
-        while cleanup.poll() is None:
-            await asyncio.sleep(0.5)
-        if cleanup.returncode:
+        if await asyncio.to_thread(_remove_deployment, names, api_secret, environment):
             cleanup_error = RuntimeError(
                 f"Spindle cleanup failed; check {', '.join(names)} and "
                 f"secret {api_secret} in the logs above"
@@ -256,8 +245,13 @@ def _remove_deployment(names, api_secret, environment) -> list[Exception]:
     return errors
 
 
-async def train(config, *, api_key=None, deploy_config=None):
-    """Train against ``config.base_url``, or a server deployed from ``deploy_config``."""
+async def train(
+    config, *, api_key, run, dashboard_url, status_token, deploy_config=None
+):
+    """The RL loop, inside the Modal container ``launch()`` spawns.
+
+    Trains against ``config.base_url``, or a server deployed from ``deploy_config``.
+    """
     from tinker_cookbook.rl import train as rl_train
     from tinker_cookbook.tokenizer_utils import get_tokenizer
 
@@ -269,17 +263,20 @@ async def train(config, *, api_key=None, deploy_config=None):
         )
     original_tinker = rl_train.tinker
     try:
-        tokenizer = get_tokenizer(config.model_name)
-        reporter = DojoReporter(config)
-        server = (
-            shared_server(config, api_key, run=reporter.run)
-            if deploy_config is None
-            else deployment(config, deploy_config, run=reporter.run)
+        # The reporter records any failure on the run launch() saved.
+        reporter = DojoReporter(
+            config, run, dashboard_url=dashboard_url, token=status_token
         )
-        # The server is checked before the reporter creates a Dojo run.
-        async with server as (config, api_key), reporter:
-            await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
-        return reporter.run
+        async with reporter:
+            tokenizer = await asyncio.to_thread(get_tokenizer, config.model_name)
+            server = (
+                shared_server(config, api_key, run=run)
+                if deploy_config is None
+                else deployment(config, deploy_config, run=run)
+            )
+            async with server as (config, api_key):
+                await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
+        return run
     finally:
         rl_train.tinker = original_tinker
         _active_run.release()
@@ -315,10 +312,3 @@ async def _run_tinker_cookbook(config, api_key, tokenizer, reporter):
             config.log_path, tokenizer, on_group=reporter.capture_group
         ):
             await rl_train.main(config)
-
-
-if __name__ == "__main__":
-    # The cleanup process that deployment() starts.
-    logging.basicConfig(level=logging.INFO)
-    environment, api_secret, *names = sys.argv[1:]
-    sys.exit(1 if _remove_deployment(names, api_secret, environment or None) else 0)

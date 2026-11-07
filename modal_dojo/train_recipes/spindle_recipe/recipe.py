@@ -5,10 +5,7 @@ from __future__ import annotations
 import copy
 import os
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
-
-from synchronicity import Synchronizer
 
 from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.config import modal_proxy_auth_headers
@@ -23,21 +20,26 @@ if TYPE_CHECKING:
 SHARED_SPINDLE_URL = "https://modal-labs-spindle--prod.modal.run"
 
 
-class _SpindleRecipe:
-    """Run tinker-cookbook LoRA RL locally against a Spindle server.
+class SpindleRecipe:
+    """Run tinker-cookbook LoRA RL against a Spindle server, driven from Modal.
 
-    Requires ``uv sync --extra spindle``. Defaults to the shared Spindle
+    Requires ``uv sync --extra spindle``. Like Slime and Miles, ``launch()``
+    starts the RL loop in a detached Modal app and returns a ``TrainingRun``
+    handle; ``train()`` also waits for it. Defaults to the shared Spindle
     server; pass ``base_url`` (or set ``rl_config.base_url``) to use another.
     ``api_key`` defaults to ``TINKER_API_KEY``. Requests carry the Modal proxy
     token from ``MODAL_KEY``/``MODAL_SECRET``, which must be allowed for the
-    server's environment. Returns a ``TrainingRun`` with trajectories and
-    metrics in Dojo; checkpoints stay on the server.
+    server's environment. Trajectories and metrics go to Dojo; checkpoints
+    stay on the server, and tinker-cookbook's ``log_path`` is replaced by the
+    run's directory on the ``spindle-checkpoints`` volume, from which a
+    retried container resumes.
 
     As a fallback, ``deploy_config`` (a Spindle ``BaseConfig`` instance or
-    subclass) deploys a fresh server in the active Modal environment and stops
-    it on exit. This needs Python 3.12, ``uv sync --extra spindle-deploy`` and
-    a sampler proxy secret. Its API requires the same Modal proxy auth, and it
-    cannot resume across deployments.
+    subclass) has the driver deploy a fresh server in the active Modal
+    environment and stop it when the run ends. Validating it locally needs
+    ``uv sync --extra spindle-deploy``; deploying needs a sampler proxy
+    secret. Its API requires the same Modal proxy auth, and since it cannot
+    resume across deployments, it runs without retries.
     """
 
     def __init__(
@@ -47,6 +49,10 @@ class _SpindleRecipe:
         base_url: str | None = None,
         api_key: str | None = None,
         deploy_config: BaseConfig | type[BaseConfig] | None = None,
+        detach: bool = True,
+        max_retries: int = 3,
+        cpu: float = 4.0,
+        memory: int = 8192,
     ):
         try:
             import chz
@@ -74,6 +80,12 @@ class _SpindleRecipe:
             raise DojoConfigError("max_tokens must be positive")
         if rl_config.max_steps is not None and rl_config.max_steps <= 0:
             raise DojoConfigError("max_steps must be positive")
+        if max_retries < 0:
+            raise DojoConfigError("max_retries must be non-negative")
+        self.detach = detach
+        self.max_retries = max_retries
+        self.cpu = cpu
+        self.memory = memory
         if deploy_config is not None:
             if base_url or api_key or rl_config.base_url:
                 raise DojoConfigError(
@@ -82,6 +94,8 @@ class _SpindleRecipe:
             self._rl_config = rl_config
             self._api_key = None
             self._deploy_config = _validated_deploy_config(rl_config, deploy_config)
+            # A retry would deploy another server without this run's checkpoints.
+            self.max_retries = 0
             return
         if base_url and rl_config.base_url and base_url != rl_config.base_url:
             raise DojoConfigError("base_url conflicts with rl_config.base_url")
@@ -90,7 +104,7 @@ class _SpindleRecipe:
             raise DojoConfigError(
                 "Pass api_key or set TINKER_API_KEY for the Spindle server"
             )
-        # The server checks the model, context window and LoRA rank at train time.
+        # launch() checks the model and context window against the server.
         self._rl_config = chz.replace(
             rl_config, base_url=base_url or rl_config.base_url or SHARED_SPINDLE_URL
         )
@@ -105,13 +119,26 @@ class _SpindleRecipe:
     def deploy_config(self) -> BaseConfig | None:
         return self._deploy_config
 
-    async def train(self) -> TrainingRun:
-        """Return a TrainingRun; use ``await recipe.train.aio()`` in async code."""
-        from modal_dojo.frameworks.spindle.launcher import train
+    def launch(self, *, show_output: bool = True) -> TrainingRun:
+        """Start training in a detached Modal app and return its handle."""
+        from modal_dojo.frameworks.spindle.app import launch
 
-        return await train(
-            self.rl_config, api_key=self._api_key, deploy_config=self.deploy_config
-        )
+        return launch(self, show_output=show_output)
+
+    def train(self, *, show_output: bool = True) -> TrainingRun:
+        """Launch, then wait for the finished TrainingRun.
+
+        Ctrl-C stops waiting; the run continues unless ``detach=False``.
+        """
+        from modal_dojo.common.modal_lifecycle import stop_app
+
+        run = self.launch(show_output=show_output)
+        try:
+            return run.result(stop_app_on_success=True)
+        except BaseException:
+            if not self.detach and run.modal_app_id:
+                stop_app(run.modal_app_id)
+            raise
 
 
 def _validated_deploy_config(
@@ -153,20 +180,13 @@ def _validated_deploy_config(
     if not 0 < rl_config.lora_rank <= max_rank:
         raise DojoConfigError(f"lora_rank must be between 1 and {max_rank}")
     # Checkpoints live with the deployment, which stops when the run ends.
-    checkpoints = Path(rl_config.log_path) / "checkpoints.jsonl"
-    if rl_config.load_checkpoint_path is not None or (
-        checkpoints.exists() and checkpoints.stat().st_size
-    ):
+    if rl_config.load_checkpoint_path is not None:
         raise DojoConfigError(
-            "Use a fresh log_path without load_checkpoint_path: a deployed "
-            "Spindle cannot resume another deployment's checkpoints"
+            "Omit load_checkpoint_path: a deployed Spindle cannot resume "
+            "another deployment's checkpoints"
         )
     return deploy_config
 
 
-_synchronizer = Synchronizer()
-SpindleRecipe = _synchronizer.create_blocking(
-    _SpindleRecipe, name="SpindleRecipe", target_module=__name__
-)
 # Keep the experimental v0 out of the published API reference.
 exclude_from_api_reference(SpindleRecipe)
