@@ -19,6 +19,10 @@ if TYPE_CHECKING:
 
 # Harbor sandboxes build from task directories, which are shipped to here.
 HARBOR_TASKS_PATH = "/root/harbor_tasks"
+# The spindle-deploy extra's release; modal-spindle is not on PyPI.
+SPINDLE_DEPLOY_REQUIREMENT = (
+    "modal-spindle @ git+https://github.com/modal-projects/spindle.git@v0.1.5"
+)
 
 
 def launch(recipe, *, show_output: bool = True) -> TrainingRun:
@@ -45,7 +49,11 @@ def launch(recipe, *, show_output: bool = True) -> TrainingRun:
     require_migrated_config()
     config = recipe.rl_config
     # Fail on a bad key, model or context before creating a run or an app.
-    server = check_server(config.base_url, recipe._api_key, config)
+    server = (
+        check_server(config.base_url, recipe._api_key, config)
+        if recipe.deploy_config is None
+        else {}
+    )
     training_run_id = create_hash(
         config.model_name,
         config.load_checkpoint_path or "",
@@ -153,7 +161,10 @@ def build_spindle_app(recipe, config, training_run_id: str) -> modal.App:
         modal.Image.debian_slim(python_version="3.12")
         # tinker-cookbook records the code state with git.
         .apt_install("git")
-        .uv_pip_install(*spindle_requirements())
+        .uv_pip_install(
+            *spindle_requirements(),
+            *([SPINDLE_DEPLOY_REQUIREMENT] if recipe.deploy_config else []),
+        )
         .add_local_python_source("modal_dojo", copy=True)
     )
     image = mount_caller_source(mount_tools_dir(image), caller_script)
@@ -162,6 +173,7 @@ def build_spindle_app(recipe, config, training_run_id: str) -> modal.App:
         None, volume_prefix=Framework.SPINDLE.value
     )
     checkpoints = volumes[checkpoints_path]
+    deploy_config = recipe.deploy_config
     app = modal.App(
         training_run_id,
         tags=build_app_tags(
@@ -177,7 +189,11 @@ def build_spindle_app(recipe, config, training_run_id: str) -> modal.App:
         volumes=volumes,
         # The key stays out of the pickled function.
         secrets=[
-            modal.Secret.from_dict({"TINKER_API_KEY": recipe._api_key}),
+            *(
+                [modal.Secret.from_dict({"TINKER_API_KEY": recipe._api_key})]
+                if recipe._api_key
+                else []
+            ),
             *proxy_auth_secrets(),
             *hf_secrets(),
         ],
@@ -202,10 +218,11 @@ def build_spindle_app(recipe, config, training_run_id: str) -> modal.App:
         try:
             await run_training(
                 config,
-                api_key=os.environ["TINKER_API_KEY"],
+                api_key=os.environ.get("TINKER_API_KEY"),
                 run=run,
                 dashboard_url=dashboard_url,
                 status_token=status_token,
+                deploy_config=deploy_config,
             )
         finally:
             await checkpoints.commit.aio()

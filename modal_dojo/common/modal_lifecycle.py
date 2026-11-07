@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from collections.abc import Callable
 
 _LIVE_APP_STATES: frozenset[int] | None = None
@@ -77,6 +79,26 @@ def app_is_live(app_id: str) -> bool:
     if status is None:
         return False
     return status
+
+
+def stop_app_by_name(name: str, environment: str | None = None) -> None:
+    """Stop a named Modal app, ignoring missing or already stopped apps."""
+    import modal
+
+    try:
+        app = modal.App.lookup(name, environment_name=environment)
+    except modal.exception.NotFoundError:
+        return
+    command = [sys.executable, "-m", "modal", "app", "stop", "--yes", app.app_id]
+    if environment:
+        command.extend(["--env", environment])
+    # Its own session keeps a terminal Ctrl-C from killing the stop midway.
+    result = subprocess.run(
+        command, capture_output=True, text=True, timeout=120, start_new_session=True
+    )
+    output = result.stderr or result.stdout
+    if result.returncode and "App is already stopped" not in output:
+        raise RuntimeError(f"Could not stop {name}: {output}")
 
 
 def stop_app(app_id: str) -> None:
