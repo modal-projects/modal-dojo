@@ -185,8 +185,6 @@ def build_spindle_app(recipe, config, training_run_id: str) -> modal.App:
         memory=recipe.memory,
         timeout=24 * 60 * 60,
         retries=modal.Retries(max_retries=recipe.max_retries, initial_delay=0.0),
-        # A preempted driver repeats every step since the last save.
-        nonpreemptible=True,
         single_use_containers=True,
         serialized=True,
         name="train",
