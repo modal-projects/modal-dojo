@@ -242,9 +242,6 @@ def render_section(families: tuple[FamilyRow, ...]) -> str:
             BEGIN_MARKER,
             BANNER,
             "",
-            "Click a row for a runnable snippet. Link to one with "
-            f"`{DOCS_URL}/?model=<name>`, e.g. `?model=beam`.",
-            "",
             "<table>",
             f"<thead><tr>{header}</tr></thead>",
             "<tbody>",
