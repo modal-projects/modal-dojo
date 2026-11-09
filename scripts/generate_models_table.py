@@ -29,7 +29,6 @@ BASE_RECIPES = {"SlimeRecipe", "MilesRecipe"}
 FRAMEWORK_BASES = frozenset({*BASE_RECIPES, "MilesConfig"})
 MODEL_CONFIGS = {name.lower(): getattr(models, name) for name in models.__all__}
 FAMILY_RE = re.compile(r"^([A-Za-z]+(?:\d+(?:\.\d+)*|\d+)?)")
-HF_URL = "https://huggingface.co"
 DOCS_URL = "https://dojo.modal.dev"
 TUTORIALS = {"Qwen/Qwen3-ASR-1.7B": "audio_asr"}
 
@@ -39,11 +38,6 @@ class RecipeRow:
     hf_id: str
     config: str
     recipe: str
-    framework: str
-    method: str
-    context: str
-    response: str
-    gpus: str
 
     @property
     def display_name(self) -> str:
@@ -69,35 +63,6 @@ def family_of(hf_id: str) -> str:
     match = FAMILY_RE.match(slug)
     family = match.group(1) if match else slug
     return family.title() if family.islower() else family
-
-
-def tokens(n: int | None) -> str:
-    if not n:
-        return "—"
-    return f"{n // 1024}K" if n % 1024 == 0 else str(n)
-
-
-def recipe_row(
-    hf_id: str, config: str, name: str, recipe: Any, module_path: str
-) -> RecipeRow:
-    r = recipe()
-    lora_rank = getattr(r, "lora_rank", None)
-    gpus = f"{r.actor_num_nodes}×{r.actor_num_gpus_per_node} {r.gpu_type}"
-    if not r.colocate and r.rollout_num_gpus:
-        gpus += f" + {r.rollout_num_gpus} rollout"
-    return RecipeRow(
-        hf_id=hf_id,
-        config=config,
-        recipe=name,
-        framework=module_path.rsplit(".", 1)[-1].removesuffix("_recipe").title(),
-        method=f"LoRA r{lora_rank}" if lora_rank else "Full",
-        context=tokens(
-            getattr(r, "seq_length", None)
-            or getattr(r, "rollout_max_context_len", None)
-        ),
-        response=tokens(r.rollout_max_response_len),
-        gpus=gpus,
-    )
 
 
 def iter_registered_recipes() -> Iterator[tuple[str, Any, Any, str]]:
@@ -137,13 +102,13 @@ def collect_model_preset_names() -> frozenset[str]:
 def collect_models() -> tuple[FamilyRow, ...]:
     families: dict[str, list[RecipeRow]] = defaultdict(list)
     unmatched: list[str] = []
-    for recipe_name, recipe, config, module_path in iter_registered_recipes():
+    for recipe_name, _recipe, config, module_path in iter_registered_recipes():
         model_name = getattr(config, "model_name", None)
         if not model_name:
             unmatched.append(f"{module_path}.{recipe_name}")
             continue
         families[family_of(model_name)].append(
-            recipe_row(model_name, config.__name__, recipe_name, recipe, module_path)
+            RecipeRow(model_name, config.__name__, recipe_name)
         )
     if unmatched:
         raise SystemExit(
@@ -195,15 +160,15 @@ def render_snippet(row: RecipeRow) -> list[str]:
     ]
 
 
-def render_row(family: str, row: RecipeRow) -> list[str]:
+def render_row(
+    family: str, row: RecipeRow, paths: dict[str, str], disambiguate: bool
+) -> list[str]:
+    model = f'<a href="{DOCS_URL}{paths[row.config]}">{row.display_name}</a>'
+    if disambiguate:
+        model += f' (<a href="{DOCS_URL}{paths[row.recipe]}">{row.recipe}</a>)'
     cells = [
         family,
-        f'<a href="{HF_URL}/{row.hf_id}">{row.display_name}</a>',
-        row.framework,
-        row.method,
-        row.context,
-        row.response,
-        row.gpus,
+        model,
     ]
     return [
         f'<tr class="model-row" data-model="{row.slug}">'
@@ -221,22 +186,21 @@ def render_row(family: str, row: RecipeRow) -> list[str]:
 
 
 def render_section(families: tuple[FamilyRow, ...]) -> str:
-    header = "".join(
-        f"<th>{h}</th>"
-        for h in (
-            "Family",
-            "Model",
-            "Framework",
-            "Training",
-            "Context",
-            "Max response",
-            "GPUs",
-        )
-    )
+    paths = importlib.import_module(
+        "scripts.api_reference_manifest"
+    ).CLASS_REFERENCE_PATHS
+    header = "".join(f"<th>{h}</th>" for h in ("Family", "Model"))
     body: list[str] = []
     for family in families:
         for i, row in enumerate(family.rows):
-            body.extend(render_row(family.family if i == 0 else "", row))
+            body.extend(
+                render_row(
+                    family.family if i == 0 else "",
+                    row,
+                    paths,
+                    sum(r.display_name == row.display_name for r in family.rows) > 1,
+                )
+            )
     return "\n".join(
         [
             BEGIN_MARKER,
