@@ -195,8 +195,6 @@ def test_endpoint_info_parses_json_with_notebook_color_env(
             "my-ft",
             "--json",
         ]
-        # Exercise Rich in a real child process with the caller's subprocess
-        # options/environment, replacing only the authenticated Modal lookup.
         return run(
             [
                 sys.executable,
