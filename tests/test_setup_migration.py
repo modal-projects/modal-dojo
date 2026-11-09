@@ -364,7 +364,8 @@ def test_migrate_warns_about_old_skills_without_changing_files(
 
     migration.migrate(resources=harness)
 
-    assert "modal-dojo skills install --force" in capsys.readouterr().err
+    warning = " ".join(capsys.readouterr().err.split())
+    assert "modal-dojo skills install --force" in warning
     assert (old / "SKILL.md").read_text() == "existing instructions"
     assert link.is_symlink() and link.resolve() == old
     assert not (old.parent / "modal-dojo-overview").exists()
