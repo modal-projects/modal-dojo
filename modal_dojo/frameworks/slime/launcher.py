@@ -120,7 +120,6 @@ _PATCH_BRIDGE_PER_TOKEN_LOSS_B64 = encode_patch(
 _PATCH_VLM_CRITIC_VALUE_HEAD_B64 = encode_patch(
     "patch_vlm_critic_value_head", _SLIME_PATCHES
 )
-_PATCH_STOP_TOKEN_DIAG_B64 = encode_patch("patch_stop_token_diagnostic", _SLIME_PATCHES)
 _PATCH_MULTIMODAL_PROMPT_FILTER_B64 = encode_patch(
     "patch_multimodal_prompt_filter", _SLIME_PATCHES
 )
@@ -177,7 +176,6 @@ _PATCH_SGLANG_TRTLLM_MOE_REPACK_B64 = encode_patch(
 _SLIME_ROOT_PATCHES_B64 = (
     _PATCH_MEGATRON_BRIDGE_B64,
     _PATCH_ADVANTAGES_B64,
-    _PATCH_STOP_TOKEN_DIAG_B64,
     _PATCH_QWEN3_ASR_EXPORT_B64,
     _PATCH_QWEN3_VL_EXPORT_B64,
     _PATCH_QWEN3_VL_TORCH_DIST_B64,
