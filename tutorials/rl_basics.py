@@ -18,7 +18,7 @@ from nltk.corpus import cmudict
 import re
 import time
 from argparse import Namespace
-from typing import Protocol
+from typing import Any, Protocol
 
 from modal_dojo import (
     Checkpoint,
@@ -164,7 +164,7 @@ def run_eval(deployment: Endpoint, max_concurrency: int = 2) -> float:
 
     deployment.wait_until_ready()
 
-    def _score_one(example):
+    def _score_one(example: dict[str, Any]) -> float:
         msg = deployment.chat(
             example[eval_dataset.input_key()],
             chat_template_kwargs={"enable_thinking": False},
