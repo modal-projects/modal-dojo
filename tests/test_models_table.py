@@ -1,5 +1,7 @@
 from collections import Counter
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -16,22 +18,28 @@ from scripts.generate_models_table import (
 )
 
 
-def test_model_table_links_and_recipes() -> None:
+def test_model_table_links_and_recipes(tmp_path: Path) -> None:
     families = collect_models()
     rendered = render_section(families)
     root = Path(__file__).resolve().parents[1]
+    subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts/generate_api_reference.py"),
+            "--output-dir",
+            str(tmp_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     entries = {entry["class_name"]: entry for entry in API_REFERENCE_MANIFEST}
     assert "<thead><tr><th>Family</th><th>Model</th></tr></thead>" in rendered
     for family in families:
         counts = Counter(row.display_name for row in family.rows)
         for row in family.rows:
             entry = entries[row.config]
-            page = (
-                root
-                / "docs-next/src/content/docs/reference"
-                / entry["group"]
-                / f"{entry['class_name'].lower()}.md"
-            )
+            page = tmp_path / entry["group"] / f"{entry['class_name'].lower()}.md"
             assert page.is_file(), row.config
             assert (
                 f'<a href="{DOCS_URL}{CLASS_REFERENCE_PATHS[row.config]}">'
