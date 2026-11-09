@@ -7,7 +7,7 @@ import sys
 import uuid
 from abc import ABC, ABCMeta
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
 from pydantic import ValidationError
@@ -25,9 +25,9 @@ if TYPE_CHECKING:
 
 # ── Volume mount paths (shared by every framework) ───────────────────────────
 
-HF_CACHE_PATH = Path("/root/.cache/huggingface")
-DATA_PATH = Path("/data")
-CHECKPOINTS_PATH = Path("/checkpoints")
+HF_CACHE_PATH = PurePosixPath("/root/.cache/huggingface")
+DATA_PATH = PurePosixPath("/data")
+CHECKPOINTS_PATH = PurePosixPath("/checkpoints")
 
 
 def _safe_data_key(cache_key: str) -> str:

@@ -8,7 +8,7 @@ import subprocess
 import shutil
 import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from modal import App, Image, __version__ as MODAL_VERSION
 
@@ -269,10 +269,10 @@ def _remap_kernel_cache_dirs(
         "SGLANG_CACHE_DIR",
     ):
         cache_dir = environment.get(key)
-        if cache_dir and Path(cache_dir).is_relative_to(CHECKPOINTS_PATH):
+        if cache_dir and PurePosixPath(cache_dir).is_relative_to(CHECKPOINTS_PATH):
             environment[key] = str(
-                Path(checkpoints_mount_path)
-                / Path(cache_dir).relative_to(CHECKPOINTS_PATH)
+                PurePosixPath(checkpoints_mount_path)
+                / PurePosixPath(cache_dir).relative_to(CHECKPOINTS_PATH)
             )
     return environment
 

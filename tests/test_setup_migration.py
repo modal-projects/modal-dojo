@@ -1,3 +1,4 @@
+import os
 from io import StringIO
 from types import SimpleNamespace
 
@@ -103,7 +104,8 @@ def test_training_guard_precedes_launch_work(paths, harness, method):
 def test_migrate_moves_config_and_preserves_volume_ids(paths, harness):
     migration.migrate(resources=harness)
     assert paths[0].exists() and not paths[1].exists()
-    assert paths[0].stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert paths[0].stat().st_mode & 0o777 == 0o600
     assert config.get_proxy_auth() == ("wk-test", "ws-test")
     for old, new in migration.VOLUME_PAIRS:
         assert harness.volumes[new].object_id == old
@@ -370,7 +372,8 @@ def test_migrate_warns_about_old_skills_without_changing_files(
 
     migration.migrate(resources=harness)
 
-    assert "modal-dojo skills install --force" in capsys.readouterr().err
+    warning = " ".join(capsys.readouterr().err.split())
+    assert "modal-dojo skills install --force" in warning
     assert (old / "SKILL.md").read_text() == "existing instructions"
     assert link.is_symlink() and link.resolve() == old
     assert not (old.parent / "modal-dojo-overview").exists()
