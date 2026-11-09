@@ -1,3 +1,4 @@
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -101,7 +102,8 @@ def test_training_guard_precedes_launch_work(paths, harness, method):
 def test_migrate_moves_config_and_preserves_volume_ids(paths, harness):
     migration.migrate(resources=harness)
     assert paths[0].exists() and not paths[1].exists()
-    assert paths[0].stat().st_mode & 0o777 == 0o600
+    if os.name != "nt":
+        assert paths[0].stat().st_mode & 0o777 == 0o600
     assert config.get_proxy_auth() == ("wk-test", "ws-test")
     for old, new in migration.VOLUME_PAIRS:
         assert harness.volumes[new].object_id == old
