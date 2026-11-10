@@ -57,19 +57,20 @@ jobs:
             exit 1
           fi
 
-      # CUDA images need substantially more disk than the default free space.
-      - name: Free runner disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
-          docker system prune --all --force
-          df -h /
-
       - name: Check out Miles
         uses: actions/checkout@v4
         with:
           repository: radixark/miles
           ref: ${{ inputs.miles_ref }}
           persist-credentials: false
+
+      - name: Fix pinned SGLang fetch
+        run: |
+          # Fail if upstream changes the command this workaround replaces.
+          grep -Fq 'git fetch origin ${SGLANG_BRANCH}' docker/Dockerfile
+          sed -i \
+            's/git fetch origin ${SGLANG_BRANCH}/git fetch --depth=1 origin ${SGLANG_COMMIT}/' \
+            docker/Dockerfile
 
       - name: Resolve Miles commit
         id: miles
