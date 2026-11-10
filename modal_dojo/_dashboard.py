@@ -20,7 +20,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode
 from typing import (
-    TYPE_CHECKING,
+    Any,
     Annotated,
     Awaitable,
     Callable,
@@ -32,10 +32,6 @@ from typing import (
 import modal
 from modal.exception import Error
 
-if TYPE_CHECKING:
-    from google.protobuf.timestamp_pb2 import Timestamp
-    from modal.client import _Client
-    from modal_proto import api_pb2
 
 # Imported at module scope so FastAPI can resolve endpoint annotations such as
 # ``request: Request`` in stream_run_logs(). Under ``from __future__ import
@@ -294,17 +290,7 @@ def _resolve_log_window(
     return max(0.0, since_ts), until_ts
 
 
-def _to_timestamp(secs: float) -> Timestamp:
-    """Convert epoch seconds (with fractional part) to a protobuf ``Timestamp``."""
-    from google.protobuf.timestamp_pb2 import Timestamp
-
-    ts = Timestamp()
-    ts.seconds = int(secs)
-    ts.nanos = int((secs - int(secs)) * 1e9)
-    return ts
-
-
-def _parse_log_batches(batches: Iterable[api_pb2.TaskLogsBatch]) -> list[LogEntry]:
+def _parse_log_batches(batches: Iterable[Any]) -> list[LogEntry]:
     """Flatten Modal ``AppFetchLogs`` batches into ``LogEntry`` dicts."""
     logs: list[LogEntry] = []
     for batch in batches:
@@ -961,10 +947,10 @@ def fastapi_app():
 
     # ── Shared Modal client ───────────────────────────────────────────────
     # Opens a client at startup and reuses it across all requests.
-    modal_client: _Client | None = None
+    modal_client: Any | None = None
     modal_client_lock = asyncio.Lock()
 
-    async def get_modal_client() -> _Client | None:
+    async def get_modal_client() -> Any | None:
         """Return the shared, connection-open Modal client.
 
         Creates it once (guarded by a lock) and reuses it thereafter. Returns
@@ -979,11 +965,11 @@ def fastapi_app():
         if not token_id or not token_secret:
             return None
 
-        from modal.client import _Client
+        from modal_dojo.common._modal_compat import open_async_client
 
         async with modal_client_lock:
             if modal_client is None:
-                modal_client = await _Client.from_credentials(token_id, token_secret)
+                modal_client = await open_async_client(token_id, token_secret)
             return modal_client
 
     @web.on_event("startup")
@@ -2001,7 +1987,7 @@ def fastapi_app():
         """
         import json
 
-        from modal_proto import api_pb2
+        from modal_dojo.common._modal_compat import stream_app_logs
 
         run = await _get_run_or_404(training_run_id)
 
@@ -2052,13 +2038,13 @@ def fastapi_app():
             while True:
                 if await request.is_disconnected():
                     return
-                req = api_pb2.AppGetLogsRequest(
-                    app_id=app_id,
-                    timeout=55,
-                    last_entry_id=last_entry_id,
-                )
                 try:
-                    async for log_batch in client.stub.AppGetLogs.unary_stream(req):
+                    async for log_batch in stream_app_logs(
+                        client,
+                        app_id=app_id,
+                        timeout=55,
+                        last_entry_id=last_entry_id,
+                    ):
                         if await request.is_disconnected():
                             return
                         consecutive_errors = 0
@@ -2157,7 +2143,7 @@ def fastapi_app():
           - ``has_more``: whether there are more log entries to fetch
           - ``next_until``: the timestamp of the next log entry to fetch
         """
-        from modal_proto import api_pb2
+        from modal_dojo.common._modal_compat import fetch_app_logs
 
         if max_lines < 0:
             raise HTTPException(status_code=400, detail="max_lines must be positive")
@@ -2207,19 +2193,19 @@ def fastapi_app():
                 detail="No Modal credentials configured. Run modal-dojo setup.",
             )
 
-        req = api_pb2.AppFetchLogsRequest(
-            app_id=app_id,
-            since=_to_timestamp(since_ts),
-            until=_to_timestamp(until_ts),
-            limit=max_lines,
-            search_text=search.strip(),
-        )
         try:
-            resp = await client.stub.AppFetchLogs(req)
+            batches = await fetch_app_logs(
+                client,
+                app_id=app_id,
+                since=since_ts,
+                until=until_ts,
+                limit=max_lines,
+                search_text=search.strip(),
+            )
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"AppFetchLogs: {exc!s}")
 
-        logs = _parse_log_batches(resp.batches)
+        logs = _parse_log_batches(batches)
         has_more, next_until = _compute_next_page(logs, max_lines)
 
         return JSONResponse(
