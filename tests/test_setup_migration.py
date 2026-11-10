@@ -1,7 +1,9 @@
 import os
+from io import StringIO
 from types import SimpleNamespace
 
 import pytest
+from rich.console import Console
 
 from modal_dojo.cli import migrate as migration
 from modal_dojo.cli import setup as cli_setup_module
@@ -281,9 +283,15 @@ def test_cli_migrate_flags(monkeypatch):
     )
 
 
-def test_shutdown_waits_for_containers(monkeypatch):
+@pytest.mark.parametrize("force_color", [False, True], ids=["plain", "colored"])
+def test_shutdown_waits_for_containers(monkeypatch, force_color):
     calls = []
-    outputs = iter(['[{"Container ID": "ta-running"}]', "[]"])
+    rendered = []
+    for payload in ([{"Container ID": "ta-running"}], []):
+        buffer = StringIO()
+        Console(file=buffer, force_terminal=force_color).print_json(data=payload)
+        rendered.append(buffer.getvalue())
+    outputs = iter(rendered)
 
     def run(command, **kwargs):
         calls.append((command, kwargs))

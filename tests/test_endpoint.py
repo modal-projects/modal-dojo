@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 import subprocess
+import sys
 from types import SimpleNamespace
 from typing import Any
 
@@ -162,6 +163,52 @@ def _endpoint(*, requires_proxy_auth: bool = False) -> Endpoint:
         model_name="model",
         requires_proxy_auth=requires_proxy_auth,
     )
+
+
+@pytest.mark.parametrize("force_color", [False, True], ids=["plain", "jupyter"])
+def test_endpoint_info_parses_json_with_notebook_color_env(
+    monkeypatch: pytest.MonkeyPatch, force_color: bool
+) -> None:
+    """Jupyter's forced colors must not break captured Modal CLI JSON."""
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    for variable in ("FORCE_COLOR", "CLICOLOR_FORCE"):
+        if force_color:
+            monkeypatch.setenv(variable, "1")
+        else:
+            monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("TERM", "xterm-color")
+    expected = {
+        "name": "my-ft",
+        "endpoint_id": _FakeModalCli.ENDPOINT_ID,
+        "service_url": _FakeModalCli.DEFAULT_URL,
+        "environment_name": "test",
+    }
+    run = subprocess.run
+
+    def fake_endpoint_info(command: list[str], **kwargs: Any):
+        assert command == [
+            sys.executable,
+            "-m",
+            "modal",
+            "endpoint",
+            "info",
+            "my-ft",
+            "--json",
+        ]
+        return run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; from rich.console import Console; "
+                "Console().print_json(sys.argv[1])",
+                json.dumps(expected),
+            ],
+            **kwargs,
+        )
+
+    monkeypatch.setattr(endpoint_module.subprocess, "run", fake_endpoint_info)
+
+    assert endpoint_module._endpoint_info(endpoint_name="my-ft") == expected
 
 
 @pytest.mark.parametrize(
