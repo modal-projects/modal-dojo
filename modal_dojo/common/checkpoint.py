@@ -22,9 +22,11 @@ from modal_dojo.common.torch_dist_checkpoint import (
     parse_torch_dist_tracker,
 )
 from modal_dojo.deploy_recipes import SglangRecipe, VllmRecipe
+from modal_dojo.remote import checkpoint_convert
 
 _CHECKPOINTS_MOUNT_FALLBACK = "/checkpoints"
-_CONVERT_COMPLETE_MARKER = ".training_gym_convert_complete"
+_CONVERT_COMPLETE_MARKER = checkpoint_convert.CONVERT_COMPLETE_MARKER
+_HF_CACHE_VOLUME_NAME = "huggingface-cache"
 
 
 class CheckpointType(Enum):
@@ -237,7 +239,7 @@ def convert_megatron_checkpoint_to_hf(
             "Cannot convert a megatron checkpoint without model_name or model_path."
         )
 
-    hf_cache_volume = Volume.from_name("huggingface-cache", create_if_missing=True)
+    hf_cache_volume = Volume.from_name(_HF_CACHE_VOLUME_NAME, create_if_missing=True)
     checkpoints_volume = volume
     from modal_dojo.common import hf_secrets
     from modal_dojo.frameworks.slime.launcher import _build_slime_base_image
@@ -246,7 +248,7 @@ def convert_megatron_checkpoint_to_hf(
     conversion_app = modal.App("training-gym-checkpoint-convert")
     gpu_spec = _conversion_gpu_spec(checkpoint, recipe)
 
-    @conversion_app.function(
+    convert_megatron_to_hf = conversion_app.function(
         image=image,
         gpu=gpu_spec,
         volumes={
@@ -255,52 +257,9 @@ def convert_megatron_checkpoint_to_hf(
         },
         timeout=4 * 60 * 60,
         secrets=hf_secrets(),
-        serialized=True,
+        include_source=False,
         name="convert_megatron_to_hf",
-    )
-    def convert_megatron_to_hf(
-        input_dir: str,
-        output_dir: str,
-        model_ref: str,
-        revision: str | None,
-    ) -> str:
-        import importlib.util
-        import shlex
-        import subprocess
-
-        from huggingface_hub import snapshot_download
-
-        hf_cache_volume.reload()
-        checkpoints_volume.reload()
-
-        if os.path.isabs(model_ref) and os.path.isdir(model_ref):
-            hf_path = model_ref
-        else:
-            hf_path = snapshot_download(
-                model_ref, revision=revision, local_files_only=True
-            )
-
-        spec = importlib.util.find_spec(
-            "modal_dojo.frameworks.slime.modal_helpers.convert_torch_dist_to_hf"
-        )
-        convert_script = spec.origin if spec else None
-        if convert_script in (None, ""):
-            raise RuntimeError(
-                "modal_dojo.frameworks.slime.modal_helpers.convert_torch_dist_to_hf is missing"
-            )
-        cmd = (
-            f"python {convert_script} "
-            f"--input-dir {shlex.quote(input_dir)} "
-            f"--output-dir {shlex.quote(output_dir)} "
-            f"--origin-hf-dir {shlex.quote(hf_path)} "
-            f"--force"
-        )
-        print(f"Converting checkpoint for serving: {cmd}")
-        subprocess.run(["bash", "-c", cmd], check=True)
-        with open(os.path.join(output_dir, _CONVERT_COMPLETE_MARKER), "w"):
-            pass
-        checkpoints_volume.commit()
-        return output_dir
+    )(checkpoint_convert.convert_megatron_to_hf)
 
     with modal.enable_output():
         with conversion_app.run():
@@ -309,6 +268,8 @@ def convert_megatron_checkpoint_to_hf(
                 output_dir=output_path,
                 model_ref=model_ref,
                 revision=model.revision,
+                hf_cache_volume_name=_HF_CACHE_VOLUME_NAME,
+                checkpoints_volume_name=checkpoints_volume_name,
             )
 
     return Checkpoint(
@@ -338,7 +299,7 @@ def convert_native_lora_checkpoint_to_peft(
             "Cannot convert a LoRA adapter without model_name or model_path."
         )
 
-    hf_cache_volume = Volume.from_name("huggingface-cache", create_if_missing=True)
+    hf_cache_volume = Volume.from_name(_HF_CACHE_VOLUME_NAME, create_if_missing=True)
     checkpoints_volume = Volume.from_name(
         checkpoints_volume_name, create_if_missing=False
     )
@@ -349,57 +310,29 @@ def convert_native_lora_checkpoint_to_peft(
     spec = importlib.util.find_spec(
         "modal_dojo.frameworks.miles.modal_helpers.convert_native_lora_to_peft"
     )
-    converter_path = "/root/convert_native_lora_to_peft.py"
     image = (
         modal.Image.debian_slim(python_version="3.12")
         .uv_pip_install(
             "torch==2.13.0", index_url="https://download.pytorch.org/whl/cpu"
         )
         .uv_pip_install("numpy==2.5.0", "safetensors==0.8.0", "huggingface-hub==1.21.0")
-        .add_local_file(spec.origin, converter_path, copy=True)
+        .add_local_file(
+            spec.origin, checkpoint_convert.NATIVE_LORA_CONVERTER_PATH, copy=True
+        )
+        .add_local_python_source("modal_dojo", copy=True)
     )
     conversion_app = modal.App("training-gym-native-lora-convert")
 
-    @conversion_app.function(
+    convert_native_lora_to_peft = conversion_app.function(
         image=image,
         volumes={
             "/root/.cache/huggingface": hf_cache_volume,
             checkpoints_mount_path: checkpoints_volume,
         },
         secrets=hf_secrets(),
-        serialized=True,
-    )
-    def convert_native_lora_to_peft(
-        input_dir: str,
-        output_dir: str,
-        model_ref: str,
-        revision: str | None,
-    ) -> str:
-        import subprocess
-
-        from huggingface_hub import snapshot_download
-
-        if os.path.isabs(model_ref) and os.path.isdir(model_ref):
-            hf_path = model_ref
-        else:
-            hf_path = snapshot_download(
-                model_ref, revision=revision, local_files_only=True
-            )
-        subprocess.run(
-            [
-                "python",
-                converter_path,
-                "--input-dir",
-                input_dir,
-                "--output-dir",
-                output_dir,
-                "--origin-hf-dir",
-                hf_path,
-            ],
-            check=True,
-        )
-        checkpoints_volume.commit()
-        return output_dir
+        include_source=False,
+        name="convert_native_lora_to_peft",
+    )(checkpoint_convert.convert_native_lora_to_peft)
 
     with modal.enable_output():
         with conversion_app.run():
@@ -408,4 +341,5 @@ def convert_native_lora_checkpoint_to_peft(
                 output_dir=f"{adapter_path}_hf",
                 model_ref=model_ref,
                 revision=model.revision,
+                checkpoints_volume_name=checkpoints_volume_name,
             )
