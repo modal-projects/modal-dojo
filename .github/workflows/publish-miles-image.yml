@@ -64,12 +64,22 @@ jobs:
           ref: ${{ inputs.miles_ref }}
           persist-credentials: false
 
-      - name: Fix pinned SGLang fetch
+      - name: Fix pinned source fetches
         run: |
-          # Fail if upstream changes the command this workaround replaces.
-          grep -Fq 'git fetch origin ${SGLANG_BRANCH}' docker/Dockerfile
+          # Fail if upstream changes any command this workaround replaces.
+          for command in \
+            'git fetch origin ${SGLANG_BRANCH}' \
+            'git checkout -f ${MEGATRON_COMMIT}' \
+            'git checkout ${MILES_COMMIT}'; do
+            if ! grep -Fq "$command" docker/Dockerfile; then
+              echo "::error::Expected Dockerfile command not found: $command"
+              exit 1
+            fi
+          done
           sed -i \
-            's/git fetch origin ${SGLANG_BRANCH}/git fetch --depth=1 origin ${SGLANG_COMMIT}/' \
+            -e 's/git fetch origin ${SGLANG_BRANCH}/git fetch --depth=1 origin ${SGLANG_COMMIT}/' \
+            -e 's/git checkout -f ${MEGATRON_COMMIT}/git fetch --depth=1 origin ${MEGATRON_COMMIT} \&\& git checkout -f ${MEGATRON_COMMIT}/' \
+            -e 's/git checkout ${MILES_COMMIT}/git fetch --depth=1 origin ${MILES_COMMIT} \&\& git checkout ${MILES_COMMIT}/' \
             docker/Dockerfile
 
       - name: Resolve Miles commit
