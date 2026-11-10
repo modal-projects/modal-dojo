@@ -36,6 +36,41 @@ def mount_tools_dir(image: "Image") -> "Image":
     )
 
 
+def _installed_module_dirs() -> list[Path]:
+    return [
+        Path(path).resolve()
+        for key in ("stdlib", "platstdlib")
+        if (path := sysconfig.get_path(key))
+    ]
+
+
+def _is_installed_module_file(module_file: str, stdlib_dirs: list[Path]) -> bool:
+    """Whether a module file belongs to the standard library or an installed
+    distribution, as opposed to the user's own source tree."""
+    module_path = Path(module_file).resolve()
+    if {"site-packages", "dist-packages"} & set(module_path.parts):
+        return True
+    return any(module_path.is_relative_to(stdlib_dir) for stdlib_dir in stdlib_dirs)
+
+
+def is_user_module(module: ModuleType, skip_prefix: str = "modal_dojo") -> bool:
+    """Whether ``module`` is the user's own code, absent from a training image.
+
+    Images carry Modal Dojo and whatever is pip-installed in them, so those
+    modules are importable remotely. A module from the user's source tree is
+    not, and neither is ``__main__``.
+    """
+    name = getattr(module, "__name__", "")
+    if not name or name.split(".")[0] == skip_prefix:
+        return False
+    if name == "__main__":
+        return True
+    module_file = getattr(module, "__file__", None)
+    if not module_file:  # builtin or namespace package
+        return False
+    return not _is_installed_module_file(module_file, _installed_module_dirs())
+
+
 def resolve_caller_module(
     skip_prefix: str = "modal_dojo",
 ) -> ModuleType | None:
@@ -48,11 +83,7 @@ def resolve_caller_module(
     to inline the user's inline classes; walking past framework frames
     recovers it.
     """
-    stdlib_dirs = [
-        Path(path).resolve()
-        for key in ("stdlib", "platstdlib")
-        if (path := sysconfig.get_path(key))
-    ]
+    stdlib_dirs = _installed_module_dirs()
     for frame_info in inspect.stack()[1:]:
         module = inspect.getmodule(frame_info.frame)
         if module is None:
@@ -73,14 +104,8 @@ def resolve_caller_module(
         ):
             continue
         module_file = getattr(module, "__file__", None)
-        if module_file:
-            module_path = Path(module_file).resolve()
-            if {"site-packages", "dist-packages"} & set(module_path.parts):
-                continue
-            if any(
-                module_path.is_relative_to(stdlib_dir) for stdlib_dir in stdlib_dirs
-            ):
-                continue
+        if module_file and _is_installed_module_file(module_file, stdlib_dirs):
+            continue
         return module
     return None
 
