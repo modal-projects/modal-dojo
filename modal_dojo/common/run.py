@@ -9,6 +9,7 @@ import copy
 import math
 import inspect
 import os
+import posixpath
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from enum import Enum
@@ -838,9 +839,9 @@ def torch_dist_resume_checkpoint(
 
 def run_scoped_save_root(save_root: str, training_run_id: str) -> str:
     save_root = str(save_root).rstrip("/") or "/"
-    if os.path.basename(save_root) == training_run_id:
+    if posixpath.basename(save_root) == training_run_id:
         return save_root
-    return os.path.join(save_root, training_run_id)
+    return posixpath.join(save_root, training_run_id)
 
 
 def mark_training_attempt_started(

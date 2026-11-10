@@ -8,7 +8,7 @@ import subprocess
 import shutil
 import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from modal import App, Image, __version__ as MODAL_VERSION
 
@@ -122,7 +122,6 @@ _REPORTING_PATCH_COMMANDS = (
 _PATCH_DIST_CKPT_QUANTIZED_B64 = encode_patch(
     "patch_dist_ckpt_quantized", _MEGATRON_PATCHES
 )
-_PATCH_DIST_CKPT_NOFORK_B64 = encode_patch("patch_dist_ckpt_nofork", _MEGATRON_PATCHES)
 _PATCH_CHECKPOINT_SAVE_B64 = encode_patch("patch_checkpoint_save", _MEGATRON_PATCHES)
 _PATCH_CHECKPOINT_COMMIT_B64 = encode_patch(
     "patch_checkpoint_commit", _MEGATRON_PATCHES
@@ -182,7 +181,6 @@ def _build_miles_base_image(
             f"rm -rf {HF_CACHE_PATH} 2>/dev/null || true",
             f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3",
             f"echo {_PATCH_DIST_CKPT_QUANTIZED_B64} | base64 -d | python3",
-            f"echo {_PATCH_DIST_CKPT_NOFORK_B64} | base64 -d | python3",
             (
                 f"if test -f {_MEGATRON_TORCH_STRATEGY_PY}; then "
                 f"echo {_PATCH_CHECKPOINT_SAVE_B64} | base64 -d | python3; "
@@ -269,10 +267,10 @@ def _remap_kernel_cache_dirs(
         "SGLANG_CACHE_DIR",
     ):
         cache_dir = environment.get(key)
-        if cache_dir and Path(cache_dir).is_relative_to(CHECKPOINTS_PATH):
+        if cache_dir and PurePosixPath(cache_dir).is_relative_to(CHECKPOINTS_PATH):
             environment[key] = str(
-                Path(checkpoints_mount_path)
-                / Path(cache_dir).relative_to(CHECKPOINTS_PATH)
+                PurePosixPath(checkpoints_mount_path)
+                / PurePosixPath(cache_dir).relative_to(CHECKPOINTS_PATH)
             )
     return environment
 
