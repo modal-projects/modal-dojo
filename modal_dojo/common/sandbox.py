@@ -31,7 +31,7 @@ class Sandbox:
         self._sb: modal.Sandbox | None = None
 
     def __enter__(self) -> Sandbox:
-        self._sb = modal.Sandbox._experimental_create(
+        self._sb = modal.Sandbox.create(
             "sleep",
             "infinity",
             app=modal.App.lookup(self._app_name, create_if_missing=True),

@@ -11,8 +11,8 @@ from modal_dojo._dashboard import (
     _compute_next_page,
     _parse_log_batches,
     _resolve_log_window,
-    _to_timestamp,
 )
+from modal_dojo.common._modal_compat import to_proto_timestamp as _to_timestamp
 
 NOW = 1_720_557_600.0
 
