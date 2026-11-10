@@ -8,6 +8,14 @@ on:
         required: true
         default: main
         type: string
+      sglang_commit:
+        description: "Full SGLang commit SHA (sgl-project/sglang, sglang-miles branch)"
+        required: true
+        type: string
+      megatron_commit:
+        description: "Full Megatron commit SHA (radixark/Megatron-LM, miles-main branch)"
+        required: true
+        type: string
       tag:
         description: "Docker Hub tag for modalresearch/miles (e.g. dev-20261109)"
         required: true
@@ -28,6 +36,8 @@ jobs:
       - name: Validate publish settings
         env:
           IMAGE_TAG: ${{ inputs.tag }}
+          SGLANG_COMMIT: ${{ inputs.sglang_commit }}
+          MEGATRON_COMMIT: ${{ inputs.megatron_commit }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
@@ -35,6 +45,12 @@ jobs:
             echo "::error::Invalid Docker image tag."
             exit 1
           fi
+          for pin in SGLANG_COMMIT MEGATRON_COMMIT; do
+            if [[ ! "${!pin}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::${pin} must be a full 40-character lowercase commit SHA."
+              exit 1
+            fi
+          done
           if [[ -z "$DOCKERHUB_USERNAME" || -z "$DOCKERHUB_TOKEN" ]]; then
             echo "::error::Set the DOCKERHUB_USERNAME and DOCKERHUB_TOKEN Actions secrets."
             exit 1
@@ -79,6 +95,8 @@ jobs:
           tags: modalresearch/miles:${{ inputs.tag }}
           build-args: |
             MILES_COMMIT=${{ steps.miles.outputs.sha }}
+            SGLANG_COMMIT=${{ inputs.sglang_commit }}
+            MEGATRON_COMMIT=${{ inputs.megatron_commit }}
           labels: |
             org.opencontainers.image.source=https://github.com/radixark/miles
             org.opencontainers.image.revision=${{ steps.miles.outputs.sha }}
@@ -87,6 +105,8 @@ jobs:
         env:
           IMAGE_TAG: ${{ inputs.tag }}
           MILES_SHA: ${{ steps.miles.outputs.sha }}
+          SGLANG_COMMIT: ${{ inputs.sglang_commit }}
+          MEGATRON_COMMIT: ${{ inputs.megatron_commit }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           {
@@ -94,5 +114,7 @@ jobs:
             echo "- Image: \`modalresearch/miles:${IMAGE_TAG}\`"
             echo "- Digest: \`modalresearch/miles@${IMAGE_DIGEST}\`"
             echo "- Miles commit: \`${MILES_SHA}\`"
+            echo "- SGLang commit: \`${SGLANG_COMMIT}\`"
+            echo "- Megatron commit: \`${MEGATRON_COMMIT}\`"
             echo '- Platform: `linux/amd64`'
           } >> "$GITHUB_STEP_SUMMARY"
