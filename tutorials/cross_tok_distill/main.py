@@ -22,7 +22,9 @@ import json
 import re
 import sys
 import time
+from argparse import Namespace
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from env import (
@@ -37,6 +39,7 @@ from env import (
     tool_schemas_to_openai,
 )
 from modal_dojo import (
+    Checkpoint,
     CustomDeployment,
     Endpoint,
     Qwen3_6_35B,
@@ -45,6 +48,10 @@ from modal_dojo import (
 )
 from modal_dojo.common.models.base import HFModelConfiguration, ToolCall
 from modal_dojo.train_recipes.slime_recipe import Qwen3_6_35B_Recipe
+
+if TYPE_CHECKING:
+    import torch
+    from slime.utils.types import Sample
 
 # ## Deploy the base models
 #
@@ -58,7 +65,7 @@ TEACHER_READY_TIMEOUT = 30 * 60
 student_model = Qwen3_6_35B()
 
 
-def deploy_base_models():
+def deploy_base_models() -> tuple[Endpoint, CustomDeployment]:
     print("deploying base student endpoint...")
     base_student_deployment = Endpoint.launch(
         student_model,
@@ -128,7 +135,7 @@ _TS_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}")
 _TMP_RE = re.compile(r"/tmp/[^\s/]+")
 
 
-def _normalize_value(v) -> str:
+def _normalize_value(v: object) -> str:
     s = str(v).strip().lower()
     s = _UUID_RE.sub("<uuid>", s)
     s = _TS_RE.sub("<timestamp>", s)
@@ -263,7 +270,9 @@ eval_dataset = BfclMultiTurnDataset(split="eval", config=dataset_config)
 CURRICULUM_TAIL_MIN = 1
 
 
-def curriculum_rollout(args, rollout_id, data_source, evaluation=False):
+def curriculum_rollout(
+    args: Namespace, rollout_id: int, data_source: Any, evaluation: bool = False
+) -> Any:
     from slime.rollout.sglang_rollout import generate_rollout
 
     if evaluation:
@@ -297,14 +306,14 @@ MAX_CONSECUTIVE_TOOL_ERRORS = 3
 
 
 def _chat(
-    deployment,
-    messages,
-    tools=None,
-    max_tokens=RESPONSE_TOKEN_CAP,
-    max_attempts=12,
+    deployment: Endpoint | CustomDeployment,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None = None,
+    max_tokens: int = RESPONSE_TOKEN_CAP,
+    max_attempts: int = 12,
     *,
-    qwen_thinking=False,
-):
+    qwen_thinking: bool | None = False,
+) -> dict:
     try:
         tok = _tokenizer("Qwen/Qwen3.6-35B-A3B")
         text = tok.apply_chat_template(
@@ -318,7 +327,7 @@ def _chat(
     if capped <= 0:
         return {"content": "", "tool_calls": []}
 
-    extra = {"temperature": 0.0, "max_tokens": capped}
+    extra: dict[str, Any] = {"temperature": 0.0, "max_tokens": capped}
     if tools is not None:
         extra["tools"] = tools
     if qwen_thinking is not None:
@@ -349,7 +358,7 @@ def _actions_from_message(msg: dict) -> tuple[str, list[ToolCall]]:
     return parsed.content, parsed.tool_calls
 
 
-def bfcl_eval_fn(deployment, example: dict) -> dict:
+def bfcl_eval_fn(deployment: Endpoint | CustomDeployment, example: dict) -> dict:
     label = json.loads(example["label"])
     N = label["total_steps"]
     flattened_calls = label["flattened_calls"]
@@ -400,13 +409,18 @@ def bfcl_eval_fn(deployment, example: dict) -> dict:
     }
 
 
-def _frac(rows, key):
+def _frac(rows: list[dict], key: str) -> float:
     if not rows:
         return 0.0
     return sum(1 for r in rows if r["metadata"].get(key)) / len(rows)
 
 
-def run_eval(deployment, *, ready_timeout, max_concurrency: int = 4):
+def run_eval(
+    deployment: Endpoint | CustomDeployment,
+    *,
+    ready_timeout: int,
+    max_concurrency: int = 4,
+) -> tuple[float, list[dict]]:
     from concurrent.futures import ThreadPoolExecutor
 
     deployment.wait_until_ready(timeout=ready_timeout)
@@ -429,7 +443,9 @@ def _print_eval_summary(mean: float, rows: list[dict], *, prefix: str = "") -> N
         print(f"{label}first-call tool match: {_frac(rows, 'tool_match'):.1%}")
 
 
-def run_baseline_evals(base_student_deployment, teacher_deployment):
+def run_baseline_evals(
+    base_student_deployment: Endpoint, teacher_deployment: CustomDeployment
+) -> None:
     print("running teacher model evaluation...")
     try:
         teacher_mean, teacher_rows = run_eval(
@@ -473,7 +489,9 @@ def run_baseline_evals(base_student_deployment, teacher_deployment):
 _teacher_rm_sem: asyncio.Semaphore | None = None
 
 
-async def cross_tokenizer_reward(args, sample, **kwargs):
+async def cross_tokenizer_reward(
+    args: Namespace, sample: "Sample", **kwargs: object
+) -> dict[str, Any]:
     import random
 
     import aiohttp
@@ -564,10 +582,10 @@ def align_cross_tokenizer(
     teacher_token_texts: list[str],
     teacher_logprobs: list[float],
     student_token_texts: list[str],
-):
+) -> tuple["torch.Tensor", "torch.Tensor"]:
     import torch
 
-    def _offsets(texts):
+    def _offsets(texts: list[str]) -> list[tuple[int, int]]:
         out, pos = [], 0
         for t in texts:
             out.append((pos, pos + len(t)))
@@ -595,7 +613,9 @@ def align_cross_tokenizer(
     return result, covered
 
 
-async def tool_step_generate(args, sample, sampling_params):
+async def tool_step_generate(
+    args: Namespace, sample: "Sample", sampling_params: dict[str, Any]
+) -> "Sample":
     from slime.rollout.sglang_rollout import GenerateState
     from slime.utils.http_utils import post
     from slime.utils.types import Sample
@@ -662,10 +682,10 @@ async def tool_step_generate(args, sample, sampling_params):
     user_close = _rest[: len(_rest) - len(gen_suffix)]
     stop_tok = obs_open.split("\n", 1)[0]
 
-    def _log(msg):
+    def _log(msg: str) -> None:
         print(f"[rollout:{task_id} T={T} K={K}] {msg}", flush=True)
 
-    def _abort_sample():
+    def _abort_sample() -> "Sample":
         pad_id = (
             state.tokenizer.pad_token_id
             if state.tokenizer.pad_token_id is not None
@@ -814,7 +834,9 @@ async def tool_step_generate(args, sample, sampling_params):
 # are used for the SimCT MAU calculation described above.
 
 
-def cross_tokenizer_post_process(args, samples, **kwargs):
+def cross_tokenizer_post_process(
+    args: Namespace, samples: list["Sample"], **kwargs: object
+) -> tuple[list[float], list[float]]:
     import torch
 
     tokenizer = _tokenizer("Qwen/Qwen3.6-35B-A3B")
@@ -915,7 +937,7 @@ def cross_tokenizer_post_process(args, samples, **kwargs):
 # With all that in place, it's dead simple to kick off training.
 
 
-def build_config(teacher_deployment):
+def build_config(teacher_deployment: CustomDeployment) -> TrainConfig:
     return TrainConfig(
         model=student_model,
         dataset=dataset,
@@ -980,7 +1002,7 @@ def build_config(teacher_deployment):
     )
 
 
-def train(config):
+def train(config: TrainConfig) -> Checkpoint:
     with config.launch() as run:
         print(f"run id: {run.training_run_id}")
         checkpoint = None
@@ -1004,7 +1026,7 @@ def train(config):
 # We'll deploy our trained student and run the same evaluation on it.
 
 
-def deploy_trained_model(checkpoint):
+def deploy_trained_model(checkpoint: Checkpoint) -> Endpoint:
     print("deploying trained student endpoint...")
     trained_student_deployment = Endpoint.launch(
         student_model,
@@ -1018,7 +1040,7 @@ def deploy_trained_model(checkpoint):
     return trained_student_deployment
 
 
-def run_trained_evals(trained_student_deployment):
+def run_trained_evals(trained_student_deployment: Endpoint) -> None:
     print("running trained student model evaluation...")
     trained_mean, trained_rows = run_eval(
         trained_student_deployment,

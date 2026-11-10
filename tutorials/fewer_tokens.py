@@ -17,11 +17,14 @@
 
 import re
 import time
+from argparse import Namespace
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Protocol
 
 from transformers import AutoTokenizer
 
 from modal_dojo import (
+    Checkpoint,
     Endpoint,
     HuggingFaceDataset,
     Qwen3_5_4B,
@@ -36,7 +39,7 @@ from modal_dojo import (
 model = Qwen3_5_4B()
 
 
-def deploy_base_model():
+def deploy_base_model() -> Endpoint:
     base_deployment = Endpoint.launch(
         model,
         recreate_if_existing=True,
@@ -84,11 +87,11 @@ eval_dataset = HuggingFaceDataset(
 )
 
 
-def run_eval(deployment, max_concurrency: int = 16) -> tuple[float, float]:
+def run_eval(deployment: Endpoint, max_concurrency: int = 16) -> tuple[float, float]:
     deployment.wait_until_ready()
     tokenizer = AutoTokenizer.from_pretrained(model.model_name)
 
-    def _score_one(example):
+    def _score_one(example: dict[str, Any]) -> tuple[float, int]:
         msg = deployment.chat(
             example[eval_dataset.input_key()],
             chat_template_kwargs={"enable_thinking": True},
@@ -109,7 +112,7 @@ def run_eval(deployment, max_concurrency: int = 16) -> tuple[float, float]:
     return accuracy, mean_tokens
 
 
-def run_baseline_evals(deployment):
+def run_baseline_evals(deployment: Endpoint) -> tuple[float, float]:
     print("running base model evaluation...")
     accuracy, mean_tokens = run_eval(deployment)
     print(f"percent correct: {accuracy:.1%}")
@@ -129,17 +132,31 @@ def run_baseline_evals(deployment):
 # $$
 
 
-async def gsm8k_correctness_rm(args, sample, **kwargs) -> float:
+class RolloutSample(Protocol):
+    Status: Any
+    status: object
+    response: str
+    label: str
+    response_length: int
+    reward: float
+
+
+async def gsm8k_correctness_rm(
+    args: Namespace, sample: RolloutSample, **kwargs: object
+) -> float:
     if sample.status == sample.Status.TRUNCATED:
         return 0.0
     response = model.parse_response(sample.response or "")
     return score_gsm8k(response.content, sample.label)
 
 
-def density_post_process(args, samples, **kwargs):
+def density_post_process(
+    args: Namespace, samples: list[RolloutSample], **kwargs: object
+) -> tuple[list[float], list[float]]:
     n = args.n_samples_per_prompt
     max_len = args.rollout_max_response_len
-    raw, processed = [], []
+    raw: list[float] = []
+    processed: list[float] = []
     for start in range(0, len(samples), n):
         group = samples[start : start + n]
         solve_rate = sum(bool(s.reward) for s in group) / len(group)
@@ -159,7 +176,7 @@ def density_post_process(args, samples, **kwargs):
 # Sit back and watch it rip.
 
 
-def deploy_trained_model(checkpoint):
+def deploy_trained_model(checkpoint: Checkpoint) -> Endpoint:
     step = int(checkpoint.name.removeprefix("iter_")) + 1
     trained_deployment = Endpoint.launch(
         model,
@@ -176,7 +193,7 @@ def deploy_trained_model(checkpoint):
     return trained_deployment
 
 
-def run_trained_evals(trained_deployment):
+def run_trained_evals(trained_deployment: Endpoint) -> tuple[float, float]:
     print("running checkpoint evaluation...")
     accuracy, mean_tokens = run_eval(trained_deployment)
     print(f"percent correct: {accuracy:.1%}")
@@ -184,7 +201,7 @@ def run_trained_evals(trained_deployment):
     return accuracy, mean_tokens
 
 
-def eval_checkpoint(checkpoint):
+def eval_checkpoint(checkpoint: Checkpoint) -> tuple[str, float, float]:
     deployment = deploy_trained_model(checkpoint)
     try:
         step = int(checkpoint.name.removeprefix("iter_")) + 1
@@ -211,7 +228,7 @@ config = TrainConfig(
 )
 
 
-def train(config):
+def train(config: TrainConfig) -> list[tuple[str, float, float]]:
     failure = None
     results = []
     with config.launch() as run, ThreadPoolExecutor() as evals:
@@ -242,7 +259,7 @@ def train(config):
     return results
 
 
-def print_results(rows):
+def print_results(rows: list[tuple[str, float, float]]) -> None:
     print("| | Accuracy | Mean output tokens |")
     print("| --- | ---: | ---: |")
     for label, accuracy, mean_tokens in rows:

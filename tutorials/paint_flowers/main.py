@@ -30,7 +30,10 @@ import base64
 import itertools
 import random
 import sys
+from argparse import Namespace
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any, Protocol
 
 from modal_dojo import (
     DatasetConfig,
@@ -133,7 +136,7 @@ def build_prompts(combos: list[tuple[str, str]], n: int) -> list[dict[str, str]]
 
 
 class FlowerPromptDataset(DatasetConfig):
-    def __init__(self, prompts: list[dict[str, str]]):
+    def __init__(self, prompts: list[dict[str, str]]) -> None:
         self.prompts = prompts
 
     def input_key(self) -> str:
@@ -142,7 +145,7 @@ class FlowerPromptDataset(DatasetConfig):
     def label_key(self) -> str:
         return "label"
 
-    def rows(self):
+    def rows(self) -> list[dict[str, Any]]:
         return [
             {
                 "messages": [
@@ -171,7 +174,7 @@ eval_dataset = FlowerPromptDataset(build_prompts(combos, N_EVAL))
 # to do pairwise comparisons. We serve the judge as an
 # [Endpoint](https://modal.com/docs/guide/endpoints).
 
-def deploy_judge():
+def deploy_judge() -> Endpoint:
     print("deploying judges...")
     judge = Endpoint.launch(
         Qwen3_6_27B(),
@@ -212,8 +215,18 @@ def render_in_sandbox(code: str) -> tuple[bytes | None, dict]:
         }
 
 
-def make_flower_rm(judge):
-    async def flower_rm(args, sample, **kwargs) -> float | None:
+class RolloutSample(Protocol):
+    response: str
+    metadata: dict[str, Any] | None
+    remove_sample: bool
+
+
+def make_flower_rm(
+    judge: Endpoint,
+) -> Callable[..., Awaitable[float | None]]:
+    async def flower_rm(
+        args: Namespace, sample: RolloutSample, **kwargs: object
+    ) -> float | None:
         code = helpers.extract_sketch(sample.response, base_model.parse_response)
         if code is None:
             reward, meta, png = 0.0, {"gate": "no valid sketch"}, None
@@ -241,7 +254,7 @@ ROLLOUT_BATCH_SIZE = 8
 N_SAMPLES_PER_PROMPT = 8
 
 
-def build_config(judge):
+def build_config(judge: Endpoint) -> TrainConfig:
     return TrainConfig(
         model=base_model,
         dataset=train_dataset,
