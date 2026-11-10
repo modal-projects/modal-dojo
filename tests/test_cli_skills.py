@@ -105,12 +105,13 @@ def test_skills_install_keeps_equivalent_absolute_claude_link(monkeypatch, tmp_p
     destination = tmp_path / ".agents" / "skills" / SKILL_NAME
     link.unlink()
     link.symlink_to(destination, target_is_directory=True)
+    original_target = link.readlink()
 
     result = runner.invoke(cli_module.entrypoint_cli, ["skills", "install"])
 
     assert result.exit_code == 0
     assert "Claude skill already linked" in result.stdout
-    assert link.readlink() == destination
+    assert link.readlink() == original_target
 
 
 def test_skills_install_preserves_modified_skill_without_force(monkeypatch, tmp_path):
@@ -360,8 +361,9 @@ def test_legacy_skills_warn_without_force(tmp_path):
         cli_module.entrypoint_cli, ["skills", "install", "--project-dir", str(tmp_path)]
     )
     assert result.exit_code == 0, result.exception
-    assert "training-gym-overview was renamed to modal-dojo-overview" in result.stderr
-    assert "modal-dojo skills install --force" in result.stderr
+    warning = " ".join(result.stderr.split())
+    assert "training-gym-overview was renamed to modal-dojo-overview" in warning
+    assert "modal-dojo skills install --force" in warning
     assert old.is_dir() and link.is_symlink()
 
 

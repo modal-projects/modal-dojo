@@ -172,49 +172,88 @@ export default defineConfig({
       title: 'Modal Dojo',
       favicon: '/modal-logo.svg',
       description:
-        'Open-source Python SDK for GRPO and RL post-training of LLMs on Modal GPU clusters — tutorials, API reference, and runnable examples.',
+        'An open-source library that gives you the building blocks, tuned defaults, and observability you need for easy, production-grade post-training: supervised fine-tuning (SFT) and reinforcement learning (RL) on Modal GPU clusters.',
       tagline:
         'GRPO, PPO, custom reward and generate functions — runnable on Modal in minutes.',
       head: [
         {
           tag: 'meta',
-          attrs: { property: 'og:image', content: 'https://dojo.modal.dev/og-image.png' },
+          attrs: { property: 'og:type', content: 'website' },
         },
         {
           tag: 'meta',
-          attrs: { property: 'og:image:width', content: '2400' },
+          attrs: { property: 'og:image', content: 'https://dojo.modal.dev/og-image.gif' },
         },
         {
           tag: 'meta',
-          attrs: { property: 'og:image:height', content: '1260' },
+          attrs: { property: 'og:image:type', content: 'image/gif' },
         },
         {
           tag: 'meta',
-          attrs: { name: 'twitter:card', content: 'summary_large_image' },
+          attrs: { property: 'og:image:width', content: '800' },
         },
         {
           tag: 'meta',
-          attrs: { name: 'twitter:image', content: 'https://dojo.modal.dev/og-image.png' },
+          attrs: { property: 'og:image:height', content: '473' },
         },
         {
           tag: 'meta',
-          attrs: { name: 'twitter:site', content: '@modal_labs' },
+          attrs: {
+            property: 'og:image:alt',
+            content: 'Modal Dojo',
+          },
+        },
+        {
+          tag: 'meta',
+          attrs: { name: 'twitter:image', content: 'https://dojo.modal.dev/og-image.gif' },
+        },
+        {
+          tag: 'meta',
+          attrs: {
+            name: 'twitter:image:alt',
+            content: 'Modal Dojo',
+          },
+        },
+        {
+          tag: 'meta',
+          attrs: { name: 'twitter:site', content: '@modal' },
         },
         {
           tag: 'script',
           attrs: { type: 'application/ld+json' },
           content: JSON.stringify({
             '@context': 'https://schema.org',
-            '@type': 'WebSite',
-            name: 'Modal Dojo',
-            url: 'https://dojo.modal.dev',
-            description:
-              'Open-source Python SDK for GRPO and RL post-training of LLMs on Modal GPU clusters.',
-            publisher: {
-              '@type': 'Organization',
-              name: 'Modal Labs',
-              url: 'https://modal.com',
-            },
+            '@graph': [
+              {
+                '@type': 'Organization',
+                '@id': 'https://modal.com/#organization',
+                name: 'Modal',
+                url: 'https://modal.com/',
+                logo: 'https://modal.com/assets/favicon.svg',
+                sameAs: [
+                  'https://github.com/modal-labs',
+                  'https://www.youtube.com/@ModalLabs',
+                  'https://www.linkedin.com/company/modal-labs/',
+                  'https://x.com/modal',
+                ],
+              },
+              {
+                '@type': 'WebSite',
+                '@id': 'https://dojo.modal.dev/#website',
+                name: 'Modal Dojo',
+                url: 'https://dojo.modal.dev',
+                publisher: { '@id': 'https://modal.com/#organization' },
+              },
+              {
+                '@type': 'SoftwareSourceCode',
+                name: 'Modal Dojo',
+                description:
+                  'An open-source library that gives you the building blocks, tuned defaults, and observability you need for easy, production-grade post-training: supervised fine-tuning (SFT) and reinforcement learning (RL).',
+                codeRepository: 'https://github.com/modal-projects/modal-dojo',
+                programmingLanguage: 'Python',
+                author: { '@id': 'https://modal.com/#organization' },
+              },
+            ],
           }),
         },
       ],

@@ -125,6 +125,57 @@ def test_derived_points_leave_out_what_cannot_be_priced() -> None:
     assert derived_points({1: {"loss": 0.1}}, {}, PRICING) == {}
 
 
+def test_resumed_rollout_axes_preserve_ids_and_gaps() -> None:
+    table = {
+        1: {dm.RESPONSE_LEN_KEY: 100.0, dm.STEP_TIME_KEY: 900.0},
+        3: {
+            dm.RESPONSE_LEN_KEY: 200.0,
+            dm.STEP_TIME_KEY: 800.0,
+            dm.TRAIN_TOK_PER_S_KEY: 1000.0,
+            dm.TRAIN_TIME_KEY: 2.0,
+        },
+    }
+    axes = {
+        row: dict.fromkeys(metrics, "rollout/step") for row, metrics in table.items()
+    }
+    points = derived_points(
+        table, {2: 40.0, 3: 999.0, 4: 80.0}, PRICING, step_keys=axes
+    )
+    assert points[1][dm.STEP_SECONDS_KEY] == 40.0
+    assert points[3][dm.STEP_SECONDS_KEY] == 80.0
+    assert points[1][dm.GEN_TPS_KEY] == points[3][dm.GEN_TPS_KEY] == 25.0
+    assert dm.TRAIN_TOKENS_KEY not in points[1]
+    assert points[3][dm.TRAIN_TOKENS_KEY] == 2000.0
+    # An absent timing must use this rollout's framework time, not a neighbor.
+    fallback = derived_points(table, {2: 40.0, 3: 999.0}, PRICING, step_keys=axes)
+    assert fallback[3][dm.STEP_SECONDS_KEY] == 800.0
+
+
+def test_merged_step_value_does_not_imply_a_metric_axis() -> None:
+    table = {7: {dm.RESPONSE_LEN_KEY: 100.0, "rollout/step": 42.0}}
+    points = derived_points(
+        table,
+        {1: 40.0, 8: 999.0, 43: 888.0},
+        PRICING,
+        step_keys={7: {"rollout/step": "rollout/step"}},
+    )
+    assert points[7][dm.STEP_SECONDS_KEY] == 40.0
+
+
+def test_optimizer_scaled_rollout_axis_uses_framework_time() -> None:
+    pricing = RunPricing.from_recipe(
+        {"wandb_always_use_train_step": True, "rollout_batch_size": 10}, {}
+    )
+    table = {4: {dm.RESPONSE_LEN_KEY: 100.0, dm.STEP_TIME_KEY: 90.0}}
+    points = derived_points(
+        table,
+        {5: 999.0},
+        pricing,
+        step_keys={4: dict.fromkeys(table[4], "rollout/step")},
+    )
+    assert points[4][dm.STEP_SECONDS_KEY] == 90.0
+
+
 def test_changed_points_only_reports_new_or_different_values() -> None:
     table = {1: {"dojo/tokens": 3.0, "dojo/step_seconds": 1.0}}
     assert (
@@ -257,6 +308,39 @@ def test_ingest_prices_later_when_timing_arrives_after_metrics(
         after = client.get(f"/api/runs/{RUN_ID}/metrics").json()["series"]
     assert after["dojo/step_seconds"][0][1] == 20.0
     assert after["dojo/tokens_per_s"][0][1] == pytest.approx(50.0)
+
+
+@pytest.mark.parametrize("timing_first", [False, True])
+def test_resumed_metrics_use_recorded_axis_at_ingest(
+    fake_volume, monkeypatch, tmp_path, timing_first
+):
+    _save_run()
+    with _client(monkeypatch, tmp_path) as client:
+        events = [
+            ("/api/timing-events", _timing(1, 40.0)),
+            (
+                "/api/metric-points",
+                {
+                    "training_run_id": RUN_ID,
+                    "points": [
+                        {
+                            "step": 1,
+                            "step_key": "rollout/step",
+                            "metrics": {
+                                dm.RESPONSE_LEN_KEY: 100.0,
+                                dm.STEP_TIME_KEY: 99.0,
+                            },
+                        }
+                    ],
+                    "final": True,
+                },
+            ),
+        ]
+        for endpoint, payload in events if timing_first else reversed(events):
+            assert client.post(endpoint, json=payload, headers=AUTH).status_code == 200
+        series = client.get(f"/api/runs/{RUN_ID}/metrics").json()["series"]
+    assert series[dm.STEP_SECONDS_KEY][0][:2] == [1, 40.0]
+    assert series[dm.GEN_TPS_KEY][0][:2] == [1, 25.0]
 
 
 def test_reading_a_finished_run_backfills_and_persists_dojo_metrics(

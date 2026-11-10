@@ -41,10 +41,14 @@
 import ast
 import json
 import time
+from argparse import Namespace
+from collections.abc import Iterator
+from typing import Any, Protocol
 
 from datasets import load_dataset
 
 from modal_dojo import (
+    Checkpoint,
     CustomDeployment,
     DatasetConfig,
     Endpoint,
@@ -68,7 +72,7 @@ student_model = Qwen3_5_4B()
 teacher_model = Qwen3_5_9B()
 
 
-def deploy_models():
+def deploy_models() -> tuple[Endpoint, CustomDeployment]:
     print("deploying base student endpoint...")
     base_student_deployment = Endpoint.launch(
         student_model,
@@ -120,7 +124,7 @@ def score_constraints(response: str, label: str) -> int:
 # Following suit, we'll only use 300 training samples.
 
 
-def _known_if_instructions(row) -> bool:
+def _known_if_instructions(row: dict[str, Any]) -> bool:
     from ifbench import instructions_registry
 
     spec = ast.literal_eval(row["ground_truth"])[0]
@@ -137,7 +141,7 @@ class IFMultiConstraintsDataset(DatasetConfig):
     def label_key(self) -> str:
         return "label"
 
-    def rows(self):
+    def rows(self) -> Iterator[dict[str, Any]]:
         ds = load_dataset(
             "allenai/IF_multi_constraints_upto5", split="train", streaming=True
         )
@@ -169,7 +173,7 @@ class IFBenchTestDataset(DatasetConfig):
     def label_key(self) -> str:
         return "label"
 
-    def rows(self):
+    def rows(self) -> Iterator[dict[str, Any]]:
         for row in load_dataset("allenai/IFBench_test", split="train"):
             yield {
                 "messages": [{"role": "user", "content": row["prompt"]}],
@@ -190,12 +194,13 @@ eval_dataset = IFBenchTestDataset()
 # must close.
 
 
-def run_eval(deployment, *, max_concurrency: int = 2) -> float:
+def run_eval(
+    deployment: Endpoint | CustomDeployment, *, max_concurrency: int = 2) -> float:
     from concurrent.futures import ThreadPoolExecutor
 
     deployment.wait_until_ready()
 
-    def _score_one(example):
+    def _score_one(example: dict[str, Any]) -> int:
         msg = deployment.chat(
             example[eval_dataset.input_key()],
             chat_template_kwargs={"enable_thinking": True},
@@ -211,7 +216,9 @@ def run_eval(deployment, *, max_concurrency: int = 2) -> float:
     return percent_correct
 
 
-def run_baseline_evals(base_student_deployment, teacher_deployment):
+def run_baseline_evals(
+    base_student_deployment: Endpoint, teacher_deployment: CustomDeployment
+) -> None:
     print("running teacher base model evaluation...")
     teacher_correct = run_eval(teacher_deployment)
     print(f"percent correct: {teacher_correct:.1%}")
@@ -266,7 +273,16 @@ def run_baseline_evals(base_student_deployment, teacher_deployment):
 # </details>
 
 
-async def ifbench_opd_rm(args, sample, **kwargs):
+class RolloutSample(Protocol):
+    response: str
+    label: str
+    score: int
+    metadata: dict[str, Any]
+
+
+async def ifbench_opd_rm(
+    args: Namespace, sample: RolloutSample, **kwargs: object
+) -> dict[str, Any]:
     from slime.rollout.on_policy_distillation import reward_func as _opd_reward
 
     teacher_response = await _opd_reward(args, sample, **kwargs)
@@ -281,7 +297,9 @@ async def ifbench_opd_rm(args, sample, **kwargs):
     return teacher_response
 
 
-def ifbench_opd_post_process(args, samples, **kwargs):
+def ifbench_opd_post_process(
+    args: Namespace, samples: list[RolloutSample], **kwargs: object
+) -> tuple[list[float], list[float]]:
     from slime.rollout.on_policy_distillation import post_process_rewards as _opd_post
 
     _, _ = _opd_post(args, samples, **kwargs)
@@ -296,7 +314,7 @@ def ifbench_opd_post_process(args, samples, **kwargs):
 # we set parameters such as `environment` and `extra_config` to supply
 # framework-necessary environment variables and flags.
 
-def build_config(teacher_deployment):
+def build_config(teacher_deployment: CustomDeployment) -> TrainConfig:
     return TrainConfig(
         model=student_model,
         dataset=train_dataset,
@@ -328,7 +346,7 @@ def build_config(teacher_deployment):
     )
 
 
-def train(config):
+def train(config: TrainConfig) -> Checkpoint:
     with config.launch() as run:
         print(f"run id: {run.training_run_id}")
         checkpoint = None
@@ -353,7 +371,7 @@ def train(config):
 # to our baseline evaluation from earlier.
 
 
-def deploy_trained_model(checkpoint):
+def deploy_trained_model(checkpoint: Checkpoint) -> Endpoint:
     print("deploying trained student endpoint...")
     trained_student_deployment = Endpoint.launch(
         student_model,
@@ -366,7 +384,7 @@ def deploy_trained_model(checkpoint):
     return trained_student_deployment
 
 
-def run_trained_evals(trained_student_deployment):
+def run_trained_evals(trained_student_deployment: Endpoint) -> None:
     print("running student checkpoint evaluation...")
     trained_student_correct = run_eval(trained_student_deployment)
     print(f"percent correct: {trained_student_correct:.1%}")

@@ -9,6 +9,7 @@ import time
 from typing import Any
 
 import httpx
+from rich.text import Text
 
 from modal_dojo.common.checkpoint import (
     Checkpoint,
@@ -82,7 +83,9 @@ def _endpoint_info(
         )
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(exc.stderr.strip()) from exc
-    return json.loads(described.stdout)
+    # Jupyter sets FORCE_COLOR=1, so Modal's Rich output includes ANSI codes
+    # even with --json and captured stdout. See https://github.com/modal-projects/modal-dojo/pull/787.
+    return json.loads(Text.from_ansi(described.stdout).plain)
 
 
 class Endpoint:

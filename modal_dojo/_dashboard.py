@@ -872,7 +872,9 @@ def fastapi_app():
         seconds = driver_step_seconds(timing.lanes) if timing else {}
         points = changed_points(
             entry.metrics.table,
-            derived_points(entry.metrics.table, seconds, pricing),
+            derived_points(
+                entry.metrics.table, seconds, pricing, step_keys=entry.metrics.step_keys
+            ),
         )
         if points:
             entry.dirty |= entry.metrics.merge_points(
