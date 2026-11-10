@@ -186,32 +186,40 @@ def test_validation_dataset_unpickles_without_the_scripts_directory(config, tmp_
 
     Backend modules live under ``scripts/``, which is absent from the training
     image, so a dataset pickled by reference crashes remotely during data
-    preparation. Unpickling in a subprocess whose ``sys.path`` has no
-    ``scripts/`` entry reproduces that container exactly.
-
-    Pickled with ``modal._serialization``, which is what actually ships the
-    dataset: it uses Modal's vendored cloudpickle, whose by-value registry is
-    separate from the installed cloudpickle's.
+    preparation. ``RunSpec.pack()`` is what ships it; unpacking in a
+    subprocess that cannot import ``scripts`` reproduces the container.
     """
     import base64
+    import json
     import subprocess
     import sys
     import textwrap
 
-    from modal._serialization import serialize
-
-    from scripts.validate_model_configs import _ship_dataset_definition
+    from modal_dojo.common.run_spec import RunSpec
 
     _, dataset = build_recipe_and_dataset(config.framework, config.model_config(), 1)
 
-    _ship_dataset_definition(dataset)
-    payload = serialize(dataset)
+    payload = RunSpec(
+        training_run_id="run",
+        app_name="app",
+        recipe=None,
+        model=None,
+        dataset=dataset,
+        eval_dataset=None,
+        dataset_path="/data/train.jsonl",
+        eval_dataset_path=None,
+        checkpoint_dir="/checkpoints/run",
+        hf_cache_volume_name="huggingface-cache",
+        data_volume_name="data",
+        checkpoints_volume_name="checkpoints",
+        checkpoints_mount_path="/checkpoints",
+    ).pack()
 
     # Blocking the import is a truer stand-in for the image than trimming
     # sys.path: modal_dojo is installed from this same tree, so the
     # entry that makes the backends importable is the one it needs too.
     probe = textwrap.dedent("""
-        import base64, pickle, sys
+        import base64, json, sys
 
         class Blocked:
             def find_spec(self, name, path=None, target=None):
@@ -220,11 +228,16 @@ def test_validation_dataset_unpickles_without_the_scripts_directory(config, tmp_
                 return None
 
         sys.meta_path.insert(0, Blocked())
-        obj = pickle.loads(base64.b64decode(sys.argv[1]))
-        print(type(obj).__name__)
+
+        from modal_dojo.common.run_spec import RunSpec
+
+        payload = json.loads(sys.argv[1])
+        payload["spec"] = base64.b64decode(payload["spec"])
+        print(type(RunSpec.unpack(payload).dataset).__name__)
     """)
+    wire = {**payload, "spec": base64.b64encode(payload["spec"]).decode()}
     result = subprocess.run(
-        [sys.executable, "-c", probe, base64.b64encode(payload).decode()],
+        [sys.executable, "-c", probe, json.dumps(wire)],
         capture_output=True,
         text=True,
         cwd=tmp_path,
@@ -234,7 +247,7 @@ def test_validation_dataset_unpickles_without_the_scripts_directory(config, tmp_
         f"{config.name} dataset does not survive into a training container:\n"
         f"{result.stderr}"
     )
-    assert result.stdout.strip() == type(dataset).__name__
+    assert result.stdout.strip().splitlines()[-1] == type(dataset).__name__
 
 
 def test_framework_harness_change_only_revalidates_that_framework():

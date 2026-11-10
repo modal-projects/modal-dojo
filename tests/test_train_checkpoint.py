@@ -10,8 +10,8 @@ from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.launcher_helpers import resumed_recipe
 from modal_dojo.common.models import Qwen3_5_4B
 from modal_dojo.common.train import TrainConfig
-from modal_dojo.frameworks.miles.launcher import build_miles_app
-from modal_dojo.frameworks.slime.launcher import build_slime_app
+from modal_dojo.frameworks.miles import launcher as miles_launcher
+from modal_dojo.frameworks.slime import launcher as slime_launcher
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
@@ -143,16 +143,12 @@ def test_hf_export_is_not_a_training_resume_checkpoint() -> None:
 
 
 def test_launchers_do_not_replace_model_path_with_checkpoint() -> None:
-    assert "model.model_path = checkpoint.path" not in inspect.getsource(
-        build_slime_app
-    )
-    assert "model.model_path = checkpoint.path" not in inspect.getsource(
-        build_miles_app
-    )
+    assert "model.model_path = checkpoint.path" not in inspect.getsource(slime_launcher)
+    assert "model.model_path = checkpoint.path" not in inspect.getsource(miles_launcher)
 
 
 def test_slime_conversion_uses_wrapper_with_expected_environment() -> None:
-    source = inspect.getsource(build_slime_app)
+    source = inspect.getsource(slime_launcher.convert_checkpoint)
 
     assert (
         "modal_dojo.frameworks.slime.modal_helpers.convert_hf_to_torch_dist" in source
@@ -164,9 +160,9 @@ def test_slime_conversion_uses_wrapper_with_expected_environment() -> None:
     assert (
         'if any(arg.startswith("--pipeline-model-parallel-size ") '
         "for arg in extra_args):\n"
-        '            env["SKIP_PP_AUTOINFLATE"] = "1"'
+        '        env["SKIP_PP_AUTOINFLATE"] = "1"'
     ) in source
-    assert 'if num_nodes > 1:\n            env["SKIP_RELEASE_RENAME"] = "1"' in source
+    assert 'if num_nodes > 1:\n        env["SKIP_RELEASE_RENAME"] = "1"' in source
 
 
 @pytest.mark.parametrize("recipe_cls", [SlimeRecipe, MilesRecipe])
@@ -212,7 +208,7 @@ def test_internal_resume_after_epoch_save_under_num_epoch(recipe_cls) -> None:
 
 
 def test_miles_conversion_uses_wrapper_with_expected_environment() -> None:
-    source = inspect.getsource(build_miles_app)
+    source = inspect.getsource(miles_launcher.convert_checkpoint)
 
     assert (
         "modal_dojo.frameworks.miles.modal_helpers.convert_hf_to_torch_dist" in source
@@ -224,9 +220,9 @@ def test_miles_conversion_uses_wrapper_with_expected_environment() -> None:
     assert (
         'if any(arg.startswith("--pipeline-model-parallel-size ") '
         "for arg in extra_args):\n"
-        '            env["CONVERT_KEEP_PP1"] = "1"'
+        '        env["CONVERT_KEEP_PP1"] = "1"'
     ) in source
-    assert 'if num_nodes > 1:\n            env["SKIP_RELEASE_RENAME"] = "1"' in source
+    assert 'if num_nodes > 1:\n        env["SKIP_RELEASE_RENAME"] = "1"' in source
 
 
 @pytest.mark.parametrize(

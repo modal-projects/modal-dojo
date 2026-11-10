@@ -35,6 +35,7 @@ from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.ray_cluster import (
     clustered_if,
 )
+from modal_dojo.common.run_spec import RunSpec
 from modal_dojo.common.run import (
     has_torch_dist_checkpoint,
     record_resume_checkpoint,
@@ -48,7 +49,6 @@ from modal_dojo.common.launcher_helpers import (
     init_training_run_record,
     mount_caller_source,
     resolve_caller_context,
-    register_recipe_functions,
     report_phase,
     start_training_cluster,
     write_datasets,
@@ -518,7 +518,7 @@ def build_slime_app(
         )
 
     # ── Volumes ──────────────────────────────────────────────────────────────
-    checkpoints_volume_name, checkpoints_mount_path, all_volumes = (
+    checkpoints_volume_name, checkpoints_mount_path, all_volumes, volume_names = (
         shared.create_training_volumes(
             checkpoint,
             volume_prefix=volume_prefix,
@@ -543,21 +543,33 @@ def build_slime_app(
         metrics=slime.metrics,
     )
     app = App(app_name, tags=tags)
-    gpu_spec = f"{slime.gpu_type}:{slime.gpu_allocation.gpus_per_node}"
 
-    register_recipe_functions(
+    spec = RunSpec(
+        training_run_id=training_run_id,
+        app_name=app_name,
+        recipe=slime,
+        model=model,
+        dataset=dataset,
+        eval_dataset=eval_dataset,
+        dataset_path=dataset_path,
+        eval_dataset_path=eval_dataset_path,
+        checkpoint_dir=checkpoint_dir,
+        hf_cache_volume_name=volume_names[str(HF_CACHE_PATH)],
+        data_volume_name=volume_names[str(DATA_PATH)],
+        checkpoints_volume_name=checkpoints_volume_name,
+        checkpoints_mount_path=checkpoints_mount_path,
+        group_id=group_id,
+    )
+
+    shared.register_setup_functions(
         app,
         image,
+        download=download,
         hf_cache_volume=hf_cache_volume,
         data_volume=data_volume,
         checkpoints_volume=checkpoints_volume,
         checkpoints_mount_path=checkpoints_mount_path,
-        download_phase=SlimeStatus.DOWNLOAD_MODEL.value,
-        download=model.download,
         download_timeout=6 * 60 * 60,
-        prepare_dataset=lambda: write_datasets(
-            dataset, eval_dataset, dataset_path, eval_dataset_path
-        ),
         dataset_timeout=2 * 60 * 60,
     )
 
@@ -566,7 +578,7 @@ def build_slime_app(
     )
     convert_gpu = f"{slime.gpu_type}:{convert_nproc}"
 
-    @app.function(
+    app.resolve_checkpoint = app.function(
         image=image,
         volumes={
             str(HF_CACHE_PATH): hf_cache_volume,
@@ -574,90 +586,12 @@ def build_slime_app(
         },
         timeout=60 * 60,
         secrets=[*hf_secrets(), *proxy_auth_secrets()],
-        serialized=True,
         single_use_containers=True,
+        include_source=False,
         name="resolve_checkpoint",
-    )
-    def resolve_checkpoint(
-        training_run_id: str = "",
-        framework_status_url: str = "",
-        framework_status_token: str = "",
-    ) -> str | None:
-        report_phase(
-            training_run_id,
-            SlimeStatus.CONVERT_MODEL.value,
-            framework_status_url,
-            framework_status_token,
-        )
+    )(resolve_checkpoint)
 
-        # Bridge mode loads HF weights directly into Megatron at train time.
-        if getattr(slime, "megatron_to_hf_mode", None) == "bridge":
-            print(
-                "Bridge mode — HF weights loaded directly via AutoBridge; no conversion needed."
-            )
-            flush_status_reporter(timeout_seconds=2.0)
-            return None
-
-        hf_cache_volume.reload()
-        checkpoints_volume.reload()
-
-        save_path = str(slime.ref_load)
-        current_config = _build_conversion_config(slime, model=model)
-        cache_status, stored_config = _checkpoint_conversion_cache_status(
-            save_path, current_config
-        )
-        if cache_status == "hit":
-            print(f"Using existing torch_dist checkpoint at {save_path}.")
-            flush_status_reporter(timeout_seconds=2.0)
-            return None
-        print(f"torch_dist checkpoint at {save_path} is {cache_status}.")
-
-        holder = acquire_convert_lock(
-            training_run_id, checkpoints_volume_name, save_path
-        )
-        if holder != training_run_id:
-            raise RuntimeError(
-                f"Run {holder} is already converting into {save_path}. Two runs of "
-                "this recipe share one ref_load, so continuing would delete that "
-                "run's in-flight conversion and interleave shards. Wait for it to "
-                "finish and relaunch to pick up the cached checkpoint, or point this "
-                "run at a different ref_load."
-            )
-
-        try:
-            if cache_status == "stale":
-                if stored_config is None:
-                    print(
-                        f"Checkpoint at {save_path} has missing or unreadable "
-                        "conversion config metadata — reconverting."
-                    )
-                else:
-                    print(
-                        f"Checkpoint at {save_path} was built with different config:"
-                        f"\n  stored: {stored_config}\n  current: {current_config}"
-                    )
-            if cache_status in {"stale", "incomplete"}:
-                print(f"Removing {cache_status} torch_dist checkpoint at {save_path}.")
-                import shutil
-
-                shutil.rmtree(save_path, ignore_errors=True)
-                checkpoints_volume.commit()
-
-            if slime.megatron_conversion_hf_checkpoint:
-                return resolve_checkpoint_ref(slime.megatron_conversion_hf_checkpoint)
-            if model.model_path:
-                return str(model.model_path)
-
-            from huggingface_hub import snapshot_download
-
-            return snapshot_download(
-                model.model_name, revision=model.revision, local_files_only=True
-            )
-        except BaseException:
-            release_convert_lock(training_run_id, checkpoints_volume_name, save_path)
-            raise
-
-    @app.function(
+    app.convert_checkpoint = app.function(
         image=image,
         gpu=convert_gpu,
         memory=slime.memory,
@@ -670,111 +604,14 @@ def build_slime_app(
         experimental_options=shared.experimental_options(
             slime, clustered=convert_nnodes > 1
         ),
-        serialized=True,
         single_use_containers=True,
+        include_source=False,
         name="convert_checkpoint",
+    )(
+        clustered_if(convert_nnodes > 1, convert_nnodes, gpu_type=slime.gpu_type)(
+            convert_checkpoint
+        )
     )
-    @clustered_if(convert_nnodes > 1, convert_nnodes, gpu_type=slime.gpu_type)
-    def convert_checkpoint(
-        hf_path: str,
-        training_run_id: str = "",
-        framework_status_url: str = "",
-        framework_status_token: str = "",
-    ):
-        save_path = str(slime.ref_load)
-
-        num_nodes, nproc_per_node, extra_args = get_checkpoint_conversion_policy(
-            slime, model=model
-        )
-        node_rank, master_addr, _, nnodes = get_modal_cluster_context(num_nodes)
-
-        import json
-
-        current_config = _build_conversion_config(slime, model=model)
-
-        torchrun_args = [f"--nproc-per-node={nproc_per_node}"]
-        if nnodes > 1:
-            torchrun_args += [
-                f"--nnodes={nnodes}",
-                f"--node-rank={node_rank}",
-                f"--master-addr={master_addr}",
-                "--master-port=12355",
-            ]
-
-        import importlib.util
-
-        mmt = ""
-        if model and getattr(model, "architecture", None):
-            mmt = getattr(model.architecture, "megatron_model_type", "")
-
-        spec = importlib.util.find_spec(
-            "modal_dojo.frameworks.slime.modal_helpers.convert_hf_to_torch_dist"
-        )
-        convert_script = spec.origin if spec is not None else None
-        if not convert_script:
-            raise RuntimeError(
-                "modal_dojo.frameworks.slime.modal_helpers.convert_hf_to_torch_dist not found"
-            )
-        if mmt or slime.slime_model_script:
-            model_script = (
-                f"{SLIME_ROOT}/{slime.slime_model_script}"
-                if slime.slime_model_script
-                else f"{SLIME_ROOT}/scripts/models/{mmt}.sh"
-            )
-            cmd = (
-                f"source {model_script} && "
-                f"torchrun {' '.join(torchrun_args)} {convert_script} "
-                '"${MODEL_ARGS[@]}" '
-                f"{' '.join(extra_args)} "
-                f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
-            )
-        else:
-            cmd = (
-                f"torchrun {' '.join(torchrun_args)} {convert_script} "
-                f"{' '.join(extra_args)} "
-                f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
-            )
-
-        env = {**os.environ, **slime.environment}
-        env.pop("NCCL_NVLS_ENABLE", None)
-        if any(arg.startswith("--pipeline-model-parallel-size ") for arg in extra_args):
-            env["SKIP_PP_AUTOINFLATE"] = "1"
-        if num_nodes > 1:
-            env["SKIP_RELEASE_RENAME"] = "1"
-        print(
-            f"Conversion layout: nodes={num_nodes}, "
-            f"nproc_per_node={nproc_per_node}, node_rank={node_rank}"
-        )
-        print(f"Running: bash -c {cmd!r}")
-        if node_rank == 0:
-            refresh_convert_lock(training_run_id, checkpoints_volume_name, save_path)
-        heartbeat = (
-            convert_lock_heartbeat(training_run_id, checkpoints_volume_name, save_path)
-            if node_rank == 0
-            else contextlib.nullcontext()
-        )
-        try:
-            with heartbeat:
-                subprocess.run(["bash", "-c", cmd], check=True, env=env)
-
-                if node_rank == 0:
-                    config_path = os.path.join(save_path, _CONVERSION_CONFIG_FILE)
-                    try:
-                        with open(config_path, "w") as f:
-                            json.dump(current_config, f)
-                    except OSError as exc:
-                        print(f"WARNING: could not write conversion config: {exc}")
-                checkpoints_volume.commit()
-        finally:
-            if node_rank == 0:
-                release_convert_lock(
-                    training_run_id, checkpoints_volume_name, save_path
-                )
-
-        if node_rank == 0:
-            print(f"Saved torch_dist checkpoint to {save_path}")
-
-        flush_status_reporter(timeout_seconds=2.0)
 
     _multi_node = slime.total_nodes > 1
 
@@ -790,7 +627,7 @@ def build_slime_app(
     # CustomDeployment.launch() endpoint (teacher /generate, etc.).
     train_secrets.extend(proxy_auth_secrets())
 
-    @app.function(
+    app.train = app.function(
         image=train_image,
         volumes=all_volumes,
         **shared.training_function_options(
@@ -800,174 +637,403 @@ def build_slime_app(
             experimental_options={},
             clustered=_multi_node,
         ),
-    )
-    @clustered_if(_multi_node, slime.total_nodes, gpu_type=slime.gpu_type)
-    async def train(
-        modal_app_id: str = "",
-        modal_app_url: str = "",
-        framework_status_url: str = "",
-        framework_status_token: str = "",
-    ):
-        cluster, modal_app_id, modal_app_url = await start_training_cluster(
-            slime,
-            (hf_cache_volume, data_volume, checkpoints_volume),
-            "SLIME_HOST_IP",
-            "SGLANG_HOST_IP",
-            modal_app_id=modal_app_id,
-            modal_app_url=modal_app_url,
-            framework_status_url=framework_status_url,
-            framework_status_token=framework_status_token,
-        )
-        cluster.start_ray()
+    )(clustered_if(_multi_node, slime.total_nodes, gpu_type=slime.gpu_type)(train))
 
-        if not cluster.is_head:
-            await cluster.wait_forever()
-            return
-
-        # Fail fast on tracker access before the framework starts training.
-        metric_entity = preflight_metric(slime.metrics)
-
-        print(f"Training run id: {training_run_id}")
-        (
-            run_record,
-            metric_run_id,
-            framework_status_token,
-        ) = await init_training_run_record(
-            training_run_id=training_run_id,
-            modal_app_id=modal_app_id,
-            modal_app_url=modal_app_url,
-            framework=Framework.SLIME,
-            initializing_status=SlimeStatus.INITIALIZING,
-            recipe=slime,
-            model=model,
-            dataset=dataset,
-            eval_dataset=eval_dataset,
-            dataset_path=dataset_path,
-            eval_dataset_path=eval_dataset_path,
-            recipe_metadata=(
-                "slime_git_repository",
-                "slime_git_revision",
-                "data_volume_name",
-            ),
-            metric_entity=metric_entity,
-            framework_status_token=framework_status_token,
-            checkpoint_dir=checkpoint_dir,
-            checkpoints_volume_name=checkpoints_volume_name,
-            checkpoints_mount_path=checkpoints_mount_path,
-        )
-
-        async with shared.training_run_lifecycle(
-            run_record, framework_status_token
-        ) as set_status:
-            if model:
-                await set_status(SlimeStatus.DOWNLOAD_MODEL)
-                model.download()
-                await hf_cache_volume.commit.aio()
-
-            if dataset:
-                await set_status(SlimeStatus.PREPARE_DATASET)
-                if write_datasets(
-                    dataset, eval_dataset, dataset_path, eval_dataset_path
-                ):
-                    await data_volume.commit.aio()
-
-            await set_status(SlimeStatus.CONVERT_MODEL)
-            save_root = checkpoint_dir
-            apply_scoped_save(slime, save_root)
-            prepare_slime_config(slime, model, tempfile.mkdtemp())
-
-            os.makedirs(save_root, exist_ok=True)
-
-            # Resolve the local HF snapshot dir (used for bridge-mode load below).
-            _hf_ref: str | None = None
-            if model and (slime.megatron_to_hf_mode == "bridge" or slime.ref_load):
-                from huggingface_hub import snapshot_download as _snap0
-
-                _hf_ref = (
-                    str(model.model_path)
-                    if model.model_path
-                    else _snap0(model.model_name, local_files_only=True)
-                )
-
-            def build_cmd() -> str:
-                resume_checkpoint = torch_dist_resume_checkpoint(
-                    save_root, is_complete=is_complete_torch_dist_checkpoint_dir
-                )
-                record_resume_checkpoint(run_record, resume_checkpoint)
-                with shared.resumed_recipe(slime, save_root, resume_checkpoint):
-                    if (
-                        resume_checkpoint is None
-                        and slime.megatron_to_hf_mode == "bridge"
-                        and not slime.ref_load
-                        and _hf_ref
-                    ):
-                        object.__setattr__(slime, "ref_load", _hf_ref)
-                    return build_train_cmd(
-                        slime,
-                        SLIME_ROOT,
-                        model=model,
-                        dataset=dataset,
-                        eval_dataset=eval_dataset,
-                        dataset_path=dataset_path,
-                        eval_dataset_path=eval_dataset_path,
-                    )
-
-            runtime_env = {
-                "env_vars": {
-                    **slime.environment,
-                    "no_proxy": ",".join(
-                        value
-                        for value in (
-                            "127.0.0.1",
-                            cluster.head_addr,
-                            slime.environment.get("no_proxy", ""),
-                        )
-                        if value
-                    ),
-                    "MASTER_ADDR": cluster.head_addr,
-                    **shared.training_reporting_env(
-                        slime, model, app_name, framework_status_url
-                    ),
-                    "MODAL_DOJO_SUBSTEP_TIMING": slime.substep_timing,
-                    **metric_runtime_env(
-                        slime.metrics,
-                        run_id=metric_run_id,
-                        entity=metric_entity,
-                    ),
-                    **timing_debug_env(),
-                    "MODAL_DOJO_TRAINING_RUN_ID": training_run_id,
-                    "MODAL_DOJO_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
-                    "MODAL_DOJO_FRAMEWORK_STATUS_TOKEN": framework_status_token,
-                }
-            }
-
-            mode = "async" if slime.train_async else "sync"
-            print(
-                f"Training {app_name} — {slime.total_nodes} node(s) × {gpu_spec}  ({mode})"
-            )
-            print(slime.gpu_allocation.summary())
-
-            await set_status(SlimeStatus.ROLLOUT_INITIALIZING)
-            async with cluster.forward_dashboard() as tunnel:
-                print(f"Ray dashboard: {tunnel.url}")
-                await shared.run_training_attempts(
-                    cluster=cluster,
-                    recipe=slime,
-                    run_record=run_record,
-                    runtime_env=runtime_env,
-                    build_cmd=build_cmd,
-                )
-
-            return await shared.complete_training_run(
-                run_record,
-                checkpoints_volume=checkpoints_volume,
-                app_name=app_name,
-                model=model,
-                group_id=group_id,
-            )
-
-    app.resolve_checkpoint = resolve_checkpoint
-    app.convert_checkpoint = convert_checkpoint
-    app.train = train
-
+    # Packed last: the remote functions must see the recipe as this function
+    # leaves it, after image construction has consumed its build-only fields.
+    app.run_payload = spec.pack()
     return app
+
+
+# ── Remote functions ─────────────────────────────────────────────────────────
+# Module-level so Modal can import them in the container by name. Each takes
+# the run's packed RunSpec as its first argument.
+
+
+def download(
+    payload: dict[str, Any],
+    training_run_id: str = "",
+    framework_status_url: str = "",
+    framework_status_token: str = "",
+) -> None:
+    spec = RunSpec.unpack(payload)
+    shared.run_download(
+        spec,
+        SlimeStatus.DOWNLOAD_MODEL.value,
+        spec.model.download,
+        training_run_id=training_run_id,
+        framework_status_url=framework_status_url,
+        framework_status_token=framework_status_token,
+    )
+
+
+def resolve_checkpoint(
+    payload: dict[str, Any],
+    training_run_id: str = "",
+    framework_status_url: str = "",
+    framework_status_token: str = "",
+) -> str | None:
+    spec = RunSpec.unpack(payload)
+    slime, model = spec.recipe, spec.model
+    checkpoints_volume_name = spec.checkpoints_volume_name
+    hf_cache_volume = spec.hf_cache_volume()
+    checkpoints_volume = spec.checkpoints_volume()
+
+    report_phase(
+        training_run_id,
+        SlimeStatus.CONVERT_MODEL.value,
+        framework_status_url,
+        framework_status_token,
+    )
+
+    # Bridge mode loads HF weights directly into Megatron at train time.
+    if getattr(slime, "megatron_to_hf_mode", None) == "bridge":
+        print(
+            "Bridge mode — HF weights loaded directly via AutoBridge; no conversion needed."
+        )
+        flush_status_reporter(timeout_seconds=2.0)
+        return None
+
+    hf_cache_volume.reload()
+    checkpoints_volume.reload()
+
+    save_path = str(slime.ref_load)
+    current_config = _build_conversion_config(slime, model=model)
+    cache_status, stored_config = _checkpoint_conversion_cache_status(
+        save_path, current_config
+    )
+    if cache_status == "hit":
+        print(f"Using existing torch_dist checkpoint at {save_path}.")
+        flush_status_reporter(timeout_seconds=2.0)
+        return None
+    print(f"torch_dist checkpoint at {save_path} is {cache_status}.")
+
+    holder = acquire_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+    if holder != training_run_id:
+        raise RuntimeError(
+            f"Run {holder} is already converting into {save_path}. Two runs of "
+            "this recipe share one ref_load, so continuing would delete that "
+            "run's in-flight conversion and interleave shards. Wait for it to "
+            "finish and relaunch to pick up the cached checkpoint, or point this "
+            "run at a different ref_load."
+        )
+
+    try:
+        if cache_status == "stale":
+            if stored_config is None:
+                print(
+                    f"Checkpoint at {save_path} has missing or unreadable "
+                    "conversion config metadata — reconverting."
+                )
+            else:
+                print(
+                    f"Checkpoint at {save_path} was built with different config:"
+                    f"\n  stored: {stored_config}\n  current: {current_config}"
+                )
+        if cache_status in {"stale", "incomplete"}:
+            print(f"Removing {cache_status} torch_dist checkpoint at {save_path}.")
+            import shutil
+
+            shutil.rmtree(save_path, ignore_errors=True)
+            checkpoints_volume.commit()
+
+        if slime.megatron_conversion_hf_checkpoint:
+            return resolve_checkpoint_ref(slime.megatron_conversion_hf_checkpoint)
+        if model.model_path:
+            return str(model.model_path)
+
+        from huggingface_hub import snapshot_download
+
+        return snapshot_download(
+            model.model_name, revision=model.revision, local_files_only=True
+        )
+    except BaseException:
+        release_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+        raise
+
+
+def convert_checkpoint(
+    payload: dict[str, Any],
+    hf_path: str,
+    training_run_id: str = "",
+    framework_status_url: str = "",
+    framework_status_token: str = "",
+):
+    spec = RunSpec.unpack(payload)
+    slime, model = spec.recipe, spec.model
+    checkpoints_volume_name = spec.checkpoints_volume_name
+    checkpoints_volume = spec.checkpoints_volume()
+
+    save_path = str(slime.ref_load)
+
+    num_nodes, nproc_per_node, extra_args = get_checkpoint_conversion_policy(
+        slime, model=model
+    )
+    node_rank, master_addr, _, nnodes = get_modal_cluster_context(num_nodes)
+
+    import json
+
+    current_config = _build_conversion_config(slime, model=model)
+
+    torchrun_args = [f"--nproc-per-node={nproc_per_node}"]
+    if nnodes > 1:
+        torchrun_args += [
+            f"--nnodes={nnodes}",
+            f"--node-rank={node_rank}",
+            f"--master-addr={master_addr}",
+            "--master-port=12355",
+        ]
+
+    import importlib.util
+
+    mmt = ""
+    if model and getattr(model, "architecture", None):
+        mmt = getattr(model.architecture, "megatron_model_type", "")
+
+    spec = importlib.util.find_spec(
+        "modal_dojo.frameworks.slime.modal_helpers.convert_hf_to_torch_dist"
+    )
+    convert_script = spec.origin if spec is not None else None
+    if not convert_script:
+        raise RuntimeError(
+            "modal_dojo.frameworks.slime.modal_helpers.convert_hf_to_torch_dist not found"
+        )
+    if mmt or slime.slime_model_script:
+        model_script = (
+            f"{SLIME_ROOT}/{slime.slime_model_script}"
+            if slime.slime_model_script
+            else f"{SLIME_ROOT}/scripts/models/{mmt}.sh"
+        )
+        cmd = (
+            f"source {model_script} && "
+            f"torchrun {' '.join(torchrun_args)} {convert_script} "
+            '"${MODEL_ARGS[@]}" '
+            f"{' '.join(extra_args)} "
+            f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
+        )
+    else:
+        cmd = (
+            f"torchrun {' '.join(torchrun_args)} {convert_script} "
+            f"{' '.join(extra_args)} "
+            f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
+        )
+
+    env = {**os.environ, **slime.environment}
+    env.pop("NCCL_NVLS_ENABLE", None)
+    if any(arg.startswith("--pipeline-model-parallel-size ") for arg in extra_args):
+        env["SKIP_PP_AUTOINFLATE"] = "1"
+    if num_nodes > 1:
+        env["SKIP_RELEASE_RENAME"] = "1"
+    print(
+        f"Conversion layout: nodes={num_nodes}, "
+        f"nproc_per_node={nproc_per_node}, node_rank={node_rank}"
+    )
+    print(f"Running: bash -c {cmd!r}")
+    if node_rank == 0:
+        refresh_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+    heartbeat = (
+        convert_lock_heartbeat(training_run_id, checkpoints_volume_name, save_path)
+        if node_rank == 0
+        else contextlib.nullcontext()
+    )
+    try:
+        with heartbeat:
+            subprocess.run(["bash", "-c", cmd], check=True, env=env)
+
+            if node_rank == 0:
+                config_path = os.path.join(save_path, _CONVERSION_CONFIG_FILE)
+                try:
+                    with open(config_path, "w") as f:
+                        json.dump(current_config, f)
+                except OSError as exc:
+                    print(f"WARNING: could not write conversion config: {exc}")
+            checkpoints_volume.commit()
+    finally:
+        if node_rank == 0:
+            release_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+
+    if node_rank == 0:
+        print(f"Saved torch_dist checkpoint to {save_path}")
+
+    flush_status_reporter(timeout_seconds=2.0)
+
+
+async def train(
+    payload: dict[str, Any],
+    modal_app_id: str = "",
+    modal_app_url: str = "",
+    framework_status_url: str = "",
+    framework_status_token: str = "",
+):
+    spec = RunSpec.unpack(payload)
+    slime, model = spec.recipe, spec.model
+    dataset, eval_dataset = spec.dataset, spec.eval_dataset
+    dataset_path, eval_dataset_path = spec.dataset_path, spec.eval_dataset_path
+    training_run_id, app_name, group_id = (
+        spec.training_run_id,
+        spec.app_name,
+        spec.group_id,
+    )
+    checkpoint_dir = spec.checkpoint_dir
+    checkpoints_volume_name = spec.checkpoints_volume_name
+    checkpoints_mount_path = spec.checkpoints_mount_path
+    hf_cache_volume = spec.hf_cache_volume()
+    data_volume = spec.data_volume()
+    checkpoints_volume = spec.checkpoints_volume()
+    gpu_spec = f"{slime.gpu_type}:{slime.gpu_allocation.gpus_per_node}"
+
+    cluster, modal_app_id, modal_app_url = await start_training_cluster(
+        slime,
+        (hf_cache_volume, data_volume, checkpoints_volume),
+        "SLIME_HOST_IP",
+        "SGLANG_HOST_IP",
+        modal_app_id=modal_app_id,
+        modal_app_url=modal_app_url,
+        framework_status_url=framework_status_url,
+        framework_status_token=framework_status_token,
+    )
+    cluster.start_ray()
+
+    if not cluster.is_head:
+        await cluster.wait_forever()
+        return
+
+    # Fail fast on tracker access before the framework starts training.
+    metric_entity = preflight_metric(slime.metrics)
+
+    print(f"Training run id: {training_run_id}")
+    (
+        run_record,
+        metric_run_id,
+        framework_status_token,
+    ) = await init_training_run_record(
+        training_run_id=training_run_id,
+        modal_app_id=modal_app_id,
+        modal_app_url=modal_app_url,
+        framework=Framework.SLIME,
+        initializing_status=SlimeStatus.INITIALIZING,
+        recipe=slime,
+        model=model,
+        dataset=dataset,
+        eval_dataset=eval_dataset,
+        dataset_path=dataset_path,
+        eval_dataset_path=eval_dataset_path,
+        recipe_metadata=(
+            "slime_git_repository",
+            "slime_git_revision",
+            "data_volume_name",
+        ),
+        metric_entity=metric_entity,
+        framework_status_token=framework_status_token,
+        checkpoint_dir=checkpoint_dir,
+        checkpoints_volume_name=checkpoints_volume_name,
+        checkpoints_mount_path=checkpoints_mount_path,
+    )
+
+    async with shared.training_run_lifecycle(
+        run_record, framework_status_token
+    ) as set_status:
+        if model:
+            await set_status(SlimeStatus.DOWNLOAD_MODEL)
+            model.download()
+            await hf_cache_volume.commit.aio()
+
+        if dataset:
+            await set_status(SlimeStatus.PREPARE_DATASET)
+            if write_datasets(dataset, eval_dataset, dataset_path, eval_dataset_path):
+                await data_volume.commit.aio()
+
+        await set_status(SlimeStatus.CONVERT_MODEL)
+        save_root = checkpoint_dir
+        apply_scoped_save(slime, save_root)
+        prepare_slime_config(slime, model, tempfile.mkdtemp())
+
+        os.makedirs(save_root, exist_ok=True)
+
+        # Resolve the local HF snapshot dir (used for bridge-mode load below).
+        _hf_ref: str | None = None
+        if model and (slime.megatron_to_hf_mode == "bridge" or slime.ref_load):
+            from huggingface_hub import snapshot_download as _snap0
+
+            _hf_ref = (
+                str(model.model_path)
+                if model.model_path
+                else _snap0(model.model_name, local_files_only=True)
+            )
+
+        def build_cmd() -> str:
+            resume_checkpoint = torch_dist_resume_checkpoint(
+                save_root, is_complete=is_complete_torch_dist_checkpoint_dir
+            )
+            record_resume_checkpoint(run_record, resume_checkpoint)
+            with shared.resumed_recipe(slime, save_root, resume_checkpoint):
+                if (
+                    resume_checkpoint is None
+                    and slime.megatron_to_hf_mode == "bridge"
+                    and not slime.ref_load
+                    and _hf_ref
+                ):
+                    object.__setattr__(slime, "ref_load", _hf_ref)
+                return build_train_cmd(
+                    slime,
+                    SLIME_ROOT,
+                    model=model,
+                    dataset=dataset,
+                    eval_dataset=eval_dataset,
+                    dataset_path=dataset_path,
+                    eval_dataset_path=eval_dataset_path,
+                )
+
+        runtime_env = {
+            "env_vars": {
+                **slime.environment,
+                "no_proxy": ",".join(
+                    value
+                    for value in (
+                        "127.0.0.1",
+                        cluster.head_addr,
+                        slime.environment.get("no_proxy", ""),
+                    )
+                    if value
+                ),
+                "MASTER_ADDR": cluster.head_addr,
+                **shared.training_reporting_env(
+                    slime, model, app_name, framework_status_url
+                ),
+                "MODAL_DOJO_SUBSTEP_TIMING": slime.substep_timing,
+                **metric_runtime_env(
+                    slime.metrics,
+                    run_id=metric_run_id,
+                    entity=metric_entity,
+                ),
+                **timing_debug_env(),
+                "MODAL_DOJO_TRAINING_RUN_ID": training_run_id,
+                "MODAL_DOJO_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
+                "MODAL_DOJO_FRAMEWORK_STATUS_TOKEN": framework_status_token,
+            }
+        }
+
+        mode = "async" if slime.train_async else "sync"
+        print(
+            f"Training {app_name} — {slime.total_nodes} node(s) × {gpu_spec}  ({mode})"
+        )
+        print(slime.gpu_allocation.summary())
+
+        await set_status(SlimeStatus.ROLLOUT_INITIALIZING)
+        async with cluster.forward_dashboard() as tunnel:
+            print(f"Ray dashboard: {tunnel.url}")
+            await shared.run_training_attempts(
+                cluster=cluster,
+                recipe=slime,
+                run_record=run_record,
+                runtime_env=runtime_env,
+                build_cmd=build_cmd,
+            )
+
+        return await shared.complete_training_run(
+            run_record,
+            checkpoints_volume=checkpoints_volume,
+            app_name=app_name,
+            model=model,
+            group_id=group_id,
+        )

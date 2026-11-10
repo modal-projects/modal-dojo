@@ -8,6 +8,7 @@ import subprocess
 import shutil
 import tempfile
 import time
+from typing import Any
 from pathlib import Path, PurePosixPath
 
 from modal import App, Image, __version__ as MODAL_VERSION
@@ -39,6 +40,7 @@ from modal_dojo.common.models import ModelConfig
 from modal_dojo.common.ray_cluster import (
     clustered_if,
 )
+from modal_dojo.common.run_spec import RunSpec
 from modal_dojo.common.run import (
     TrainingRun,
     has_torch_dist_checkpoint,
@@ -54,7 +56,6 @@ from modal_dojo.common.launcher_helpers import (
     init_training_run_record,
     mount_caller_source,
     resolve_caller_context,
-    register_recipe_functions,
     report_phase,
     start_training_cluster,
     write_datasets,
@@ -362,11 +363,11 @@ def build_miles_app(
     _caller_module, caller_script = resolve_caller_context()
 
     image = _build_miles_base_image(miles, dataset, eval_dataset, caller_script)
-    # Encoded patch scripts belong in the image, not every worker's closure.
-    # Keeping them here can exceed Modal's 64 KiB serialized-function limit.
+    # Encoded patch scripts belong in the image, not in the payload sent with
+    # every remote call.
     miles.image_run_commands = []
 
-    checkpoints_volume_name, checkpoints_mount_path, all_volumes = (
+    checkpoints_volume_name, checkpoints_mount_path, all_volumes, volume_names = (
         shared.create_training_volumes(
             checkpoint,
             volume_prefix=volume_prefix,
@@ -375,14 +376,12 @@ def build_miles_app(
     hf_cache_volume = all_volumes[str(HF_CACHE_PATH)]
     data_volume = all_volumes[str(DATA_PATH)]
     checkpoints_volume = all_volumes[checkpoints_mount_path]
-    environment = _remap_kernel_cache_dirs(miles.environment, checkpoints_mount_path)
     checkpoint_dir = compute_recipe_save_root(
         miles,
         recipe_default_save_root=str(CHECKPOINTS_PATH),
         mounted_save_root=checkpoints_mount_path,
         training_run_id=training_run_id,
     )
-    recorded_checkpoint_dir = checkpoint_dir if configured_recipe_save(miles) else ""
 
     tags = build_app_tags(
         framework="miles",
@@ -391,43 +390,34 @@ def build_miles_app(
         metrics=miles.metrics,
     )
     app = App(app_name, tags=tags)
-    gpu_spec = f"{miles.gpu_type}:{miles.gpu_allocation.gpus_per_node}"
-    download_timeout = miles.download_timeout_seconds or 4 * 60 * 60
-    dataset_timeout = 4 * 60 * 60
 
-    def materialize_model_remote_code() -> None:
-        # Rewrite remote-code symlinks before the head commits the cache Volume.
-        if model and model.model_name and not is_local_checkpoint_ref(model.model_name):
-            materialize_remote_code(
-                resolve_checkpoint_ref(
-                    model.model_path or model.model_name, revision=model.revision
-                )
-            )
+    spec = RunSpec(
+        training_run_id=training_run_id,
+        app_name=app_name,
+        recipe=miles,
+        model=model,
+        dataset=dataset,
+        eval_dataset=eval_dataset,
+        dataset_path=dataset_path,
+        eval_dataset_path=eval_dataset_path,
+        checkpoint_dir=checkpoint_dir,
+        hf_cache_volume_name=volume_names[str(HF_CACHE_PATH)],
+        data_volume_name=volume_names[str(DATA_PATH)],
+        checkpoints_volume_name=checkpoints_volume_name,
+        checkpoints_mount_path=checkpoints_mount_path,
+        group_id=group_id,
+    )
 
-    def download_inputs() -> None:
-        model.download()
-        materialize_model_remote_code()
-        miles.download_model(
-            revision=model_revision(
-                model, miles.source_hf_checkpoint or miles.hf_checkpoint
-            )
-        )
-        miles.post_process_model()
-
-    register_recipe_functions(
+    shared.register_setup_functions(
         app,
         image,
+        download=download,
         hf_cache_volume=hf_cache_volume,
         data_volume=data_volume,
         checkpoints_volume=checkpoints_volume,
         checkpoints_mount_path=checkpoints_mount_path,
-        download_phase=MilesStatus.DOWNLOAD_MODEL.value,
-        download=download_inputs,
-        download_timeout=download_timeout,
-        prepare_dataset=lambda: write_datasets(
-            dataset, eval_dataset, dataset_path, eval_dataset_path
-        ),
-        dataset_timeout=dataset_timeout,
+        download_timeout=_download_timeout(miles),
+        dataset_timeout=_DATASET_TIMEOUT_SECONDS,
     )
 
     convert_nnodes, convert_nproc, _ = get_checkpoint_conversion_policy(
@@ -436,7 +426,7 @@ def build_miles_app(
     convert_gpu = f"{miles.gpu_type}:{convert_nproc}"
     convert_multi_node = convert_nnodes > 1
 
-    @app.function(
+    app.resolve_checkpoint = app.function(
         image=image,
         volumes={
             str(HF_CACHE_PATH): hf_cache_volume,
@@ -444,99 +434,11 @@ def build_miles_app(
         },
         timeout=60 * 60,
         secrets=[*hf_secrets(), *proxy_auth_secrets()],
-        serialized=True,
+        include_source=False,
         name="resolve_checkpoint",
-    )
-    def resolve_checkpoint(
-        training_run_id: str = "",
-        framework_status_url: str = "",
-        framework_status_token: str = "",
-    ) -> str | None:
-        report_phase(
-            training_run_id,
-            MilesStatus.CONVERT_MODEL.value,
-            framework_status_url,
-            framework_status_token,
-        )
+    )(resolve_checkpoint)
 
-        if getattr(miles, "megatron_to_hf_mode", None) == "bridge":
-            print("Bridge mode - no conversion needed.")
-            flush_status_reporter(timeout_seconds=2.0)
-            return None
-
-        hf_cache_volume.reload()
-        checkpoints_volume.reload()
-
-        save_path = str(miles.ref_load)
-        if has_torch_dist_checkpoint(
-            save_path, is_complete=is_complete_torch_dist_checkpoint_storage
-        ):
-            print(
-                f"Found existing torch_dist checkpoint at {save_path}; "
-                "skipping conversion."
-            )
-            flush_status_reporter(timeout_seconds=2.0)
-            return None
-
-        holder = _acquire_convert_lock(
-            training_run_id, checkpoints_volume_name, save_path
-        )
-        if holder != training_run_id:
-            raise RuntimeError(
-                f"Run {holder} is already converting into {save_path}. Two runs of "
-                "this recipe share one ref_load, so continuing would delete that "
-                "run's in-flight conversion and interleave shards. Wait for it to "
-                "finish and relaunch to pick up the cached checkpoint, or point this "
-                "run at a different ref_load."
-            )
-
-        try:
-            # Clear partial torch_dist writes from an earlier crash here — the
-            # single-container step that decides to convert — so the conversion cannot mix
-            # fresh shards with stale ones from a different parallelism. Only the
-            # ``iter_*``/``release`` directories the converter itself writes, plus the
-            # iteration tracker the resume scan prefers over them, are removed, and only
-            # those failing the completeness check: ``ref_load`` is user-settable
-            # and may hold a hand-placed checkpoint in a layout this predicate rejects.
-            if os.path.isdir(save_path):
-                stale = [
-                    name
-                    for name in sorted(os.listdir(save_path))
-                    if (name == "release" or name.startswith("iter_"))
-                    and os.path.isdir(os.path.join(save_path, name))
-                    and not is_complete_torch_dist_checkpoint_storage(
-                        os.path.join(save_path, name)
-                    )
-                ]
-                tracker = "latest_checkpointed_iteration.txt"
-                tracker_path = os.path.join(save_path, tracker)
-                has_tracker = stale and os.path.isfile(tracker_path)
-                if stale:
-                    print(
-                        f"Removing incomplete torch_dist checkpoint state at {save_path}: "
-                        + ", ".join([*stale, *([tracker] if has_tracker else [])])
-                    )
-                    for name in stale:
-                        shutil.rmtree(os.path.join(save_path, name), ignore_errors=True)
-                    if has_tracker:
-                        os.remove(tracker_path)
-                    checkpoints_volume.commit()
-
-            conversion_hf_checkpoint = (
-                getattr(miles, "megatron_conversion_hf_checkpoint", None)
-                or getattr(miles, "hf_checkpoint", "")
-                or model.model_path
-                or model.model_name
-            )
-            return resolve_checkpoint_ref(
-                conversion_hf_checkpoint,
-                revision=model_revision(model, conversion_hf_checkpoint),
-            )
-        except BaseException:
-            _release_convert_lock(training_run_id, checkpoints_volume_name, save_path)
-            raise
-
-    @app.function(
+    app.convert_checkpoint = app.function(
         image=image,
         gpu=convert_gpu,
         volumes=all_volumes,
@@ -548,130 +450,13 @@ def build_miles_app(
         experimental_options=shared.experimental_options(
             miles, clustered=convert_multi_node
         ),
-        serialized=True,
+        include_source=False,
         name="convert_checkpoint",
+    )(
+        clustered_if(convert_multi_node, convert_nnodes, gpu_type=miles.gpu_type)(
+            convert_checkpoint
+        )
     )
-    @clustered_if(
-        convert_multi_node,
-        convert_nnodes,
-        gpu_type=miles.gpu_type,
-    )
-    def convert_checkpoint(
-        hf_path: str,
-        training_run_id: str = "",
-        framework_status_url: str = "",
-        framework_status_token: str = "",
-    ):
-        save_path = str(miles.ref_load)
-        num_nodes, nproc_per_node, extra_args = get_checkpoint_conversion_policy(
-            miles, model=model
-        )
-
-        if num_nodes == 1:
-            node_rank, master_addr, nnodes = 0, "127.0.0.1", 1
-        else:
-            import modal
-
-            cluster = modal.Cluster.from_context()
-            node_rank = cluster.container_rank()
-            master_addr = cluster.container_ips(family="ipv4")[0]
-            nnodes = len(cluster.container_ips(family="ipv4"))
-
-        torchrun_args = [f"--nproc-per-node={nproc_per_node}"]
-        if nnodes > 1:
-            torchrun_args += [
-                f"--nnodes={nnodes}",
-                f"--node-rank={node_rank}",
-                f"--master-addr={master_addr}",
-                "--master-port=12355",
-            ]
-
-        import importlib.util
-
-        spec = importlib.util.find_spec(
-            "modal_dojo.frameworks.miles.modal_helpers.convert_hf_to_torch_dist"
-        )
-        convert_script = spec.origin if spec is not None else None
-        if not convert_script:
-            raise RuntimeError(
-                "modal_dojo.frameworks.miles.modal_helpers.convert_hf_to_torch_dist not found"
-            )
-
-        if miles.miles_model_script:
-            cmd = (
-                f"source {MILES_ROOT}/{miles.miles_model_script} && "
-                f"torchrun {' '.join(torchrun_args)} {convert_script} "
-                f"${{MODEL_ARGS[@]}} {' '.join(extra_args)} "
-                f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
-            )
-        elif model_args_cmd := model_args_command(miles, MILES_ROOT):
-            cmd = (
-                f'MODEL_ARGS_LINE="$({model_args_cmd})" || exit 1; '
-                f'read -ra MODEL_ARGS <<< "$MODEL_ARGS_LINE"; '
-                f"torchrun {' '.join(torchrun_args)} {convert_script} "
-                f"${{MODEL_ARGS[@]}} {' '.join(extra_args)} "
-                f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
-            )
-        else:
-            cmd = (
-                f"torchrun {' '.join(torchrun_args)} {convert_script} "
-                f"{' '.join(extra_args)} "
-                f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
-            )
-
-        env = {**os.environ, **environment}
-        # The patched Megatron save synchronizes all node-leader commits before
-        # returning. Parent-only commits race the clustered function's return.
-        env["MODAL_DOJO_CHECKPOINTS_VOLUME_NAME"] = checkpoints_volume_name
-        if any(arg.startswith("--pipeline-model-parallel-size ") for arg in extra_args):
-            env["CONVERT_KEEP_PP1"] = "1"
-        if num_nodes > 1:
-            env["SKIP_RELEASE_RENAME"] = "1"
-        print(
-            f"Conversion layout: nodes={num_nodes}, nproc_per_node={nproc_per_node}, "
-            f"node_rank={node_rank}"
-        )
-        print(f"Running: bash -c {cmd!r}")
-        if node_rank == 0:
-            _refresh_convert_lock(training_run_id, checkpoints_volume_name, save_path)
-        heartbeat = (
-            _convert_lock_heartbeat(training_run_id, checkpoints_volume_name, save_path)
-            if node_rank == 0
-            else contextlib.nullcontext()
-        )
-        try:
-            with heartbeat:
-                prewarm_remote_code(
-                    hf_path, env, required=miles.model_name == "kimi_k3"
-                )
-                subprocess.run(["bash", "-c", cmd], check=True, env=env)
-
-                checkpoints_volume.commit()
-
-                if node_rank == 0:
-                    checkpoints_volume.reload()
-                    print(f"Saved Megatron torch_dist checkpoint to {save_path}")
-                    # Fail loudly here rather than leaving a partial checkpoint for a later
-                    # run to mistake for a cache hit.
-                    if not has_torch_dist_checkpoint(
-                        save_path, is_complete=is_complete_torch_dist_checkpoint_storage
-                    ):
-                        raise RuntimeError(
-                            f"Conversion finished but {save_path} holds no complete "
-                            "torch_dist checkpoint (metadata or referenced shard data missing)."
-                        )
-            if node_rank == 0:
-                _release_convert_lock(
-                    training_run_id, checkpoints_volume_name, save_path
-                )
-        except BaseException:
-            if node_rank == 0:
-                _release_convert_lock(
-                    training_run_id, checkpoints_volume_name, save_path
-                )
-            raise
-
-        flush_status_reporter(timeout_seconds=2.0)
 
     _multi_node = miles.total_nodes > 1
 
@@ -681,7 +466,7 @@ def build_miles_app(
         *proxy_auth_secrets(),
     ]
 
-    @app.function(
+    app.train = app.function(
         image=image,
         volumes=all_volumes,
         **shared.training_function_options(
@@ -691,295 +476,569 @@ def build_miles_app(
             experimental_options={},
             clustered=_multi_node,
         ),
+    )(clustered_if(_multi_node, miles.total_nodes, gpu_type=miles.gpu_type)(train))
+
+    # Packed last: the remote functions must see the recipe as this function
+    # leaves it, after image construction has consumed its build-only fields.
+    app.run_payload = spec.pack()
+    return app
+
+
+# ── Remote functions ─────────────────────────────────────────────────────────
+# Module-level so Modal can import them in the container by name. Each takes
+# the run's packed RunSpec as its first argument.
+
+_DATASET_TIMEOUT_SECONDS = 4 * 60 * 60
+
+
+def _download_timeout(miles: MilesRecipe) -> int:
+    return miles.download_timeout_seconds or 4 * 60 * 60
+
+
+def _materialize_model_remote_code(model: ModelConfig) -> None:
+    # Rewrite remote-code symlinks before the head commits the cache Volume.
+    if model and model.model_name and not is_local_checkpoint_ref(model.model_name):
+        materialize_remote_code(
+            resolve_checkpoint_ref(
+                model.model_path or model.model_name, revision=model.revision
+            )
+        )
+
+
+def download(
+    payload: dict[str, Any],
+    training_run_id: str = "",
+    framework_status_url: str = "",
+    framework_status_token: str = "",
+) -> None:
+    spec = RunSpec.unpack(payload)
+    miles, model = spec.recipe, spec.model
+
+    def download_inputs() -> None:
+        model.download()
+        _materialize_model_remote_code(model)
+        miles.download_model(
+            revision=model_revision(
+                model, miles.source_hf_checkpoint or miles.hf_checkpoint
+            )
+        )
+        miles.post_process_model()
+
+    shared.run_download(
+        spec,
+        MilesStatus.DOWNLOAD_MODEL.value,
+        download_inputs,
+        training_run_id=training_run_id,
+        framework_status_url=framework_status_url,
+        framework_status_token=framework_status_token,
     )
-    @clustered_if(
-        _multi_node,
-        miles.total_nodes,
-        gpu_type=miles.gpu_type,
+
+
+def resolve_checkpoint(
+    payload: dict[str, Any],
+    training_run_id: str = "",
+    framework_status_url: str = "",
+    framework_status_token: str = "",
+) -> str | None:
+    spec = RunSpec.unpack(payload)
+    miles, model = spec.recipe, spec.model
+    checkpoints_volume_name = spec.checkpoints_volume_name
+    hf_cache_volume = spec.hf_cache_volume()
+    checkpoints_volume = spec.checkpoints_volume()
+
+    report_phase(
+        training_run_id,
+        MilesStatus.CONVERT_MODEL.value,
+        framework_status_url,
+        framework_status_token,
     )
-    async def train(
-        modal_app_id: str = "",
-        modal_app_url: str = "",
-        framework_status_url: str = "",
-        framework_status_token: str = "",
+
+    if getattr(miles, "megatron_to_hf_mode", None) == "bridge":
+        print("Bridge mode - no conversion needed.")
+        flush_status_reporter(timeout_seconds=2.0)
+        return None
+
+    hf_cache_volume.reload()
+    checkpoints_volume.reload()
+
+    save_path = str(miles.ref_load)
+    if has_torch_dist_checkpoint(
+        save_path, is_complete=is_complete_torch_dist_checkpoint_storage
     ):
-        cluster, modal_app_id, modal_app_url = await start_training_cluster(
-            miles,
-            (hf_cache_volume, data_volume, checkpoints_volume),
-            "MILES_HOST_IP",
-            "SGLANG_HOST_IP",
+        print(
+            f"Found existing torch_dist checkpoint at {save_path}; skipping conversion."
+        )
+        flush_status_reporter(timeout_seconds=2.0)
+        return None
+
+    holder = _acquire_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+    if holder != training_run_id:
+        raise RuntimeError(
+            f"Run {holder} is already converting into {save_path}. Two runs of "
+            "this recipe share one ref_load, so continuing would delete that "
+            "run's in-flight conversion and interleave shards. Wait for it to "
+            "finish and relaunch to pick up the cached checkpoint, or point this "
+            "run at a different ref_load."
+        )
+
+    try:
+        # Clear partial torch_dist writes from an earlier crash here — the
+        # single-container step that decides to convert — so the conversion cannot mix
+        # fresh shards with stale ones from a different parallelism. Only the
+        # ``iter_*``/``release`` directories the converter itself writes, plus the
+        # iteration tracker the resume scan prefers over them, are removed, and only
+        # those failing the completeness check: ``ref_load`` is user-settable
+        # and may hold a hand-placed checkpoint in a layout this predicate rejects.
+        if os.path.isdir(save_path):
+            stale = [
+                name
+                for name in sorted(os.listdir(save_path))
+                if (name == "release" or name.startswith("iter_"))
+                and os.path.isdir(os.path.join(save_path, name))
+                and not is_complete_torch_dist_checkpoint_storage(
+                    os.path.join(save_path, name)
+                )
+            ]
+            tracker = "latest_checkpointed_iteration.txt"
+            tracker_path = os.path.join(save_path, tracker)
+            has_tracker = stale and os.path.isfile(tracker_path)
+            if stale:
+                print(
+                    f"Removing incomplete torch_dist checkpoint state at {save_path}: "
+                    + ", ".join([*stale, *([tracker] if has_tracker else [])])
+                )
+                for name in stale:
+                    shutil.rmtree(os.path.join(save_path, name), ignore_errors=True)
+                if has_tracker:
+                    os.remove(tracker_path)
+                checkpoints_volume.commit()
+
+        conversion_hf_checkpoint = (
+            getattr(miles, "megatron_conversion_hf_checkpoint", None)
+            or getattr(miles, "hf_checkpoint", "")
+            or model.model_path
+            or model.model_name
+        )
+        return resolve_checkpoint_ref(
+            conversion_hf_checkpoint,
+            revision=model_revision(model, conversion_hf_checkpoint),
+        )
+    except BaseException:
+        _release_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+        raise
+
+
+def convert_checkpoint(
+    payload: dict[str, Any],
+    hf_path: str,
+    training_run_id: str = "",
+    framework_status_url: str = "",
+    framework_status_token: str = "",
+):
+    spec = RunSpec.unpack(payload)
+    miles, model = spec.recipe, spec.model
+    checkpoints_volume_name = spec.checkpoints_volume_name
+    checkpoints_volume = spec.checkpoints_volume()
+    environment = _remap_kernel_cache_dirs(
+        miles.environment, spec.checkpoints_mount_path
+    )
+
+    save_path = str(miles.ref_load)
+    num_nodes, nproc_per_node, extra_args = get_checkpoint_conversion_policy(
+        miles, model=model
+    )
+
+    if num_nodes == 1:
+        node_rank, master_addr, nnodes = 0, "127.0.0.1", 1
+    else:
+        import modal
+
+        cluster = modal.Cluster.from_context()
+        node_rank = cluster.container_rank()
+        master_addr = cluster.container_ips(family="ipv4")[0]
+        nnodes = len(cluster.container_ips(family="ipv4"))
+
+    torchrun_args = [f"--nproc-per-node={nproc_per_node}"]
+    if nnodes > 1:
+        torchrun_args += [
+            f"--nnodes={nnodes}",
+            f"--node-rank={node_rank}",
+            f"--master-addr={master_addr}",
+            "--master-port=12355",
+        ]
+
+    import importlib.util
+
+    spec = importlib.util.find_spec(
+        "modal_dojo.frameworks.miles.modal_helpers.convert_hf_to_torch_dist"
+    )
+    convert_script = spec.origin if spec is not None else None
+    if not convert_script:
+        raise RuntimeError(
+            "modal_dojo.frameworks.miles.modal_helpers.convert_hf_to_torch_dist not found"
+        )
+
+    if miles.miles_model_script:
+        cmd = (
+            f"source {MILES_ROOT}/{miles.miles_model_script} && "
+            f"torchrun {' '.join(torchrun_args)} {convert_script} "
+            f"${{MODEL_ARGS[@]}} {' '.join(extra_args)} "
+            f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
+        )
+    elif model_args_cmd := model_args_command(miles, MILES_ROOT):
+        cmd = (
+            f'MODEL_ARGS_LINE="$({model_args_cmd})" || exit 1; '
+            f'read -ra MODEL_ARGS <<< "$MODEL_ARGS_LINE"; '
+            f"torchrun {' '.join(torchrun_args)} {convert_script} "
+            f"${{MODEL_ARGS[@]}} {' '.join(extra_args)} "
+            f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
+        )
+    else:
+        cmd = (
+            f"torchrun {' '.join(torchrun_args)} {convert_script} "
+            f"{' '.join(extra_args)} "
+            f"--hf-checkpoint {shlex.quote(hf_path)} --save {shlex.quote(save_path)}"
+        )
+
+    env = {**os.environ, **environment}
+    # The patched Megatron save synchronizes all node-leader commits before
+    # returning. Parent-only commits race the clustered function's return.
+    env["MODAL_DOJO_CHECKPOINTS_VOLUME_NAME"] = checkpoints_volume_name
+    if any(arg.startswith("--pipeline-model-parallel-size ") for arg in extra_args):
+        env["CONVERT_KEEP_PP1"] = "1"
+    if num_nodes > 1:
+        env["SKIP_RELEASE_RENAME"] = "1"
+    print(
+        f"Conversion layout: nodes={num_nodes}, nproc_per_node={nproc_per_node}, "
+        f"node_rank={node_rank}"
+    )
+    print(f"Running: bash -c {cmd!r}")
+    if node_rank == 0:
+        _refresh_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+    heartbeat = (
+        _convert_lock_heartbeat(training_run_id, checkpoints_volume_name, save_path)
+        if node_rank == 0
+        else contextlib.nullcontext()
+    )
+    try:
+        with heartbeat:
+            prewarm_remote_code(hf_path, env, required=miles.model_name == "kimi_k3")
+            subprocess.run(["bash", "-c", cmd], check=True, env=env)
+
+            checkpoints_volume.commit()
+
+            if node_rank == 0:
+                checkpoints_volume.reload()
+                print(f"Saved Megatron torch_dist checkpoint to {save_path}")
+                # Fail loudly here rather than leaving a partial checkpoint for a later
+                # run to mistake for a cache hit.
+                if not has_torch_dist_checkpoint(
+                    save_path, is_complete=is_complete_torch_dist_checkpoint_storage
+                ):
+                    raise RuntimeError(
+                        f"Conversion finished but {save_path} holds no complete "
+                        "torch_dist checkpoint (metadata or referenced shard data missing)."
+                    )
+        if node_rank == 0:
+            _release_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+    except BaseException:
+        if node_rank == 0:
+            _release_convert_lock(training_run_id, checkpoints_volume_name, save_path)
+        raise
+
+    flush_status_reporter(timeout_seconds=2.0)
+
+
+async def train(
+    payload: dict[str, Any],
+    modal_app_id: str = "",
+    modal_app_url: str = "",
+    framework_status_url: str = "",
+    framework_status_token: str = "",
+):
+    spec = RunSpec.unpack(payload)
+    miles, model = spec.recipe, spec.model
+    dataset, eval_dataset = spec.dataset, spec.eval_dataset
+    dataset_path, eval_dataset_path = spec.dataset_path, spec.eval_dataset_path
+    training_run_id, app_name, group_id = (
+        spec.training_run_id,
+        spec.app_name,
+        spec.group_id,
+    )
+    checkpoint_dir = spec.checkpoint_dir
+    checkpoints_volume_name = spec.checkpoints_volume_name
+    checkpoints_mount_path = spec.checkpoints_mount_path
+    hf_cache_volume = spec.hf_cache_volume()
+    data_volume = spec.data_volume()
+    checkpoints_volume = spec.checkpoints_volume()
+    environment = _remap_kernel_cache_dirs(miles.environment, checkpoints_mount_path)
+    # Read before ``apply_scoped_save`` rewrites ``miles.save`` below.
+    recorded_checkpoint_dir = checkpoint_dir if configured_recipe_save(miles) else ""
+    gpu_spec = f"{miles.gpu_type}:{miles.gpu_allocation.gpus_per_node}"
+    download_timeout = _download_timeout(miles)
+    dataset_timeout = _DATASET_TIMEOUT_SECONDS
+
+    cluster, modal_app_id, modal_app_url = await start_training_cluster(
+        miles,
+        (hf_cache_volume, data_volume, checkpoints_volume),
+        "MILES_HOST_IP",
+        "SGLANG_HOST_IP",
+        modal_app_id=modal_app_id,
+        modal_app_url=modal_app_url,
+        framework_status_url=framework_status_url,
+        framework_status_token=framework_status_token,
+    )
+
+    prep_id = hashlib.sha1(training_run_id.encode("utf-8")).hexdigest()[:16]
+    prep_marker = os.path.join(
+        checkpoints_mount_path, f".training_gym_prepared_{prep_id}"
+    )
+    prep_error = f"{prep_marker}.error"
+
+    run_record: TrainingRun | None = None
+
+    metric_entity = ""
+    metric_run_id = ""
+
+    if cluster.is_head:
+        metric_entity = preflight_metric(miles.metrics)
+
+        print(f"Training run id: {training_run_id}")
+        (
+            run_record,
+            metric_run_id,
+            framework_status_token,
+        ) = await init_training_run_record(
+            training_run_id=training_run_id,
             modal_app_id=modal_app_id,
             modal_app_url=modal_app_url,
-            framework_status_url=framework_status_url,
+            framework=Framework.MILES,
+            initializing_status=MilesStatus.INITIALIZING,
+            recipe=miles,
+            model=model,
+            dataset=dataset,
+            eval_dataset=eval_dataset,
+            dataset_path=dataset_path,
+            eval_dataset_path=eval_dataset_path,
+            recipe_metadata=("gpu_type",),
+            metric_entity=metric_entity,
+            framework_status_token=framework_status_token,
+            checkpoint_dir=recorded_checkpoint_dir,
+            checkpoints_volume_name=checkpoints_volume_name,
+            checkpoints_mount_path=checkpoints_mount_path,
+        )
+
+    async def _prepare_shared_inputs() -> None:
+        await set_status(MilesStatus.DOWNLOAD_MODEL)
+        if model:
+            model.download()
+            if hasattr(model, "prepare_runtime_cache"):
+                model.prepare_runtime_cache()
+
+        miles.download_model(
+            revision=model_revision(
+                model, miles.source_hf_checkpoint or miles.hf_checkpoint
+            )
+        )
+        _materialize_model_remote_code(model)
+        await set_status(MilesStatus.CONVERT_MODEL)
+        miles.post_process_model()
+        await hf_cache_volume.commit.aio()
+        await checkpoints_volume.commit.aio()
+
+        await set_status(MilesStatus.PREPARE_DATASET)
+        if write_datasets(dataset, eval_dataset, dataset_path, eval_dataset_path):
+            await data_volume.commit.aio()
+
+    if cluster.is_head:
+        try:
+            async with shared.training_run_lifecycle(
+                run_record, framework_status_token
+            ) as set_status:
+                await _prepare_shared_inputs()
+        except BaseException as exc:
+            os.makedirs(os.path.dirname(prep_error), exist_ok=True)
+            with open(prep_error, "w") as f:
+                f.write(repr(exc))
+            await checkpoints_volume.commit.aio()
+            raise
+        os.makedirs(os.path.dirname(prep_marker), exist_ok=True)
+        with open(prep_marker, "w") as f:
+            f.write(str(time.time()))
+        await checkpoints_volume.commit.aio()
+    else:
+        deadline = time.time() + download_timeout + dataset_timeout
+        while True:
+            await asyncio.gather(
+                hf_cache_volume.reload.aio(),
+                data_volume.reload.aio(),
+                checkpoints_volume.reload.aio(),
+            )
+            if os.path.exists(prep_marker):
+                break
+            if os.path.exists(prep_error):
+                with open(prep_error) as f:
+                    raise RuntimeError(f"Head preparation failed: {f.read()}")
+            if time.time() > deadline:
+                raise RuntimeError("Timed out waiting for head preparation marker")
+            await asyncio.sleep(5)
+
+    if model and model.model_name:
+        # Warm each node's cache before Ray imports remote code concurrently.
+        ref = model.model_path or model.model_name
+        prewarm_remote_code(
+            resolve_checkpoint_ref(ref, revision=model_revision(model, ref)),
+            environment,
+            required=miles.model_name == "kimi_k3",
+        )
+
+    cluster.start_ray()
+
+    if not cluster.is_head:
+        await cluster.wait_forever()
+        return
+    assert run_record is not None
+
+    async with shared.training_run_lifecycle(
+        run_record, framework_status_token
+    ) as set_status:
+        save_root = checkpoint_dir
+        apply_scoped_save(miles, save_root)
+        prepare_miles_config(miles, model, tempfile.mkdtemp())
+
+        os.makedirs(save_root, exist_ok=True)
+
+        hf_ref: str | None = None
+        if model and miles.megatron_to_hf_mode == "bridge" and not miles.ref_load:
+            from huggingface_hub import snapshot_download
+
+            hf_ref = (
+                str(model.model_path)
+                if model.model_path
+                else snapshot_download(
+                    model.model_name, revision=model.revision, local_files_only=True
+                )
+            )
+
+        def build_cmd() -> str:
+            beam_resume = any(
+                os.path.basename(path) == "patch_beam_checkpoint.py"
+                for path in miles.patch_files
+            )
+            is_complete = _is_resumable_checkpoint
+            if beam_resume:
+                from modal_dojo.frameworks.miles.modal_helpers.beam_checkpoint import (
+                    complete_checkpoint,
+                )
+
+                is_complete = complete_checkpoint
+            resume_checkpoint = torch_dist_resume_checkpoint(
+                save_root, is_complete=is_complete
+            )
+            if beam_resume and resume_checkpoint is None and miles.lora_adapter_path:
+                adapter = Path(miles.lora_adapter_path)
+                checkpoint_path = adapter.parent
+                if adapter.name != "adapter" or not is_complete(str(checkpoint_path)):
+                    raise RuntimeError(
+                        f"Incomplete Beam resume checkpoint: {checkpoint_path}"
+                    )
+                iteration = int(checkpoint_path.name.removeprefix("iter_"))
+                resume_checkpoint = {
+                    "resume_checkpoint_path": str(checkpoint_path),
+                    "resume_checkpoint_name": checkpoint_path.name,
+                    "resume_from_iteration": iteration,
+                }
+            if (
+                beam_resume
+                and resume_checkpoint is None
+                and (run_record.metadata or {}).get("attempt_count", 1) > 1
+                and not miles.lora_adapter_path
+            ):
+                raise RuntimeError(
+                    "Beam retry has no complete training checkpoint; refusing to restart from step zero"
+                )
+            record_resume_checkpoint(run_record, resume_checkpoint)
+            resume_overrides = {}
+            if (
+                (miles.megatron_to_hf_mode == "raw" or beam_resume)
+                and miles.lora_rank is not None
+                and hasattr(miles, "lora_adapter_path")
+            ):
+                adapter_path = (
+                    os.path.join(resume_checkpoint["resume_checkpoint_path"], "adapter")
+                    if resume_checkpoint is not None
+                    else miles.lora_adapter_path
+                )
+                if adapter_path is not None:
+                    # Native LoRA loads the frozen base separately from the adapter.
+                    # Explicit --load also prevents Miles resetting optimizer/rollout state.
+                    resume_overrides = {"lora_adapter_path": adapter_path}
+                    if beam_resume:
+                        resume_overrides["load"] = str(Path(adapter_path).parent.parent)
+                    else:
+                        resume_overrides["load"] = miles.ref_load
+            with shared.resumed_recipe(
+                miles, save_root, resume_checkpoint, overrides=resume_overrides
+            ):
+                if resume_checkpoint is None and (
+                    unresumable := _unresumable_save_dirs(save_root)
+                ):
+                    print(
+                        f"WARNING: {save_root} holds saves of interrupted writes that cannot be resumed "
+                        f"({', '.join(unresumable)}). Resuming into one of these would load a partial save."
+                    )
+                shared.check_resume_scheduler_shape(miles)
+                if hf_ref:
+                    object.__setattr__(miles, "ref_load", hf_ref)
+                return build_train_cmd(
+                    miles,
+                    MILES_ROOT,
+                    model=model,
+                    dataset=dataset,
+                    eval_dataset=eval_dataset,
+                    dataset_path=dataset_path,
+                    eval_dataset_path=eval_dataset_path,
+                )
+
+        runtime_env = build_ray_runtime_env(
+            head_addr=cluster.head_addr,
+            metric_env=metric_runtime_env(
+                miles.metrics,
+                run_id=metric_run_id,
+                entity=metric_entity,
+            ),
+            environment=environment,
+            substep_timing=miles.substep_timing,
+            extra_env={
+                "MODAL_DOJO_TRAINING_RUN_ID": training_run_id,
+                "MODAL_DOJO_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
+                **shared.training_reporting_env(
+                    miles, model, app_name, framework_status_url
+                ),
+            },
             framework_status_token=framework_status_token,
         )
 
-        prep_id = hashlib.sha1(training_run_id.encode("utf-8")).hexdigest()[:16]
-        prep_marker = os.path.join(
-            checkpoints_mount_path, f".training_gym_prepared_{prep_id}"
+        mode = "async" if miles.train_async else "sync"
+        print(
+            f"Training {app_name} - {miles.total_nodes} node(s) x {gpu_spec} ({mode})"
         )
-        prep_error = f"{prep_marker}.error"
+        print(miles.gpu_allocation.summary())
 
-        run_record: TrainingRun | None = None
+        await set_status(MilesStatus.TRAINING)
+        result = await shared.run_training_attempts(
+            cluster=cluster,
+            recipe=miles,
+            run_record=run_record,
+            runtime_env=runtime_env,
+            build_cmd=build_cmd,
+        )
+        print(f"Ray job message: {result.message}")
 
-        metric_entity = ""
-        metric_run_id = ""
-
-        if cluster.is_head:
-            metric_entity = preflight_metric(miles.metrics)
-
-            print(f"Training run id: {training_run_id}")
-            (
-                run_record,
-                metric_run_id,
-                framework_status_token,
-            ) = await init_training_run_record(
-                training_run_id=training_run_id,
-                modal_app_id=modal_app_id,
-                modal_app_url=modal_app_url,
-                framework=Framework.MILES,
-                initializing_status=MilesStatus.INITIALIZING,
-                recipe=miles,
-                model=model,
-                dataset=dataset,
-                eval_dataset=eval_dataset,
-                dataset_path=dataset_path,
-                eval_dataset_path=eval_dataset_path,
-                recipe_metadata=("gpu_type",),
-                metric_entity=metric_entity,
-                framework_status_token=framework_status_token,
-                checkpoint_dir=recorded_checkpoint_dir,
-                checkpoints_volume_name=checkpoints_volume_name,
-                checkpoints_mount_path=checkpoints_mount_path,
-            )
-
-        async def _prepare_shared_inputs() -> None:
-            await set_status(MilesStatus.DOWNLOAD_MODEL)
-            if model:
-                model.download()
-                if hasattr(model, "prepare_runtime_cache"):
-                    model.prepare_runtime_cache()
-
-            miles.download_model(
-                revision=model_revision(
-                    model, miles.source_hf_checkpoint or miles.hf_checkpoint
-                )
-            )
-            materialize_model_remote_code()
-            await set_status(MilesStatus.CONVERT_MODEL)
-            miles.post_process_model()
-            await hf_cache_volume.commit.aio()
-            await checkpoints_volume.commit.aio()
-
-            await set_status(MilesStatus.PREPARE_DATASET)
-            if write_datasets(dataset, eval_dataset, dataset_path, eval_dataset_path):
-                await data_volume.commit.aio()
-
-        if cluster.is_head:
-            try:
-                async with shared.training_run_lifecycle(
-                    run_record, framework_status_token
-                ) as set_status:
-                    await _prepare_shared_inputs()
-            except BaseException as exc:
-                os.makedirs(os.path.dirname(prep_error), exist_ok=True)
-                with open(prep_error, "w") as f:
-                    f.write(repr(exc))
-                await checkpoints_volume.commit.aio()
-                raise
-            os.makedirs(os.path.dirname(prep_marker), exist_ok=True)
-            with open(prep_marker, "w") as f:
-                f.write(str(time.time()))
-            await checkpoints_volume.commit.aio()
-        else:
-            deadline = time.time() + download_timeout + dataset_timeout
-            while True:
-                await asyncio.gather(
-                    hf_cache_volume.reload.aio(),
-                    data_volume.reload.aio(),
-                    checkpoints_volume.reload.aio(),
-                )
-                if os.path.exists(prep_marker):
-                    break
-                if os.path.exists(prep_error):
-                    with open(prep_error) as f:
-                        raise RuntimeError(f"Head preparation failed: {f.read()}")
-                if time.time() > deadline:
-                    raise RuntimeError("Timed out waiting for head preparation marker")
-                await asyncio.sleep(5)
-
-        if model and model.model_name:
-            # Warm each node's cache before Ray imports remote code concurrently.
-            ref = model.model_path or model.model_name
-            prewarm_remote_code(
-                resolve_checkpoint_ref(ref, revision=model_revision(model, ref)),
-                environment,
-                required=miles.model_name == "kimi_k3",
-            )
-
-        cluster.start_ray()
-
-        if not cluster.is_head:
-            await cluster.wait_forever()
-            return
-        assert run_record is not None
-
-        async with shared.training_run_lifecycle(
-            run_record, framework_status_token
-        ) as set_status:
-            save_root = checkpoint_dir
-            apply_scoped_save(miles, save_root)
-            prepare_miles_config(miles, model, tempfile.mkdtemp())
-
-            os.makedirs(save_root, exist_ok=True)
-
-            hf_ref: str | None = None
-            if model and miles.megatron_to_hf_mode == "bridge" and not miles.ref_load:
-                from huggingface_hub import snapshot_download
-
-                hf_ref = (
-                    str(model.model_path)
-                    if model.model_path
-                    else snapshot_download(
-                        model.model_name, revision=model.revision, local_files_only=True
-                    )
-                )
-
-            def build_cmd() -> str:
-                beam_resume = any(
-                    os.path.basename(path) == "patch_beam_checkpoint.py"
-                    for path in miles.patch_files
-                )
-                is_complete = _is_resumable_checkpoint
-                if beam_resume:
-                    from modal_dojo.frameworks.miles.modal_helpers.beam_checkpoint import (
-                        complete_checkpoint,
-                    )
-
-                    is_complete = complete_checkpoint
-                resume_checkpoint = torch_dist_resume_checkpoint(
-                    save_root, is_complete=is_complete
-                )
-                if (
-                    beam_resume
-                    and resume_checkpoint is None
-                    and miles.lora_adapter_path
-                ):
-                    adapter = Path(miles.lora_adapter_path)
-                    checkpoint_path = adapter.parent
-                    if adapter.name != "adapter" or not is_complete(
-                        str(checkpoint_path)
-                    ):
-                        raise RuntimeError(
-                            f"Incomplete Beam resume checkpoint: {checkpoint_path}"
-                        )
-                    iteration = int(checkpoint_path.name.removeprefix("iter_"))
-                    resume_checkpoint = {
-                        "resume_checkpoint_path": str(checkpoint_path),
-                        "resume_checkpoint_name": checkpoint_path.name,
-                        "resume_from_iteration": iteration,
-                    }
-                if (
-                    beam_resume
-                    and resume_checkpoint is None
-                    and (run_record.metadata or {}).get("attempt_count", 1) > 1
-                    and not miles.lora_adapter_path
-                ):
-                    raise RuntimeError(
-                        "Beam retry has no complete training checkpoint; refusing to restart from step zero"
-                    )
-                record_resume_checkpoint(run_record, resume_checkpoint)
-                resume_overrides = {}
-                if (
-                    (miles.megatron_to_hf_mode == "raw" or beam_resume)
-                    and miles.lora_rank is not None
-                    and hasattr(miles, "lora_adapter_path")
-                ):
-                    adapter_path = (
-                        os.path.join(
-                            resume_checkpoint["resume_checkpoint_path"], "adapter"
-                        )
-                        if resume_checkpoint is not None
-                        else miles.lora_adapter_path
-                    )
-                    if adapter_path is not None:
-                        # Native LoRA loads the frozen base separately from the adapter.
-                        # Explicit --load also prevents Miles resetting optimizer/rollout state.
-                        resume_overrides = {"lora_adapter_path": adapter_path}
-                        if beam_resume:
-                            resume_overrides["load"] = str(
-                                Path(adapter_path).parent.parent
-                            )
-                        else:
-                            resume_overrides["load"] = miles.ref_load
-                with shared.resumed_recipe(
-                    miles, save_root, resume_checkpoint, overrides=resume_overrides
-                ):
-                    if resume_checkpoint is None and (
-                        unresumable := _unresumable_save_dirs(save_root)
-                    ):
-                        print(
-                            f"WARNING: {save_root} holds saves of interrupted writes that cannot be resumed "
-                            f"({', '.join(unresumable)}). Resuming into one of these would load a partial save."
-                        )
-                    shared.check_resume_scheduler_shape(miles)
-                    if hf_ref:
-                        object.__setattr__(miles, "ref_load", hf_ref)
-                    return build_train_cmd(
-                        miles,
-                        MILES_ROOT,
-                        model=model,
-                        dataset=dataset,
-                        eval_dataset=eval_dataset,
-                        dataset_path=dataset_path,
-                        eval_dataset_path=eval_dataset_path,
-                    )
-
-            runtime_env = build_ray_runtime_env(
-                head_addr=cluster.head_addr,
-                metric_env=metric_runtime_env(
-                    miles.metrics,
-                    run_id=metric_run_id,
-                    entity=metric_entity,
-                ),
-                environment=environment,
-                substep_timing=miles.substep_timing,
-                extra_env={
-                    "MODAL_DOJO_TRAINING_RUN_ID": training_run_id,
-                    "MODAL_DOJO_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
-                    **shared.training_reporting_env(
-                        miles, model, app_name, framework_status_url
-                    ),
-                },
-                framework_status_token=framework_status_token,
-            )
-
-            mode = "async" if miles.train_async else "sync"
-            print(
-                f"Training {app_name} - {miles.total_nodes} node(s) x {gpu_spec} ({mode})"
-            )
-            print(miles.gpu_allocation.summary())
-
-            await set_status(MilesStatus.TRAINING)
-            result = await shared.run_training_attempts(
-                cluster=cluster,
-                recipe=miles,
-                run_record=run_record,
-                runtime_env=runtime_env,
-                build_cmd=build_cmd,
-            )
-            print(f"Ray job message: {result.message}")
-
-            return await shared.complete_training_run(
-                run_record,
-                checkpoints_volume=checkpoints_volume,
-                app_name=app_name,
-                model=model,
-                group_id=group_id,
-            )
-
-    app.resolve_checkpoint = resolve_checkpoint
-    app.convert_checkpoint = convert_checkpoint
-    app.train = train
-
-    return app
+        return await shared.complete_training_run(
+            run_record,
+            checkpoints_volume=checkpoints_volume,
+            app_name=app_name,
+            model=model,
+            group_id=group_id,
+        )

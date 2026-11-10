@@ -87,10 +87,10 @@ def _convert_checkpoint_on_cache_miss(
         "framework_status_url": framework_status_url,
         "framework_status_token": framework_status_token,
     }
-    hf_path = app.resolve_checkpoint.remote(**call_kwargs)
+    hf_path = app.resolve_checkpoint.remote(app.run_payload, **call_kwargs)
     if hf_path is None:
         return False
-    app.convert_checkpoint.remote(hf_path=hf_path, **call_kwargs)
+    app.convert_checkpoint.remote(app.run_payload, hf_path=hf_path, **call_kwargs)
     return True
 
 
@@ -741,6 +741,7 @@ class TrainConfig:
                         )
                         _set_status(download_status, is_active=False)
                         app.download.remote(
+                            app.run_payload,
                             training_run_id=training_run_id,
                             framework_status_url=framework_status_url,
                             framework_status_token=framework_status_token,
@@ -755,6 +756,7 @@ class TrainConfig:
                             )
 
                         function_call = app.train.spawn(
+                            app.run_payload,
                             modal_app_id=modal_app_id,
                             modal_app_url=modal_app_url,
                             framework_status_url=framework_status_url,

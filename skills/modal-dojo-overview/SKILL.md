@@ -3,7 +3,7 @@ name: modal-dojo-overview
 description: >-
   Explains modal-dojo repository architecture:
   package layout, TrainConfig, models, datasets, recipes, framework internals,
-  cloudpickle caller resolution, tutorial generation, and shared tools. Use
+  remote functions and RunSpec, tutorial generation, and shared tools. Use
   when modifying or explaining repository internals, not for running or
   debugging a normal training lifecycle.
 when_to_use: >-
@@ -35,7 +35,9 @@ modal_dojo/         <- installable package
 │   ├── models/             <- ModelConfig hierarchy (see below)
 │   ├── wandb.py            <- WandbConfig
 │   ├── framework.py        <- resolve_caller_module, TOOLS_*
+│   ├── run_spec.py         <- RunSpec: what remote training functions receive
 │   └── ray_cluster.py      <- ModalRayCluster helper (used by slime)
+├── remote/                 <- dependency-light Modal function bodies
 ├── frameworks/             <- one subpackage per training framework
 │   ├── slime/              <- slime GRPO (Ray + Megatron + SGLang)
 └── tools/                  <- shared scripts mounted on every image at
@@ -132,14 +134,24 @@ cfg = TrainConfig(
 run = cfg.train()
 ```
 
-### Caller resolution for cloudpickle
+### Remote functions and `RunSpec`
 
-Launchers walk the call stack via
+Every Modal function is a module-level callable registered where its app is
+built (`app.function(...)(fn)`); none use `serialized=True`. Light-weight
+functions (Trackio dashboard, checkpoint converters, vLLM/SGLang servers) live
+in `modal_dojo/remote/`. Training functions live in each framework's
+`launcher.py` and take the run's packed `RunSpec`
+(`common/run_spec.py`) as their first argument.
+
+`RunSpec.pack()` is the one place the package pickles user objects. It finds
+the user's own modules among the spec's recipe, model, and datasets and
+registers them for cloudpickle by-value pickling -- this is how a user's
+inline `DatasetConfig` / `ModelConfig` subclasses reach the remote container.
+
+Launchers also walk the call stack via
 `common.framework.resolve_caller_module()` to find the true user-tutorial
-module (skipping `modal_dojo.*` frames) and register that module
-for cloudpickle by-value inlining -- this is how a user's inline
-`DatasetConfig` / `ModelConfig` subclasses survive serialization to
-the remote container.
+module (skipping `modal_dojo.*` frames); `ship_callable` uses it to decide
+how a user callback is shipped.
 
 ## Framework catalog
 
@@ -282,16 +294,18 @@ tutorial only. Don't expand to all tutorials on a single change.
 ## Gotchas
 
 - **Python version pin**. The repo pins 3.12 (see `pyproject.toml` +
-  `CLAUDE.md`). Modal's `serialized=True` functions require the remote
-  image's Python to match the local one. If a framework image has Python
-  3.11 (e.g. some ModelScope images), app build fails with `InvalidError`.
+  `CLAUDE.md`). Classes and callbacks defined inline in the launching script
+  are pickled by value, which needs the image's Python minor version to match
+  the local one. If a framework image has another Python (e.g. 3.11 on some
+  ModelScope images), such a run fails when the container unpacks its
+  `RunSpec`, with an error naming both versions.
 - **Framework image switches**. Recipes have no `image=`; use
   `image_overlay=` (slime/miles) or Miles `docker_image=` to customize.
   The launcher's `pip_install` chain reinstalls the framework fresh, so
   switching/overlaying the base is usually enough. Check whether transitive
   deps (megatron-core, pillow, tokenizers for transformers) are in the new
   image; the ModelScope image shipped many, bare CUDA/NGC images don't.
-- **cloudpickle caller_module**. `TrainConfig.train()` / `.launch()` (and
+- **Caller module**. `TrainConfig.train()` / `.launch()` (and
   the internal `_build_app` path) delegate to the launcher, meaning
   `inspect.stack()[1]` inside `build_<f>_app` is not the tutorial.
   Launchers use `resolve_caller_module()` to walk past

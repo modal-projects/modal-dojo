@@ -86,9 +86,15 @@ One registry, one script, one workflow, across every framework.
 
 `list` and `list --names-only` print every registered model. The workflow's blank-dispatch branch and `diff_impact.py` use that same set, so a PR or weekly synmon run covers the whole registry. `diff_impact.py` scopes re-validation per framework, so a miles-only change doesn't re-run the slime set.
 
-### Cloudpickle caller resolution
+### Remote functions and `RunSpec`
 
-Launchers use `resolve_caller_module()` (in `common/framework.py`) to find the user's tutorial module by walking the stack past `modal_dojo.*` frames. This enables cloudpickle to serialize inline `DatasetConfig`/`ModelConfig` subclasses by value to remote containers.
+Modal functions are module-level callables registered where the app is built (`app.function(...)(fn)`), never closures marked `serialized=True`; a test enforces this. Functions that run in images without Modal Dojo's dependencies (Trackio dashboard, checkpoint converters, vLLM/SGLang servers) live in `modal_dojo/remote/`, whose modules import only the standard library and `modal` at module scope. Training functions (`download`, `prepare_dataset`, `resolve_checkpoint`, `convert_checkpoint`, `train`) live in each framework's `launcher.py`.
+
+A training function's first argument is the run's packed `RunSpec` (`common/run_spec.py`): the recipe, model, datasets, paths, and volume names. `RunSpec.pack()` is the only place the package pickles user objects. It registers the user's own modules for cloudpickle by-value pickling, so inline `DatasetConfig`/`ModelConfig`/recipe subclasses reach the container without being importable there.
+
+### Caller resolution for user callbacks
+
+Launchers use `resolve_caller_module()` (in `common/framework.py`) to find the user's tutorial module by walking the stack past `modal_dojo.*` frames. `ship_callable` uses it to tell a callback defined inline in the launching script from one imported from another file.
 
 ### TrainingRun persistence
 
@@ -112,7 +118,7 @@ Tutorials are `tutorials/*.py` or `tutorials/<name>/main.py` with sibling helper
 - Tutorial sources are `tutorials/*.py`, `tutorials/*.md`, or `tutorials/<name>/main.py`. Keep `order` values contiguous from zero.
 - Never hand-edit the models table in README.md. It is generated from `__all__` of each `train_recipes/*_recipe/__init__.py`; add the recipe and matching `ModelConfig` export, then rerun `scripts/generate_models_table.py`.
 - Ruff excludes `tutorials/**`.
-- Python 3.12 is pinned. Modal's `serialized=True` requires local ↔ remote Python version match.
+- Python 3.12 is pinned. Classes and callbacks defined inline in a launching script are pickled by value, which requires the local and image Python minor versions to match. Runs that ship no inline code have no such constraint.
 - Modal Secrets `huggingface-secret` (HF_TOKEN) and `wandb-secret` (WANDB_API_KEY) are optional: HF auth is only needed for gated/rate-limited Hub access, and `wandb-secret` only when a `WandbConfig` is passed.
 - `Endpoint.launch()` and custom SGLang and vLLM deployments (`CustomDeployment.launch()`) require Modal proxy auth by default (pass `unauthenticated=True` to make them public). Authenticated endpoints need `MODAL_KEY` (`wk-…`) / `MODAL_SECRET` (`ws-…`) exported in the launching shell, or eval/`generate`/teacher calls return HTTP 401. For calls from remote workers (custom rm/reward fns) to authenticated endpoints, also forward the pair into the worker via a `modal.Secret` — the driver shell env doesn't reach them.
 - Every framework's Modal app is tagged with `_modal_framework`, `_modal_job_type=training`, and metric provider/project/group for dashboard auto-discovery (see `common/__init__.py: COMMON_DOJO_TAGS`).

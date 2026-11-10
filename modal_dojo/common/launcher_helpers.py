@@ -31,6 +31,7 @@ from modal_dojo.common.framework import (
 )
 from modal_dojo.common.modal_refs import register_modal_cloudpickle_reducers
 from modal_dojo.common.modal_urls import modal_app_dashboard_url
+from modal_dojo.common.run_spec import RunSpec
 from modal_dojo.common.run import (
     CHECKPOINT_LOCATION_METADATA_KEY,
     TrainingRun,
@@ -149,9 +150,12 @@ def create_training_volumes(
     volume_prefix: str,
     data_volume_name: str | None = None,
     mount_metadata: bool = False,
-) -> tuple[str, str, dict[str, Volume]]:
-    def volume(volume_name: str) -> Volume:
-        return Volume.from_name(volume_name, create_if_missing=True)
+) -> tuple[str, str, dict[str, Volume], dict[str, str]]:
+    """Open the run's volumes.
+
+    Returns the checkpoints volume name, its mount path, the volumes keyed by
+    mount path, and the volume names keyed the same way.
+    """
 
     name = (
         getattr(checkpoint, "checkpoints_volume_name", None)
@@ -160,16 +164,20 @@ def create_training_volumes(
     mount = (
         getattr(checkpoint, "checkpoints_mount_path", None) or str(CHECKPOINTS_PATH)
     ).rstrip("/") or "/"
-    volumes = {
-        str(HF_CACHE_PATH): volume("huggingface-cache"),
-        str(DATA_PATH): volume(data_volume_name or f"{volume_prefix}-data"),
-        mount: volume(name),
+    names = {
+        str(HF_CACHE_PATH): "huggingface-cache",
+        str(DATA_PATH): data_volume_name or f"{volume_prefix}-data",
+        mount: name,
     }
     if mount_metadata:
         from modal_dojo.utils.metadata import METADATA_VOLUME_NAME
 
-        volumes["/metadata"] = volume(METADATA_VOLUME_NAME)
-    return name, mount, volumes
+        names["/metadata"] = METADATA_VOLUME_NAME
+    volumes = {
+        path: Volume.from_name(volume_name, create_if_missing=True)
+        for path, volume_name in names.items()
+    }
+    return name, mount, volumes, names
 
 
 def experimental_options(recipe: Any, *, clustered: bool = True) -> dict[str, Any]:
@@ -225,7 +233,7 @@ def training_function_options(
             overrides.get("experimental_options"),
             clustered=clustered,
         ),
-        "serialized": True,
+        "include_source": False,
         "name": "train",
     }
 
@@ -289,26 +297,26 @@ def report_phase(
         )
 
 
-def register_recipe_functions(
+def register_setup_functions(
     app: Any,
     image: Image,
     *,
+    download: Callable[..., None],
     hf_cache_volume: Volume,
     data_volume: Volume,
     checkpoints_volume: Volume,
     checkpoints_mount_path: str,
-    download_phase: str,
-    download: Callable[[], None],
     download_timeout: int,
-    prepare_dataset: Callable[[], None],
     dataset_timeout: int,
 ) -> None:
+    """Register the CPU-only ``download`` and ``prepare_dataset`` functions.
+
+    ``download`` is the framework's own module-level function; it is expected
+    to call :func:`run_download`. ``prepare_dataset`` is shared.
+    """
     from modal_dojo.common import hf_secrets, proxy_auth_secrets
-    from modal_dojo.common.status_reporter import flush as flush_status
 
-    volumes = (hf_cache_volume, checkpoints_volume)
-
-    @app.function(
+    app.download = app.function(
         image=image,
         volumes={
             str(HF_CACHE_PATH): hf_cache_volume,
@@ -316,42 +324,51 @@ def register_recipe_functions(
         },
         timeout=download_timeout,
         secrets=[*hf_secrets(), *proxy_auth_secrets()],
-        serialized=True,
+        include_source=False,
         name="download",
-    )
-    def _download(
-        training_run_id: str = "",
-        framework_status_url: str = "",
-        framework_status_token: str = "",
-    ) -> None:
-        report_phase(
-            training_run_id,
-            download_phase,
-            framework_status_url,
-            framework_status_token,
-        )
-        for volume in volumes:
-            volume.reload()
-        download()
-        for volume in volumes:
-            volume.commit()
-        flush_status(timeout_seconds=2.0)
+    )(download)
 
-    @app.function(
+    app.prepare_dataset = app.function(
         image=image,
         volumes={str(DATA_PATH): data_volume},
         timeout=dataset_timeout,
         secrets=hf_secrets(),
-        serialized=True,
+        include_source=False,
         name="prepare_dataset",
-    )
-    def _prepare_dataset() -> None:
-        data_volume.reload()
-        prepare_dataset()
-        data_volume.commit()
+    )(prepare_dataset)
 
-    app.download = _download
-    app.prepare_dataset = _prepare_dataset
+
+def run_download(
+    spec: RunSpec,
+    phase: str,
+    download: Callable[[], None],
+    *,
+    training_run_id: str,
+    framework_status_url: str,
+    framework_status_token: str,
+) -> None:
+    """Body of a framework's remote ``download`` function."""
+    from modal_dojo.common.status_reporter import flush as flush_status
+
+    report_phase(training_run_id, phase, framework_status_url, framework_status_token)
+    volumes = (spec.hf_cache_volume(), spec.checkpoints_volume())
+    for volume in volumes:
+        volume.reload()
+    download()
+    for volume in volumes:
+        volume.commit()
+    flush_status(timeout_seconds=2.0)
+
+
+def prepare_dataset(payload: dict[str, Any]) -> None:
+    """Remote function: materialize the run's datasets on the data volume."""
+    spec = RunSpec.unpack(payload)
+    data_volume = spec.data_volume()
+    data_volume.reload()
+    write_datasets(
+        spec.dataset, spec.eval_dataset, spec.dataset_path, spec.eval_dataset_path
+    )
+    data_volume.commit()
 
 
 def ship_recipe_callables(

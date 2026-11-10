@@ -54,14 +54,6 @@ ALLOWED = {
         "away once Modal handles are picklable or callbacks stop capturing them"
     ),
     "tests/test_modal_refs.py": "tests the reducers in modal_refs.py",
-    "scripts/validate_model_configs.py": (
-        "registers by-value pickling with Modal's vendored cloudpickle; goes "
-        "away once user objects travel as an explicit payload"
-    ),
-    "tests/test_model_validation_registry.py": (
-        "pickles with Modal's serializer to mirror serialized=True; goes away "
-        "with the entry above"
-    ),
 }
 
 

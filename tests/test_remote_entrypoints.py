@@ -10,6 +10,8 @@ work, and neither is exercised by an ordinary unit test:
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
 import pathlib
 import pkgutil
@@ -156,3 +158,79 @@ def test_sglang_serve_app_registers_the_importable_server_class(
     assert spec["model_path"] == "org/model"
     assert spec["server_args"]["--served-model-name"] == "model"
     assert spec["server_args"]["--revision"] == "abc123"
+
+
+# ── Training functions ───────────────────────────────────────────────────────
+
+TRAINING_FUNCTIONS = (
+    "download",
+    "prepare_dataset",
+    "resolve_checkpoint",
+    "convert_checkpoint",
+    "train",
+)
+
+
+def _recipe_and_model(framework: str):
+    if framework == "slime":
+        from modal_dojo import Qwen3_4B, Qwen3_4B_Recipe
+
+        return Qwen3_4B_Recipe(), Qwen3_4B()
+    from modal_dojo import Qwen3_5_4B
+    from modal_dojo.train_recipes.miles_recipe import Qwen3_5_4B_Miles_Recipe
+
+    return Qwen3_5_4B_Miles_Recipe(), Qwen3_5_4B()
+
+
+@pytest.mark.parametrize("framework", ["slime", "miles"])
+def test_training_app_registers_importable_functions(framework: str) -> None:
+    from modal_dojo import TrainConfig
+    from modal_dojo.common.dataset import HuggingFaceDataset
+    from modal_dojo.common.run_spec import RunSpec
+
+    recipe, model = _recipe_and_model(framework)
+    dataset = HuggingFaceDataset("org/repo", input_column="q", output_column="a")
+    app = TrainConfig(model=model, dataset=dataset, recipe=recipe)._build_app("run-1")
+
+    for name in TRAINING_FUNCTIONS:
+        assert isinstance(getattr(app, name), modal.Function)
+
+    # Each registered function is a module-level callable in a module the
+    # image can import, taking the packed spec as its first argument.
+    launcher = sys.modules[f"modal_dojo.frameworks.{framework}.launcher"]
+    for name in TRAINING_FUNCTIONS:
+        fn = getattr(launcher, name, None) or getattr(
+            sys.modules["modal_dojo.common.launcher_helpers"], name
+        )
+        assert fn.__qualname__ == name
+        assert next(iter(inspect.signature(fn).parameters)) == "payload"
+
+    spec = RunSpec.unpack(app.run_payload)
+    assert spec.training_run_id == "run-1"
+    assert type(spec.recipe).__name__ == type(recipe).__name__
+    assert spec.model.model_name == model.model_name
+
+
+def test_package_defines_no_serialized_modal_functions() -> None:
+    """``serialized=True`` pickles a function and its closure. Module-level
+    functions plus ``RunSpec`` replaced every use; keep it that way."""
+    package = pathlib.Path(modal_dojo.remote.__file__).resolve().parent.parent
+
+    def is_true(node: ast.AST) -> bool:
+        return isinstance(node, ast.Constant) and node.value is True
+
+    offenders = []
+    for path in sorted(package.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
+            passed_as_keyword = isinstance(node, ast.keyword) and (
+                node.arg == "serialized" and is_true(node.value)
+            )
+            passed_in_options_dict = isinstance(node, ast.Dict) and any(
+                isinstance(key, ast.Constant)
+                and key.value == "serialized"
+                and is_true(value)
+                for key, value in zip(node.keys, node.values)
+            )
+            if passed_as_keyword or passed_in_options_dict:
+                offenders.append(f"{path.relative_to(package.parent)}:{node.lineno}")
+    assert not offenders, offenders

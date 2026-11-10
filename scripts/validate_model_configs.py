@@ -16,14 +16,11 @@ Usage:
 
 import argparse
 import json
-import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-import cloudpickle
 from modal.exception import Error
-from modal._vendor import cloudpickle as modal_cloudpickle
 
 try:
     # Run as a script: sys.path[0] is scripts/, matching download_perf_baseline.
@@ -314,25 +311,6 @@ def available_models(
     ]
 
 
-def _ship_dataset_definition(dataset) -> None:
-    """Send the dataset's defining module by value, not by reference.
-
-    ``resolve_caller_context`` only registers the module that calls ``train()``,
-    which leaves a dataset class defined in a backend module pickled by name.
-    Nothing under ``scripts/`` is importable inside the training image, so the
-    container would fail to unpickle it during data preparation. Classes that
-    ship with the package are importable remotely and stay by reference.
-
-    Modal serializes with its own vendored copy of cloudpickle, which keeps a
-    registry separate from the installed one, so both have to be told.
-    """
-    module = sys.modules.get(type(dataset).__module__)
-    if module is None or module.__name__.startswith("modal_dojo"):
-        return
-    cloudpickle.register_pickle_by_value(module)
-    modal_cloudpickle.register_pickle_by_value(module)
-
-
 def run_base_training(
     model_name: str,
     step_count: int = 1,
@@ -367,7 +345,6 @@ def run_base_training(
             train_recipe.rollout_num_gpus = (
                 train_recipe.actor_num_nodes * train_recipe.actor_num_gpus_per_node
             )
-    _ship_dataset_definition(dataset)
 
     dataset_name = getattr(dataset, "hf_repo", type(dataset).__name__).rsplit("/", 1)[
         -1

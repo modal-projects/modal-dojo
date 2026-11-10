@@ -5,14 +5,18 @@ that defines it and looking the function up by name. That only works for
 module-level callables, which is why every function here is defined at module
 scope and registered where the app is built::
 
-    app.function(image=image, name="download", include_source=False)(
-        remote.training.download
+    app.function(image=image, name="dashboard", include_source=False)(
+        remote.trackio_dashboard.dashboard
     )
 
 The alternative, ``serialized=True``, pickles the function and everything it
-closes over. It ties the caller's Python version to the image's, hides what a
-container receives inside a closure, and is reserved for the one place that
-needs it: shipping classes a user defined inline in their own script.
+closes over. It ties the caller's Python version to the image's and hides what
+a container receives inside a closure, so nothing in Modal Dojo uses it.
+
+This package holds the functions that run in images without Modal Dojo's
+dependencies. Training functions need their framework's image anyway, so they
+live in ``modal_dojo/frameworks/<name>/launcher.py`` and receive their run's
+configuration as a ``RunSpec`` (see ``modal_dojo/common/run_spec.py``).
 
 Rules for modules in this package:
 
