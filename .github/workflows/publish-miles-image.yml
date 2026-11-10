@@ -57,19 +57,30 @@ jobs:
             exit 1
           fi
 
-      # CUDA images need substantially more disk than the default free space.
-      - name: Free runner disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android
-          docker system prune --all --force
-          df -h /
-
       - name: Check out Miles
         uses: actions/checkout@v4
         with:
           repository: radixark/miles
           ref: ${{ inputs.miles_ref }}
           persist-credentials: false
+
+      - name: Fix pinned source fetches
+        run: |
+          # Fail if upstream changes any command this workaround replaces.
+          for command in \
+            'git fetch origin ${SGLANG_BRANCH}' \
+            'git checkout -f ${MEGATRON_COMMIT}' \
+            'git checkout ${MILES_COMMIT}'; do
+            if ! grep -Fq "$command" docker/Dockerfile; then
+              echo "::error::Expected Dockerfile command not found: $command"
+              exit 1
+            fi
+          done
+          sed -i \
+            -e 's/git fetch origin ${SGLANG_BRANCH}/git fetch --depth=1 origin ${SGLANG_COMMIT}/' \
+            -e 's/git checkout -f ${MEGATRON_COMMIT}/git fetch --depth=1 origin ${MEGATRON_COMMIT} \&\& git checkout -f ${MEGATRON_COMMIT}/' \
+            -e 's/git checkout ${MILES_COMMIT}/git fetch --depth=1 origin ${MILES_COMMIT} \&\& git checkout ${MILES_COMMIT}/' \
+            docker/Dockerfile
 
       - name: Resolve Miles commit
         id: miles
