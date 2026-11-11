@@ -60,11 +60,6 @@ def resolve_framework_status(phase: str, framework: str) -> FrameworkStatus | No
         raise ValueError(f"Invalid framework string detected: {framework}")
 
     status_enum = enums[framework.strip().lower()]
-    if status_enum is SpindleStatus:
-        phase = {
-            "generate_rollouts": SpindleStatus.DO_GROUP_ROLLOUT_AND_FILTER_CONSTANT_REWARD.value,
-            "training": SpindleStatus.TRAIN_STEP.value,
-        }.get(phase.strip(), phase)
     try:
         return status_enum(phase.strip())
     except ValueError:

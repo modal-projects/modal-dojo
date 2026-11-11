@@ -1,11 +1,9 @@
-"""Launch the tinker-cookbook RL driver in a detached Modal app, like Slime and Miles."""
+"""Launch a TinkerProgram's driver in a detached Modal app, like Slime and Miles."""
 
 from __future__ import annotations
 
-import copy
 import dataclasses
 import secrets
-from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,9 +21,6 @@ HARBOR_TASKS_PATH = "/root/harbor_tasks"
 
 def launch(recipe, *, show_output: bool = True) -> TrainingRun:
     """Start the driver in a detached Modal app; return its TrainingRun handle."""
-    import chz
-    import modal
-
     from modal_dojo.cli.setup import ensure_dashboard_deployed
     from modal_dojo.common.config import (
         CONFIG_PATH,
@@ -33,25 +28,21 @@ def launch(recipe, *, show_output: bool = True) -> TrainingRun:
         require_migrated_config,
     )
     from modal_dojo.common.ids import create_hash
-    from modal_dojo.common.modal_lifecycle import stop_app
-    from modal_dojo.common.modal_urls import modal_app_dashboard_url
-    from modal_dojo.common.train import _terminalize_launch, _TrainStatusDisplay
+    from modal_dojo.common.train import TrainStatusDisplay, launch_detached
     from modal_dojo.train_recipes.base import CHECKPOINTS_PATH
-    from modal_dojo.utils.metadata import MetadataStore, vol_put
 
     from .launcher import check_server
     from .reporting import new_training_run
 
     require_migrated_config()
-    config = recipe.rl_config
+    program = recipe.program
+    max_tokens = _max_tokens(program)
     # Fail on a bad key, model or context before creating a run or an app.
-    server = check_server(config.base_url, recipe._api_key, config)
+    server = check_server(
+        recipe.base_url, recipe._api_key, program.model_name, max_tokens=max_tokens
+    )
     training_run_id = create_hash(
-        config.model_name,
-        config.load_checkpoint_path or "",
-        f"SpindleRecipe:{Framework.SPINDLE.value}",
-        "",
-        "",
+        program.model_name, "", f"SpindleRecipe:{Framework.SPINDLE.value}", "", ""
     )
     ensure_dashboard_deployed()
     framework_status_url = get_framework_status_url() or ""
@@ -59,83 +50,57 @@ def launch(recipe, *, show_output: bool = True) -> TrainingRun:
         raise DojoConfigError(
             "Could not connect to Dojo. Run `modal-dojo setup` before launching Spindle."
         )
-    framework_status_token = secrets.token_urlsafe(32)
-    # Retries resume from checkpoints.jsonl in this directory.
-    config = chz.replace(config, log_path=f"{CHECKPOINTS_PATH}/{training_run_id}")
-
-    status_display = _TrainStatusDisplay(
+    log_dir = f"{CHECKPOINTS_PATH}/{training_run_id}"
+    status_display = TrainStatusDisplay(
         run_id=training_run_id,
         framework=Framework.SPINDLE.value,
-        model_name=config.model_name,
-        dataset_name=type(config.dataset_builder).__name__,
+        model_name=program.model_name,
+        dataset_name=_dataset_name(program),
         framework_status_url=framework_status_url,
         config_path=str(CONFIG_PATH),
     )
     if show_output:
         status_display.print_banner()
-    run = new_training_run(config, training_run_id)
+    run = new_training_run(program, training_run_id, log_dir)
+    run.app_name = training_run_id
     run.metadata.update(server)
-    run.save()
-    vol_put(
-        MetadataStore.FRAMEWORK_STATUS_TOKENS,
-        training_run_id,
-        {"token": framework_status_token},
-    )
-    print(f"TrainingRun recorded: {training_run_id}")
 
-    app = None
-    function_call = None
-    launch_error = None
-    try:
-        app = build_spindle_app(recipe, config, training_run_id)
-        with modal.enable_output() if show_output else nullcontext():
-            with app.run(detach=True):
-                try:
-                    run.modal_app_id = app.app_id or ""
-                    run.modal_app_url = modal_app_dashboard_url(run.modal_app_id)
-                    run.app_name = training_run_id
-                    if show_output:
-                        status_display.set_modal_app_url(run.modal_app_url)
-                    run.save()
-                    function_call = app.train.spawn(
-                        dashboard_url=framework_status_url.removesuffix(
-                            "/api/framework-status"
-                        ),
-                        status_token=framework_status_token,
-                    )
-                except BaseException as exc:
-                    launch_error = exc
-        if launch_error is not None:
-            raise launch_error
-    except (KeyboardInterrupt, Exception) as exc:
-        if function_call is None:
-            if run.modal_app_id:
-                stop_app(run.modal_app_id)
-            _terminalize_launch(run, exc)
-            raise
-        launch_error = exc
-
-    run.function_call_id = function_call.object_id
-    run._function_call = function_call
-    run._status_display = status_display if show_output else None
-    run.save()
-    if isinstance(launch_error, KeyboardInterrupt):
-        print(f'Disconnected from Modal app "{app.name}". The app was left running.')
-        print(run.modal_app_url)
-        raise launch_error
-    if launch_error is not None:
-        print(
-            f"WARNING: training was launched, but Modal client cleanup failed: {launch_error}"
+    def start(app, framework_status_token: str):
+        return app.train.spawn(
+            framework_status_url=framework_status_url,
+            framework_status_token=framework_status_token,
         )
-    print(
-        f"Launched training {training_run_id}: "
-        f"app={run.modal_app_id}, function_call={run.function_call_id}"
+
+    return launch_detached(
+        run,
+        framework_status_token=secrets.token_urlsafe(32),
+        build_app=lambda: build_spindle_app(
+            recipe, training_run_id, log_dir, max_tokens=max_tokens
+        ),
+        start=start,
+        status_display=status_display,
+        show_output=show_output,
     )
-    return run
 
 
-def build_spindle_app(recipe, config, training_run_id: str) -> modal.App:
-    """A CPU-only app whose ``train`` function runs tinker-cookbook's RL loop."""
+def _max_tokens(program) -> int | None:
+    from .cookbook import CookbookRL
+
+    return program.config.max_tokens if isinstance(program, CookbookRL) else None
+
+
+def _dataset_name(program) -> str:
+    from .cookbook import CookbookRL
+
+    if isinstance(program, CookbookRL):
+        return type(program.config.dataset_builder).__name__
+    return type(program).__name__
+
+
+def build_spindle_app(
+    recipe, training_run_id: str, log_dir: str, *, max_tokens: int | None
+) -> modal.App:
+    """A CPU-only app whose ``train`` function runs the program's driver."""
     import modal
 
     from modal_dojo.common import hf_secrets, proxy_auth_secrets
@@ -147,7 +112,7 @@ def build_spindle_app(recipe, config, training_run_id: str) -> modal.App:
         resolve_caller_context,
     )
 
-    # Pickle the caller's reward functions, evaluators and builders by value.
+    # Pickle the caller's programs, reward functions and builders by value.
     _, caller_script = resolve_caller_context()
     image = (
         modal.Image.debian_slim(python_version="3.12")
@@ -157,16 +122,17 @@ def build_spindle_app(recipe, config, training_run_id: str) -> modal.App:
         .add_local_python_source("modal_dojo", copy=True)
     )
     image = mount_caller_source(mount_tools_dir(image), caller_script)
-    config, image = ship_harbor_tasks(config, image)
+    program, image = ship_harbor_tasks(recipe.program, image)
     _, checkpoints_path, volumes = create_training_volumes(
         None, volume_prefix=Framework.SPINDLE.value
     )
     checkpoints = volumes[checkpoints_path]
+    base_url = recipe.base_url
     app = modal.App(
         training_run_id,
         tags=build_app_tags(
             framework=Framework.SPINDLE.value,
-            model=config,
+            model=program,
             recipe_app_tags={},
             metrics=None,
         ),
@@ -189,21 +155,24 @@ def build_spindle_app(recipe, config, training_run_id: str) -> modal.App:
         serialized=True,
         name="train",
     )
-    async def train(dashboard_url: str, status_token: str) -> None:
+    async def train(framework_status_url: str, framework_status_token: str) -> None:
         import os
 
         from modal_dojo.common.run import TrainingRun
 
-        from .launcher import train as run_training
+        from .launcher import run_program
 
+        # Dojo's shared reporting reads these, as in Slime and Miles containers.
+        os.environ["MODAL_DOJO_FRAMEWORK_STATUS_URL"] = framework_status_url
+        os.environ["MODAL_DOJO_FRAMEWORK_STATUS_TOKEN"] = framework_status_token
         run = await TrainingRun.from_id(training_run_id, is_async=True)
         try:
-            await run_training(
-                config,
-                api_key=os.environ["TINKER_API_KEY"],
+            await run_program(
+                program,
                 run=run,
-                dashboard_url=dashboard_url,
-                status_token=status_token,
+                base_url=base_url,
+                log_dir=log_dir,
+                max_tokens=max_tokens,
             )
         finally:
             await checkpoints.commit.aio()
@@ -229,36 +198,28 @@ def spindle_requirements() -> list[str]:
     return pins
 
 
-def ship_harbor_tasks(config, image):
+def ship_harbor_tasks(program, image):
     """Add the task directories a Harbor builder uses, at paths the container sees."""
+    from .cookbook import CookbookRL
+
+    if not isinstance(program, CookbookRL):
+        return program, image
     import chz
+    from tinker_cookbook.recipes.harbor_rl.harbor_env import HarborDatasetBuilder
 
-    from .dataset_builders import HarborBuilder
+    builder = program.config.dataset_builder
+    if not isinstance(builder, HarborDatasetBuilder):
+        return program, image
 
-    builder = config.dataset_builder
-    if isinstance(builder, HarborBuilder):
-        dataset = copy.copy(builder.dataset)
-        root = dataset._resolve_task_root()
-        remote = f"{HARBOR_TASKS_PATH}/{root.name}"
-        # Ship every candidate so the split is chosen the same way remotely.
-        for task_dir in dataset._iter_task_dirs():
-            image = image.add_local_dir(
-                task_dir, remote_path=f"{remote}/{task_dir.relative_to(root)}"
-            )
-        dataset.path, dataset.dataset_name, dataset.task_root = remote, "", ""
-        builder = chz.replace(builder, dataset=dataset)
-    elif type(builder).__name__ == "HarborDatasetBuilder":
-        shipped: dict[Path, str] = {}
-        tasks = []
-        for task in builder.tasks:
-            if task.task_dir not in shipped:
-                remote = f"{HARBOR_TASKS_PATH}/{len(shipped)}/{task.task_dir.name}"
-                image = image.add_local_dir(task.task_dir, remote_path=remote)
-                shipped[task.task_dir] = remote
-            tasks.append(
-                dataclasses.replace(task, task_dir=Path(shipped[task.task_dir]))
-            )
-        builder = chz.replace(builder, tasks=tasks)
-    else:
-        return config, image
-    return chz.replace(config, dataset_builder=builder), image
+    shipped: dict[Path, str] = {}
+    tasks = []
+    for task in builder.tasks:
+        if task.task_dir not in shipped:
+            remote = f"{HARBOR_TASKS_PATH}/{len(shipped)}/{task.task_dir.name}"
+            image = image.add_local_dir(task.task_dir, remote_path=remote)
+            shipped[task.task_dir] = remote
+        tasks.append(dataclasses.replace(task, task_dir=Path(shipped[task.task_dir])))
+    config = chz.replace(
+        program.config, dataset_builder=chz.replace(builder, tasks=tasks)
+    )
+    return CookbookRL(config), image

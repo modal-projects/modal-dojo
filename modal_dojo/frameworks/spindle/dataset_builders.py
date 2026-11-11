@@ -1,4 +1,4 @@
-"""Optional tinker-cookbook implementations, imported only by dataset conversion."""
+"""tinker-cookbook RL dataset builders over Dojo Hugging Face and Harbor datasets."""
 
 from __future__ import annotations
 
@@ -13,6 +13,10 @@ from typing import Any
 import chz
 import tinker
 from tinker_cookbook import renderers
+from tinker_cookbook.recipes.harbor_rl.harbor_env import (
+    HarborDatasetBuilder,
+    HarborTask,
+)
 from tinker_cookbook.rl.problem_env import ProblemGroupBuilder
 from tinker_cookbook.rl.types import Env, RLDataset, RLDatasetBuilder, StepResult
 from tinker_cookbook.tokenizer_utils import get_tokenizer
@@ -100,49 +104,81 @@ class HuggingFaceBuilder(RLDatasetBuilder):
 
 
 @chz.chz
-class HarborBuilder(RLDatasetBuilder):
-    dataset: HarborDataset
-    model_name: str
-    renderer_name: str
-    batch_size: int
-    group_size: int
-    options: dict[str, Any] = chz.field(default_factory=dict)
-
+class _HarborTrainOnly(HarborDatasetBuilder):
     async def __call__(self):
-        from tinker_cookbook.recipes.harbor_rl.harbor_env import (
-            HarborDatasetBuilder,
-            HarborTask,
-        )
+        # Don't silently evaluate on the training tasks.
+        train, _ = await super().__call__()
+        return train, None
 
-        tasks = []
-        for item in self.dataset.load(split=self.dataset.split):
-            task_dir = Path(item["task_path"])
-            instruction = self.dataset._format_prompt(
-                instruction=item["instruction"],
-                task_dir=task_dir,
-                label=item["label"],
-            )
-            tasks.append(
-                HarborTask(
-                    task_name=item["task_name"],
-                    instruction=instruction,
+
+def huggingface_dataset_builder(
+    dataset: HuggingFaceDataset,
+    *,
+    model_name: str,
+    renderer_name: str,
+    batch_size: int,
+    group_size: int,
+    reward_fn: Callable[[str, Any], float],
+) -> RLDatasetBuilder:
+    """Single-turn RL groups scored by ``reward_fn(response_text, label)``."""
+    if dataset.input_format == "raw":
+        raise DojoConfigError("tinker-cookbook requires text or messages input")
+    if dataset.label_key() is None:
+        raise DojoConfigError("tinker-cookbook requires an output_column for rewards")
+    if not callable(reward_fn):
+        raise DojoConfigError("reward_fn must score (response_text, label) -> float")
+    if batch_size < 1 or group_size < 1:
+        raise DojoConfigError("batch_size and group_size must be positive")
+    return HuggingFaceBuilder(
+        dataset=dataset,
+        model_name=model_name,
+        renderer_name=renderer_name,
+        batch_size=batch_size,
+        group_size=group_size,
+        reward_fn=reward_fn,
+    )
+
+
+def harbor_dataset_builder(
+    dataset: HarborDataset,
+    *,
+    model_name: str,
+    renderer_name: str,
+    batch_size: int,
+    group_size: int,
+    **options: Any,
+) -> RLDatasetBuilder:
+    """tinker-cookbook Harbor environments over the dataset's selected split.
+
+    ``options`` are ``HarborDatasetBuilder`` fields such as ``max_turns``.
+    """
+    if batch_size < 1 or group_size < 1:
+        raise DojoConfigError("batch_size and group_size must be positive")
+    if dataset.system_prompt:
+        raise DojoConfigError("tinker-cookbook Harbor supplies its own system prompt")
+    tasks = []
+    for item in dataset.load(split=dataset.split):
+        task_dir = Path(item["task_path"])
+        tasks.append(
+            HarborTask(
+                task_name=item["task_name"],
+                instruction=dataset.format_prompt(
+                    instruction=item["instruction"],
                     task_dir=task_dir,
-                    config=tomllib.loads((task_dir / "task.toml").read_text()),
-                )
+                    label=item["label"],
+                ),
+                task_dir=task_dir,
+                config=tomllib.loads((task_dir / "task.toml").read_text()),
             )
-        repeats = {
-            "train": self.dataset.train_repeats,
-            "eval": self.dataset.eval_repeats,
-        }.get(self.dataset.split, 1)
-        tasks = [task for task in tasks for _ in range(max(1, repeats))]
-        builder = HarborDatasetBuilder(
-            tasks=tasks,
-            batch_size=self.batch_size,
-            group_size=self.group_size,
-            model_name=self.model_name,
-            renderer_name=self.renderer_name,
-            **self.options,
         )
-        # Retain the selected split; do not silently evaluate on the training set.
-        groups = builder._make_env_group_builders(self.group_size)
-        return _Batches(groups, self.batch_size), None
+    repeats = {"train": dataset.train_repeats, "eval": dataset.eval_repeats}.get(
+        dataset.split, 1
+    )
+    return _HarborTrainOnly(
+        tasks=[task for task in tasks for _ in range(max(1, repeats))],
+        batch_size=batch_size,
+        group_size=group_size,
+        model_name=model_name,
+        renderer_name=renderer_name,
+        **options,
+    )
