@@ -25,14 +25,15 @@ from scripts.validate_model_configs import ValidationResult, run_base_training
 from synthetic_monitoring.chart import RunPoint, render_timing_history_chart
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+MODAL_ENV = "training-gym"
+HISTORY_DICT_NAME = "gym-synmon-timing-baselines"
+QUICKSTART_NAME = "quickstart"
+
 QUICKSTART_TIMEOUT_S = 60 * 60
 PROBE_TIMEOUT_S = max(c.timeout_s for c in _ValidationConfig.select())
 CLEANUP_GRACE_S = 5 * 60
 MONITOR_TIMEOUT_S = PROBE_TIMEOUT_S + CLEANUP_GRACE_S + 30 * 60
 LAUNCH_TIMEOUT_S = MONITOR_TIMEOUT_S + 30 * 60
-MODAL_ENV = "training-gym"
-HISTORY_DICT_NAME = "gym-synmon-timing-baselines"
-QUICKSTART_NAME = "quickstart"
 
 probe_image = (
     modal.Image.debian_slim(python_version="3.12")
@@ -48,7 +49,7 @@ probe_image = (
 )
 
 slack_secret = modal.Secret.from_name("dojo-bot-slack", environment_name=MODAL_ENV)
-hf_secret = modal.Secret.from_name("huggingface-secret", environment_name="main")
+hf_secret = modal.Secret.from_name("huggingface-secret", environment_name=MODAL_ENV)
 
 app = modal.App("gym-synmon-launcher")
 
@@ -200,15 +201,10 @@ def _row(
 
 def _post_report(rows: list[dict]) -> None:
     from slack_sdk import WebClient
-    from slack_sdk.errors import SlackApiError
 
     client = WebClient(token=os.environ["SLACK_BOT_TOKEN"])
     channel = os.environ["SLACK_CHANNEL_ID"]
-    try:
-        client.conversations_join(channel=channel)
-    except SlackApiError as exc:
-        if exc.response["error"] != "already_in_channel":
-            raise
+
     header = f"Weekly model validation - {datetime.now(timezone.utc):%Y-%m-%d}"
     thread_ts = client.chat_postMessage(
         channel=channel,
@@ -286,12 +282,13 @@ def monitor(model: str = "", num_steps: int = 1) -> dict:
             print(f"error: probe failed for {QUICKSTART_NAME}: {error}")
             if run is not None:
                 run.close()
-            url = _lookup_app_url(run.training_run_id) if run else None
+            training_run_id = run.training_run_id if run else ""
+            url = _lookup_app_url(training_run_id)
             point = RunPoint(
                 ts=time.time(),
                 timings={},
-                training_run_id=run.training_run_id,
-                total_duration_s=run.duration_seconds,
+                training_run_id=training_run_id,
+                total_duration_s=run.duration_seconds if run else 0.0,
                 status="failed",
                 modal_app_url=url,
             )
