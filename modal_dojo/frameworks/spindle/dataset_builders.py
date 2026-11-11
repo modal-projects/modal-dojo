@@ -1,27 +1,21 @@
-"""tinker-cookbook RL dataset builders over Dojo Hugging Face and Harbor datasets."""
+"""A tinker-cookbook RL dataset builder over any Dojo dataset."""
 
 from __future__ import annotations
 
 import math
-import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
-from pathlib import Path
 from typing import Any
 
 import chz
 import tinker
 from tinker_cookbook import renderers
-from tinker_cookbook.recipes.harbor_rl.harbor_env import (
-    HarborDatasetBuilder,
-    HarborTask,
-)
 from tinker_cookbook.rl.problem_env import ProblemGroupBuilder
 from tinker_cookbook.rl.types import Env, RLDataset, RLDatasetBuilder, StepResult
 from tinker_cookbook.tokenizer_utils import get_tokenizer
 
-from modal_dojo.common.dataset import HarborDataset, HuggingFaceDataset
+from modal_dojo.common.dataset import DatasetConfig
 from modal_dojo.common.errors import DojoConfigError
 
 
@@ -68,8 +62,8 @@ class _Batches(RLDataset):
 
 
 @chz.chz
-class HuggingFaceBuilder(RLDatasetBuilder):
-    dataset: HuggingFaceDataset
+class DojoRLDatasetBuilder(RLDatasetBuilder):
+    dataset: DatasetConfig
     model_name: str
     renderer_name: str
     batch_size: int
@@ -80,6 +74,8 @@ class HuggingFaceBuilder(RLDatasetBuilder):
         renderer = renderers.get_renderer(
             self.renderer_name, tokenizer=get_tokenizer(self.model_name)
         )
+        label_key = self.dataset.label_key()
+        assert label_key is not None
         groups = []
         for row in self.dataset.rows():
             messages = row[self.dataset.input_key()]
@@ -90,29 +86,17 @@ class HuggingFaceBuilder(RLDatasetBuilder):
             groups.append(
                 ProblemGroupBuilder(
                     env_thunk=partial(
-                        _RowEnv,
-                        messages,
-                        row[self.dataset.label_key()],
-                        renderer,
-                        self.reward_fn,
+                        _RowEnv, messages, row[label_key], renderer, self.reward_fn
                     ),
                     num_envs=self.group_size,
-                    dataset_name=self.dataset.hf_repo,
+                    dataset_name=type(self.dataset).__name__,
                 )
             )
         return _Batches(groups, self.batch_size), None
 
 
-@chz.chz
-class _HarborTrainOnly(HarborDatasetBuilder):
-    async def __call__(self):
-        # Don't silently evaluate on the training tasks.
-        train, _ = await super().__call__()
-        return train, None
-
-
-def huggingface_dataset_builder(
-    dataset: HuggingFaceDataset,
+def rl_dataset_builder(
+    dataset: DatasetConfig,
     *,
     model_name: str,
     renderer_name: str,
@@ -120,65 +104,20 @@ def huggingface_dataset_builder(
     group_size: int,
     reward_fn: Callable[[str, Any], float],
 ) -> RLDatasetBuilder:
-    """Single-turn RL groups scored by ``reward_fn(response_text, label)``."""
-    if dataset.input_format == "raw":
+    """Single-turn RL groups over ``dataset``, scored by ``reward_fn(response_text, label)``."""
+    if not dataset.apply_chat_template():
         raise DojoConfigError("tinker-cookbook requires text or messages input")
     if dataset.label_key() is None:
-        raise DojoConfigError("tinker-cookbook requires an output_column for rewards")
+        raise DojoConfigError("tinker-cookbook requires a label column for rewards")
     if not callable(reward_fn):
         raise DojoConfigError("reward_fn must score (response_text, label) -> float")
     if batch_size < 1 or group_size < 1:
         raise DojoConfigError("batch_size and group_size must be positive")
-    return HuggingFaceBuilder(
+    return DojoRLDatasetBuilder(
         dataset=dataset,
         model_name=model_name,
         renderer_name=renderer_name,
         batch_size=batch_size,
         group_size=group_size,
         reward_fn=reward_fn,
-    )
-
-
-def harbor_dataset_builder(
-    dataset: HarborDataset,
-    *,
-    model_name: str,
-    renderer_name: str,
-    batch_size: int,
-    group_size: int,
-    **options: Any,
-) -> RLDatasetBuilder:
-    """tinker-cookbook Harbor environments over the dataset's selected split.
-
-    ``options`` are ``HarborDatasetBuilder`` fields such as ``max_turns``.
-    """
-    if batch_size < 1 or group_size < 1:
-        raise DojoConfigError("batch_size and group_size must be positive")
-    if dataset.system_prompt:
-        raise DojoConfigError("tinker-cookbook Harbor supplies its own system prompt")
-    tasks = []
-    for item in dataset.load(split=dataset.split):
-        task_dir = Path(item["task_path"])
-        tasks.append(
-            HarborTask(
-                task_name=item["task_name"],
-                instruction=dataset.format_prompt(
-                    instruction=item["instruction"],
-                    task_dir=task_dir,
-                    label=item["label"],
-                ),
-                task_dir=task_dir,
-                config=tomllib.loads((task_dir / "task.toml").read_text()),
-            )
-        )
-    repeats = {"train": dataset.train_repeats, "eval": dataset.eval_repeats}.get(
-        dataset.split, 1
-    )
-    return _HarborTrainOnly(
-        tasks=[task for task in tasks for _ in range(max(1, repeats))],
-        batch_size=batch_size,
-        group_size=group_size,
-        model_name=model_name,
-        renderer_name=renderer_name,
-        **options,
     )

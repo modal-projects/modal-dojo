@@ -560,10 +560,9 @@ class HarborDataset(DatasetConfig):
             label["test_cases"] = self._read_test_data(task_dir)
         return label
 
-    def format_prompt(
+    def _format_prompt(
         self, *, instruction: str, task_dir: Path, label: dict[str, Any]
     ) -> str:
-        """One task's user prompt, from ``prompt_template``."""
         context = {
             "instruction": instruction,
             "task_name": task_dir.name,
@@ -580,7 +579,7 @@ class HarborDataset(DatasetConfig):
             )
         instruction = instruction_file.read_text(encoding="utf-8").strip()
         label = self._build_label(task_root, task_dir)
-        user_prompt = self.format_prompt(
+        user_prompt = self._format_prompt(
             instruction=instruction, task_dir=task_dir, label=label
         )
         messages = []

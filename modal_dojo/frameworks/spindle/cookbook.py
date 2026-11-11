@@ -44,8 +44,7 @@ class CookbookRL:
         if not callable(config.dataset_builder):
             raise DojoConfigError(
                 "dataset_builder must be a tinker-cookbook builder; build one from a "
-                "Dojo dataset with modal_dojo.tinker.huggingface_dataset_builder or "
-                "harbor_dataset_builder"
+                "Dojo dataset with modal_dojo.tinker.rl_dataset_builder"
             )
         if (
             config.async_config is not None

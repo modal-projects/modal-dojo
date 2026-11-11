@@ -6,14 +6,13 @@ from typing import Any
 
 from modal_dojo.tinker.program import TinkerContext, TinkerProgram
 
-# tinker-cookbook dataset builders; they need modal-dojo[spindle].
-_BUILDERS = ("harbor_dataset_builder", "huggingface_dataset_builder")
+# Needs modal-dojo[spindle].
+_BUILDERS = ("rl_dataset_builder",)
 
 __all__ = [
     "TinkerContext",
     "TinkerProgram",
-    "harbor_dataset_builder",
-    "huggingface_dataset_builder",
+    "rl_dataset_builder",
 ]
 
 
