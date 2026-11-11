@@ -30,6 +30,7 @@ from modal_dojo.common.memory_estimate import maybe_warn_gpu_oom
 from modal_dojo.common.models.qwen3_4b import Qwen3_4B
 from modal_dojo.common.ray_cluster import ModalRayJobResult
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+from modal_dojo.train_recipes.miles_recipe.muse_spark import Muse_Spark_Open_64k_Recipe
 from modal_dojo.train_recipes.slime_recipe import SlimeRecipe
 
 
@@ -104,15 +105,45 @@ def test_resolve_knob_dynamic_auto_starts_at_full_per_rank_batch():
     )
 
 
-def test_resolve_knob_respects_context_len_and_cp():
+@pytest.mark.parametrize("context_field", ["rollout_max_context_len", "max_seq_len"])
+def test_resolve_knob_respects_context_len_and_cp(context_field):
     recipe = MilesRecipe(
         max_tokens_per_gpu="auto",
         global_batch_size=6,
         context_parallel_size=2,
-        extra_config={"rollout_max_context_len": 9000},
+        extra_config={context_field: 9000},
     )
     # One actor GPU, cp=2: dp=1, so all 6 samples land on the rank, split by cp.
     assert resolve_batch_size_knob(recipe) == ("max_tokens_per_gpu", 27000, 4500)
+
+
+@pytest.mark.parametrize("context_field", ["rollout_max_context_len", "max_seq_len"])
+def test_context_budget_rejects_oversized_prompt_and_response(context_field):
+    with pytest.raises(ValueError, match=f"budgets exceed {context_field}"):
+        MilesRecipe(
+            rollout_max_response_len=8192,
+            extra_config={context_field: 9000, "rollout_max_prompt_len": 1024},
+        )
+
+
+def test_muse_legacy_context_override_emits_only_the_new_flag(tmp_path):
+    recipe = Muse_Spark_Open_64k_Recipe(
+        rollout_max_response_len=1024,
+        extra_config={"rollout_max_context_len": 8192},
+    )
+    prepare_launch_config(
+        recipe, None, str(tmp_path), yaml_config_fields=("extra_config",)
+    )
+    args = recipe.cli_args()
+    assert args[args.index("--max-seq-len") + 1] == "8192"
+    assert "rollout_max_context_len" not in yaml.safe_load(
+        (tmp_path / "extra_config.yaml").read_text()
+    )
+    with pytest.raises(ValueError, match="budgets exceed max_seq_len"):
+        Muse_Spark_Open_64k_Recipe(
+            rollout_max_response_len=1024,
+            extra_config={"rollout_max_context_len": 4096},
+        )
 
 
 def test_resolve_knob_fixed_micro_batch_uses_field_or_hatch():

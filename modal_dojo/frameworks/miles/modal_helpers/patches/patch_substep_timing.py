@@ -582,14 +582,15 @@ def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
         print(f"{path.name} already patched for substep timing")
         return
 
-    if path.name == "train_async.py" and "create_rollout_components" in src:
+    executor_driver = "create_rollout_components" in src or "create_components" in src
+    if path.name == "train_async.py" and executor_driver:
         src = _patch_async_executor_driver(src, path)
         compile(src, str(path), "exec")
         path.write_text(src)
         print(f"Patched {path.name} for async executor-based substep timing")
         return
 
-    if path.name == "train.py" and "create_rollout_components" in src:
+    if path.name == "train.py" and executor_driver:
         src = _patch_executor_driver(src, path)
         compile(src, str(path), "exec")
         path.write_text(src)
@@ -730,12 +731,19 @@ def _phase(name: str) -> str:
 
 def _patch_async_executor_driver(src: str, path: Path) -> str:
     """Instrument the executor async loop without serializing its prefetch tasks."""
+    startup = (
+        {"create_components": _phase("initialize_components")}
+        if "create_components(" in src
+        else {
+            "create_rollout_components": _phase("initialize_rollout"),
+            "create_training_models": _phase("initialize_training"),
+        }
+    )
     src = _wrap_calls(
         src,
         "train",
         {
-            "create_rollout_components": _phase("initialize_rollout"),
-            "create_training_models": _phase("initialize_training"),
+            **startup,
             "actor_model.train": _phase("train_models"),
             "critic_model.train": _phase("train_models"),
             "save_training_model": _phase("checkpoint_save"),
@@ -792,10 +800,14 @@ def _patch_async_executor_driver(src: str, path: Path) -> str:
 
 
 def _patch_executor_driver(src: str, path: Path) -> str:
-    startup = {
-        "create_rollout_components": "initialize_rollout",
-        "create_training_models": "initialize_training",
-    }
+    startup = (
+        {"create_components": "initialize_components"}
+        if "create_components(" in src
+        else {
+            "create_rollout_components": "initialize_rollout",
+            "create_training_models": "initialize_training",
+        }
+    )
     calls = {name: _phase(phase) for name, phase in startup.items()}
     # Newer Miles wraps Ray actors in worker handles, which expose get directly.
     rollout_get = (

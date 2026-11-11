@@ -1,4 +1,4 @@
-"""64K Muse Spark B300 recipe derived from radixark/miles PR #4111.
+"""64K Muse Spark B300 recipe using upstream Miles Muse Spark support.
 
 Trains the text model with frozen omni towers and FP32 master weights; Adam
 moments use BF16 on disk.
@@ -16,8 +16,9 @@ from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
-# The image bundles Miles 002ec9cf35e2, SGLang bc1c2ac7dfc5, and Megatron
-# 7cc41d59347e. Keep those sources together instead of overlaying older commits.
+# Keep SGLang bc1c2ac7dfc5 and Megatron 7cc41d59347e from the B300 image.
+# SGLang #49688 upstreams only part of this build's weight-sync fixes; it
+# excludes Blackwell's TRT-LLM expert refresh. Overlay the merged Miles support.
 # Miles PR #4125 supplies Torch 2.14 wheels, replacing our TE/FA2/Apex rebuilds:
 # https://github.com/radixark/miles/pull/4125
 _PATCH_DIR = (
@@ -47,10 +48,12 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     model_config_class: ClassVar[type[ModelConfig]] = Muse_Spark_Open
     # Preserve the volume name holding the validated torch_dist conversion.
     name: str = "miles-muse_spark_open_64k_b300_recipe"
+    # Keep the B300 image used for the full-model validation of this Miles pin.
     docker_image: str = (
-        "modalresearch/miles:dojo-muse-spark-open@sha256:"
-        "635dd446d8e19542045a3dd04d7edd56b60e5d0ea12c8e927468554fa1ed6f8d"
+        "radixark/miles:muse-spark-open@sha256:"
+        "88c66b1414aff0f2cd018923b70f7c463391980236171683bdf22f34796b6bf2"
     )
+    miles_git_ref: str = "706c6106cafe24bad5eba7cceb09ee4f24c2d1b3"
     image_run_commands: list[str] = field(default_factory=_image_patches)
     miles_model_name: str = "muse-spark-full"
     model_name: str = "muse_spark"
@@ -101,7 +104,7 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     n_samples_per_prompt: int = 4
     global_batch_size: int = 16
     num_steps_per_rollout: int = 1
-    rollout_max_context_len: int = 65536
+    max_seq_len: int = 65536
     rollout_max_prompt_len: int = 4096
     rollout_max_response_len: int = 61440
     eval_max_response_len: int = 61440
@@ -110,11 +113,10 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     apply_chat_template_kwargs: str | dict = field(
         default_factory=lambda: {"reasoning_effort": "xhigh"}
     )
-    chat_template_path: str = (
-        "/root/miles/miles/utils/chat_template_utils/templates/muse_spark_fixed.jinja"
-    )
-    # Leave reward to the workload.
-    rm_type: str = ""
+    # The native session adapter selects the registered fixed chat template.
+    use_session_server: bool | str = True
+    session_server_workers: int = 4
+    tito_model: str = "muse_spark"
     use_rollout_routing_replay: bool = True
     calculate_per_token_loss: bool = True
     balance_data: bool = True
