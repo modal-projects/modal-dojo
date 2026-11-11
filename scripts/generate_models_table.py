@@ -42,7 +42,8 @@ class RecipeRow:
 
     @property
     def display_name(self) -> str:
-        return self.hf_id.rsplit("/", 1)[-1]
+        slug = self.hf_id.rsplit("/", 1)[-1]
+        return slug[:1].upper() + slug[1:]
 
     @property
     def slug(self) -> str:

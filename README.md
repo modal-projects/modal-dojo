@@ -260,7 +260,7 @@ if __name__ == "__main__":
 
 </details>
 </td></tr>
-<tr class="model-row" data-model="gemma4-26b-a4b"><td>Gemma</td><td><a href="https://dojo.modal.dev/reference/gemma4_26b_a4b/">gemma-4-26B-A4B-it</a></td></tr>
+<tr class="model-row" data-model="gemma4-26b-a4b"><td>Gemma</td><td><a href="https://dojo.modal.dev/reference/gemma4_26b_a4b/">Gemma-4-26B-A4B-it</a></td></tr>
 <tr class="model-code"><td colspan="2">
 <details id="model-gemma4-26b-a4b" data-model="gemma4-26b-a4b">
 <summary>Run Gemma4_26B_A4B_Recipe</summary>
