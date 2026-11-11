@@ -45,6 +45,8 @@ MAX_METRIC_POINTS_PER_BATCH = 5000
 _PHASE_TIMEOUT_SECONDS = 30.0
 _STEP_EVENT_TIMEOUT_SECONDS = 5.0
 _ROLLOUT_TIMEOUT_SECONDS = 30.0
+# Metric writes are usually quick, but slow down with the dashboard under load.
+_METRIC_TIMEOUT_SECONDS = 30.0
 REPORT_DRAIN_RETRY_DELAY_SECONDS = 0.1
 REPORT_DRAIN_TIMEOUT_SECONDS = 60.0
 _REPORT_DRAIN_DEADLINE: float | None = None
@@ -240,7 +242,13 @@ def _enqueue_rollout(payload: dict[str, Any]) -> None:
         return
     lane = _lane(url)
     _ensure_worker(lane)
-    item = {"_url": url, "_timeout": _ROLLOUT_TIMEOUT_SECONDS, **payload}
+    item = {
+        "_url": url,
+        "_timeout": _ROLLOUT_TIMEOUT_SECONDS,
+        "_retry_count": 1,
+        "_retry_delay": 1.0,
+        **payload,
+    }
     try:
         lane.queue.put_nowait(item)
     except Exception:
@@ -317,7 +325,7 @@ def _enqueue_metric_points(payload: dict[str, Any], *, final: bool = False) -> N
     _ensure_worker(lane, allow_during_drain=final)
     item = {
         "_url": url,
-        "_timeout": _STEP_EVENT_TIMEOUT_SECONDS,
+        "_timeout": _METRIC_TIMEOUT_SECONDS,
         "_retry_count": 3 if final else 1,
         "_retry_delay": 1.0,
         **payload,
@@ -604,14 +612,14 @@ def _compact_report_queue(queue: "Queue[dict[str, Any] | None]") -> None:
         queue.not_empty.notify_all()
 
 
-def drain() -> None:
+def drain(timeout: float = REPORT_DRAIN_TIMEOUT_SECONDS) -> None:
     """Deliver queued reports, then stop accepting new ones.
 
-    Waits up to ``REPORT_DRAIN_TIMEOUT_SECONDS`` across all endpoints. Runs at
-    process exit; call it earlier to land every report before a final write.
+    Waits up to ``timeout`` seconds across all endpoints. Runs at process exit;
+    call it earlier to land every report before a final write.
     """
     global _REPORTER_DRAINING, _REPORT_DRAIN_DEADLINE
-    _REPORT_DRAIN_DEADLINE = time.monotonic() + REPORT_DRAIN_TIMEOUT_SECONDS
+    _REPORT_DRAIN_DEADLINE = time.monotonic() + timeout
     with _REPORTER_LOCK:
         _REPORTER_DRAINING = True
     for lane in _lanes():

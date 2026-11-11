@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import os
+import time
 
 import httpx
 
 from modal_dojo.common.config import modal_proxy_auth_headers
 from modal_dojo.common.errors import DojoConfigError
+
+# The driver waits this long for an unreachable or erroring server to come back.
+SERVER_WAIT_SECONDS = 15 * 60
+
+
+class SpindleUnavailable(DojoConfigError):
+    """The server is unreachable or answering with server errors."""
 
 
 def check_server(
@@ -29,7 +36,7 @@ def check_server(
             capabilities = client.get("/api/v1/get_server_capabilities")
             deployments = client.get("/api/v1/spindle/deployments")
         except httpx.TransportError as exc:
-            raise DojoConfigError(
+            raise SpindleUnavailable(
                 f"Could not reach Spindle at {base_url}: {exc}"
             ) from exc
     for response in (capabilities, deployments):
@@ -40,6 +47,11 @@ def check_server(
                 "Modal proxy token in MODAL_KEY/MODAL_SECRET is allowed for the "
                 "server's environment (`modal workspace proxy-tokens allow "
                 "<wk-token-id> <environment>`)."
+            )
+        if response.status_code >= 500:
+            raise SpindleUnavailable(
+                f"Spindle at {base_url} is unavailable ({response.status_code} "
+                f"from {response.request.url.path}); try again shortly"
             )
         if not response.is_success:
             raise DojoConfigError(
@@ -92,14 +104,25 @@ async def run_program(program, *, run, base_url, log_dir, max_tokens=None):
     # The driver owns its single-use container, so every ServiceClient in it,
     # tinker-cookbook's included, reaches Spindle through the Modal proxy.
     os.environ["TINKER_BASE_URL"] = base_url
-    tinker.ServiceClient = functools.partial(
-        tinker.ServiceClient, default_headers_overrides=modal_proxy_auth_headers()
-    )
+    proxy_headers = modal_proxy_auth_headers()
+
+    # A subclass, not a partial, so user code can still subclass and isinstance it.
+    class ServiceClient(tinker.ServiceClient):
+        def __init__(self, *args, default_headers_overrides=None, **kwargs):
+            super().__init__(
+                *args,
+                default_headers_overrides={
+                    **proxy_headers,
+                    **(default_headers_overrides or {}),
+                },
+                **kwargs,
+            )
+
+    tinker.ServiceClient = ServiceClient
     async with run_lifecycle(run):
         # The shared server is redeployed from Spindle main; record what ran.
         run.metadata.update(
-            await asyncio.to_thread(
-                check_server,
+            await _wait_for_server(
                 base_url,
                 os.environ["TINKER_API_KEY"],
                 program.model_name,
@@ -109,3 +132,18 @@ async def run_program(program, *, run, base_url, log_dir, max_tokens=None):
         with tinker.ServiceClient() as client:
             await program.run(client, TinkerContext(run, log_dir))
     return run
+
+
+async def _wait_for_server(base_url, api_key, model_name, *, max_tokens):
+    """check_server, waiting out a restart instead of failing the attempt."""
+    deadline = time.monotonic() + SERVER_WAIT_SECONDS
+    while True:
+        try:
+            return await asyncio.to_thread(
+                check_server, base_url, api_key, model_name, max_tokens=max_tokens
+            )
+        except SpindleUnavailable as exc:
+            if time.monotonic() >= deadline:
+                raise
+            print(f"{exc}; checking again in 30 s", flush=True)
+            await asyncio.sleep(30)
