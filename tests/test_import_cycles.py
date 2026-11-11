@@ -57,7 +57,6 @@ REMOTE_ONLY = frozenset(
         "modal_dojo.frameworks.slime.modal_helpers.patches.patch_advantages",
         "modal_dojo.frameworks.slime.modal_helpers.patches.patch_bridge_provider_per_token_loss",
         "modal_dojo.frameworks.slime.modal_helpers.patches.patch_megatron_bridge",
-        "modal_dojo.frameworks.slime.modal_helpers.patches.patch_stop_token_diagnostic",
         "modal_dojo.frameworks.slime.modal_helpers.patches.patch_zero_std_metrics",
         "modal_dojo.frameworks.slime.opd_reward",
     }

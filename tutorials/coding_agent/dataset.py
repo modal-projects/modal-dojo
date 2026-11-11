@@ -22,6 +22,7 @@ from typing import Any
 
 import modal
 
+from modal_dojo import TrainingRun
 from modal_dojo.common import hf_secrets
 from modal_dojo.common.dataset_partitioning import sample_rows, split_rows
 from modal_dojo.common.run import checkpoint_location
@@ -382,7 +383,7 @@ def _prepare_remote(
     hf_revision: str | None,
     min_grade: str | None,
     volume_name: str,
-):
+) -> dict[str, int]:
     counts = prepare_dataset(
         Path(root),
         converter_revision=converter_revision,
@@ -403,7 +404,7 @@ def _mixed_remote(
     checkpoint: str | None,
     replace: bool,
     volume_name: str,
-):
+) -> tuple[str, dict[str, Any]]:
     import torch
 
     dump = Path(probe_dump)
@@ -424,7 +425,7 @@ def _mixed_remote(
     return str(path), provenance
 
 
-def probe(root: Path):
+def probe(root: Path) -> tuple[TrainingRun, str]:
     config = runpy.run_path(str(Path(__file__).with_name("main.py")))["config"]
     dataset = type(config.dataset)(root / "train-300.jsonl")
     recipe = replace(

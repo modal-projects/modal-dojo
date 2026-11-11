@@ -11,7 +11,9 @@
 # [Harbor](https://docs.harborframework.com/).
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from modal_dojo import (
@@ -50,7 +52,7 @@ TRAIN_SUBSET = "train-300-mixed-reward-qwen3-6-27b-agentic-n8"
 EVAL_SUBSETS = ("eval",)
 
 class AgentTaskDataset(DatasetConfig):
-    def __init__(self, path: Path):
+    def __init__(self, path: Path) -> None:
         self.path = path
 
     def input_key(self) -> str:
@@ -62,7 +64,7 @@ class AgentTaskDataset(DatasetConfig):
     def apply_chat_template(self) -> bool:
         return False
 
-    def rows(self):
+    def rows(self) -> Iterator[dict[str, Any]]:
         with self.path.open() as source:
             for line in source:
                 if line.strip():

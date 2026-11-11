@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import sys
-import time
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 from modal_dojo.common import reporting
 from modal_dojo.common import timing_recorder
@@ -34,6 +33,12 @@ def test_dist_down_rank_environment_elects_one_publisher(monkeypatch):
 
 def test_phase_accounting_and_invocations_are_cumulative(monkeypatch):
     _configure(monkeypatch)
+    now = 0.0
+    monkeypatch.setattr(
+        timing_recorder,
+        "time",
+        SimpleNamespace(monotonic=lambda: now, time=lambda: 1000.0),
+    )
     snapshots = []
     monkeypatch.setattr(
         reporting,
@@ -43,14 +48,15 @@ def test_phase_accounting_and_invocations_are_cumulative(monkeypatch):
 
     recorder = RoleRecorder("actor", 7)
     with recorder.phase("forward_backward"):
-        time.sleep(0.001)
+        now += 0.25
+    now += 0.5
     with recorder.phase("forward_backward"):
-        time.sleep(0.001)
+        now += 0.75
 
     phase = snapshots[-1][0]["phases"]["forward_backward"]
     assert phase["count"] == 2
-    assert phase["busy_duration_s"] > 0
-    assert len(phase["invocations"]) == 2
+    assert phase["busy_duration_s"] == 1.0
+    assert phase["invocations"] == [[0.0, 0.25], [0.75, 1.5]]
     assert (
         RoleTimingRecord.model_validate(snapshots[-1][0]).storage_key
         == "00000007__actor"
