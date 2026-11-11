@@ -687,10 +687,7 @@ class MilesRecipe(BaseTrainRecipe):
     )
     async_mode: bool = False
     metrics: MetricConfig | None = field(default_factory=DashboardMetricConfig)
-    docker_image: str = (
-        "modalresearch/miles:dojo-dev-202609151226@sha256:"
-        "51e5fc3f3abbdde6f92411a58f4bc045eb92863f284c05162afe0f6a47e3cb2c"
-    )
+    docker_image: str = "radixark/miles:dev-202609151226"
     image_overlay: Callable[[modal.Image], modal.Image] | None = None
     local_miles: str | None = None
     miles_git_ref: str | None = None
