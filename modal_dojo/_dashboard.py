@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import hashlib
 import hmac
 import json
@@ -18,7 +19,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, quote, urlencode
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -68,7 +69,9 @@ from modal_dojo.common.dashboard import (
 )
 from modal_dojo.common.dashboard_components import (
     DASHBOARD_OVERLAY_VOLUME_NAME,
+    MAX_COMPILED_COMPONENT_BYTES,
     MAX_COMPONENT_BYTES,
+    MULTI_INSTANCE_COMPONENTS,
     DashboardComponent,
 )
 from modal_dojo.common.run import (
@@ -531,6 +534,35 @@ def _component_compiler_script() -> Path:
     raise DashboardComponentCompileError("Dashboard component compiler unavailable")
 
 
+@functools.cache
+def component_frame_version() -> str:
+    """Fingerprint of everything besides the source that shapes a frame.
+
+    Frames are served ``immutable`` under a URL keyed by the source digest, so
+    the URL also carries this version: a dashboard deploy that changes the
+    host template, the bundler, or the frontend's locked dependencies (which
+    the bundler inlines, Svelte included) gets new URLs instead of browsers
+    reusing frames built by the old ones.
+    """
+    digest = hashlib.sha256(_COMPONENT_FRAME_TEMPLATE.encode())
+    try:
+        script = _component_compiler_script()
+    except DashboardComponentCompileError:
+        return digest.hexdigest()[:16]
+    for path in (script, script.with_name("package-lock.json")):
+        if path.is_file():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def component_frame_url(training_run_id: str, component_type: str, digest: str) -> str:
+    base = (
+        f"/api/runs/{quote(training_run_id, safe='')}/dashboard-components/"
+        f"{quote(component_type, safe='')}/{digest}/frame.html"
+    )
+    return f"{base}?{urlencode({'bridge': 'modal-dojo-v1', 'v': component_frame_version()})}"
+
+
 def compile_dashboard_component_source(source: bytes) -> bytes:
     """Compile Svelte component source into a self-contained ES module.
 
@@ -554,7 +586,13 @@ def compile_dashboard_component_source(source: bytes) -> bytes:
         if completed.returncode != 0 or not output_path.is_file():
             detail = (completed.stderr or completed.stdout or "compile failed").strip()
             raise DashboardComponentCompileError(detail[-1000:])
-        return output_path.read_bytes()
+        bundle = output_path.read_bytes()
+        if len(bundle) > MAX_COMPILED_COMPONENT_BYTES:
+            raise DashboardComponentCompileError(
+                f"compiled component is {len(bundle):,} bytes; the limit is "
+                f"{MAX_COMPILED_COMPONENT_BYTES:,} (MAX_COMPILED_COMPONENT_BYTES)"
+            )
+        return bundle
 
 
 # Deliberately no secrets and no Volumes: the compiler only ever sees the
@@ -1376,6 +1414,40 @@ def fastapi_app():
             result = None
         return build_run_summary(run.model_dump(mode="json"), result)
 
+    def _component_kind(component_type: str) -> str:
+        try:
+            return DashboardComponent(component_type).value
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=404, detail="Unknown dashboard component"
+            ) from exc
+
+    def _attached_components(
+        run: TrainingRun, kind: str | None = None
+    ) -> list[JsonDict]:
+        """Usable manifests attached to ``run``, in attachment order."""
+        components = (run.metadata or {}).get("dashboard_components")
+        if not isinstance(components, dict):
+            return []
+        attached = []
+        for value in components.values():
+            if not isinstance(value, dict):
+                continue
+            if kind is not None and value.get("type") != kind:
+                continue
+            if not value.get("path") or not value.get("sha256"):
+                continue
+            attached.append(dict(value))
+        return attached
+
+    def _with_frame_url(run: TrainingRun, manifest: JsonDict) -> JsonDict:
+        return {
+            **manifest,
+            "frame_url": component_frame_url(
+                run.training_run_id, str(manifest["type"]), str(manifest["sha256"])
+            ),
+        }
+
     def _component_manifest(
         run: TrainingRun, component_type: str, digest: str | None = None
     ) -> JsonDict:
@@ -1390,23 +1462,8 @@ def fastapi_app():
         ``digest`` the entry carrying exactly that ``sha256`` is returned, so
         a URL that names an artifact can never be answered with another one.
         """
-        try:
-            kind = DashboardComponent(component_type).value
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=404, detail="Unknown dashboard component"
-            ) from exc
-        components = (run.metadata or {}).get("dashboard_components")
-        if not isinstance(components, dict):
-            raise HTTPException(
-                status_code=404, detail="No dashboard component attached"
-            )
-        for value in reversed(list(components.values())):
-            if not isinstance(value, dict) or value.get("type") != kind:
-                continue
-            manifest = dict(value)
-            if not manifest.get("path") or not manifest.get("sha256"):
-                continue
+        kind = _component_kind(component_type)
+        for manifest in reversed(_attached_components(run, kind)):
             if digest is not None and manifest["sha256"] != digest:
                 continue
             return manifest
@@ -1517,13 +1574,42 @@ def fastapi_app():
         except (AttributeError, RuntimeError, Error):
             return
 
+    @web.get("/api/runs/{training_run_id}/dashboard-components")
+    async def list_dashboard_components(
+        training_run_id: str, type: str | None = Query(default=None)
+    ):
+        """Every component attached to a run, oldest attachment first.
+
+        Panel slots render all of these; ``trajectory_viewer`` uses only the
+        last one (see the single-type route).
+        """
+        run = await _get_run_or_404(training_run_id)
+        kind = _component_kind(type) if type is not None else None
+        return JSONResponse(
+            [
+                _with_frame_url(run, manifest)
+                for manifest in _attached_components(run, kind)
+            ]
+        )
+
     @web.get("/api/runs/{training_run_id}/dashboard-components/{component_type}")
     async def get_dashboard_component_manifest(
         training_run_id: str, component_type: str
     ):
+        """The component that fills a single-instance slot: the latest one."""
         run = await _get_run_or_404(training_run_id)
+        if DashboardComponent(_component_kind(component_type)) in (
+            MULTI_INSTANCE_COMPONENTS
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"{component_type} shows every attached component; list "
+                    "them with ?type= on /dashboard-components"
+                ),
+            )
         manifest = _component_manifest(run, component_type)
-        return JSONResponse(manifest)
+        return JSONResponse(_with_frame_url(run, manifest))
 
     @web.get(
         "/api/runs/{training_run_id}/dashboard-components/{component_type}"
@@ -1540,7 +1626,7 @@ def fastapi_app():
         source = _component_source_path(manifest)
         cache_root = Path("/tmp/training-gym-dashboard-components")
         cache_root.mkdir(parents=True, exist_ok=True)
-        bundle = cache_root / f"{digest}.js"
+        bundle = cache_root / f"{digest}.{component_frame_version()}.js"
 
         if not bundle.is_file():
             await _compile_component_bundle(source, digest, bundle)

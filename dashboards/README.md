@@ -67,3 +67,59 @@ receives its props over `postMessage` and cannot use the dashboard's
 credentials. The built-in viewer remains the fallback when no run-scoped
 component is available (or compilation fails). If several names are attached
 for the same component type, the most recently attached one is used.
+
+### Slots
+
+| `component_type` | Where it renders | How many | Props |
+| --- | --- | --- | --- |
+| `TRAJECTORY_VIEWER` | Rollouts tab, in place of the selected sample's conversation | the latest one | `sample`, `samples`, `trajectory`, `rewardEvents`, `rollout`, `run`, `position` |
+| `SUMMARY_PANEL` | Summary tab, below the charts | all, in attachment order | `run`, `rollouts` (per-step summaries, oldest first) |
+| `ROLLOUT_PANEL` | Rollouts tab, below the selected sample's conversation | all, in attachment order | `sample`, `samples`, `rollout`, `run`, `position` |
+
+`modal_dojo.common.dashboard_components.COMPONENT_PROPS` lists the same props
+with descriptions. Props are re-sent, which remounts the component, when the
+selection changes (for the Rollouts tab slots) or when the run's status or
+rollouts change (for summary panels), not on every background refresh.
+
+A summary panel that lists each step's reward range:
+
+```svelte
+<script>
+  let { rollouts = [] } = $props();
+</script>
+
+<ul>
+  {#each rollouts as step}
+    {@const stats = step.reward_stats}
+    <li>
+      step {step.rollout_id}:
+      {stats ? `${stats.min.toFixed(3)} to ${stats.max.toFixed(3)}` : "no rewards"}
+    </li>
+  {/each}
+</ul>
+
+<style>
+  ul { margin: 0; padding-left: 16px; color: #d1d1d1; font: 12px system-ui; }
+</style>
+```
+
+```python
+run.add_dashboard_component(
+    name="reward-range",
+    component_type=DashboardComponent.SUMMARY_PANEL,
+    from_path="./RewardRange.svelte",
+)
+run.remove_dashboard_component("reward-range")  # detach it again
+```
+
+Components run without network access and without the dashboard's
+stylesheet, so style them with a `<style>` block. A compiled component,
+Svelte runtime included, must stay under 400 KB
+(`MAX_COMPILED_COMPONENT_BYTES`); a larger one shows a compile error instead. `GET
+/api/runs/<id>/dashboard-components?type=<slot>` lists a run's attachments,
+each with the `frame_url` the dashboard loads. Frame URLs include a version of
+the frame template and bundler, so a dashboard upgrade never serves a frame
+built by the previous one.
+
+See [`MALLEABLE_UI.md`](MALLEABLE_UI.md) for where this is going (layouts and an
+in-browser editor) and the security model.
