@@ -66,6 +66,19 @@ jobs:
 
       - name: Fix pinned source fetches
         run: |
+          if ! grep -q '^ARG MEGATRON_COMMIT=' docker/Dockerfile; then
+            grep -q '^ARG MEGATRON_BRANCH=' docker/Dockerfile
+            grep -Fq 'cd Megatron-LM &&' docker/Dockerfile
+            awk '
+              { print }
+              /^ARG MEGATRON_BRANCH=/ { print "ARG MEGATRON_COMMIT=\"\"" }
+            ' docker/Dockerfile > docker/Dockerfile.patched
+            mv docker/Dockerfile.patched docker/Dockerfile
+            sed -i \
+              's/cd Megatron-LM \&\&/cd Megatron-LM \&\& git checkout -f ${MEGATRON_COMMIT} \&\& git submodule update --init --recursive \&\&/' \
+              docker/Dockerfile
+          fi
+
           # Fail if upstream changes any command this workaround replaces.
           for command in \
             'git fetch origin ${SGLANG_BRANCH}' \
@@ -81,6 +94,17 @@ jobs:
             -e 's/git checkout -f ${MEGATRON_COMMIT}/git fetch --depth=1 origin ${MEGATRON_COMMIT} \&\& git checkout -f ${MEGATRON_COMMIT}/' \
             -e 's/git checkout ${MILES_COMMIT}/git fetch --depth=1 origin ${MILES_COMMIT} \&\& git checkout ${MILES_COMMIT}/' \
             docker/Dockerfile
+
+      - name: Fix DeepSelect shallow clone
+        run: |
+          # Some older DeepSeek Dockerfiles only do a shallow clone before checkout.
+          if grep -Fq 'git clone --recursive --depth 1 https://github.com/deepseek-ai/DeepSelect.git /tmp/DeepSelect' docker/Dockerfile; then
+            grep -Fq 'cd /tmp/DeepSelect && git checkout 0f03b68748b304863fdf0181a11458d04ae533a9' docker/Dockerfile
+            sed -i \
+              -e 's|git clone --recursive --depth 1 https://github.com/deepseek-ai/DeepSelect.git /tmp/DeepSelect|git clone --depth 1 https://github.com/deepseek-ai/DeepSelect.git /tmp/DeepSelect|' \
+              -e 's|cd /tmp/DeepSelect \&\& git checkout 0f03b68748b304863fdf0181a11458d04ae533a9|cd /tmp/DeepSelect \&\& git fetch --depth=1 origin 0f03b68748b304863fdf0181a11458d04ae533a9 \&\& git checkout --detach FETCH_HEAD|' \
+              docker/Dockerfile
+          fi
 
       - name: Resolve Miles commit
         id: miles
