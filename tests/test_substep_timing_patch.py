@@ -11,6 +11,7 @@ expected output with ``uv run pytest tests/test_substep_timing_patch.py
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -492,3 +493,84 @@ def test_executor_package_skips_unpatchable_files(miles, tmp_path, capsys):
     for rel in files:
         if "model.py" not in rel:
             assert miles.PREAMBLE_MARKER in (tmp_path / rel).read_text()
+
+
+# The shape of the executor-based ``train_async.py`` (radixark/miles 819cfd23):
+# one direct await of the prefetched rollout, one conditional drain of the next
+# rollout before the weight update, and evals before and inside the loop.
+_EXECUTOR_TRAIN_ASYNC = """\
+from miles.ray.placement_group import create_rollout_components
+async def train(args):
+    inference_controller, rollout_executor, n = await create_rollout_components(args)
+    actor_model, critic_model = await create_training_models(args, rollout_executor)
+    await update_weights(args, actor_model, rollout_executor, inference_controller)
+    if args.eval_interval is not None:
+        await inference_controller.prepare_eval()
+        await eval_dispatcher.dispatch(0, hf_dir=args.hf_checkpoint)
+    rollout_data_next_future = await eager_create_task(prepare_and_generate(0))
+    for rollout_id in range(args.start_rollout_id, args.num_rollout):
+        if rollout_data_next_future is not None:
+            rollout_data_curr_ref = await rollout_data_next_future
+        if args.use_critic:
+            values = await critic_model.train(rollout_id, rollout_data_curr_ref)
+        await actor_model.train(rollout_id, rollout_data_curr_ref)
+        if args.offload_train:
+            await actor_model.offload()
+        await save_training_model(actor_model, rollout_id, True)
+        await rollout_executor.save(rollout_id)
+        if args.drain_before_update:
+            rollout_data_curr_ref = (await x) if (x := rollout_data_next_future) is not None else None
+            rollout_data_next_future = None
+        await update_weights(args, actor_model, rollout_executor, inference_controller, rollout_id=rollout_id)
+        if args.eval_interval is not None:
+            await inference_controller.prepare_eval()
+            await eval_dispatcher.dispatch(rollout_id)
+"""
+
+
+def test_async_executor_driver_separates_waits_and_evals(miles, tmp_path):
+    path = tmp_path / "train_async.py"
+    path.write_text(_EXECUTOR_TRAIN_ASYNC)
+    miles._patch_file(path, miles.ENTRYPOINTS[path.name])
+    patched = path.read_text()
+    compile(patched, str(path), "exec")
+    before_loop, loop = patched.split("for rollout_id in range", 1)
+    assert re.search(
+        r"with _tg_time_phase\('wait_for_rollout'\):\n"
+        r" +rollout_data_curr_ref = await rollout_data_next_future\n",
+        loop,
+    )
+    assert re.search(
+        r"with _tg_time_phase\('wait_for_next_rollout'\):\n"
+        r" +rollout_data_curr_ref = \(await x\)",
+        loop,
+    )
+    phase = "_tg_time_phase('evaluate_rollouts_end' if 'rollout_id' in locals() else 'evaluate_rollouts')"
+    assert before_loop.count(phase) == 1
+    assert loop.count(phase) == 1
+
+
+def test_async_executor_driver_records_eval_phase_by_position(miles):
+    """Before the loop the eval is pre-training; inside it, post-training."""
+    phase = (
+        "'evaluate_rollouts_end' if 'rollout_id' in locals() else 'evaluate_rollouts'"
+    )
+
+    def outside():
+        return eval(phase)
+
+    def inside():
+        rollout_id = 0  # noqa: F841
+        return eval(phase)
+
+    assert outside() == "evaluate_rollouts"
+    assert inside() == "evaluate_rollouts_end"
+
+
+def test_async_executor_driver_rejects_ambiguous_waits(miles, tmp_path):
+    src = _EXECUTOR_TRAIN_ASYNC.replace(
+        "(await x) if (x := rollout_data_next_future) is not None else None",
+        "await rollout_data_next_future",
+    )
+    with pytest.raises(RuntimeError, match="one direct and one conditional"):
+        miles._patch_async_executor_driver(src, tmp_path / "train_async.py")
