@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import ast
 import copyreg
 import pickle
-from types import FunctionType
 from typing import Any
+
+from modal_dojo.common._modal_compat import HandleDescription, describe_handle
 
 
 class ModalCaptureError(TypeError):
@@ -22,6 +22,9 @@ def register_modal_cloudpickle_reducers() -> None:
     needs cloudpickle for inline user callbacks, so register reducers that
     preserve normal Modal syntax while reconstructing those handles from
     Modal's public APIs inside the remote container.
+
+    Reading back how a handle was constructed is the only part that needs
+    Modal's private attributes; it lives in ``_modal_compat.describe_handle``.
     """
 
     global _REDUCERS_REGISTERED
@@ -49,13 +52,11 @@ def register_modal_cloudpickle_reducers() -> None:
 
 
 def _reduce_modal_app_named_handle(value: Any):
-    original = _sync_original(value)
-    local_reduce = _reduce_from_local_handle(value, original)
-    if local_reduce is not None:
-        return local_reduce
-    closure = _load_closure(original)
-    app_name = closure.get("app_name")
-    name = closure.get("name")
+    handle = describe_handle(value)
+    if handle.is_local:
+        return _default_reduce(value)
+    app_name = handle.loader_vars.get("app_name")
+    name = handle.loader_vars.get("name")
     if not isinstance(app_name, str) or not isinstance(name, str):
         raise ModalCaptureError(
             f"Only name-based {type(value).__name__} handles can be captured in "
@@ -66,17 +67,15 @@ def _reduce_modal_app_named_handle(value: Any):
         _public_modal_class_name(value),
         app_name,
         name,
-        _environment_name(original),
+        handle.environment_name,
     )
 
 
 def _reduce_modal_named_handle(value: Any):
-    original = _sync_original(value)
-    local_reduce = _reduce_from_local_handle(value, original)
-    if local_reduce is not None:
-        return local_reduce
-    closure = _load_closure(original)
-    name = getattr(original, "_name", None) or closure.get("name")
+    handle = describe_handle(value)
+    if handle.is_local:
+        return _default_reduce(value)
+    name = handle.name or handle.loader_vars.get("name")
     if not isinstance(name, str):
         raise ModalCaptureError(
             f"Only name-based {type(value).__name__} handles can be captured in "
@@ -86,56 +85,48 @@ def _reduce_modal_named_handle(value: Any):
     return _restore_modal_named_handle, (
         _public_modal_class_name(value),
         name,
-        _environment_name(original),
-        _create_if_missing(closure),
+        handle.environment_name,
+        bool(handle.loader_vars.get("create_if_missing", False)),
     )
 
 
 def _reduce_modal_name_or_id_handle(value: Any):
-    original = _sync_original(value)
-    local_reduce = _reduce_from_local_handle(value, original)
-    if local_reduce is not None:
-        return local_reduce
-    closure = _load_closure(original)
-    object_id = _object_id(original) or _single_closure_id(closure)
-    if isinstance(object_id, str):
+    handle = describe_handle(value)
+    if handle.is_local:
+        return _default_reduce(value)
+    object_id = _handle_object_id(handle)
+    if object_id is not None:
         return _restore_modal_id_handle, (_public_modal_class_name(value), object_id)
     return _reduce_modal_named_handle(value)
 
 
 def _reduce_modal_volume(volume: Any):
-    original = _sync_original(volume)
-    local_reduce = _reduce_from_local_handle(volume, original)
-    if local_reduce is not None:
-        return local_reduce
-    closure = _load_closure(original)
-    object_id = _object_id(original) or _single_closure_id(closure)
-    if isinstance(object_id, str):
+    handle = describe_handle(volume)
+    if handle.is_local:
+        return _default_reduce(volume)
+    object_id = _handle_object_id(handle)
+    if object_id is not None:
         return _restore_modal_id_handle, (_public_modal_class_name(volume), object_id)
-    name = getattr(original, "_name", None) or closure.get("name")
+    name = handle.name or handle.loader_vars.get("name")
     if not isinstance(name, str):
         raise ModalCaptureError(
             "Only name-based or id-based Volume handles can be captured in "
             "Modal Dojo callbacks. Use modal.Volume.from_name(...), "
             "modal.Volume.from_id(...), or create the Volume inside the callback."
         )
-    create_if_missing = bool(closure.get("create_if_missing", False))
-    version = closure.get("version")
     return _restore_modal_volume, (
         name,
-        _environment_name(original),
-        create_if_missing,
-        version,
+        handle.environment_name,
+        bool(handle.loader_vars.get("create_if_missing", False)),
+        handle.loader_vars.get("version"),
     )
 
 
 def _reduce_modal_secret(secret: Any):
-    original = _sync_original(secret)
-    local_reduce = _reduce_from_local_handle(secret, original)
-    if local_reduce is not None:
-        return local_reduce
-    closure = _load_closure(original)
-    name = getattr(original, "_name", None) or closure.get("name")
+    handle = describe_handle(secret)
+    if handle.is_local:
+        return _default_reduce(secret)
+    name = handle.name or handle.loader_vars.get("name")
     if not isinstance(name, str):
         raise ModalCaptureError(
             "Only name-based Secret handles can be captured in Modal Dojo "
@@ -144,16 +135,15 @@ def _reduce_modal_secret(secret: Any):
             "Secret.from_local_environ(...) are intentionally not serialized "
             "because that would embed local secret values in the pickle payload."
         )
-    required_keys = closure.get("required_keys", [])
+    required_keys = handle.loader_vars.get("required_keys", [])
     if not isinstance(required_keys, list):
         required_keys = []
-    return _restore_modal_secret, (name, _environment_name(original), required_keys)
+    return _restore_modal_secret, (name, handle.environment_name, required_keys)
 
 
 def _reduce_modal_sandbox(sandbox: Any):
-    original = _sync_original(sandbox)
-    closure = _load_closure(original)
-    sandbox_id = _object_id(original) or closure.get("sandbox_id")
+    handle = describe_handle(sandbox)
+    sandbox_id = handle.object_id or handle.loader_vars.get("sandbox_id")
     if not isinstance(sandbox_id, str):
         raise ModalCaptureError(
             "Only id-based Sandbox handles can be captured in Modal Dojo "
@@ -164,13 +154,11 @@ def _reduce_modal_sandbox(sandbox: Any):
 
 
 def _reduce_modal_id_handle(value: Any):
-    original = _sync_original(value)
-    local_reduce = _reduce_from_local_handle(value, original)
-    if local_reduce is not None:
-        return local_reduce
-    closure = _load_closure(original)
-    object_id = _object_id(original) or _single_closure_id(closure)
-    if not isinstance(object_id, str):
+    handle = describe_handle(value)
+    if handle.is_local:
+        return _default_reduce(value)
+    object_id = _handle_object_id(handle)
+    if object_id is None:
         raise ModalCaptureError(
             f"Only id-based {type(value).__name__} handles can be captured in "
             f"Modal Dojo callbacks. Use modal.{type(value).__name__}.from_id(...) "
@@ -244,79 +232,21 @@ def _restore_modal_secret(
     return modal.Secret.from_name(name, **kwargs)
 
 
-def _sync_original(value: Any) -> Any:
-    for attr_name, attr_value in getattr(value, "__dict__", {}).items():
-        if attr_name.startswith("_sync_original"):
-            return attr_value
-    return value
-
-
 def _public_modal_class_name(value: Any) -> str:
     return type(value).__name__.lstrip("_")
 
 
-def _object_id(original: Any) -> str | None:
-    object_id = getattr(original, "_object_id", None)
-    return object_id if isinstance(object_id, str) else None
-
-
-def _reduce_from_local_handle(value: Any, original: Any):
-    load = getattr(original, "_load", None)
-    qualname = getattr(load, "__qualname__", "")
-    if not isinstance(qualname, str) or "from_local" not in qualname:
-        return None
+def _default_reduce(value: Any):
+    """Pickle a handle built from local state the way pickle would without us."""
     return value.__reduce_ex__(pickle.HIGHEST_PROTOCOL)
 
 
-def _single_closure_id(closure: dict[str, Any]) -> str | None:
-    if len(closure) != 1:
+def _handle_object_id(handle: HandleDescription) -> str | None:
+    """The handle's object id: its own if hydrated, else the single id a
+    ``from_id`` loader was given."""
+    if handle.object_id is not None:
+        return handle.object_id
+    if len(handle.loader_vars) != 1:
         return None
-    value = next(iter(closure.values()))
+    value = next(iter(handle.loader_vars.values()))
     return value if isinstance(value, str) else None
-
-
-def _create_if_missing(closure: dict[str, Any]) -> bool:
-    return bool(closure.get("create_if_missing", False))
-
-
-def _environment_name(original: Any) -> str | None:
-    load_context = getattr(original, "_load_context_overrides", None)
-    environment_name = getattr(load_context, "_environment_name", None)
-    if isinstance(environment_name, str):
-        return environment_name
-
-    kwargs = _repr_kwargs(original)
-    environment_name = kwargs.get("environment_name")
-    return environment_name if isinstance(environment_name, str) else None
-
-
-def _load_closure(original: Any) -> dict[str, Any]:
-    load = getattr(original, "_load", None)
-    if not isinstance(load, FunctionType):
-        return {}
-    closure = load.__closure__ or ()
-    return {
-        name: cell.cell_contents
-        for name, cell in zip(load.__code__.co_freevars, closure, strict=False)
-    }
-
-
-def _repr_kwargs(original: Any) -> dict[str, Any]:
-    rep = getattr(original, "_rep", "")
-    if not isinstance(rep, str):
-        return {}
-    try:
-        expr = ast.parse(rep, mode="eval").body
-    except SyntaxError:
-        return {}
-    if not isinstance(expr, ast.Call):
-        return {}
-    kwargs: dict[str, Any] = {}
-    for keyword in expr.keywords:
-        if keyword.arg is None:
-            continue
-        try:
-            kwargs[keyword.arg] = ast.literal_eval(keyword.value)
-        except ValueError:
-            continue
-    return kwargs
