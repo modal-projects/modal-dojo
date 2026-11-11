@@ -506,10 +506,9 @@ def test_final_record_is_written_once_and_not_shadowed_by_progress(
     queue.put(None)
     queue.put(None)
     queue.put(final_payload)
-    monkeypatch.setattr(reporting, "_REPORT_QUEUE", queue)
     monkeypatch.setattr(reporting, "_post", lambda item: delivered.append(item) or True)
     monkeypatch.setattr(reporting, "_REPORT_DRAIN_DEADLINE", time.monotonic() + 1.0)
-    reporting._worker()
+    reporting._worker(queue)
     assert delivered == [final_payload]
     assert queue.unfinished_tasks == 0
 

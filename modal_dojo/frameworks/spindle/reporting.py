@@ -108,6 +108,7 @@ async def run_lifecycle(run: TrainingRun):
         else:
             mark_run_failed(run, exc)
         _end(run)
+        await _drain_reports()
         try:
             await run.save(is_async=True)
         except Exception:
@@ -115,8 +116,19 @@ async def run_lifecycle(run: TrainingRun):
         raise
     run.status = TrainingRunStatus.COMPLETED
     run.completed_at = _end(run)
+    await _drain_reports()
     mark_training_attempt_finished(run, status="completed", ended_at=run.completed_at)
     await run.save(is_async=True)
+
+
+async def _drain_reports() -> None:
+    """Land queued dashboard writes, which rewrite the run, before its final save."""
+    from modal_dojo.common.reporting import drain
+
+    try:
+        await asyncio.to_thread(drain)
+    except Exception:
+        logger.exception("Could not drain Dojo reports")
 
 
 def _end(run: TrainingRun) -> int:

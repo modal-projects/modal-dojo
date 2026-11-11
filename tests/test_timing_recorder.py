@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import time
-from queue import Queue
 from types import ModuleType
 
 from modal_dojo.common import reporting
@@ -113,13 +112,10 @@ def test_sft_skips_rl_only_phases(monkeypatch):
 def test_preloop_recorders_close_before_queue_drains(monkeypatch):
     _configure(monkeypatch)
     timing_recorder._PRELOOP_RECORDERS.clear()
-    queue = Queue()
-    monkeypatch.setattr(reporting, "_REPORT_QUEUE", queue)
-    monkeypatch.setattr(reporting, "_REPORTER_STARTED", False)
-    monkeypatch.setattr(reporting, "_REPORTER_THREAD", None)
+    monkeypatch.setattr(reporting, "_LANES", {})
     monkeypatch.setattr(reporting, "_REPORTER_DRAINING", False)
-    monkeypatch.setattr(reporting, "_REPORT_DRAIN_SENTINEL_QUEUED", False)
-    monkeypatch.setattr(reporting, "_ensure_worker", lambda **_kwargs: None)
+    monkeypatch.setattr(reporting, "_ensure_worker", lambda *_a, **_kwargs: None)
+    queue = reporting._lane("https://dashboard.test/api/timing-events").queue
 
     with timing_recorder.recording_lane("driver", None) as recorder:
         with recorder.phase("initial_weight_sync"):
@@ -133,7 +129,7 @@ def test_preloop_recorders_close_before_queue_drains(monkeypatch):
             "final": False,
         }
     )
-    reporting._drain_report_queue()
+    reporting.drain()
 
     queued = list(queue.queue)
     assert queued
