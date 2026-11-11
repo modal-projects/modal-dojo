@@ -119,9 +119,9 @@ from modal_dojo.common.training_rollout import (
 from modal_dojo.utils.metadata import (
     bounded_gather_with_retries,
     vol_get as _metadata_vol_get,
-    vol_list as _metadata_vol_list,
     vol_list_metadata_with_failures,
     vol_put_many as _metadata_vol_put_many,
+    vol_remove as _metadata_vol_remove,
 )
 
 SummaryLoader = Callable[[], Awaitable[list[JsonDict]]]
@@ -252,6 +252,7 @@ _MISSING_TOKEN_DUMMY = "modal-dojo-missing-token-dummy-never-issued"
 
 # Suffix on the metric chunk files this container writes (one per process).
 METRIC_WRITER_ID = _secrets.token_hex(4)
+METRIC_CHUNK_FILE = re.compile(r"(?P<chunk>chunk-\d+)-[0-9A-Za-z]+\.json")
 
 
 def _is_local() -> bool:
@@ -814,12 +815,76 @@ def fastapi_app():
         return entry
 
     async def _load_metrics(training_run_id: str, entry: MetricEntry) -> None:
-        """Merge the volume's chunks under in-memory points. Caller holds the lock."""
-        for chunk in await _metadata_vol_list(
-            metric_series_store(training_run_id), is_async=True
-        ):
-            entry.metrics.load_chunk(chunk)
+        """Merge the volume's chunks under in-memory points, then fold any
+        chunk stored as several writer copies into this container's single
+        copy. Caller holds the lock.
+
+        Every container start brings a new writer id, so without folding a
+        long-lived run accumulates one full copy per container and each read
+        pays for all of them. Each payload is merged as soon as it is read, so
+        only a bounded number are held in memory at once.
+        """
+        store = metric_series_store(training_run_id)
+        files, failed = await vol_list_metadata_with_failures(store, is_async=True)
+        if failed:
+            raise RuntimeError(f"listing {store} failed")
+        copies: dict[str, list[JsonDict]] = {}
+        for file in files:
+            if match := METRIC_CHUNK_FILE.fullmatch(file["path"].rsplit("/", 1)[-1]):
+                copies.setdefault(match["chunk"], []).append(file)
+
+        async def _merge(file: JsonDict) -> None:
+            key = file["path"].rsplit("/", 1)[-1].removesuffix(".json")
+            try:
+                payload = await _metadata_vol_get(store, key, is_async=True)
+            except KeyError:
+                return  # folded away by another replica since the listing
+            if isinstance(payload, dict):
+                entry.metrics.load_chunk(payload)
+
+        results = await bounded_gather_with_retries(
+            [lambda f=f: _merge(f) for chunk in copies.values() for f in chunk]
+        )
+        if failure := next((r for r in results if isinstance(r, BaseException)), None):
+            raise failure
         entry.loaded_at = time.monotonic()
+
+        mine = f"-{METRIC_WRITER_ID}.json"
+        fold = {
+            chunk: [f for f in chunk_files if not f["path"].endswith(mine)]
+            for chunk, chunk_files in copies.items()
+            if len(chunk_files) > 1
+        }
+        if not fold:
+            return
+        try:
+            await _metadata_vol_put_many(
+                store,
+                {
+                    f"{chunk}-{METRIC_WRITER_ID}": entry.metrics.chunk_payload(chunk)
+                    for chunk in fold
+                },
+                is_async=True,
+            )
+            entry.dirty -= set(fold)
+            # Only drop copies untouched since they were read: a replica that
+            # rewrote its copy meanwhile may hold points this merge lacks.
+            current, failed = await vol_list_metadata_with_failures(
+                store, is_async=True
+            )
+            if failed:
+                return
+            seen = {f["path"]: (f["mtime"], f["size"]) for f in current}
+            for chunk_files in fold.values():
+                for f in chunk_files:
+                    if seen.get(f["path"]) == (f["mtime"], f["size"]):
+                        await asyncio.to_thread(
+                            _metadata_vol_remove,
+                            store,
+                            f["path"].rsplit("/", 1)[-1].removesuffix(".json"),
+                        )
+        except Exception as exc:
+            print(f"[dashboard] metric chunk fold failed: {exc}", flush=True)
 
     async def _flush_metrics(training_run_id: str, entry: MetricEntry) -> None:
         """Write every dirty chunk in one commit. Caller holds the lock."""
