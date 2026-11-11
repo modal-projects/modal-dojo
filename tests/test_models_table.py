@@ -1,4 +1,3 @@
-from collections import Counter
 from pathlib import Path
 import subprocess
 import sys
@@ -14,7 +13,9 @@ from scripts.generate_models_table import (
     FamilyRow,
     RecipeRow,
     collect_models,
+    iter_registered_recipes,
     render_section,
+    render_snippet,
 )
 
 
@@ -35,8 +36,11 @@ def test_model_table_links_and_recipes(tmp_path: Path) -> None:
     )
     entries = {entry["class_name"]: entry for entry in API_REFERENCE_MANIFEST}
     assert "<thead><tr><th>Family</th><th>Model</th></tr></thead>" in rendered
+    rows = [row for family in families for row in family.rows]
+    assert len({row.config for row in rows}) == len(rows)
+    assert len({row.slug for row in rows}) == len(rows)
+    registered = list(iter_registered_recipes())
     for family in families:
-        counts = Counter(row.display_name for row in family.rows)
         for row in family.rows:
             entry = entries[row.config]
             page = tmp_path / entry["group"] / f"{entry['class_name'].lower()}.md"
@@ -49,11 +53,41 @@ def test_model_table_links_and_recipes(tmp_path: Path) -> None:
                 f'<details id="model-{row.slug}" data-model="{row.slug}">' in rendered
             )
             assert f"<summary>Run {row.recipe}</summary>" in rendered
-            recipe_link = (
-                f'<a href="{DOCS_URL}{CLASS_REFERENCE_PATHS[row.recipe]}">'
-                f"{row.recipe}</a>"
+            assert (
+                f'<td><a href="{DOCS_URL}{CLASS_REFERENCE_PATHS[row.config]}">'
+                f"{row.display_name}</a></td>"
+            ) in rendered
+            names = sorted(
+                {
+                    name
+                    for name, _, config, _ in registered
+                    if config.__name__ == row.config
+                },
+                key=lambda name: (len(name), name),
             )
-            assert (recipe_link in rendered) == (counts[row.display_name] > 1)
+            assert row.recipe == names[0]
+            assert row.other_recipes == tuple(names[1:])
+
+
+@pytest.mark.parametrize("others", [(), ("LongRecipe",), ("LongRecipe", "OtherRecipe")])
+def test_snippet_alternate_recipes(others: tuple[str, ...]) -> None:
+    row = RecipeRow("org/Model", "Model", "BaseRecipe", others)
+    snippet = "\n".join(render_snippet(row))
+    line = '    recipe=BaseRecipe(rm_type="deepscaler"),'
+    if others:
+        line += f"  # or {', '.join(others)}"
+    assert line in snippet.splitlines()
+    imports = snippet.split(")", 1)[0]
+    assert "    BaseRecipe," in imports
+    assert all(name not in imports for name in others)
+    assert ("# or" in snippet) == bool(others)
+
+
+def test_snippet_tutorial_link() -> None:
+    row = RecipeRow("Qwen/Qwen3-ASR-1.7B", "Qwen3_ASR_1_7B", "Qwen3_ASR_1_7B_Recipe")
+    assert render_snippet(row) == [
+        "See the [tutorial](https://dojo.modal.dev/tutorials/audio_asr) for a runnable example."
+    ]
 
 
 def test_empty_model_table() -> None:

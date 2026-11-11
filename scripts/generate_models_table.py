@@ -38,6 +38,7 @@ class RecipeRow:
     hf_id: str
     config: str
     recipe: str
+    other_recipes: tuple[str, ...] = ()
 
     @property
     def display_name(self) -> str:
@@ -45,7 +46,7 @@ class RecipeRow:
 
     @property
     def slug(self) -> str:
-        return re.sub(r"[^a-z0-9]+", "-", self.recipe.removesuffix("_Recipe").lower())
+        return re.sub(r"[^a-z0-9]+", "-", self.config.lower())
 
 
 @dataclass(frozen=True)
@@ -101,15 +102,14 @@ def collect_model_preset_names() -> frozenset[str]:
 
 def collect_models() -> tuple[FamilyRow, ...]:
     families: dict[str, list[RecipeRow]] = defaultdict(list)
+    recipes: dict[type[ModelConfig], set[str]] = defaultdict(set)
     unmatched: list[str] = []
     for recipe_name, _recipe, config, module_path in iter_registered_recipes():
         model_name = getattr(config, "model_name", None)
         if not model_name:
             unmatched.append(f"{module_path}.{recipe_name}")
             continue
-        families[family_of(model_name)].append(
-            RecipeRow(model_name, config.__name__, recipe_name)
-        )
+        recipes[config].add(recipe_name)
     if unmatched:
         raise SystemExit(
             "No ModelConfig found for these recipes:\n  "
@@ -117,10 +117,15 @@ def collect_models() -> tuple[FamilyRow, ...]:
             + "\nSet model_config_class on the recipe, or export a matching "
             "ModelConfig from modal_dojo.common.models."
         )
+    for config, names in recipes.items():
+        recipe, *others = sorted(names, key=lambda name: (len(name), name))
+        families[family_of(config.model_name)].append(
+            RecipeRow(config.model_name, config.__name__, recipe, tuple(others))
+        )
     return tuple(
         FamilyRow(
             family=family,
-            rows=tuple(sorted(rows, key=lambda r: (r.display_name, r.recipe))),
+            rows=tuple(sorted(rows, key=lambda r: (r.display_name, r.config))),
         )
         for family, rows in sorted(families.items())
     )
@@ -130,7 +135,7 @@ def render_snippet(row: RecipeRow) -> list[str]:
     tutorial = TUTORIALS.get(row.hf_id)
     if tutorial:
         return [
-            f"See the [{tutorial} tutorial]({DOCS_URL}/tutorials/{tutorial}) "
+            f"See the [tutorial]({DOCS_URL}/tutorials/{tutorial}) "
             "for a runnable example.",
         ]
     return [
@@ -150,7 +155,8 @@ def render_snippet(row: RecipeRow) -> list[str]:
         '        output_column="label",',
         '        input_format="messages",',
         "    ),",
-        f'    recipe={row.recipe}(rm_type="deepscaler"),',
+        f'    recipe={row.recipe}(rm_type="deepscaler"),'
+        + (f"  # or {', '.join(row.other_recipes)}" if row.other_recipes else ""),
         ")",
         "",
         'if __name__ == "__main__":',
@@ -160,12 +166,8 @@ def render_snippet(row: RecipeRow) -> list[str]:
     ]
 
 
-def render_row(
-    family: str, row: RecipeRow, paths: dict[str, str], disambiguate: bool
-) -> list[str]:
+def render_row(family: str, row: RecipeRow, paths: dict[str, str]) -> list[str]:
     model = f'<a href="{DOCS_URL}{paths[row.config]}">{row.display_name}</a>'
-    if disambiguate:
-        model += f' (<a href="{DOCS_URL}{paths[row.recipe]}">{row.recipe}</a>)'
     cells = [
         family,
         model,
@@ -198,7 +200,6 @@ def render_section(families: tuple[FamilyRow, ...]) -> str:
                     family.family if i == 0 else "",
                     row,
                     paths,
-                    sum(r.display_name == row.display_name for r in family.rows) > 1,
                 )
             )
     return "\n".join(

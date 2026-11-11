@@ -105,9 +105,9 @@ For a step-by-step walkthrough, see the [Getting started tutorial](https://dojo.
 <table>
 <thead><tr><th>Family</th><th>Model</th></tr></thead>
 <tbody>
-<tr class="model-row" data-model="beam-1-0-501b-a23b-lora-256k"><td>Beam</td><td><a href="https://dojo.modal.dev/reference/beam_1_0_501b_a23b_lora/">Beam-1.0-501B-A23B</a></td></tr>
+<tr class="model-row" data-model="beam-1-0-501b-a23b-lora"><td>Beam</td><td><a href="https://dojo.modal.dev/reference/beam_1_0_501b_a23b_lora/">Beam-1.0-501B-A23B</a></td></tr>
 <tr class="model-code"><td colspan="2">
-<details id="model-beam-1-0-501b-a23b-lora-256k" data-model="beam-1-0-501b-a23b-lora-256k">
+<details id="model-beam-1-0-501b-a23b-lora" data-model="beam-1-0-501b-a23b-lora">
 <summary>Run Beam_1_0_501B_A23B_LoRA_256k_Recipe</summary>
 
 ```python
@@ -229,38 +229,7 @@ if __name__ == "__main__":
 
 </details>
 </td></tr>
-<tr class="model-row" data-model="glm-5-3-flash-lora-256k"><td></td><td><a href="https://dojo.modal.dev/reference/glm_5_3_flash_lora/">GLM-5.3-Flash</a> (<a href="https://dojo.modal.dev/reference/glm_5_3_flash_lora_256k_recipe/">GLM_5_3_Flash_LoRA_256k_Recipe</a>)</td></tr>
-<tr class="model-code"><td colspan="2">
-<details id="model-glm-5-3-flash-lora-256k" data-model="glm-5-3-flash-lora-256k">
-<summary>Run GLM_5_3_Flash_LoRA_256k_Recipe</summary>
-
-```python
-from modal_dojo import (
-    HuggingFaceDataset,
-    TrainConfig,
-    GLM_5_3_Flash_LoRA,
-    GLM_5_3_Flash_LoRA_256k_Recipe,
-)
-
-config = TrainConfig(
-    model=GLM_5_3_Flash_LoRA(),
-    dataset=HuggingFaceDataset(
-        hf_repo="zhuzilin/dapo-math-17k",
-        input_column="prompt",
-        output_column="label",
-        input_format="messages",
-    ),
-    recipe=GLM_5_3_Flash_LoRA_256k_Recipe(rm_type="deepscaler"),
-)
-
-if __name__ == "__main__":
-    run = config.launch()
-    print(run.training_run_id)
-```
-
-</details>
-</td></tr>
-<tr class="model-row" data-model="glm-5-3-flash-lora"><td></td><td><a href="https://dojo.modal.dev/reference/glm_5_3_flash_lora/">GLM-5.3-Flash</a> (<a href="https://dojo.modal.dev/reference/glm_5_3_flash_lora_recipe/">GLM_5_3_Flash_LoRA_Recipe</a>)</td></tr>
+<tr class="model-row" data-model="glm-5-3-flash-lora"><td></td><td><a href="https://dojo.modal.dev/reference/glm_5_3_flash_lora/">GLM-5.3-Flash</a></td></tr>
 <tr class="model-code"><td colspan="2">
 <details id="model-glm-5-3-flash-lora" data-model="glm-5-3-flash-lora">
 <summary>Run GLM_5_3_Flash_LoRA_Recipe</summary>
@@ -281,7 +250,7 @@ config = TrainConfig(
         output_column="label",
         input_format="messages",
     ),
-    recipe=GLM_5_3_Flash_LoRA_Recipe(rm_type="deepscaler"),
+    recipe=GLM_5_3_Flash_LoRA_Recipe(rm_type="deepscaler"),  # or GLM_5_3_Flash_LoRA_256k_Recipe
 )
 
 if __name__ == "__main__":
@@ -322,38 +291,7 @@ if __name__ == "__main__":
 
 </details>
 </td></tr>
-<tr class="model-row" data-model="inkling-small-lora"><td>Inkling</td><td><a href="https://dojo.modal.dev/reference/inkling_small/">Inkling-Small</a> (<a href="https://dojo.modal.dev/reference/inkling_small_lora_recipe/">Inkling_Small_LoRA_Recipe</a>)</td></tr>
-<tr class="model-code"><td colspan="2">
-<details id="model-inkling-small-lora" data-model="inkling-small-lora">
-<summary>Run Inkling_Small_LoRA_Recipe</summary>
-
-```python
-from modal_dojo import (
-    HuggingFaceDataset,
-    TrainConfig,
-    Inkling_Small,
-    Inkling_Small_LoRA_Recipe,
-)
-
-config = TrainConfig(
-    model=Inkling_Small(),
-    dataset=HuggingFaceDataset(
-        hf_repo="zhuzilin/dapo-math-17k",
-        input_column="prompt",
-        output_column="label",
-        input_format="messages",
-    ),
-    recipe=Inkling_Small_LoRA_Recipe(rm_type="deepscaler"),
-)
-
-if __name__ == "__main__":
-    run = config.launch()
-    print(run.training_run_id)
-```
-
-</details>
-</td></tr>
-<tr class="model-row" data-model="inkling-small"><td></td><td><a href="https://dojo.modal.dev/reference/inkling_small/">Inkling-Small</a> (<a href="https://dojo.modal.dev/reference/inkling_small_recipe/">Inkling_Small_Recipe</a>)</td></tr>
+<tr class="model-row" data-model="inkling-small"><td>Inkling</td><td><a href="https://dojo.modal.dev/reference/inkling_small/">Inkling-Small</a></td></tr>
 <tr class="model-code"><td colspan="2">
 <details id="model-inkling-small" data-model="inkling-small">
 <summary>Run Inkling_Small_Recipe</summary>
@@ -374,7 +312,7 @@ config = TrainConfig(
         output_column="label",
         input_format="messages",
     ),
-    recipe=Inkling_Small_Recipe(rm_type="deepscaler"),
+    recipe=Inkling_Small_Recipe(rm_type="deepscaler"),  # or Inkling_Small_LoRA_Recipe
 )
 
 if __name__ == "__main__":
@@ -384,40 +322,9 @@ if __name__ == "__main__":
 
 </details>
 </td></tr>
-<tr class="model-row" data-model="kimi-k3-lora-64k"><td>Kimi</td><td><a href="https://dojo.modal.dev/reference/kimi_k3/">Kimi-K3</a> (<a href="https://dojo.modal.dev/reference/kimi_k3_lora_64k_recipe/">Kimi_K3_LoRA_64k_Recipe</a>)</td></tr>
+<tr class="model-row" data-model="kimi-k3"><td>Kimi</td><td><a href="https://dojo.modal.dev/reference/kimi_k3/">Kimi-K3</a></td></tr>
 <tr class="model-code"><td colspan="2">
-<details id="model-kimi-k3-lora-64k" data-model="kimi-k3-lora-64k">
-<summary>Run Kimi_K3_LoRA_64k_Recipe</summary>
-
-```python
-from modal_dojo import (
-    HuggingFaceDataset,
-    TrainConfig,
-    Kimi_K3,
-    Kimi_K3_LoRA_64k_Recipe,
-)
-
-config = TrainConfig(
-    model=Kimi_K3(),
-    dataset=HuggingFaceDataset(
-        hf_repo="zhuzilin/dapo-math-17k",
-        input_column="prompt",
-        output_column="label",
-        input_format="messages",
-    ),
-    recipe=Kimi_K3_LoRA_64k_Recipe(rm_type="deepscaler"),
-)
-
-if __name__ == "__main__":
-    run = config.launch()
-    print(run.training_run_id)
-```
-
-</details>
-</td></tr>
-<tr class="model-row" data-model="kimi-k3-lora"><td></td><td><a href="https://dojo.modal.dev/reference/kimi_k3/">Kimi-K3</a> (<a href="https://dojo.modal.dev/reference/kimi_k3_lora_recipe/">Kimi_K3_LoRA_Recipe</a>)</td></tr>
-<tr class="model-code"><td colspan="2">
-<details id="model-kimi-k3-lora" data-model="kimi-k3-lora">
+<details id="model-kimi-k3" data-model="kimi-k3">
 <summary>Run Kimi_K3_LoRA_Recipe</summary>
 
 ```python
@@ -436,7 +343,7 @@ config = TrainConfig(
         output_column="label",
         input_format="messages",
     ),
-    recipe=Kimi_K3_LoRA_Recipe(rm_type="deepscaler"),
+    recipe=Kimi_K3_LoRA_Recipe(rm_type="deepscaler"),  # or Kimi_K3_LoRA_64k_Recipe
 )
 
 if __name__ == "__main__":
@@ -446,9 +353,9 @@ if __name__ == "__main__":
 
 </details>
 </td></tr>
-<tr class="model-row" data-model="moonlight-16b-a3b"><td>Moonlight</td><td><a href="https://dojo.modal.dev/reference/moonlight_16b_a3b_instruct/">Moonlight-16B-A3B-Instruct</a></td></tr>
+<tr class="model-row" data-model="moonlight-16b-a3b-instruct"><td>Moonlight</td><td><a href="https://dojo.modal.dev/reference/moonlight_16b_a3b_instruct/">Moonlight-16B-A3B-Instruct</a></td></tr>
 <tr class="model-code"><td colspan="2">
-<details id="model-moonlight-16b-a3b" data-model="moonlight-16b-a3b">
+<details id="model-moonlight-16b-a3b-instruct" data-model="moonlight-16b-a3b-instruct">
 <summary>Run Moonlight_16B_A3B_Recipe</summary>
 
 ```python
@@ -477,9 +384,9 @@ if __name__ == "__main__":
 
 </details>
 </td></tr>
-<tr class="model-row" data-model="muse-spark-open-64k"><td>Muse</td><td><a href="https://dojo.modal.dev/reference/muse_spark_open/">Muse-Spark-Open-816B-A42B</a></td></tr>
+<tr class="model-row" data-model="muse-spark-open"><td>Muse</td><td><a href="https://dojo.modal.dev/reference/muse_spark_open/">Muse-Spark-Open-816B-A42B</a></td></tr>
 <tr class="model-code"><td colspan="2">
-<details id="model-muse-spark-open-64k" data-model="muse-spark-open-64k">
+<details id="model-muse-spark-open" data-model="muse-spark-open">
 <summary>Run Muse_Spark_Open_64k_Recipe</summary>
 
 ```python
@@ -637,7 +544,7 @@ if __name__ == "__main__":
 <details id="model-qwen3-asr-1-7b" data-model="qwen3-asr-1-7b">
 <summary>Run Qwen3_ASR_1_7B_Recipe</summary>
 
-See the [audio_asr tutorial](https://dojo.modal.dev/tutorials/audio_asr) for a runnable example.
+See the [tutorial](https://dojo.modal.dev/tutorials/audio_asr) for a runnable example.
 
 </details>
 </td></tr>
@@ -734,38 +641,7 @@ if __name__ == "__main__":
 
 </details>
 </td></tr>
-<tr class="model-row" data-model="qwen3-5-4b-miles"><td></td><td><a href="https://dojo.modal.dev/reference/qwen3_5_4b/">Qwen3.5-4B</a> (<a href="https://dojo.modal.dev/reference/qwen3_5_4b_miles_recipe/">Qwen3_5_4B_Miles_Recipe</a>)</td></tr>
-<tr class="model-code"><td colspan="2">
-<details id="model-qwen3-5-4b-miles" data-model="qwen3-5-4b-miles">
-<summary>Run Qwen3_5_4B_Miles_Recipe</summary>
-
-```python
-from modal_dojo import (
-    HuggingFaceDataset,
-    TrainConfig,
-    Qwen3_5_4B,
-    Qwen3_5_4B_Miles_Recipe,
-)
-
-config = TrainConfig(
-    model=Qwen3_5_4B(),
-    dataset=HuggingFaceDataset(
-        hf_repo="zhuzilin/dapo-math-17k",
-        input_column="prompt",
-        output_column="label",
-        input_format="messages",
-    ),
-    recipe=Qwen3_5_4B_Miles_Recipe(rm_type="deepscaler"),
-)
-
-if __name__ == "__main__":
-    run = config.launch()
-    print(run.training_run_id)
-```
-
-</details>
-</td></tr>
-<tr class="model-row" data-model="qwen3-5-4b"><td></td><td><a href="https://dojo.modal.dev/reference/qwen3_5_4b/">Qwen3.5-4B</a> (<a href="https://dojo.modal.dev/reference/qwen3_5_4b_recipe/">Qwen3_5_4B_Recipe</a>)</td></tr>
+<tr class="model-row" data-model="qwen3-5-4b"><td></td><td><a href="https://dojo.modal.dev/reference/qwen3_5_4b/">Qwen3.5-4B</a></td></tr>
 <tr class="model-code"><td colspan="2">
 <details id="model-qwen3-5-4b" data-model="qwen3-5-4b">
 <summary>Run Qwen3_5_4B_Recipe</summary>
@@ -786,7 +662,7 @@ config = TrainConfig(
         output_column="label",
         input_format="messages",
     ),
-    recipe=Qwen3_5_4B_Recipe(rm_type="deepscaler"),
+    recipe=Qwen3_5_4B_Recipe(rm_type="deepscaler"),  # or Qwen3_5_4B_Miles_Recipe
 )
 
 if __name__ == "__main__":
