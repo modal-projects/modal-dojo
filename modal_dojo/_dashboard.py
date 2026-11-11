@@ -17,6 +17,8 @@ import secrets as _secrets
 import subprocess
 import tempfile
 import time
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode
 from typing import (
@@ -24,18 +26,16 @@ from typing import (
     Annotated,
     Awaitable,
     Callable,
-    Iterable,
     TypedDict,
     cast,
 )
 
 import modal
+from modal.app import _App
 from modal.exception import Error
 
 if TYPE_CHECKING:
-    from google.protobuf.timestamp_pb2 import Timestamp
     from modal.client import _Client
-    from modal_proto import api_pb2
 
 # Imported at module scope so FastAPI can resolve endpoint annotations such as
 # ``request: Request`` in stream_run_logs(). Under ``from __future__ import
@@ -294,47 +294,29 @@ def _resolve_log_window(
     return max(0.0, since_ts), until_ts
 
 
-def _to_timestamp(secs: float) -> Timestamp:
-    """Convert epoch seconds (with fractional part) to a protobuf ``Timestamp``."""
-    from google.protobuf.timestamp_pb2 import Timestamp
-
-    ts = Timestamp()
-    ts.seconds = int(secs)
-    ts.nanos = int((secs - int(secs)) * 1e9)
-    return ts
+_SOURCE_TO_FD = {"stdout": 1, "stderr": 2, "system": 3}
 
 
-def _parse_log_batches(batches: Iterable[api_pb2.TaskLogsBatch]) -> list[LogEntry]:
-    """Flatten Modal ``AppFetchLogs`` batches into ``LogEntry`` dicts."""
-    logs: list[LogEntry] = []
-    for batch in batches:
-        for item in batch.items:
-            if not item.data:
-                continue
-            ts = float(getattr(item, "timestamp", 0) or 0)
-            ts_ns = int(getattr(item, "timestamp_ns", 0) or 0)
-            entry: LogEntry = {
-                "task_id": batch.task_id,
-                "line": item.data,
-                "fd": int(getattr(item, "file_descriptor", 0) or 0),
-                "ts": ts or None,
-                "ts_ns": ts_ns or None,
-            }
-            logs.append(entry)
-    return logs
+def _log_entry_dict(entry: "modal.types.LogEntry") -> LogEntry:
+    """Adapt a public-API ``LogEntry`` to the dashboard's wire shape."""
+    ts = entry.timestamp.timestamp()
+    return {
+        "task_id": entry.context_ids[-1] if entry.context_ids else "",
+        "line": entry.message,
+        "fd": _SOURCE_TO_FD.get(entry.source, 0),
+        "ts": ts,
+        "ts_ns": int(ts * 1_000_000_000),
+    }
 
 
-def _compute_next_page(logs: list[LogEntry], limit: int) -> tuple[bool, float | None]:
-    """Derive ``(has_more, next_until)`` for keyset pagination."""
-    has_more = len(logs) >= limit
-    next_until: float | None = None
-    if has_more and logs:
-        oldest = logs[0]
-        oldest_ns = oldest.get("ts_ns") or int(
-            (oldest.get("ts") or 0.0) * 1_000_000_000
-        )
-        next_until = (oldest_ns - 1) / 1_000_000_000
-    return has_more, next_until
+def _app_handle(client: "_Client", app_id: str, app_name: str = "") -> _App:
+    """Return an ``App`` handle for an existing app by id.
+
+    ``App.lookup`` resolves by deployment name (which repeats across runs);
+    there is no public ``App.from_id`` yet — ``_new_remote`` is the SDK's own
+    no-RPC constructor (same one ``App.lookup`` uses).
+    """
+    return _App._new_remote(app_name or None, app_id, "", client)
 
 
 def ensure_creds_secret(interactive: bool = False) -> bool:
@@ -1988,9 +1970,9 @@ def fastapi_app():
     ):
         """Server-Sent Events stream of the underlying Modal app's logs.
 
-        Pure pass-through: we open a long-poll ``AppGetLogs`` stream against
-        the run's ``modal_app_id`` and forward each batch as an SSE ``data``
-        event. Nothing is persisted on the dashboard side.
+        Pure pass-through: we stream ``App.logs`` for the run's
+        ``modal_app_id`` and forward each entry as an SSE ``data`` event.
+        Nothing is persisted on the dashboard side.
 
         Query params:
           - ``search``: case-insensitive substring filter; lines that don't
@@ -2000,8 +1982,6 @@ def fastapi_app():
             is emitted per second summarizing the count.
         """
         import json
-
-        from modal_proto import api_pb2
 
         run = await _get_run_or_404(training_run_id)
 
@@ -2034,12 +2014,10 @@ def fastapi_app():
                 )
                 return
 
-            last_entry_id = ""
+            app = _app_handle(client, app_id, run.app_name)
             window_start = time.monotonic()
             window_emitted = 0
             window_dropped = 0
-            consecutive_errors = 0
-            max_consecutive_errors = 10
 
             def _drain_drop_event() -> str | None:
                 nonlocal window_dropped
@@ -2049,73 +2027,46 @@ def fastapi_app():
                 window_dropped = 0
                 return f"event: dropped\ndata: {json.dumps(payload)}\n\n"
 
-            while True:
-                if await request.is_disconnected():
-                    return
-                req = api_pb2.AppGetLogsRequest(
-                    app_id=app_id,
-                    timeout=55,
-                    last_entry_id=last_entry_id,
+            try:
+                async for entry in app.logs.stream():
+                    if await request.is_disconnected():
+                        return
+                    if not entry.message:
+                        continue
+                    if search_lower and search_lower not in entry.message.lower():
+                        continue
+
+                    now = time.monotonic()
+                    if now - window_start >= 1.0:
+                        drop_event = _drain_drop_event()
+                        if drop_event:
+                            yield drop_event
+                        window_start = now
+                        window_emitted = 0
+
+                    if rate_cap and window_emitted >= rate_cap:
+                        window_dropped += 1
+                        continue
+
+                    window_emitted += 1
+                    payload: dict[str, str | float] = {
+                        "task_id": entry.context_ids[-1] if entry.context_ids else "",
+                        "line": entry.message,
+                        "ts": entry.timestamp.timestamp(),
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                yield (
+                    "event: error\n"
+                    f"data: {json.dumps({'error': f'log stream failed: {exc!s}'})}\n\n"
                 )
-                try:
-                    async for log_batch in client.stub.AppGetLogs.unary_stream(req):
-                        if await request.is_disconnected():
-                            return
-                        consecutive_errors = 0
-                        if log_batch.entry_id:
-                            last_entry_id = log_batch.entry_id
-                        for log in log_batch.items:
-                            if not log.data:
-                                continue
-                            if search_lower and search_lower not in log.data.lower():
-                                continue
-
-                            now = time.monotonic()
-                            if now - window_start >= 1.0:
-                                drop_event = _drain_drop_event()
-                                if drop_event:
-                                    yield drop_event
-                                window_start = now
-                                window_emitted = 0
-
-                            if rate_cap and window_emitted >= rate_cap:
-                                window_dropped += 1
-                                continue
-
-                            window_emitted += 1
-                            payload: dict[str, str | float] = {
-                                "task_id": log_batch.task_id,
-                                "line": log.data,
-                            }
-                            ts = getattr(log, "timestamp", 0) or 0
-                            if ts:
-                                payload["ts"] = ts
-                            yield f"data: {json.dumps(payload)}\n\n"
-                        if log_batch.app_done:
-                            drop_event = _drain_drop_event()
-                            if drop_event:
-                                yield drop_event
-                            yield "event: done\ndata: {}\n\n"
-                            return
-                except asyncio.CancelledError:
-                    return
-                except Exception as exc:
-                    consecutive_errors += 1
-                    if consecutive_errors >= max_consecutive_errors:
-                        yield (
-                            "event: error\n"
-                            f"data: {json.dumps({'error': f'log stream failed after {consecutive_errors} retries: {exc!s}'})}\n\n"
-                        )
-                        return
-                    backoff = min(2 ** (consecutive_errors - 1), 10)
-                    yield (
-                        "event: reconnect\n"
-                        f"data: {json.dumps({'reason': str(exc)})}\n\n"
-                    )
-                    try:
-                        await asyncio.sleep(backoff)
-                    except asyncio.CancelledError:
-                        return
+                return
+            drop_event = _drain_drop_event()
+            if drop_event:
+                yield drop_event
+            yield "event: done\ndata: {}\n\n"
 
         return StreamingResponse(
             event_stream(),
@@ -2137,7 +2088,7 @@ def fastapi_app():
         max_lines: int = 100,
         search: str = "",
     ):
-        """Historical log fetch for a run, backed by Modal's ``AppFetchLogs``.
+        """Historical log fetch for a run, backed by ``App.logs``.
 
         Returns the most recent ``max_lines`` entries within the ``[since, until]``
         window, oldest-first.
@@ -2147,9 +2098,8 @@ def fastapi_app():
             relative age (``30m`` / ``2h`` / ``1d`` / ``45s`` = "N ago").
             ``since`` is exclusive and ``until`` is inclusive. Defaults to the run's
             lifetime.
-          - ``max_lines``: max entries to return (default 100). Throws if negative or too large.
-            These are the newest entries in the window (ClickHouse caps a single
-            fetch at 20000).
+          - ``max_lines``: max entries to return (default 100). Throws if negative.
+            These are the newest entries in the window.
           - ``search``: case-insensitive substring filter.
 
         Returns a JSON object with the following fields:
@@ -2157,8 +2107,6 @@ def fastapi_app():
           - ``has_more``: whether there are more log entries to fetch
           - ``next_until``: the timestamp of the next log entry to fetch
         """
-        from modal_proto import api_pb2
-
         if max_lines < 0:
             raise HTTPException(status_code=400, detail="max_lines must be positive")
 
@@ -2207,20 +2155,26 @@ def fastapi_app():
                 detail="No Modal credentials configured. Run modal-dojo setup.",
             )
 
-        req = api_pb2.AppFetchLogsRequest(
-            app_id=app_id,
-            since=_to_timestamp(since_ts),
-            until=_to_timestamp(until_ts),
-            limit=max_lines,
-            search_text=search.strip(),
-        )
+        app = _app_handle(client, app_id, run.app_name)
+        kept: deque[LogEntry] = deque(maxlen=max_lines)
+        total = 0
         try:
-            resp = await client.stub.AppFetchLogs(req)
+            async for entry in app.logs.fetch(
+                since=datetime.fromtimestamp(since_ts, tz=timezone.utc),
+                until=datetime.fromtimestamp(until_ts, tz=timezone.utc),
+                search_text=search.strip(),
+            ):
+                total += 1
+                kept.append(_log_entry_dict(entry))
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"AppFetchLogs: {exc!s}")
+            raise HTTPException(status_code=502, detail=f"App.logs.fetch: {exc!s}")
 
-        logs = _parse_log_batches(resp.batches)
-        has_more, next_until = _compute_next_page(logs, max_lines)
+        logs = list(kept)
+        has_more = total > len(logs)
+        next_until: float | None = None
+        if has_more and logs:
+            oldest_ns = logs[0].get("ts_ns") or int((logs[0].get("ts") or 0.0) * 1e9)
+            next_until = (oldest_ns - 1) / 1e9
 
         return JSONResponse(
             {
