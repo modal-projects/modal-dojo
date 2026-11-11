@@ -1840,6 +1840,7 @@ dialog {
 
 .sl-markdown-content tr.model-row {
   cursor: pointer;
+  scroll-margin-top: calc(var(--sl-nav-height) + 1rem);
 }
 
 .sl-markdown-content tr.model-row:hover,

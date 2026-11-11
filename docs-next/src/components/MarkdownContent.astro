@@ -154,7 +154,11 @@ const isCliIndex = slug === 'reference/cli';
       : undefined;
     if (target) {
       target.open = true;
-      target.closest('tr')?.previousElementSibling?.scrollIntoView({ block: 'center' });
+      window.addEventListener('load', () => {
+        requestAnimationFrame(() => {
+          target.closest('tr')?.previousElementSibling?.scrollIntoView({ block: 'start' });
+        });
+      }, { once: true });
     }
 
     for (const row of document.querySelectorAll('tr.model-row')) {
