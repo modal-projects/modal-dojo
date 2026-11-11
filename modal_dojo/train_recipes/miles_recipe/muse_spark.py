@@ -48,8 +48,8 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     # Preserve the volume name holding the validated torch_dist conversion.
     name: str = "miles-muse_spark_open_64k_b300_recipe"
     docker_image: str = (
-        "radixark/miles:muse-spark-open@sha256:"
-        "88c66b1414aff0f2cd018923b70f7c463391980236171683bdf22f34796b6bf2"
+        "modalresearch/miles:dojo-muse-spark-open@sha256:"
+        "635dd446d8e19542045a3dd04d7edd56b60e5d0ea12c8e927468554fa1ed6f8d"
     )
     image_run_commands: list[str] = field(default_factory=_image_patches)
     miles_model_name: str = "muse-spark-full"
