@@ -30,7 +30,7 @@ class SpindleRecipe:
     ``base_url`` (or set ``rl_config.base_url``) to use another. ``api_key``
     defaults to ``TINKER_API_KEY``. Requests carry the Modal proxy token from
     ``MODAL_KEY``/``MODAL_SECRET``, which must be allowed for the server's
-    environment. Checkpoints stay on the server. A cookbook config's
+    environment. Checkpoints stay on the server. A tinker-cookbook config's
     ``log_path`` is replaced by the run's directory on the
     ``spindle-checkpoints`` volume, from which a retried driver resumes, so its
     ``max_retries`` defaults to 3; a program's defaults to 0.
@@ -82,7 +82,7 @@ class SpindleRecipe:
         max_retries = default_retries if max_retries is None else max_retries
         if max_retries < 0:
             raise DojoConfigError("max_retries must be non-negative")
-        # launch() checks the model (and a cookbook config's context) against the server.
+        # launch() checks the model (and a tinker-cookbook config's context) against the server.
         self.program = program
         self.base_url = base_url
         self.detach = detach
