@@ -167,6 +167,9 @@ def build_spindle_app(
         memory=recipe.memory,
         timeout=24 * 60 * 60,
         retries=modal.Retries(max_retries=recipe.max_retries, initial_delay=0.0),
+        # Modal reschedules a preempted input whatever its retries, which would
+        # deploy a second server and could leak the first one's GPU apps.
+        nonpreemptible=deploy_config is not None,
         single_use_containers=True,
         serialized=True,
         name="train",
