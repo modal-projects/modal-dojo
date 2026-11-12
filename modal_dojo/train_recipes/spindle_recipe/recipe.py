@@ -9,9 +9,8 @@ from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.errors import DojoConfigError
 
 if TYPE_CHECKING:
-    from tinker_cookbook.rl.train import Config
-
     from modal_dojo.common.run import TrainingRun
+    from modal_dojo.frameworks.spindle.cookbook import CookbookRL
 
 # Modal's always-on internal Spindle server.
 SHARED_SPINDLE_URL = "https://modal-labs-spindle--prod.modal.run"
@@ -20,11 +19,12 @@ SHARED_SPINDLE_URL = "https://modal-labs-spindle--prod.modal.run"
 class SpindleRecipe:
     """Run a tinker-cookbook RL config against a Spindle server, driven from Modal.
 
-    ``config`` is a tinker-cookbook ``rl_train.Config``. Requires
+    ``program`` is a tinker-cookbook ``rl_train.Config`` wrapped by
+    ``modal_dojo.tinker.cookbook_rl``. Requires
     ``uv sync --extra spindle``. Like Slime and Miles, ``launch()`` starts the
     driver in a detached Modal app and returns a ``TrainingRun`` handle;
     ``train()`` also waits for it. Defaults to the shared Spindle server; pass
-    ``base_url`` (or set ``config.base_url``) to use another. ``api_key``
+    ``base_url`` (or set the config's ``base_url``) to use another. ``api_key``
     defaults to ``TINKER_API_KEY``. Requests carry the Modal proxy token from
     ``MODAL_KEY``/``MODAL_SECRET``, which must be allowed for the server's
     environment. Checkpoints stay on the server. The config's ``log_path`` is
@@ -34,7 +34,7 @@ class SpindleRecipe:
 
     def __init__(
         self,
-        config: Config,
+        program: CookbookRL,
         *,
         base_url: str | None = None,
         api_key: str | None = None,
@@ -45,7 +45,7 @@ class SpindleRecipe:
     ):
         try:
             import chz
-            from tinker_cookbook.rl.train import Config
+            import tinker_cookbook  # noqa: F401
         except ImportError as exc:
             raise ImportError(
                 "SpindleRecipe requires modal-dojo[spindle]. "
@@ -53,10 +53,14 @@ class SpindleRecipe:
             ) from exc
         from modal_dojo.frameworks.spindle.cookbook import CookbookRL
 
-        if not isinstance(config, Config):
-            raise DojoConfigError("config must be a tinker-cookbook rl_train.Config")
+        if not isinstance(program, CookbookRL):
+            raise DojoConfigError(
+                "Pass a tinker-cookbook rl_train.Config as "
+                "SpindleRecipe(modal_dojo.tinker.cookbook_rl(config))"
+            )
+        config = program.config
         if base_url and config.base_url and base_url != config.base_url:
-            raise DojoConfigError("base_url conflicts with config.base_url")
+            raise DojoConfigError("base_url conflicts with the config's base_url")
         base_url = base_url or config.base_url or SHARED_SPINDLE_URL
         api_key = api_key or os.environ.get("TINKER_API_KEY")
         if not api_key:
