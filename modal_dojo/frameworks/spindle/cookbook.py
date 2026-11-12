@@ -205,7 +205,12 @@ class _Reporter:
         step = int(metrics["progress/batch"])
         self.run.metrics = {}
         self.ctx.log_metrics(step, **metrics)
-        self.flush_groups(step, self.run.metrics)
+        try:
+            self.flush_groups(step, self.run.metrics)
+        except Exception:
+            # tinker-cookbook calls loggers unguarded; reporting must not stop training.
+            logger.exception("Could not report tinker-cookbook rollouts")
+            self.groups.clear()
         self.phase(
             self.run.framework_status,
             is_active=True,
@@ -225,7 +230,15 @@ class _Reporter:
                     window.get_span_dicts(),
                     min(span.wall_start for span in window.spans),
                 )
-                _enqueue_timing(record.model_dump(mode="json"), final=True)
+                # storage_key is a property, so model_dump leaves it out; the
+                # transport keys exit retries by it.
+                _enqueue_timing(
+                    {
+                        **record.model_dump(mode="json"),
+                        "storage_key": record.storage_key,
+                    },
+                    final=True,
+                )
         except Exception:
             logger.exception("Could not report tinker-cookbook timing")
 
