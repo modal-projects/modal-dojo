@@ -148,7 +148,7 @@ export async function fetchRollout(trainingRunId, rolloutId) {
 // Historical Modal logs for a run, served from the durable storage.
 //
 // Returns the newest `maxLines` lines within the (since, until] window, oldest
-// first, plus a `nextUntil` cursor for paging further back through history.
+// first. There is no paging; narrow the window to reach earlier lines.
 // When omitted, `maxLines` defaults to 100 on the server.
 // `since` defaults to the run's start (then creation time or the Unix epoch);
 // `until` defaults to the run's end/completion time, or now when unavailable.
@@ -170,11 +170,7 @@ export async function fetchRunLogs(
     throw new Error(await getErrorFromResponse(res));
   }
   const data = await res.json();
-  return {
-    logs: Array.isArray(data.logs) ? data.logs : [],
-    hasMore: !!data.has_more,
-    nextUntil: data.next_until ?? null,
-  };
+  return { logs: Array.isArray(data.logs) ? data.logs : [] };
 }
 
 // Per-step advantage distribution summaries (one row per training step, each

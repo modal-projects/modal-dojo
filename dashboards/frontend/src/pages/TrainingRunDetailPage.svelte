@@ -56,10 +56,8 @@
     timingRunStart,
   } from "../lib/timing.js";
 
-  // Number of historical log lines requested per page.
-  const HIST_PAGE = 500;
-  // Maximum number of historical log lines retained in the browser.
-  const HIST_BUFFER_MAX = 2000;
+  // Newest historical log lines fetched for the selected time range.
+  const HIST_MAX_LINES = 2000;
 
   /** @typedef {"summary" | "metrics" | "rollouts" | "logs"} TabId */
   const DETAIL_TABS = new Set(["summary", "metrics", "rollouts", "logs"]);
@@ -1076,14 +1074,10 @@
   // ── Historical logs ─────
   let isRunning = $derived(runStatus === "running");
 
-  let histLines = $state([]), histNewerWindows = $state([]);
-  let histLoading = $state(false),
-    histLoadingOlder = $state(false),
-    histLoadingNewer = $state(false);
-  let histError = $state(""), histHasMore = $state(false);
-  let histNextUntil = $state(null), histTailEl = $state(null);
-  let histSeq = 0, histLastScrollTop = 0;
-  let histController = null, histRestoringScroll = false;
+  let histLines = $state([]), histTruncated = $state(false);
+  let histLoading = $state(false), histError = $state("");
+  let histTailEl = $state(null);
+  let histSeq = 0;
 
   let histRangeInput = $state({ since: "", until: "" });
   let histRange = $state({ since: "", until: "" });
@@ -1144,135 +1138,41 @@
     for (const entry of entries) {
       const task_id = entry.task_id || "";
       const ts = entry.ts || 0;
-      const ts_ns = entry.ts_ns || 0;
       for (const part of String(entry.line ?? "").split(/\r?\n/)) {
         if (!part.length) continue;
-        target.push({ id: histSeq++, task_id, line: part, ts, ts_ns });
+        target.push({ id: histSeq++, task_id, line: part, ts });
       }
     }
   }
 
   function resetHist() {
     histLines = [];
+    histTruncated = false;
     histError = "";
-    histHasMore = false;
-    histNewerWindows = [];
-    histNextUntil = null;
     histLoading = false;
-    histLoadingOlder = false;
-    histLoadingNewer = false;
-    histLastScrollTop = 0;
-    histRestoringScroll = false;
   }
 
-  function histRowTime(row) {
-    if (!row) return 0;
-    if (row.ts_ns) return Number(row.ts_ns) / 1_000_000_000;
-    return Number(row.ts) || 0;
-  }
-
-  function histCursorBefore(row) {
-    if (!row) return null;
-    if (row.ts_ns) return (Number(row.ts_ns) - 1) / 1_000_000_000;
-    const ts = Number(row.ts) || 0;
-    return ts > 0 ? ts - 0.000000001 : null;
-  }
-
-  // Capture a visible row and its exact viewport position. Restoring this
-  // after replacing the bounded window avoids any perceptible jump.
-  function captureHistAnchor() {
-    const el = histTailEl;
-    if (!el) return null;
-    const containerTop = el.getBoundingClientRect().top;
-    const rows = el.querySelectorAll("[data-hist-id]");
-    for (const node of rows) {
-      const rect = node.getBoundingClientRect();
-      if (rect.bottom >= containerTop) {
-        return {
-          id: node.dataset.histId,
-          top: rect.top,
-          scrollTop: el.scrollTop,
-        };
-      }
-    }
-    return null;
-  }
-
-  async function restoreHistAnchor(anchor) {
-    if (!histTailEl || !anchor) return;
-    histRestoringScroll = true;
-    await tick();
-    if (!histTailEl) {
-      histRestoringScroll = false;
-      return;
-    }
-    const node = histTailEl.querySelector(`[data-hist-id="${anchor.id}"]`);
-    if (node) {
-      histTailEl.scrollTop += node.getBoundingClientRect().top - anchor.top;
-    } else {
-      histTailEl.scrollTop = anchor.scrollTop;
-    }
-    histLastScrollTop = histTailEl.scrollTop;
-    requestAnimationFrame(() => {
-      if (histTailEl) histLastScrollTop = histTailEl.scrollTop;
-      histRestoringScroll = false;
-    });
-  }
-
-  function rememberTrimmedNewer(kept, dropped) {
-    if (!kept.length || !dropped.length) return;
-    const since = histRowTime(kept[kept.length - 1]);
-    const until = histRowTime(dropped[dropped.length - 1]);
-    if (since > 0 && until >= since) {
-      histNewerWindows = [...histNewerWindows, { since, until }];
-    }
-  }
-
-  function markTrimmedOlder(kept, dropped) {
-    if (!kept.length || !dropped.length) return;
-    histHasMore = true;
-    histNextUntil = histCursorBefore(kept[0]);
-  }
-
-  async function loadHistInitial(id, { search, since, until }, signal) {
+  // Fetch the newest HIST_MAX_LINES lines in the range. There is no paging:
+  // narrowing the range is how to reach earlier lines.
+  async function loadHist(id, { search, since, until }, signal) {
     histLoading = true;
     histError = "";
     try {
       const data = await fetchRunLogs(id, {
-        maxLines: HIST_PAGE,
+        maxLines: HIST_MAX_LINES,
         search,
         since,
         until,
         signal,
       });
       if (signal?.aborted) return;
-      histNewerWindows = [];
       const rows = [];
       pushHistRows(rows, data.logs);
-      const droppedOlder =
-        rows.length > HIST_BUFFER_MAX
-          ? rows.slice(0, rows.length - HIST_BUFFER_MAX)
-          : [];
-      histLines =
-        rows.length > HIST_BUFFER_MAX
-          ? rows.slice(-HIST_BUFFER_MAX)
-          : rows;
-      if (droppedOlder.length) {
-        markTrimmedOlder(histLines, droppedOlder);
-      } else {
-        histHasMore = data.hasMore;
-        histNextUntil = data.nextUntil;
-      }
+      histLines = rows;
+      histTruncated = data.logs.length >= HIST_MAX_LINES;
       // Land on the newest line, like the live tail does.
       queueMicrotask(() => {
-        if (histTailEl) {
-          histRestoringScroll = true;
-          histTailEl.scrollTop = histTailEl.scrollHeight;
-          histLastScrollTop = histTailEl.scrollTop;
-          requestAnimationFrame(() => {
-            histRestoringScroll = false;
-          });
-        }
+        if (histTailEl) histTailEl.scrollTop = histTailEl.scrollHeight;
       });
     } catch (err) {
       if (signal?.aborted) return;
@@ -1280,139 +1180,6 @@
     } finally {
       if (!signal?.aborted) histLoading = false;
     }
-  }
-
-  async function loadHistPage(direction, { since, until }) {
-    const loadingOlder = direction === "older";
-    if (loadingOlder) {
-      histLoadingOlder = true;
-    } else {
-      histLoadingNewer = true;
-    }
-    histError = "";
-    const anchor = captureHistAnchor();
-    const signal = histController?.signal;
-    try {
-      const data = await fetchRunLogs(runId, {
-        since,
-        until,
-        maxLines: HIST_PAGE,
-        search: logSearch,
-        signal,
-      });
-      if (signal?.aborted) return;
-      const rows = [];
-      pushHistRows(rows, data.logs);
-      if (loadingOlder && !rows.length) {
-        histHasMore = false;
-        histNextUntil = null;
-        return;
-      }
-
-      const adjacent =
-        rows.length <= HIST_PAGE
-          ? rows
-          : loadingOlder
-            ? rows.slice(-HIST_PAGE)
-            : rows.slice(0, HIST_PAGE);
-      const merged = loadingOlder
-        ? adjacent.concat(histLines)
-        : histLines.concat(adjacent);
-
-      if (loadingOlder) {
-        const dropped = merged.slice(HIST_BUFFER_MAX);
-        histLines = merged.slice(0, HIST_BUFFER_MAX);
-        rememberTrimmedNewer(histLines, dropped);
-        if (rows.length > HIST_PAGE) {
-          histHasMore = true;
-          histNextUntil = histCursorBefore(adjacent[0]);
-        } else {
-          histHasMore = data.hasMore;
-          histNextUntil = data.nextUntil;
-        }
-      } else {
-        const dropped = merged.slice(
-          0,
-          Math.max(0, merged.length - HIST_BUFFER_MAX),
-        );
-        histLines = merged.slice(-HIST_BUFFER_MAX);
-        markTrimmedOlder(histLines, dropped);
-        histNewerWindows = histNewerWindows.slice(0, -1);
-      }
-
-      await restoreHistAnchor(anchor);
-    } catch (err) {
-      if (signal?.aborted) return;
-      histError = String(err?.message || err);
-    } finally {
-      if (!signal?.aborted) {
-        if (loadingOlder) {
-          histLoadingOlder = false;
-        } else {
-          histLoadingNewer = false;
-        }
-      }
-    }
-  }
-
-  function loadHistOlder() {
-    if (
-      !histHasMore ||
-      histNextUntil == null ||
-      histLoadingOlder ||
-      histLoadingNewer ||
-      histLoading
-    ) {
-      return;
-    }
-    return loadHistPage("older", {
-      since: histRange.since,
-      until: histNextUntil,
-    });
-  }
-
-  function loadHistNewer() {
-    if (
-      !histNewerWindows.length ||
-      histLoadingNewer ||
-      histLoadingOlder ||
-      histLoading
-    ) {
-      return;
-    }
-    const range = histNewerWindows[histNewerWindows.length - 1];
-    return loadHistPage("newer", range);
-  }
-
-  // Load only in the direction the user moved. Scroll restoration after a
-  // page swap is ignored, preventing older/newer fetches from ping-ponging.
-  function onHistScroll() {
-    const el = histTailEl;
-    if (!el || histRestoringScroll) return;
-    const top = el.scrollTop;
-    const delta = top - histLastScrollTop;
-    histLastScrollTop = top;
-    if (delta < 0 && top <= 40) {
-      void loadHistOlder();
-      return;
-    }
-    if (delta > 0) {
-      const distanceFromBottom = el.scrollHeight - top - el.clientHeight;
-      if (distanceFromBottom <= 40) void loadHistNewer();
-    }
-  }
-
-  function jumpHistToLatest() {
-    if (!runId || histLoading || histLoadingOlder || histLoadingNewer) return;
-    void loadHistInitial(
-      runId,
-      {
-        search: logSearch,
-        since: histRange.since,
-        until: histRange.until,
-      },
-      histController?.signal,
-    );
   }
 
   function resetHistRange() {
@@ -1438,12 +1205,8 @@
     if (tab !== "logs" || !id || !status || running) return;
 
     const controller = new AbortController();
-    histController = controller;
-    void loadHistInitial(id, { search, since, until }, controller.signal);
-    return () => {
-      controller.abort();
-      if (histController === controller) histController = null;
-    };
+    void loadHist(id, { search, since, until }, controller.signal);
+    return () => controller.abort();
   });
 
   // ── Shared chart time range ─────
@@ -2536,36 +2299,17 @@
             {/if}
           </div>
         {:else}
-          <div class="bg-(--color-c-gray-08,#0e0e0e) rounded-[6px] p-[8px_12px] max-h-[420px] overflow-y-auto overflow-x-auto [overflow-anchor:none] [font-family:ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] leading-[1.45] text-(--text)" bind:this={histTailEl} onscroll={onHistScroll}>
-            {#if histHasMore}
-              <div class="text-center text-[10px] text-(--muted) pb-[6px]">
-                {histLoadingOlder ? "Loading older lines…" : "Scroll up for older lines"}
-              </div>
-            {/if}
+          <div class="bg-(--color-c-gray-08,#0e0e0e) rounded-[6px] p-[8px_12px] max-h-[420px] overflow-y-auto overflow-x-auto [overflow-anchor:none] [font-family:ui-monospace,SFMono-Regular,Menlo,monospace] text-[12px] leading-[1.45] text-(--text)" bind:this={histTailEl}>
             {#each histLines as entry (entry.id)}
-              <div class="flex gap-[10px] whitespace-pre" data-hist-id={entry.id}>
+              <div class="flex gap-[10px] whitespace-pre">
                 <span class="shrink-0 text-(--muted) text-[10px] min-w-[64px] overflow-hidden text-ellipsis">{entry.task_id || ""}</span>
                 <span class="flex-1 whitespace-pre-wrap break-all">{entry.line}</span>
               </div>
             {/each}
-            {#if histNewerWindows.length}
-              <div class="text-center text-[10px] text-(--muted) pt-[6px]">
-                {histLoadingNewer ? "Loading newer lines…" : "Scroll down for newer lines"}
-              </div>
-            {/if}
           </div>
-          <div class="mt-[6px] text-[11px] text-(--muted) [font-variant-numeric:tabular-nums] flex items-center gap-[8px]">
-            <span>Showing {histLines.length} line{histLines.length === 1 ? "" : "s"}</span>
-            {#if histNewerWindows.length}
-              <span class="h-[12px] w-px bg-(--border)"></span>
-              <button
-                type="button"
-                class="text-(--accent) underline-offset-2 hover:underline bg-transparent border-0 p-0 cursor-pointer text-[11px]"
-                onclick={jumpHistToLatest}
-              >
-                Jump to latest
-              </button>
-            {/if}
+          <div class="mt-[6px] text-[11px] text-(--muted) [font-variant-numeric:tabular-nums]">
+            Showing {histLines.length} line{histLines.length === 1 ? "" : "s"}{#if histTruncated}
+              — the newest {HIST_MAX_LINES} log entries in this range. Narrow the range to see earlier ones.{/if}
           </div>
         {/if}
       {/if}

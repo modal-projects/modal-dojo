@@ -688,9 +688,7 @@ def show_run_params(*, run_id: str, json_output: bool) -> None:
     )
 
 
-def _validate_log_payload(
-    payload: object,
-) -> tuple[list[dict[str, object]], bool, int | float | None]:
+def _validate_log_payload(payload: object) -> list[dict[str, object]]:
     if not isinstance(payload, dict) or not isinstance(payload.get("logs"), list):
         raise CLIError(
             "Dashboard returned invalid log data.",
@@ -707,19 +705,7 @@ def _validate_log_payload(
                 exit_code=ExitCode.BACKEND,
             )
         logs.append(entry)
-
-    has_more = payload.get("has_more", False)
-    next_until = payload.get("next_until")
-    if not isinstance(has_more, bool) or (
-        next_until is not None
-        and (not isinstance(next_until, (int, float)) or isinstance(next_until, bool))
-    ):
-        raise CLIError(
-            "Dashboard returned invalid log pagination data.",
-            error="invalid_dashboard_response",
-            exit_code=ExitCode.BACKEND,
-        )
-    return logs, has_more, next_until
+    return logs
 
 
 def _print_log_line(line: str) -> None:
@@ -784,22 +770,9 @@ def show_run_logs(
                 },
                 not_found_error=not_found_error,
             )
-            logs, has_more, next_until = _validate_log_payload(payload)
-            if has_more:
-                message = (
-                    f"[showing the newest {len(logs)} logs; older logs are available"
-                )
-                if next_until is not None:
-                    message += f" with --until {next_until}"
-                click.echo(f"{message}]", err=True)
+            logs = _validate_log_payload(payload)
             if json_output:
-                print_json(
-                    {
-                        "logs": logs,
-                        "has_more": has_more,
-                        "next_until": next_until,
-                    }
-                )
+                print_json({"logs": logs})
                 return
             for entry in logs:
                 _print_log_line(str(entry["line"]))
@@ -836,8 +809,6 @@ def show_run_logs(
                     f"[dropped {decoded.get('dropped', 0)} log lines]",
                     err=True,
                 )
-            elif event == "reconnect":
-                click.echo("[reconnecting log stream]", err=True)
         raise CLIError(
             "Dashboard log stream ended unexpectedly.",
             error="log_stream_disconnected",
