@@ -347,3 +347,94 @@ def test_latest_checkpoint_sees_location_written_after_launch(
 
     assert checkpoint is not None
     assert checkpoint.name == "iter_0000001"
+
+
+def _adapter_files(name: str, *, world_size: int, ranks: range) -> list[_DirEntry]:
+    adapter = f"run-1/{name}/adapter"
+    return [
+        _DirEntry(f"{adapter}/META.json"),
+        _DirEntry(f"{adapter}/adapter_config.json"),
+        *(_DirEntry(f"{adapter}/adapter_megatron_rank{rank}.pt") for rank in ranks),
+    ]
+
+
+def test_run_lists_complete_lora_adapters(monkeypatch, fake_volume) -> None:
+    run = _run_with_checkpoint_location()
+    meta = b'{"world_size": 2}'
+    volume = _ListingVolume(
+        {
+            "run-1": [
+                _DirEntry("run-1/iter_0000001", is_directory=True),
+                _DirEntry("run-1/iter_0000002", is_directory=True),
+            ],
+            "run-1/iter_0000001": [
+                _DirEntry("run-1/iter_0000001/adapter", is_directory=True),
+                _DirEntry("run-1/iter_0000001/adapter_hf", is_directory=True),
+            ],
+            "run-1/iter_0000001/adapter": _adapter_files(
+                "iter_0000001", world_size=2, ranks=range(2)
+            ),
+            "run-1/iter_0000002": [
+                _DirEntry("run-1/iter_0000002/adapter", is_directory=True)
+            ],
+            # Interrupted save: rank 1 never landed.
+            "run-1/iter_0000002/adapter": _adapter_files(
+                "iter_0000002", world_size=2, ranks=range(1)
+            ),
+        },
+        files={
+            "run-1/iter_0000001/adapter/META.json": meta,
+            "run-1/iter_0000002/adapter/META.json": meta,
+        },
+    )
+    monkeypatch.setattr(
+        checkpoint_mod.Volume, "from_name", lambda *args, **kwargs: volume
+    )
+
+    checkpoints = run.checkpoints()
+
+    assert [(c.name, c.checkpoint_type) for c in checkpoints] == [
+        ("iter_0000001", CheckpointType.lora_adapter)
+    ]
+    assert checkpoints[0].path == "/checkpoints/run-1/iter_0000001/adapter"
+    # An adapter is not full weights, so .model never points at it.
+    assert run.model.model_path == "/checkpoints/run-1"
+
+
+def test_lora_adapter_listing_respects_tracker(monkeypatch, fake_volume) -> None:
+    run = _run_with_checkpoint_location()
+    volume = _ListingVolume(
+        {
+            "run-1": [_DirEntry("run-1/iter_0000002", is_directory=True)],
+            "run-1/iter_0000002": [
+                _DirEntry("run-1/iter_0000002/adapter", is_directory=True)
+            ],
+            "run-1/iter_0000002/adapter": _adapter_files(
+                "iter_0000002", world_size=1, ranks=range(1)
+            ),
+        },
+        files={
+            "run-1/iter_0000002/adapter/META.json": b'{"world_size": 1}',
+            "run-1/latest_checkpointed_iteration.txt": b"1\n",
+        },
+    )
+    monkeypatch.setattr(
+        checkpoint_mod.Volume, "from_name", lambda *args, **kwargs: volume
+    )
+
+    assert run.checkpoints() == []
+
+
+def test_convert_megatron_checkpoint_to_hf_rejects_lora_adapters() -> None:
+    adapter = Checkpoint(
+        checkpoint_type=CheckpointType.lora_adapter,
+        name="iter_0000010",
+        path="/checkpoints/run/iter_0000010/adapter",
+        timestamp=1.0,
+        checkpoints_volume_name="gym-checkpoints",
+    )
+
+    with pytest.raises(DojoConfigError, match="LoRA adapter"):
+        convert_megatron_checkpoint_to_hf(
+            adapter, ModelConfig(model_name="Qwen/Qwen3-4B")
+        )

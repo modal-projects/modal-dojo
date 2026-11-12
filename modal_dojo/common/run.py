@@ -6,6 +6,7 @@ It is used to track the training run and its results.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import math
 import inspect
 import os
@@ -47,6 +48,8 @@ from modal_dojo.utils.metadata import (
 
 if TYPE_CHECKING:
     from modal_dojo.common.checkpoint import Checkpoint
+    from modal_dojo.common.deployment import CustomDeployment
+    from modal_dojo.deploy_recipes import SglangRecipe, VllmRecipe
     from modal_dojo.common.dashboard_components import DashboardComponent
     from modal_dojo.common.training_rollout import TrainingRolloutResult
 
@@ -245,10 +248,11 @@ class TrainingRun(BaseModel):
             return True, exc
 
     def checkpoints(self) -> list["Checkpoint"]:
-        """Snapshot of committed megatron ``iter_*`` directories.
+        """Snapshot of committed ``iter_*`` checkpoints.
 
-        Miles LoRA adapters are not listed. Serving needs
-        ``convert_megatron_checkpoint_to_hf``.
+        Full-weight runs list megatron directories. Miles native-LoRA runs list
+        their complete ``iter_*/adapter`` directories as ``lora_adapter``
+        checkpoints. ``serve`` handles both.
         """
         from modal_dojo.common.checkpoint import _list_checkpoints
 
@@ -290,20 +294,112 @@ class TrainingRun(BaseModel):
         self._reload()
         return inferred_batch_size_result(self.metadata)
 
-    @property
-    def model(self) -> "ModelConfig":
-        """Build a ``ModelConfig`` whose path targets the latest megatron checkpoint."""
-        self._reload()
+    def serve(
+        self,
+        checkpoint: "Checkpoint | None" = None,
+        *,
+        recipe: "SglangRecipe | VllmRecipe | None" = None,
+        app_name: str | None = None,
+        served_model_name: str | None = None,
+        unauthenticated: bool = False,
+    ) -> "CustomDeployment":
+        """Deploy a checkpoint from this run with SGLang or vLLM.
+
+        Full-weight checkpoints are converted to Hugging Face format and served
+        directly. LoRA adapter checkpoints are served on top of the base model;
+        send ``deployment.request_model_name`` as the request ``model``, or use
+        ``deployment.chat``.
+
+        Args:
+            checkpoint:
+                Checkpoint to serve. Defaults to ``latest_checkpoint()``.
+            recipe:
+                Serving recipe. Defaults to ``SglangRecipe()``, one H100; size it
+                for the model. LoRA adapters need SGLang, and inherit the training
+                recipe's ``sglang_lora_backend`` when the serving recipe sets none.
+            app_name:
+                Modal app name for the deployment.
+            served_model_name:
+                Model name exposed to clients.
+            unauthenticated:
+                Whether the endpoint accepts requests without proxy credentials.
+
+        Returns:
+            The deployed ``CustomDeployment``. Call ``wait_until_ready()`` before
+            sending requests.
+
+        Raises:
+            ValueError: The run has no complete checkpoint yet.
+        """
+        from modal_dojo.common.checkpoint import CheckpointType
+        from modal_dojo.common.deployment import CustomDeployment
+        from modal_dojo.deploy_recipes import SglangRecipe
+
+        checkpoint = checkpoint or self.latest_checkpoint()
+        if checkpoint is None:
+            raise ValueError(
+                f"Training run {self.training_run_id} has no complete checkpoint to serve."
+            )
+        recipe = recipe or SglangRecipe()
+        train_recipe = (
+            self.config.get("recipe") if isinstance(self.config, dict) else None
+        )
+        backend = (
+            train_recipe.get("sglang_lora_backend")
+            if isinstance(train_recipe, dict)
+            else None
+        )
+        if (
+            checkpoint.checkpoint_type == CheckpointType.lora_adapter
+            and isinstance(recipe, SglangRecipe)
+            and backend
+            and "--lora-backend" not in (recipe.extra_server_args or {})
+        ):
+            recipe = dataclasses.replace(
+                recipe,
+                extra_server_args={
+                    "--lora-backend": backend,
+                    **(recipe.extra_server_args or {}),
+                },
+            )
+        return CustomDeployment.launch(
+            self._source_model_config(),
+            checkpoint,
+            recipe=recipe,
+            app_name=app_name,
+            served_model_name=served_model_name,
+            unauthenticated=unauthenticated,
+        )
+
+    def _source_model_config(self) -> "ModelConfig":
         raw = self.source_model
         if raw is None:
             raise ValueError("No source_model on this TrainingRun.")
         if isinstance(raw, ModelConfig):
-            model = copy.copy(raw)
-        elif isinstance(raw, dict):
-            model = ModelConfig(**raw)
-        else:
-            raise ValueError("source_model is not a ModelConfig or dict.")
-        checkpoint = self.latest_checkpoint()
+            return copy.copy(raw)
+        if isinstance(raw, dict):
+            return ModelConfig(**raw)
+        raise ValueError("source_model is not a ModelConfig or dict.")
+
+    @property
+    def model(self) -> "ModelConfig":
+        """Build a ``ModelConfig`` whose path targets the latest megatron checkpoint.
+
+        LoRA adapter checkpoints are not full weights, so they are skipped; serve
+        them with ``serve``.
+        """
+        from modal_dojo.common.checkpoint import CheckpointType
+
+        self._reload()
+        model = self._source_model_config()
+        checkpoint = next(
+            (
+                checkpoint
+                for checkpoint in reversed(self.checkpoints())
+                if checkpoint.checkpoint_type == CheckpointType.megatron
+            ),
+            None,
+        )
         if checkpoint is not None:
             model.model_path = checkpoint.path
         elif self.checkpoint_dir:
