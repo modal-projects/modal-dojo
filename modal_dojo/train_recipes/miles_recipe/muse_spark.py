@@ -50,7 +50,7 @@ class Muse_Spark_Open_64k_Recipe(MilesRecipe):
     name: str = "miles-muse_spark_open_64k_b300_recipe"
     # Keep the B300 image used for the full-model validation of this Miles pin.
     docker_image: str = (
-        "radixark/miles:muse-spark-open@sha256:"
+        "modalresearch/miles:dojo-muse-spark-open-20261112@sha256:"
         "88c66b1414aff0f2cd018923b70f7c463391980236171683bdf22f34796b6bf2"
     )
     miles_git_ref: str = "706c6106cafe24bad5eba7cceb09ee4f24c2d1b3"
