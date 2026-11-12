@@ -46,7 +46,7 @@ def _exception_summary(exc: BaseException, *, limit: int = 1000) -> str:
     name = type(exc).__name__
     if not message or message == f"{name}()":
         return name
-    if message.startswith(f"{name}:") or message.startswith(f"{name}("):
+    if message.startswith((f"{name}:", f"{name}(")):
         return message[:limit]
     return f"{name}: {message}"[:limit]
 

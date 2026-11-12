@@ -67,8 +67,8 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     model_config_class: ClassVar[type[ModelConfig]] = DeepSeek_V4_1_Flash
 
     docker_image: str = (
-        "radixark/miles:dsv41-h200-ea751aac8@sha256:"
-        "eff12eb317af7021f637ab6bf21359164e27274ca07a3b2b3754dfa4c5d1bd66"
+        "modalresearch/miles:dojo-dsv41-h200-ea751aac8-1@sha256:"
+        "5534ed5966cca234b9f98eb1f331b7a274adf75437b0e5766baa41d8cd884c7d"
     )
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "H200"

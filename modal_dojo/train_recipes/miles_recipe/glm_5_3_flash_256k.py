@@ -78,8 +78,8 @@ class GLM_5_3_Flash_LoRA_256k_Recipe(MilesRecipe):
 
     model_config_class: ClassVar[type[ModelConfig]] = GLM_5_3_Flash_LoRA
     docker_image: str = (
-        "radixark/miles:dev-202610140350@sha256:"
-        "c53f65d346a6b364cf89d7dbaa416595a2d5638670b5d82c683214183dca10bd"
+        "modalresearch/miles:dojo-dev-202610140350@sha256:"
+        "97438bed2a81d8e114f4e218331e9bfce8a8cb6e0d8eb21361261d8cf888903c"
     )
     miles_git_ref: str | None = "d33406f1139f1fa66305b17b9e91dfa110e3c4ce"
     sglang_git_ref: str | None = "f31278164939dd0746037abbb7566de4164e6767"

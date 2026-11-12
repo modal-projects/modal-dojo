@@ -783,13 +783,11 @@ def build_miles_app(
                     await _prepare_shared_inputs()
             except BaseException as exc:
                 os.makedirs(os.path.dirname(prep_error), exist_ok=True)
-                with open(prep_error, "w") as f:
-                    f.write(repr(exc))
+                await asyncio.to_thread(Path(prep_error).write_text, repr(exc))
                 await checkpoints_volume.commit.aio()
                 raise
             os.makedirs(os.path.dirname(prep_marker), exist_ok=True)
-            with open(prep_marker, "w") as f:
-                f.write(str(time.time()))
+            await asyncio.to_thread(Path(prep_marker).write_text, str(time.time()))
             await checkpoints_volume.commit.aio()
         else:
             deadline = time.time() + download_timeout + dataset_timeout
@@ -799,11 +797,11 @@ def build_miles_app(
                     data_volume.reload.aio(),
                     checkpoints_volume.reload.aio(),
                 )
-                if os.path.exists(prep_marker):
+                if await asyncio.to_thread(os.path.exists, prep_marker):
                     break
-                if os.path.exists(prep_error):
-                    with open(prep_error) as f:
-                        raise RuntimeError(f"Head preparation failed: {f.read()}")
+                if await asyncio.to_thread(os.path.exists, prep_error):
+                    error = await asyncio.to_thread(Path(prep_error).read_text)
+                    raise RuntimeError(f"Head preparation failed: {error}")
                 if time.time() > deadline:
                     raise RuntimeError("Timed out waiting for head preparation marker")
                 await asyncio.sleep(5)

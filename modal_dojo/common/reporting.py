@@ -358,7 +358,7 @@ def _is_final_timing(payload: dict[str, Any]) -> bool:
     """Process-exit flush whose delivery is worth retrying while draining."""
     url = str(payload.get("_url", "")).rstrip("/")
     return bool(payload.get("final")) and (
-        url.endswith("/api/timing-events") or url.endswith(_METRIC_POINTS_PATH)
+        url.endswith(("/api/timing-events", _METRIC_POINTS_PATH))
     )
 
 
