@@ -111,9 +111,8 @@ def safe_next_path(next_path: str | None) -> str:
     if (
         not next_path
         or not next_path.startswith("/")
-        or next_path.startswith("//")
+        or next_path.startswith(("//", LOGIN_PATH))
         or "\\" in next_path
-        or next_path.startswith(LOGIN_PATH)
     ):
         return "/"
     return next_path

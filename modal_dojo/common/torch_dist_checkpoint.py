@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import os
 import pickle
+import time
 from collections.abc import Collection
 from datetime import timedelta
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable
 
@@ -120,20 +122,89 @@ def _commit_volume(volume_name: str) -> None:
     Volume.from_name(volume_name, create_if_missing=False).commit()
 
 
+COMMIT_TIMEOUT_ENV = "MODAL_DOJO_CHECKPOINT_COMMIT_TIMEOUT_SECONDS"
+COMMIT_RETRY_DELAY_SECONDS = 30.0
+# Ranks waiting on the gloo group outlive the retry deadline by this much, so
+# the final retry's sleep and the error gather finish before the group times out.
+COMMIT_GROUP_SLACK_SECONDS = 10 * 60
+
+
+def _commit_volume_once(volume_name: str) -> str | None:
+    try:
+        _commit_volume(volume_name)
+    except Exception as exc:
+        return _error_text(exc)
+    return None
+
+
+def commit_volume_with_retries(
+    volume_name: str,
+    timeout_seconds: float,
+    *,
+    commit: Callable[[str], None] = _commit_volume,
+    retry_delay_seconds: float = COMMIT_RETRY_DELAY_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str | None:
+    """Commit ``volume_name`` until it succeeds or ``timeout_seconds`` runs out.
+
+    A commit cut short by a per-file upload timeout (blob-store throttling on a
+    multi-GB shard) is safe to repeat: files already published are skipped, so
+    a retry only uploads what is still missing. A retry is only started when
+    the time left covers the delay and another attempt as long as the last
+    one, so the slowest node finishes inside the gloo group's timeout.
+
+    Returns ``None`` on success, otherwise the text of the last error."""
+    deadline = clock() + timeout_seconds
+    attempt = 0
+    while True:
+        attempt += 1
+        started = clock()
+        try:
+            commit(volume_name)
+        except Exception as exc:
+            error = _error_text(exc)
+        else:
+            if attempt > 1:
+                print(
+                    f"Checkpoint Volume commit succeeded on attempt {attempt}",
+                    flush=True,
+                )
+            return None
+        last_attempt = clock() - started
+        remaining = deadline - clock()
+        if remaining < retry_delay_seconds + last_attempt:
+            print(
+                f"Checkpoint Volume commit gave up after {attempt} attempt(s): {error}",
+                flush=True,
+            )
+            return error
+        print(
+            f"Checkpoint Volume commit attempt {attempt} failed, retrying in "
+            f"{retry_delay_seconds:.0f}s ({remaining:.0f}s left): {error}",
+            flush=True,
+        )
+        sleep(retry_delay_seconds)
+
+
 def commit_checkpoint_volume_across_ranks(
     volume_name: str | None,
     dist_wrapper: Any,
     barrier: Callable[[], None],
+    *,
+    commit: Callable[[str], str | None] = _commit_volume_once,
 ) -> None:
+    """Commit the checkpoint Volume from every node, shards before metadata.
+
+    ``commit`` returns the error text, or ``None`` on success. The coordinator
+    commits last because its commit publishes ``.metadata``, the completeness
+    marker, and it skips that commit when any shard commit failed."""
     if not volume_name:
         return
 
     shard_commit_error = None
     if _is_node_leader() and not dist_wrapper.is_coordinator:
-        try:
-            _commit_volume(volume_name)
-        except Exception as exc:
-            shard_commit_error = _error_text(exc)
+        shard_commit_error = commit(volume_name)
     _raise_gathered_errors(
         dist_wrapper,
         shard_commit_error,
@@ -143,10 +214,7 @@ def commit_checkpoint_volume_across_ranks(
 
     coordinator_commit_error = None
     if _is_node_leader() and dist_wrapper.is_coordinator:
-        try:
-            _commit_volume(volume_name)
-        except Exception as exc:
-            coordinator_commit_error = _error_text(exc)
+        coordinator_commit_error = commit(volume_name)
     _raise_gathered_errors(
         dist_wrapper,
         coordinator_commit_error,
@@ -183,14 +251,23 @@ def commit_latest_checkpoint_volume() -> None:
     import torch.distributed as dist
 
     group = None
-    timeout = os.environ.get("MODAL_DOJO_CHECKPOINT_COMMIT_TIMEOUT_SECONDS")
-    if timeout is not None and dist.is_initialized():
+    commit: Callable[[str], str | None] = _commit_volume_once
+    timeout = os.environ.get(COMMIT_TIMEOUT_ENV)
+    if timeout is not None:
         # Terabyte-scale Volume publication can outlast the GPU collective
-        # timeout. Keep this storage wait off NCCL and bound it independently.
+        # timeout. Keep this storage wait off NCCL and bound it independently,
+        # retrying failed commits until the timeout runs out. Without the
+        # timeout, ranks wait on the NCCL group, whose watchdog would kill the
+        # job long before retries could help, so commit once.
         seconds = int(timeout)
         if seconds <= 0:
             raise ValueError("Checkpoint commit timeout must be positive")
-        group = dist.new_group(backend="gloo", timeout=timedelta(seconds=seconds))
+        commit = partial(commit_volume_with_retries, timeout_seconds=seconds)
+        if dist.is_initialized():
+            group = dist.new_group(
+                backend="gloo",
+                timeout=timedelta(seconds=seconds + COMMIT_GROUP_SLACK_SECONDS),
+            )
     try:
         barrier = (
             (lambda: dist.barrier(group=group))
@@ -201,6 +278,7 @@ def commit_latest_checkpoint_volume() -> None:
             volume_name,
             _TorchDistributed(group),
             barrier,
+            commit=commit,
         )
     finally:
         if group is not None:
