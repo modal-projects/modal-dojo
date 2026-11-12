@@ -170,9 +170,61 @@ def test_reads_pick_up_chunks_written_by_another_replica(
             headers=AUTH,
         )
         files = _chunk_files(fake_volume)
-        assert f"chunk-000000-{WRITER}.json" in files  # others left untouched
-        assert files["chunk-000000-aaaa.json"]["steps"]["3"] == {"lr": 0.1}
+        # The two copies of chunk 0 were folded into this writer's one copy;
+        # chunk 2 had a single copy, so it stays where it is.
+        assert sorted(files) == [
+            f"chunk-000000-{WRITER}.json",
+            "chunk-000002-bbbb.json",
+        ]
+        assert files[f"chunk-000000-{WRITER}.json"]["steps"] == {
+            "3": {"lr": 0.1},
+            "4": {"lr": 0.9},
+            "5": {"lr": 0.3},
+        }
         assert client.get("/api/runs/ghost/metrics").status_code == 404
+
+
+def test_load_folds_many_writer_copies_into_one(fake_volume, monkeypatch, tmp_path):
+    """Every container start writes under a new writer id; a read folds the
+    pile of copies back into one file without losing any point."""
+    _save_run(TrainingRunStatus.COMPLETED)
+    for i in range(20):
+        metadata.vol_put(
+            STORE,
+            f"chunk-000000-w{i:02d}",
+            {"steps": {str(i): {"loss": float(i)}}, "written": {str(i): {"loss": i}}},
+        )
+    with _client(monkeypatch, tmp_path) as client:
+        result = client.get(f"/api/runs/{RUN_ID}/metrics").json()
+    assert result["series"]["loss"] == [[i, float(i), None] for i in range(20)]
+    files = _chunk_files(fake_volume)
+    assert list(files) == [f"chunk-000000-{WRITER}.json"]
+    assert len(files[f"chunk-000000-{WRITER}.json"]["steps"]) == 20
+
+
+def test_fold_keeps_copies_rewritten_after_they_were_read(
+    fake_volume, monkeypatch, tmp_path
+):
+    """A replica that rewrites its copy mid-fold may hold points the fold
+    never saw, so that copy survives until a later read folds it."""
+    _save_run()
+    metadata.vol_put(STORE, "chunk-000000-aaaa", {"steps": {"0": {"a": 1.0}}})
+    metadata.vol_put(STORE, "chunk-000000-bbbb", {"steps": {"1": {"a": 2.0}}})
+    put_many = _dashboard._metadata_vol_put_many
+
+    async def put_and_race(store, values, *, is_async):
+        await put_many(store, values, is_async=is_async)
+        metadata.vol_put(
+            STORE, "chunk-000000-bbbb", {"steps": {"1": {"a": 2.0}, "2": {"a": 3.0}}}
+        )
+
+    monkeypatch.setattr(_dashboard, "_metadata_vol_put_many", put_and_race)
+    with _client(monkeypatch, tmp_path) as client:
+        client.get(f"/api/runs/{RUN_ID}/metrics")
+    assert set(_chunk_files(fake_volume)) == {
+        "chunk-000000-bbbb.json",
+        f"chunk-000000-{WRITER}.json",
+    }
 
 
 def test_reading_a_finished_run_persists_whatever_is_still_buffered(
@@ -211,7 +263,7 @@ def test_finished_run_read_serves_memory_when_the_volume_is_down(
         async def boom(*args, **kwargs):
             raise RuntimeError("volume down")
 
-        monkeypatch.setattr(_dashboard, "_metadata_vol_list", boom)
+        monkeypatch.setattr(_dashboard, "vol_list_metadata_with_failures", boom)
         monkeypatch.setattr(_dashboard, "_metadata_vol_put_many", boom)
         result = client.get(f"/api/runs/{RUN_ID}/metrics")
         assert result.status_code == 200
@@ -294,3 +346,37 @@ def test_metric_series_splits_the_table_per_key_and_downsamples():
     assert list(out) == ["a", "x"]
     assert out["a"] == [[3, 1.0, None]]
     assert out["x"] == [[0, 0.0, 100.0], [9, 9.0, 109.0]]
+
+
+def test_fold_leaves_recently_written_copies_alone(fake_volume, monkeypatch, tmp_path):
+    """A copy written inside the grace period may belong to a live replica
+    that is about to rewrite it, so it is merged on read but never deleted."""
+    _save_run(TrainingRunStatus.COMPLETED)
+    metadata.vol_put(STORE, "chunk-000000-aaaa", {"steps": {"0": {"a": 1.0}}})
+    metadata.vol_put(STORE, "chunk-000000-bbbb", {"steps": {"1": {"a": 2.0}}})
+    # FakeVolume stamps every file with mtime=1; a grace reaching back past
+    # the epoch makes them all "just written".
+    monkeypatch.setattr(_dashboard, "METRIC_FOLD_GRACE_S", time.time() + 60)
+    with _client(monkeypatch, tmp_path) as client:
+        series = client.get(f"/api/runs/{RUN_ID}/metrics").json()["series"]
+    assert series == {"a": [[0, 1.0, None], [1, 2.0, None]]}
+    assert {"chunk-000000-aaaa.json", "chunk-000000-bbbb.json"} <= set(
+        _chunk_files(fake_volume)
+    )
+
+
+def test_rewrites_own_copy_that_a_fold_deleted(fake_volume, monkeypatch, tmp_path):
+    """Another replica's fold can delete this container's copy just after a
+    rewrite it never saw; the recheck notices and writes it again."""
+    _save_run()
+    own = f"chunk-000000-{WRITER}.json"
+    with _client(monkeypatch, tmp_path) as client:
+        client.post(
+            "/api/metric-points",
+            json=_batch([(0, {"a": 1.0})], final=True),
+            headers=AUTH,
+        )
+        assert own in _chunk_files(fake_volume)
+        del fake_volume.files[f"{STORE}/{own}"]
+    # Shutdown rechecks every copy written since the last check.
+    assert _chunk_files(fake_volume)[own]["steps"] == {"0": {"a": 1.0}}
