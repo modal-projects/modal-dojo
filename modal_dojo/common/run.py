@@ -574,6 +574,32 @@ class TrainingRun(BaseModel):
         self.save()
         return manifest
 
+    def remove_dashboard_component(self, name: str) -> bool:
+        """Detach the dashboard component attached to this run as ``name``.
+
+        Returns ``False`` when no component has that name. The uploaded source
+        stays on the overlay Volume (other runs may share it); only this run's
+        association is removed.
+        """
+        from modal_dojo.common.dashboard_components import (
+            remove_dashboard_component_association,
+        )
+
+        metadata = dict(self.metadata or {})
+        components = metadata.get("dashboard_components")
+        components = dict(components) if isinstance(components, dict) else {}
+        if name not in components:
+            return False
+        components.pop(name)
+        metadata["dashboard_components"] = components
+        self.metadata = metadata
+        self._dashboard_component_updates.add(name)
+        self.save()
+        remove_dashboard_component_association(
+            training_run_id=self.training_run_id, name=name
+        )
+        return True
+
     def _touch(self) -> None:
         self.updated_at = int(time.time())
 
@@ -647,7 +673,8 @@ class TrainingRun(BaseModel):
             # appended so insertion order stays attachment order (the
             # dashboard picks the last matching entry). A handle that merely
             # carries a stale copy of the map can neither drop nor revert
-            # another handle's attachments.
+            # another handle's attachments. A name this handle touched that is
+            # no longer in its map was removed by this handle.
             stored_components = stored_metadata.get("dashboard_components")
             current_components = current_metadata.get("dashboard_components")
             if isinstance(stored_components, dict) and isinstance(
@@ -655,10 +682,9 @@ class TrainingRun(BaseModel):
             ):
                 merged_components = dict(stored_components)
                 for name in self._dashboard_component_updates:
-                    if name not in current_components:
-                        continue
                     merged_components.pop(name, None)
-                    merged_components[name] = current_components[name]
+                    if name in current_components:
+                        merged_components[name] = current_components[name]
                 merged_metadata["dashboard_components"] = merged_components
             payload["metadata"] = merged_metadata
             return payload

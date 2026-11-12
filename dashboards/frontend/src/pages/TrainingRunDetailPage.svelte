@@ -9,6 +9,7 @@
   import InferenceStats from "../components/InferenceStats.svelte";
   import SampleTimeline from "../components/SampleTimeline.svelte";
   import DynamicTrajectoryViewer from "../components/DynamicTrajectoryViewer.svelte";
+  import DashboardPanels from "../components/DashboardPanels.svelte";
   import AdvantageViolins from "../components/AdvantageViolins.svelte";
   import AdvantageSpreadChart from "../components/AdvantageSpreadChart.svelte";
   import ComparativeBarChart from "../components/ComparativeBarChart.svelte";
@@ -319,6 +320,16 @@
   let expandedRolloutId = $state(null);
   let expandedRollout = $state(null);
   let expandedRolloutLoading = $state(false);
+  // Props for run-scoped summary panels. They are re-sent (remounting each
+  // panel) only when the run's status or its rollouts change, not on every poll.
+  const summaryPanelKey = $derived.by(() => {
+    const last = rolloutSummaries.at(-1);
+    return [run?.status, rolloutSummaries.length, last?.rollout_id, last?.mean, last?.total].join("|");
+  });
+  const summaryPanelProps = $derived.by(() => {
+    summaryPanelKey;
+    return untrack(() => ({ run, rollouts: rolloutSummaries }));
+  });
   const rolloutColumns = [
     { key: "step", label: "Step", width: 72, minWidth: 56 },
     { key: "mean", label: "Mean reward", width: 118, minWidth: 96 },
@@ -2066,6 +2077,12 @@
               {/if}
             </div>
           {/if}
+          <DashboardPanels
+            {run}
+            type="summary_panel"
+            componentProps={summaryPanelProps}
+            propsKey={summaryPanelKey}
+          />
         </div>
         <aside class="summary-tab-side">
           <RunSummary
@@ -2311,6 +2328,18 @@
                             rollout={expandedRollout}
                             run={run}
                             position={`${activeBucket}/${activeSample.pos}`}
+                          />
+                          <DashboardPanels
+                            {run}
+                            type="rollout_panel"
+                            componentProps={{
+                              sample: activeSample.sample,
+                              samples: activeSample.samples,
+                              rollout: expandedRollout,
+                              run,
+                              position: `${activeBucket}/${activeSample.pos}`,
+                            }}
+                            propsKey={[activeSample.sample, activeSample.samples, expandedRollout, activeBucket, activeSample.pos]}
                           />
                           {#if activeSample.sample.metadata?.reference}
                             <div class="rollout-sample-label">reference</div>
