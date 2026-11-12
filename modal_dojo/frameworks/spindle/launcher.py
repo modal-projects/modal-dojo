@@ -1,4 +1,4 @@
-"""Run a TinkerProgram against an existing or freshly deployed Spindle server."""
+"""Run a program against an existing or freshly deployed Spindle server."""
 
 from __future__ import annotations
 
@@ -260,8 +260,7 @@ async def run_program(
     """
     import tinker
 
-    from modal_dojo.tinker import TinkerContext
-
+    from .context import TinkerContext
     from .reporting import run_lifecycle
 
     # The driver owns its single-use container, so every ServiceClient in it,
