@@ -30,13 +30,13 @@ _PATCHES = (
 
 # Includes K3 support in Miles, Megatron, and SGLang.
 _DOCKER_IMAGE = (
-    "modalresearch/miles:dojo-dev-202609251434@sha256:"
-    "223e9bf3c6f8b6664e497e31f8b6e3e65c8708cca32b61ec5f97e130f41763de"
+    "modalresearch/miles:dojo-dev-202609251434-1@sha256:"
+    "57d24d92d66acbef489fed0a8c5199b9b35c767f39dd4407bf866e2cbfb7fb21"
 )
 
-# Reuse compiled kernels only within the same image digest.
+# Reuse compiled kernels only within the same image version.
 _KERNEL_CACHE_ROOT = (
-    f"/checkpoints/.kernel-cache/{_DOCKER_IMAGE.rsplit('@sha256:', 1)[-1]}"
+    f"/checkpoints/.kernel-cache/{_DOCKER_IMAGE.partition('@')[0].split(':')[-1]}"
 )
 
 

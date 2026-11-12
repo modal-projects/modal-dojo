@@ -15,7 +15,8 @@ from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 # The dedicated amd64/H200 image includes the DeepSeek sources together:
 # miles ea751aac8, sglang 7e74b31b2, and Megatron-LM b0b23e198.
 # Keep those bundled revisions instead of overlaying the older PR head and
-# the arm64 deepseek-v41 image's SGLang tree.
+# the arm64 deepseek-v41 image's SGLang tree. The named tag is outside miles'
+# automatic dev/PR tag cleanup; the digest also prevents tag updates drifting.
 
 # Node-local disk: 768 GiB stages the params-only save (~1.1 TB bf16 over 8
 # nodes, so ~140 GB a node); 1.5 TiB holds the NVMe-streamed optimizer
@@ -66,8 +67,8 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
     model_config_class: ClassVar[type[ModelConfig]] = DeepSeek_V4_1_Flash
 
     docker_image: str = (
-        "modalresearch/miles:dojo-dsv41-h200-ea751aac8@sha256:"
-        "e49378161c5008e1e868131b0a9f7a5c4adfa02ec84039a59429600767d64671"
+        "modalresearch/miles:dojo-dsv41-h200-ea751aac8-1@sha256:"
+        "5534ed5966cca234b9f98eb1f331b7a274adf75437b0e5766baa41d8cd884c7d"
     )
     image_run_commands: list[str] = field(default_factory=_image_patches)
     gpu_type: str = "H200"
