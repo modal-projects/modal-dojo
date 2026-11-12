@@ -1,16 +1,15 @@
-"""Run tinker-cookbook RL against an existing or freshly deployed Spindle server."""
+"""Run a TinkerProgram against an existing or freshly deployed Spindle server."""
 
 from __future__ import annotations
 
 import asyncio
 import copy
 import logging
+import os
 import secrets
 import sys
-import threading
 import uuid
 from contextlib import asynccontextmanager
-from types import SimpleNamespace
 
 import httpx
 
@@ -19,12 +18,12 @@ from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.modal_lifecycle import stop_app_by_name
 
 logger = logging.getLogger(__name__)
-# tinker-cookbook hooks are process-wide.
-_active_run = threading.Lock()
 
 
-def check_server(base_url: str, api_key: str, config) -> dict[str, str | None]:
-    """Fail unless the server has a LoRA deployment that fits ``config``.
+def check_server(
+    base_url: str, api_key: str, model_name: str, *, max_tokens: int | None = None
+) -> dict[str, str | None]:
+    """Fail unless the server has a LoRA deployment of ``model_name`` that fits.
 
     Returns the server's identity for the run record: the shared server is
     redeployed from Spindle main, so one config can run on several versions.
@@ -65,7 +64,7 @@ def check_server(base_url: str, api_key: str, config) -> dict[str, str | None]:
     lora = [
         deployment
         for deployment in served
-        if deployment["base_model"] == config.model_name
+        if deployment["base_model"] == model_name
         and deployment["parameterization"] == "lora"
     ]
     if not lora:
@@ -74,13 +73,13 @@ def check_server(base_url: str, api_key: str, config) -> dict[str, str | None]:
         )
         raise DojoConfigError(
             f"Spindle at {base_url} has no LoRA deployment of "
-            f"{config.model_name}; it serves {available}"
+            f"{model_name}; it serves {available}"
         )
     # Spindle routes a base model to its longest-context deployment.
     context = max(deployment["max_context_length"] for deployment in lora)
-    if config.max_tokens >= context:
+    if max_tokens is not None and max_tokens >= context:
         raise DojoConfigError(
-            f"max_tokens must leave room for prompts in {config.model_name}'s "
+            f"max_tokens must leave room for prompts in {model_name}'s "
             f"{context}-token context"
         )
     return {
@@ -91,18 +90,21 @@ def check_server(base_url: str, api_key: str, config) -> dict[str, str | None]:
 
 
 @asynccontextmanager
-async def shared_server(config, api_key, *, run):
-    """Use the long-lived server at ``config.base_url``; this run never stops it."""
+async def shared_server(base_url, model_name, *, run, max_tokens):
+    """An existing server; nothing to stop on exit."""
+    api_key = os.environ["TINKER_API_KEY"]
+    # The shared server is redeployed from Spindle main; record what ran.
     run.metadata.update(
-        await asyncio.to_thread(check_server, config.base_url, api_key, config)
+        await asyncio.to_thread(
+            check_server, base_url, api_key, model_name, max_tokens=max_tokens
+        )
     )
-    yield config, api_key
+    yield base_url, api_key
 
 
 @asynccontextmanager
-async def deployment(config, deploy_config, *, run):
+async def deployment(model_name, deploy_config, *, run, max_tokens):
     """Deploy a uniquely named LoRA Spindle server, and stop all of it on exit."""
-    import chz
     import modal
     from modal.config import config as modal_config
     from spindle.deployment_cli import deploy
@@ -185,8 +187,12 @@ async def deployment(config, deploy_config, *, run):
         url = await server.get_web_url.aio()
         if not url:
             raise RuntimeError("Spindle deployed without an API URL")
-        run.metadata.update(await asyncio.to_thread(check_server, url, api_key, config))
-        yield chz.replace(config, base_url=url), api_key
+        run.metadata.update(
+            await asyncio.to_thread(
+                check_server, url, api_key, model_name, max_tokens=max_tokens
+            )
+        )
+        yield url, api_key
     finally:
         if await asyncio.to_thread(_remove_deployment, names, api_secret, environment):
             cleanup_error = RuntimeError(
@@ -245,70 +251,46 @@ def _remove_deployment(names, api_secret, environment) -> list[Exception]:
     return errors
 
 
-async def train(
-    config, *, api_key, run, dashboard_url, status_token, deploy_config=None
+async def run_program(
+    program, *, run, base_url, log_dir, max_tokens=None, deploy_config=None
 ):
-    """The RL loop, inside the Modal container ``launch()`` spawns.
+    """Run ``program`` in the Modal container ``launch()`` spawns.
 
-    Trains against ``config.base_url``, or a server deployed from ``deploy_config``.
+    Trains against ``base_url``, or a server deployed from ``deploy_config``.
     """
-    from tinker_cookbook.rl import train as rl_train
-    from tinker_cookbook.tokenizer_utils import get_tokenizer
-
-    from .reporting import DojoReporter
-
-    if not _active_run.acquire(blocking=False):
-        raise DojoConfigError(
-            "Only one SpindleRecipe may train per Python process at a time"
-        )
-    original_tinker = rl_train.tinker
-    try:
-        # The reporter records any failure on the run launch() saved.
-        reporter = DojoReporter(
-            config, run, dashboard_url=dashboard_url, token=status_token
-        )
-        async with reporter:
-            tokenizer = await asyncio.to_thread(get_tokenizer, config.model_name)
-            server = (
-                shared_server(config, api_key, run=run)
-                if deploy_config is None
-                else deployment(config, deploy_config, run=run)
-            )
-            async with server as (config, api_key):
-                await _run_tinker_cookbook(config, api_key, tokenizer, reporter)
-        return run
-    finally:
-        rl_train.tinker = original_tinker
-        _active_run.release()
-
-
-async def _run_tinker_cookbook(config, api_key, tokenizer, reporter):
     import tinker
-    from tinker_cookbook.rl import train as rl_train
-    from .trajectories import capture_trajectories
 
-    with reporter.tinker_cookbook_hooks(rl_train):
+    from modal_dojo.tinker import TinkerContext
 
-        def service_client(**kwargs):
-            # rl_train.main opens this as a context manager, which closes it.
-            return tinker.ServiceClient(
-                **{
-                    **kwargs,
-                    "base_url": config.base_url,
-                    "api_key": api_key,
-                    # tinker ignores the older default_headers name.
-                    "default_headers_overrides": modal_proxy_auth_headers(),
-                }
+    from .reporting import run_lifecycle
+
+    # The driver owns its single-use container, so every ServiceClient in it,
+    # tinker-cookbook's included, reaches Spindle through the Modal proxy.
+    proxy_headers = modal_proxy_auth_headers()
+
+    # A subclass, not a partial, so user code can still subclass and isinstance it.
+    class ServiceClient(tinker.ServiceClient):
+        def __init__(self, *args, default_headers_overrides=None, **kwargs):
+            super().__init__(
+                *args,
+                default_headers_overrides={
+                    **proxy_headers,
+                    **(default_headers_overrides or {}),
+                },
+                **kwargs,
             )
 
-        # Scope client routing to tinker-cookbook.
-        rl_train.tinker = SimpleNamespace(
-            **{
-                **vars(tinker),
-                "ServiceClient": service_client,
-            }
+    tinker.ServiceClient = ServiceClient
+    server = (
+        shared_server(base_url, program.model_name, run=run, max_tokens=max_tokens)
+        if deploy_config is None
+        else deployment(
+            program.model_name, deploy_config, run=run, max_tokens=max_tokens
         )
-        async with capture_trajectories(
-            config.log_path, tokenizer, on_group=reporter.capture_group
-        ):
-            await rl_train.main(config)
+    )
+    async with run_lifecycle(run), server as (base_url, api_key):
+        os.environ["TINKER_BASE_URL"] = base_url
+        os.environ["TINKER_API_KEY"] = api_key
+        with tinker.ServiceClient() as client:
+            await program.run(client, TinkerContext(run, log_dir))
+    return run

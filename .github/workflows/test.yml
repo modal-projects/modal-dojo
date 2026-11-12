@@ -10,7 +10,13 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"
     permissions:
       contents: read
     steps:
@@ -29,6 +35,7 @@ jobs:
         run: uv sync --locked --group dev
 
       - name: Verify generated files
+        shell: bash
         run: |
           uv run python -m scripts.generate_llms_txt
           git diff --exit-code -- docs-next/public/llms.txt
@@ -46,6 +53,16 @@ jobs:
         run: uv build
 
       - name: Smoke-test installed wheel
+        shell: python
         run: |
-          cd $(mktemp -d)
-          uvx --from $OLDPWD/dist/*.whl modal-dojo --help
+          import pathlib
+          import subprocess
+          import tempfile
+
+          wheel = next(pathlib.Path("dist").glob("*.whl")).resolve()
+          with tempfile.TemporaryDirectory() as directory:
+              subprocess.run(
+                  ["uvx", "--from", str(wheel), "modal-dojo", "--help"],
+                  cwd=directory,
+                  check=True,
+              )

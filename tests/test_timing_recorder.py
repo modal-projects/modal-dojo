@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import sys
-import time
-from queue import Queue
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 from modal_dojo.common import reporting
 from modal_dojo.common import timing_recorder
@@ -35,6 +33,12 @@ def test_dist_down_rank_environment_elects_one_publisher(monkeypatch):
 
 def test_phase_accounting_and_invocations_are_cumulative(monkeypatch):
     _configure(monkeypatch)
+    now = 0.0
+    monkeypatch.setattr(
+        timing_recorder,
+        "time",
+        SimpleNamespace(monotonic=lambda: now, time=lambda: 1000.0),
+    )
     snapshots = []
     monkeypatch.setattr(
         reporting,
@@ -44,14 +48,15 @@ def test_phase_accounting_and_invocations_are_cumulative(monkeypatch):
 
     recorder = RoleRecorder("actor", 7)
     with recorder.phase("forward_backward"):
-        time.sleep(0.001)
+        now += 0.25
+    now += 0.5
     with recorder.phase("forward_backward"):
-        time.sleep(0.001)
+        now += 0.75
 
     phase = snapshots[-1][0]["phases"]["forward_backward"]
     assert phase["count"] == 2
-    assert phase["busy_duration_s"] > 0
-    assert len(phase["invocations"]) == 2
+    assert phase["busy_duration_s"] == 1.0
+    assert phase["invocations"] == [[0.0, 0.25], [0.75, 1.5]]
     assert (
         RoleTimingRecord.model_validate(snapshots[-1][0]).storage_key
         == "00000007__actor"
@@ -113,13 +118,10 @@ def test_sft_skips_rl_only_phases(monkeypatch):
 def test_preloop_recorders_close_before_queue_drains(monkeypatch):
     _configure(monkeypatch)
     timing_recorder._PRELOOP_RECORDERS.clear()
-    queue = Queue()
-    monkeypatch.setattr(reporting, "_REPORT_QUEUE", queue)
-    monkeypatch.setattr(reporting, "_REPORTER_STARTED", False)
-    monkeypatch.setattr(reporting, "_REPORTER_THREAD", None)
+    monkeypatch.setattr(reporting, "_LANES", {})
     monkeypatch.setattr(reporting, "_REPORTER_DRAINING", False)
-    monkeypatch.setattr(reporting, "_REPORT_DRAIN_SENTINEL_QUEUED", False)
-    monkeypatch.setattr(reporting, "_ensure_worker", lambda **_kwargs: None)
+    monkeypatch.setattr(reporting, "_ensure_worker", lambda *_a, **_kwargs: None)
+    queue = reporting._lane("https://dashboard.test/api/timing-events").queue
 
     with timing_recorder.recording_lane("driver", None) as recorder:
         with recorder.phase("initial_weight_sync"):
@@ -133,7 +135,7 @@ def test_preloop_recorders_close_before_queue_drains(monkeypatch):
             "final": False,
         }
     )
-    reporting._drain_report_queue()
+    reporting.drain()
 
     queued = list(queue.queue)
     assert queued

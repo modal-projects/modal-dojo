@@ -1,8 +1,9 @@
-"""Run a raw tinker-cookbook RL configuration against a Spindle server."""
+"""Run Tinker training code against a Spindle server."""
 
 from __future__ import annotations
 
 import copy
+import inspect
 import os
 import sys
 from typing import TYPE_CHECKING
@@ -14,25 +15,29 @@ from modal_dojo.common.errors import DojoConfigError
 if TYPE_CHECKING:
     from spindle.configuration import BaseConfig
     from tinker_cookbook.rl.train import Config
+
     from modal_dojo.common.run import TrainingRun
+    from modal_dojo.tinker import TinkerProgram
 
 # Modal's always-on internal Spindle server.
 SHARED_SPINDLE_URL = "https://modal-labs-spindle--prod.modal.run"
 
 
 class SpindleRecipe:
-    """Run tinker-cookbook LoRA RL against a Spindle server, driven from Modal.
+    """Run Tinker training code against a Spindle server, driven from Modal.
 
-    Requires ``uv sync --extra spindle``. Like Slime and Miles, ``launch()``
-    starts the RL loop in a detached Modal app and returns a ``TrainingRun``
-    handle; ``train()`` also waits for it. Defaults to the shared Spindle
-    server; pass ``base_url`` (or set ``rl_config.base_url``) to use another.
-    ``api_key`` defaults to ``TINKER_API_KEY``. Requests carry the Modal proxy
-    token from ``MODAL_KEY``/``MODAL_SECRET``, which must be allowed for the
-    server's environment. Trajectories and metrics go to Dojo; checkpoints
-    stay on the server, and tinker-cookbook's ``log_path`` is replaced by the
-    run's directory on the ``spindle-checkpoints`` volume, from which a
-    retried container resumes.
+    ``program`` is a tinker-cookbook ``rl_train.Config``, or a ``TinkerProgram``
+    whose ``run(client, ctx)`` is your own training loop. Requires
+    ``uv sync --extra spindle``. Like Slime and Miles, ``launch()`` starts the
+    driver in a detached Modal app and returns a ``TrainingRun`` handle;
+    ``train()`` also waits for it. Defaults to the shared Spindle server; pass
+    ``base_url`` (or set ``rl_config.base_url``) to use another. ``api_key``
+    defaults to ``TINKER_API_KEY``. Requests carry the Modal proxy token from
+    ``MODAL_KEY``/``MODAL_SECRET``, which must be allowed for the server's
+    environment. Checkpoints stay on the server. A cookbook config's
+    ``log_path`` is replaced by the run's directory on the
+    ``spindle-checkpoints`` volume, from which a retried driver resumes, so its
+    ``max_retries`` defaults to 3; a program's defaults to 0.
 
     As a fallback, ``deploy_config`` (a Spindle ``BaseConfig`` instance or
     subclass) has the driver deploy a fresh server in the active Modal
@@ -44,13 +49,13 @@ class SpindleRecipe:
 
     def __init__(
         self,
-        rl_config: Config,
+        program: Config | TinkerProgram,
         *,
         base_url: str | None = None,
         api_key: str | None = None,
         deploy_config: BaseConfig | type[BaseConfig] | None = None,
         detach: bool = True,
-        max_retries: int = 3,
+        max_retries: int | None = None,
         cpu: float = 4.0,
         memory: int = 8192,
     ):
@@ -62,62 +67,60 @@ class SpindleRecipe:
                 "SpindleRecipe requires modal-dojo[spindle]. "
                 "Install with `uv sync --extra spindle` in this repository."
             ) from exc
-        if not isinstance(rl_config, Config):
-            raise DojoConfigError("rl_config must be tinker_cookbook.rl.train.Config")
-        if not callable(rl_config.dataset_builder):
+        from modal_dojo.frameworks.spindle.cookbook import CookbookRL
+        from modal_dojo.tinker import TinkerProgram
+
+        if deploy_config is not None:
+            if base_url or api_key or getattr(program, "base_url", None):
+                raise DojoConfigError(
+                    "deploy_config deploys its own server; omit base_url and api_key"
+                )
+            if max_retries:
+                raise DojoConfigError(
+                    "deploy_config runs without retries: a retry would deploy "
+                    "another server without this run's checkpoints"
+                )
+        if isinstance(program, Config):
+            if deploy_config is not None:
+                program = CookbookRL(program)
+            elif base_url and program.base_url and base_url != program.base_url:
+                raise DojoConfigError("base_url conflicts with rl_config.base_url")
+            else:
+                base_url = base_url or program.base_url or SHARED_SPINDLE_URL
+                program = CookbookRL(chz.replace(program, base_url=base_url))
+            default_retries = 3
+        elif isinstance(program, TinkerProgram):
+            if not inspect.iscoroutinefunction(program.run):
+                raise DojoConfigError("TinkerProgram.run must be an async method")
+            if deploy_config is None:
+                base_url = base_url or SHARED_SPINDLE_URL
+            # A retry reruns run() from the start unless it resumes from ctx.log_dir.
+            default_retries = 0
+        else:
             raise DojoConfigError(
-                "dataset_builder must be a tinker-cookbook builder; convert DatasetConfig "
-                "with DojoDatasetBuilder.from_dataset(...) first"
+                "program must be a tinker-cookbook rl_train.Config or a TinkerProgram"
             )
-        if (
-            rl_config.async_config is not None
-            or rl_config.stream_minibatch_config is not None
-        ):
-            raise DojoConfigError(
-                "SpindleRecipe v0 supports synchronous tinker-cookbook RL only"
-            )
-        if rl_config.max_tokens <= 0:
-            raise DojoConfigError("max_tokens must be positive")
-        if rl_config.max_steps is not None and rl_config.max_steps <= 0:
-            raise DojoConfigError("max_steps must be positive")
+        if deploy_config is not None:
+            deploy_config = _validated_deploy_config(program, deploy_config)
+            default_retries = 0
+        else:
+            api_key = api_key or os.environ.get("TINKER_API_KEY")
+            if not api_key:
+                raise DojoConfigError(
+                    "Pass api_key or set TINKER_API_KEY for the Spindle server"
+                )
+        max_retries = default_retries if max_retries is None else max_retries
         if max_retries < 0:
             raise DojoConfigError("max_retries must be non-negative")
+        # launch() checks the model (and a cookbook config's context) against the server.
+        self.program = program
+        self.base_url = base_url
         self.detach = detach
         self.max_retries = max_retries
         self.cpu = cpu
         self.memory = memory
-        if deploy_config is not None:
-            if base_url or api_key or rl_config.base_url:
-                raise DojoConfigError(
-                    "deploy_config deploys its own server; omit base_url and api_key"
-                )
-            self._rl_config = rl_config
-            self._api_key = None
-            self._deploy_config = _validated_deploy_config(rl_config, deploy_config)
-            # A retry would deploy another server without this run's checkpoints.
-            self.max_retries = 0
-            return
-        if base_url and rl_config.base_url and base_url != rl_config.base_url:
-            raise DojoConfigError("base_url conflicts with rl_config.base_url")
-        api_key = api_key or os.environ.get("TINKER_API_KEY")
-        if not api_key:
-            raise DojoConfigError(
-                "Pass api_key or set TINKER_API_KEY for the Spindle server"
-            )
-        # launch() checks the model and context window against the server.
-        self._rl_config = chz.replace(
-            rl_config, base_url=base_url or rl_config.base_url or SHARED_SPINDLE_URL
-        )
+        self.deploy_config = deploy_config
         self._api_key = api_key
-        self._deploy_config = None
-
-    @property
-    def rl_config(self) -> Config:
-        return self._rl_config
-
-    @property
-    def deploy_config(self) -> BaseConfig | None:
-        return self._deploy_config
 
     def launch(self, *, show_output: bool = True) -> TrainingRun:
         """Start training in a detached Modal app and return its handle."""
@@ -142,9 +145,11 @@ class SpindleRecipe:
 
 
 def _validated_deploy_config(
-    rl_config: Config, deploy_config: BaseConfig | type[BaseConfig]
+    program, deploy_config: BaseConfig | type[BaseConfig]
 ) -> BaseConfig:
     """Check a deploy-on-the-fly config locally, before requesting GPUs."""
+    from modal_dojo.frameworks.spindle.cookbook import CookbookRL
+
     try:
         from spindle.configuration import BaseConfig
         from spindle.deployments import DeploymentConfig
@@ -165,11 +170,14 @@ def _validated_deploy_config(
     if not isinstance(deploy_config, BaseConfig):
         raise DojoConfigError("deploy_config must be a Spindle BaseConfig or subclass")
     deploy_config = copy.deepcopy(deploy_config)
-    if rl_config.model_name != deploy_config.model:
-        raise DojoConfigError("RL model_name must match deploy_config.model")
+    if program.model_name != deploy_config.model:
+        raise DojoConfigError("model_name must match deploy_config.model")
     if deploy_config.parameterization != "lora":
         raise DojoConfigError("SpindleRecipe v0 supports LoRA training only")
-    if rl_config.max_tokens >= deploy_config.max_context_length:
+    if not isinstance(program, CookbookRL):
+        return deploy_config
+    config = program.config
+    if config.max_tokens >= deploy_config.max_context_length:
         raise DojoConfigError(
             "max_tokens must leave room for prompts in the context window"
         )
@@ -177,10 +185,10 @@ def _validated_deploy_config(
     max_rank = compiled.trainer_settings.get(deploy_config.backend, {}).get(
         "max_lora_rank", 32
     )
-    if not 0 < rl_config.lora_rank <= max_rank:
+    if not 0 < config.lora_rank <= max_rank:
         raise DojoConfigError(f"lora_rank must be between 1 and {max_rank}")
     # Checkpoints live with the deployment, which stops when the run ends.
-    if rl_config.load_checkpoint_path is not None:
+    if config.load_checkpoint_path is not None:
         raise DojoConfigError(
             "Omit load_checkpoint_path: a deployed Spindle cannot resume "
             "another deployment's checkpoints"

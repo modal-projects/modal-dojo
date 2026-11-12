@@ -1,20 +1,13 @@
-"""Bridge tinker-cookbook callbacks to Dojo's existing authenticated ingestion APIs."""
+"""The Spindle run record: its config summary and each attempt's outcome."""
 
 from __future__ import annotations
 
 import asyncio
-from contextlib import contextmanager
-from contextvars import ContextVar
+from contextlib import asynccontextmanager
 from enum import Enum
-from functools import wraps
-import json
 import logging
-import math
 from pathlib import Path
 import time
-from types import SimpleNamespace
-
-import httpx
 
 from modal_dojo.common.dataset import DatasetConfig
 from modal_dojo.common.framework import Framework
@@ -25,22 +18,14 @@ from modal_dojo.common.launcher_utils import (
     serialize_recipe_value,
 )
 from modal_dojo.common.run import (
-    FrameworkStatusUpdate,
     TrainingRun,
     TrainingRunStatus,
     mark_training_attempt_finished,
     mark_training_attempt_started,
 )
 from modal_dojo.common.status import SpindleStatus
-from modal_dojo.common.training_rollout import (
-    TrainingRolloutResult,
-    TrainingRolloutSample,
-)
-
-from .timing import timing_record
 
 logger = logging.getLogger(__name__)
-_training_rollout = ContextVar("spindle_training_rollout", default=False)
 
 
 def _recipe_fields(config, prefix=""):
@@ -76,369 +61,77 @@ def _field_value(name, value):
     return serialize_recipe_value(type(value))
 
 
-def new_training_run(config, training_run_id):
+def new_training_run(program, training_run_id, log_dir):
     """The run record ``launch()`` saves before the driver container starts."""
+    import chz
+
+    from .cookbook import CookbookRL
+
+    if isinstance(program, CookbookRL):
+        config = chz.replace(program.config, log_path=log_dir)
+        summary = {
+            "recipe": _recipe_fields(config),
+            "dataset": {"type": type(config.dataset_builder).__name__},
+        }
+    else:
+        summary = {
+            "recipe": {
+                "program": serialize_recipe_value(type(program)),
+                **_recipe_fields(program),
+            }
+        }
     now = int(time.time())
     return TrainingRun(
         training_run_id=training_run_id,
         framework=Framework.SPINDLE,
         framework_status=SpindleStatus.INITIALIZING,
-        config={
-            "model": {"model_name": config.model_name},
-            "recipe": _recipe_fields(config),
-            "dataset": {"type": type(config.dataset_builder).__name__},
-        },
-        source_model={"model_name": config.model_name},
+        config={"model": {"model_name": program.model_name}, **summary},
+        source_model={"model_name": program.model_name},
         created_at=now,
         started_at=now,
-        metadata={"log_path": config.log_path},
+        metadata={"log_path": log_dir},
     )
 
 
-class DojoReporter:
-    def __init__(self, config, run, *, dashboard_url, token):
-        self.config = config
-        self.run = run
-        self.dashboard_url = dashboard_url.rstrip("/")
-        self.token = token
-        self.groups = []
-        self.next_step = 0
-        # Preserve per-endpoint ordering without blocking other streams.
-        self.queues = {
-            endpoint: asyncio.Queue(maxsize=128)
-            for endpoint in (
-                "framework-status",
-                "training-rollouts",
-                "metric-points",
-                "timing-events",
-            )
-        }
-        self.failures = 0
-
-    async def __aenter__(self):
-        from modal_dojo.common.config import modal_proxy_auth_headers
-
-        # A retried container resumes the same run.
-        mark_training_attempt_started(self.run, started_at=int(time.time()))
-        await self.run.save(is_async=True)
-        self.client = httpx.AsyncClient(
-            base_url=self.dashboard_url,
-            headers={
-                **modal_proxy_auth_headers(),
-                "Authorization": f"Bearer {self.token}",
-            },
-            timeout=30,
-        )
-        try:
-            response = await self.client.post(
-                "/api/framework-status",
-                json={
-                    "training_run_id": self.run.training_run_id,
-                    "phase": SpindleStatus.INITIALIZING.value,
-                    "is_active": False,
-                },
-            )
-            response.raise_for_status()
-        except BaseException as exc:
-            await self.client.aclose()
-            self.run.error_message = f"Dojo reporting preflight failed: {exc}"
-            mark_run_failed(self.run, exc)
-            self.run.ended_at = int(time.time())
-            await self.run.save(is_async=True)
-            raise
-        self.workers = [
-            asyncio.create_task(self._worker(endpoint, queue))
-            for endpoint, queue in self.queues.items()
-        ]
-        print(
-            f"Dojo run: {self.dashboard_url}/training/{self.run.training_run_id}",
-            flush=True,
-        )
-        return self
-
-    def _enqueue(self, endpoint, payload):
-        payload = {"training_run_id": self.run.training_run_id, **payload}
-        queue = self.queues[endpoint]
-        if endpoint == "framework-status" and not queue.empty():
-            # Each status write takes seconds; the dashboard merges updates
-            # into one snapshot, so merge any still-pending one here.
-            payload = {**queue.get_nowait(), **payload}
-            queue.task_done()
-        try:
-            queue.put_nowait(payload)
-        except asyncio.QueueFull:
-            self.failures += 1
-            logger.warning(
-                "Dojo reporting queue full; raw data remains in the tinker-cookbook log path"
-            )
-
-    def _phase(self, phase: SpindleStatus, **kwargs):
-        payload = {"phase": phase.value, **kwargs}
-        self.run.apply_framework_status(
-            FrameworkStatusUpdate(training_run_id=self.run.training_run_id, **payload)
-        )
-        self._enqueue("framework-status", payload)
-
-    async def _worker(self, endpoint, queue):
-        while True:
-            payload = await queue.get()
-            try:
-                if payload is None:
-                    return
-                # Ingestion is idempotent by run/step.
-                for attempt in range(2):
-                    try:
-                        response = await self.client.post(
-                            f"/api/{endpoint}", json=payload
-                        )
-                        response.raise_for_status()
-                        break
-                    except (httpx.TransportError, httpx.HTTPStatusError) as error:
-                        if attempt or (
-                            isinstance(error, httpx.HTTPStatusError)
-                            and error.response.status_code < 500
-                        ):
-                            raise
-                        await asyncio.sleep(0.5)
-            except Exception as exc:
-                self.failures += 1
-                logger.warning("Dojo %s reporting failed: %r", endpoint, exc)
-            finally:
-                queue.task_done()
-
-    async def capture_group(self, record):
-        if _training_rollout.get():
-            self.groups.append(record)
-
-    def _flush_groups(self, step, metrics=None):
-        if not self.groups:
-            return
-        samples = []
-        for group_index, record in enumerate(self.groups):
-            group = record["trajectory_group"]
-            for index, (trajectory, decoded, final_reward) in enumerate(
-                zip(
-                    group["trajectories_G"],
-                    record["decoded"],
-                    group["final_rewards_G"],
-                    strict=True,
-                )
-            ):
-                # Raw tokens and logprobs stay in the local trajectories jsonl.
-                samples.append(
-                    TrainingRolloutSample(
-                        rollout_index=len(samples),
-                        sample_index=len(samples),
-                        group_index=group_index,
-                        prompt=decoded[0]["prompt"] if decoded else "",
-                        # Later turns' prompts hold only their new messages, so
-                        # this is the episode's transcript after the first prompt.
-                        response=decoded[0]["response"]
-                        + "".join(
-                            turn["prompt"] + turn["response"] for turn in decoded[1:]
-                        )
-                        if decoded
-                        else "",
-                        score=float(
-                            final_reward
-                            + sum(t["reward"] for t in trajectory["transitions"])
-                        ),
-                        metadata={
-                            "transition_rewards": [
-                                t["reward"] for t in trajectory["transitions"]
-                            ],
-                            "final_reward": final_reward,
-                            "tags": record["tags"],
-                            "metrics": group.get(
-                                "metrics_G", [{}] * len(record["decoded"])
-                            )[index],
-                        },
-                    )
-                )
-        result = TrainingRolloutResult(
-            training_run_id=self.run.training_run_id,
-            rollout_id=step,
-            created_at=int(time.time()),
-            samples=samples,
-            metrics=metrics or {},
-        )
-        self.run.record_latest_rollout(result)
-        self._enqueue("training-rollouts", result.model_dump(mode="json"))
-        self.groups.clear()
-
-    def _metric_point(self, step, scalars):
-        self._enqueue(
-            "metric-points",
-            {
-                "points": [
-                    {
-                        "step": step,
-                        "metrics": scalars,
-                        "time": time.time(),
-                        "step_key": "progress/batch",
-                    }
-                ],
-                "final": True,
-            },
-        )
-
-    def log_metrics(self, metrics, step=None):
-        scalars = {
-            key: float(value)
-            for key, value in metrics.items()
-            if isinstance(value, (int, float)) and math.isfinite(value)
-        }
-        # Only training metrics establish a batch boundary; the final weights'
-        # evaluation is logged after the last batch with just its step.
-        if "progress/batch" not in metrics:
-            if step is not None and scalars:
-                self.run.metrics = {**self.run.metrics, **scalars}
-                self._metric_point(step, scalars)
-            return
-        step = int(metrics["progress/batch"])
-        self.run.metrics = scalars
-        self.next_step = step + 1
-        self._flush_groups(step, scalars)
-        self._metric_point(step, scalars)
-        self._phase(
-            self.run.framework_status,
-            is_active=True,
-            progress_current=self.next_step,
-            # tinker-cookbook stops at max_steps or when the dataset runs out.
-            progress_total=round(self.next_step / scalars["progress/done_frac"]),
-            progress_unit="step",
-            rollout_id=step,
-        )
-
-    @contextmanager
-    def tinker_cookbook_hooks(self, rl_train):
-        original_log = rl_train.ml_log
-        original_trace = rl_train.trace
-        operations = {
-            phase: getattr(rl_train, phase.value)
-            for phase in (
-                SpindleStatus.DO_GROUP_ROLLOUT_AND_FILTER_CONSTANT_REWARD,
-                SpindleStatus.TRAIN_STEP,
-                SpindleStatus.SAVE_CHECKPOINT_AND_GET_SAMPLING_CLIENT,
-            )
-        }
-        reporter = self
-
-        class Logger(original_log.Logger):
-            def log_hparams(self, config):
-                pass
-
-            def log_metrics(self, metrics, step=None):
-                reporter.log_metrics(metrics, step)
-
-        def setup_logging(*args, **kwargs):
-            result = original_log.setup_logging(*args, **kwargs)
-            result.loggers.append(Logger())
-            return result
-
-        @contextmanager
-        def trace_iteration(step):
-            with original_trace.trace_iteration(step) as window:
-                try:
-                    yield window
-                finally:
-                    try:
-                        if window.spans:
-                            record = timing_record(
-                                reporter.run.training_run_id,
-                                step,
-                                window.get_span_dicts(),
-                                min(span.wall_start for span in window.spans),
-                            )
-                            reporter._enqueue(
-                                "timing-events", record.model_dump(mode="json")
-                            )
-                    except Exception:
-                        reporter.failures += 1
-                        logger.exception("Could not report tinker-cookbook timing")
-
-        def wrap_operation(operation, phase):
-            @wraps(operation)
-            async def wrapped(*args, **kwargs):
-                if reporter.run.framework_status != phase:
-                    reporter._phase(phase, is_active=True)
-                token = _training_rollout.set(
-                    phase is SpindleStatus.DO_GROUP_ROLLOUT_AND_FILTER_CONSTANT_REWARD
-                )
-                try:
-                    return await operation(*args, **kwargs)
-                finally:
-                    _training_rollout.reset(token)
-
-            return wrapped
-
-        rl_train.ml_log = SimpleNamespace(
-            **{**vars(original_log), "setup_logging": setup_logging}
-        )
-        rl_train.trace = SimpleNamespace(
-            **{**vars(original_trace), "trace_iteration": trace_iteration}
-        )
-        for phase, operation in operations.items():
-            setattr(rl_train, phase.value, wrap_operation(operation, phase))
-        try:
-            yield
-        finally:
-            rl_train.ml_log = original_log
-            rl_train.trace = original_trace
-            for phase, operation in operations.items():
-                setattr(rl_train, phase.value, operation)
-
-    async def __aexit__(self, exc_type, exc, tb):
-        self._flush_groups(self.next_step)
-        try:
-
-            async def drain():
-                for queue in self.queues.values():
-                    await queue.put(None)
-                await asyncio.gather(*self.workers)
-
-            await asyncio.wait_for(drain(), timeout=90)
-        except TimeoutError:
-            self.failures += sum(q.qsize() for q in self.queues.values()) + 1
-            for worker in self.workers:
-                worker.cancel()
-            await asyncio.gather(*self.workers, return_exceptions=True)
-            logger.warning(
-                "Dojo reporting drain timed out; raw data remains in the tinker-cookbook log path"
-            )
-        finally:
-            await self.client.aclose()
-        ended_at = int(time.time())
-        if exc is None:
-            self.run.status = TrainingRunStatus.COMPLETED
-            self.run.completed_at = ended_at
-            mark_training_attempt_finished(
-                self.run, status="completed", ended_at=ended_at
-            )
-        elif isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
+@asynccontextmanager
+async def run_lifecycle(run: TrainingRun):
+    """Record this attempt on the run ``launch()`` saved, then its outcome."""
+    # A retried container resumes the same run.
+    mark_training_attempt_started(run, started_at=int(time.time()))
+    await run.save(is_async=True)
+    try:
+        yield
+    except BaseException as exc:
+        if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
             # Stopping the Modal app cancels the driver.
-            mark_run_stopped(self.run)
+            mark_run_stopped(run)
         else:
-            mark_run_failed(self.run, exc)
-        self.run.ended_at = ended_at
-        self.run.duration_seconds = ended_at - self.run.started_at
-        self.run.metadata["reporting_failures"] = self.failures
-        checkpoints = Path(self.config.log_path) / "checkpoints.jsonl"
-        if checkpoints.exists():
-            try:
-                self.run.metadata["spindle_checkpoints"] = [
-                    json.loads(line)
-                    for line in checkpoints.read_text().splitlines()
-                    if line.strip()
-                ]
-            except (OSError, ValueError) as error:
-                self.run.metadata["checkpoint_read_error"] = str(error)
-                logger.warning(
-                    "Could not read tinker-cookbook checkpoint records: %s", error
-                )
+            mark_run_failed(run, exc)
+        _end(run)
+        await _drain_reports()
         try:
-            await self.run.save(is_async=True)
+            await run.save(is_async=True)
         except Exception:
-            if exc is None:
-                raise
             logger.exception("Could not persist terminal Spindle run status")
+        raise
+    run.status = TrainingRunStatus.COMPLETED
+    run.completed_at = _end(run)
+    await _drain_reports()
+    mark_training_attempt_finished(run, status="completed", ended_at=run.completed_at)
+    await run.save(is_async=True)
+
+
+async def _drain_reports() -> None:
+    """Land queued dashboard writes, which rewrite the run, before its final save."""
+    from modal_dojo.common.reporting import drain
+
+    try:
+        await asyncio.to_thread(drain)
+    except Exception:
+        logger.exception("Could not drain Dojo reports")
+
+
+def _end(run: TrainingRun) -> int:
+    run.ended_at = ended_at = int(time.time())
+    run.duration_seconds = ended_at - run.started_at
+    return ended_at
