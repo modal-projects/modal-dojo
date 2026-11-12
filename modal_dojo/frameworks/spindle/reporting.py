@@ -1,4 +1,4 @@
-"""The Spindle run record: its config summary and each attempt's outcome."""
+"""The Spindle run record, each attempt's outcome, and its dashboard reports."""
 
 from __future__ import annotations
 
@@ -135,3 +135,65 @@ def _end(run: TrainingRun) -> int:
     run.ended_at = ended_at = int(time.time())
     run.duration_seconds = ended_at - run.started_at
     return ended_at
+
+
+def report_status(run: TrainingRun, status: SpindleStatus, **fields) -> None:
+    """Set the run's phase, locally and on the dashboard."""
+    from modal_dojo.common.reporting import _enqueue
+    from modal_dojo.common.run import FrameworkStatusUpdate
+
+    payload = {
+        "training_run_id": run.training_run_id,
+        "phase": status.value,
+        **fields,
+    }
+    run.apply_framework_status(FrameworkStatusUpdate(**payload))
+    _enqueue(payload)
+
+
+# Reporting must not stop training, so these log failures instead of raising.
+def report_rollouts(run: TrainingRun, step: int, samples: list, metrics: dict) -> None:
+    """Send ``step``'s rollout samples, replacing any already sent for it."""
+    from modal_dojo.common.reporting import _enqueue_rollout
+    from modal_dojo.common.training_rollout import TrainingRolloutResult
+
+    if not samples:
+        return
+    try:
+        result = TrainingRolloutResult(
+            training_run_id=run.training_run_id,
+            rollout_id=step,
+            created_at=int(time.time()),
+            samples=samples,
+            metrics=metrics,
+        )
+        payload = result.model_dump(mode="json")
+        run.record_latest_rollout(result)
+        _enqueue_rollout(payload)
+    except Exception:
+        logger.exception("Could not report rollouts for step %s", step)
+
+
+def report_timing(run: TrainingRun, step: int, spans: list[dict]) -> None:
+    """Send ``step``'s timing from tinker-cookbook-style span dicts."""
+    from modal_dojo.common.reporting import _enqueue_timing
+
+    from .timing import timing_record
+
+    if not spans:
+        return
+    try:
+        record = timing_record(
+            run.training_run_id,
+            step,
+            spans,
+            min(span["wall_start"] for span in spans),
+        )
+        # storage_key is a property, so model_dump leaves it out; the
+        # transport keys exit retries by it.
+        _enqueue_timing(
+            {**record.model_dump(mode="json"), "storage_key": record.storage_key},
+            final=True,
+        )
+    except Exception:
+        logger.exception("Could not report timing for step %s", step)

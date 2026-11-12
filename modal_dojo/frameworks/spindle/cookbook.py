@@ -9,18 +9,12 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
-import time
 
 from modal_dojo.common.errors import DojoConfigError
-from modal_dojo.common.reporting import _enqueue, _enqueue_rollout, _enqueue_timing
-from modal_dojo.common.run import FrameworkStatusUpdate
 from modal_dojo.common.status import SpindleStatus
-from modal_dojo.common.training_rollout import (
-    TrainingRolloutResult,
-    TrainingRolloutSample,
-)
+from modal_dojo.common.training_rollout import TrainingRolloutSample
 
-from .timing import timing_record
+from .reporting import report_rollouts, report_status, report_timing
 
 logger = logging.getLogger(__name__)
 _training_rollout = ContextVar("spindle_training_rollout", default=False)
@@ -187,13 +181,7 @@ class _Reporter:
             setattr(rl_train, name, report_phase(phase, getattr(rl_train, name)))
 
     def phase(self, phase: SpindleStatus, **kwargs):
-        payload = {
-            "training_run_id": self.run.training_run_id,
-            "phase": phase.value,
-            **kwargs,
-        }
-        self.run.apply_framework_status(FrameworkStatusUpdate(**payload))
-        _enqueue(payload)
+        report_status(self.run, phase, **kwargs)
 
     def log_metrics(self, metrics, step=None):
         # Only training metrics mark a batch; the final weights' evaluation is
@@ -222,25 +210,7 @@ class _Reporter:
         )
 
     def report_timing(self, step, window):
-        try:
-            if window.spans:
-                record = timing_record(
-                    self.run.training_run_id,
-                    step,
-                    window.get_span_dicts(),
-                    min(span.wall_start for span in window.spans),
-                )
-                # storage_key is a property, so model_dump leaves it out; the
-                # transport keys exit retries by it.
-                _enqueue_timing(
-                    {
-                        **record.model_dump(mode="json"),
-                        "storage_key": record.storage_key,
-                    },
-                    final=True,
-                )
-        except Exception:
-            logger.exception("Could not report tinker-cookbook timing")
+        report_timing(self.run, step, window.get_span_dicts())
 
     def flush_groups(self, step, metrics):
         samples = []
@@ -275,14 +245,4 @@ class _Reporter:
                     )
                 )
         self.groups.clear()
-        if not samples:
-            return
-        result = TrainingRolloutResult(
-            training_run_id=self.run.training_run_id,
-            rollout_id=step,
-            created_at=int(time.time()),
-            samples=samples,
-            metrics=metrics,
-        )
-        self.run.record_latest_rollout(result)
-        _enqueue_rollout(result.model_dump(mode="json"))
+        report_rollouts(self.run, step, samples, metrics)
