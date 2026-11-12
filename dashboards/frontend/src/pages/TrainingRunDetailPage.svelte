@@ -1152,13 +1152,13 @@
     histLoading = false;
   }
 
-  // Fetch the newest HIST_MAX_LINES lines in the range. There is no paging:
-  // narrowing the range is how to reach earlier lines.
+  // Fetch the newest HIST_MAX_LINES log entries in the range. Narrowing the
+  // range is how to reach earlier ones.
   async function loadHist(id, { search, since, until }, signal) {
     histLoading = true;
     histError = "";
     try {
-      const data = await fetchRunLogs(id, {
+      const logs = await fetchRunLogs(id, {
         maxLines: HIST_MAX_LINES,
         search,
         since,
@@ -1167,9 +1167,9 @@
       });
       if (signal?.aborted) return;
       const rows = [];
-      pushHistRows(rows, data.logs);
+      pushHistRows(rows, logs);
       histLines = rows;
-      histTruncated = data.logs.length >= HIST_MAX_LINES;
+      histTruncated = logs.length >= HIST_MAX_LINES;
       // Land on the newest line, like the live tail does.
       queueMicrotask(() => {
         if (histTailEl) histTailEl.scrollTop = histTailEl.scrollHeight;
