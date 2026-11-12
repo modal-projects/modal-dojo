@@ -1,8 +1,7 @@
-"""Run Tinker training code against a Spindle server."""
+"""Run tinker-cookbook RL against a Spindle server."""
 
 from __future__ import annotations
 
-import inspect
 import os
 from typing import TYPE_CHECKING
 
@@ -13,37 +12,34 @@ if TYPE_CHECKING:
     from tinker_cookbook.rl.train import Config
 
     from modal_dojo.common.run import TrainingRun
-    from modal_dojo.tinker import TinkerProgram
 
 # Modal's always-on internal Spindle server.
 SHARED_SPINDLE_URL = "https://modal-labs-spindle--prod.modal.run"
 
 
 class SpindleRecipe:
-    """Run Tinker training code against a Spindle server, driven from Modal.
+    """Run a tinker-cookbook RL config against a Spindle server, driven from Modal.
 
-    ``program`` is a tinker-cookbook ``rl_train.Config``, or a ``TinkerProgram``
-    whose ``run(client, ctx)`` is your own training loop. Requires
+    ``config`` is a tinker-cookbook ``rl_train.Config``. Requires
     ``uv sync --extra spindle``. Like Slime and Miles, ``launch()`` starts the
     driver in a detached Modal app and returns a ``TrainingRun`` handle;
     ``train()`` also waits for it. Defaults to the shared Spindle server; pass
-    ``base_url`` (or set ``rl_config.base_url``) to use another. ``api_key``
+    ``base_url`` (or set ``config.base_url``) to use another. ``api_key``
     defaults to ``TINKER_API_KEY``. Requests carry the Modal proxy token from
     ``MODAL_KEY``/``MODAL_SECRET``, which must be allowed for the server's
-    environment. Checkpoints stay on the server. A tinker-cookbook config's
-    ``log_path`` is replaced by the run's directory on the
-    ``spindle-checkpoints`` volume, from which a retried driver resumes, so its
-    ``max_retries`` defaults to 3; a program's defaults to 0.
+    environment. Checkpoints stay on the server. The config's ``log_path`` is
+    replaced by the run's directory on the ``spindle-checkpoints`` volume, from
+    which a retried driver resumes.
     """
 
     def __init__(
         self,
-        program: Config | TinkerProgram,
+        config: Config,
         *,
         base_url: str | None = None,
         api_key: str | None = None,
         detach: bool = True,
-        max_retries: int | None = None,
+        max_retries: int = 3,
         cpu: float = 4.0,
         memory: int = 8192,
     ):
@@ -56,34 +52,21 @@ class SpindleRecipe:
                 "Install with `uv sync --extra spindle` in this repository."
             ) from exc
         from modal_dojo.frameworks.spindle.cookbook import CookbookRL
-        from modal_dojo.tinker import TinkerProgram
 
-        if isinstance(program, Config):
-            if base_url and program.base_url and base_url != program.base_url:
-                raise DojoConfigError("base_url conflicts with rl_config.base_url")
-            base_url = base_url or program.base_url or SHARED_SPINDLE_URL
-            program = CookbookRL(chz.replace(program, base_url=base_url))
-            default_retries = 3
-        elif isinstance(program, TinkerProgram):
-            if not inspect.iscoroutinefunction(program.run):
-                raise DojoConfigError("TinkerProgram.run must be an async method")
-            base_url = base_url or SHARED_SPINDLE_URL
-            # A retry reruns run() from the start unless it resumes from ctx.log_dir.
-            default_retries = 0
-        else:
-            raise DojoConfigError(
-                "program must be a tinker-cookbook rl_train.Config or a TinkerProgram"
-            )
+        if not isinstance(config, Config):
+            raise DojoConfigError("config must be a tinker-cookbook rl_train.Config")
+        if base_url and config.base_url and base_url != config.base_url:
+            raise DojoConfigError("base_url conflicts with config.base_url")
+        base_url = base_url or config.base_url or SHARED_SPINDLE_URL
         api_key = api_key or os.environ.get("TINKER_API_KEY")
         if not api_key:
             raise DojoConfigError(
                 "Pass api_key or set TINKER_API_KEY for the Spindle server"
             )
-        max_retries = default_retries if max_retries is None else max_retries
         if max_retries < 0:
             raise DojoConfigError("max_retries must be non-negative")
-        # launch() checks the model (and a tinker-cookbook config's context) against the server.
-        self.program = program
+        # launch() checks the model and context length against the server.
+        self.program = CookbookRL(chz.replace(config, base_url=base_url))
         self.base_url = base_url
         self.detach = detach
         self.max_retries = max_retries

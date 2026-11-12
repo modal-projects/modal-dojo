@@ -65,21 +65,11 @@ def new_training_run(program, training_run_id, log_dir):
     """The run record ``launch()`` saves before the driver container starts."""
     import chz
 
-    from .cookbook import CookbookRL
-
-    if isinstance(program, CookbookRL):
-        config = chz.replace(program.config, log_path=log_dir)
-        summary = {
-            "recipe": _recipe_fields(config),
-            "dataset": {"type": type(config.dataset_builder).__name__},
-        }
-    else:
-        summary = {
-            "recipe": {
-                "program": serialize_recipe_value(type(program)),
-                **_recipe_fields(program),
-            }
-        }
+    config = chz.replace(program.config, log_path=log_dir)
+    summary = {
+        "recipe": _recipe_fields(config),
+        "dataset": {"type": type(config.dataset_builder).__name__},
+    }
     now = int(time.time())
     return TrainingRun(
         training_run_id=training_run_id,

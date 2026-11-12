@@ -1,14 +1,12 @@
-"""Your own Tinker training loop, run on Modal against Spindle by SpindleRecipe."""
+"""What the driver hands the program it runs, besides a Tinker client."""
 
 from __future__ import annotations
 
 import math
 import time
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    import tinker
-
     from modal_dojo.common.run import TrainingRun
 
 
@@ -41,15 +39,3 @@ class TinkerContext:
                 "points": [{"step": step, "metrics": scalars, "time": time.time()}],
             }
         )
-
-
-@runtime_checkable
-class TinkerProgram(Protocol):
-    """A training loop that ``SpindleRecipe`` runs on Modal against Spindle."""
-
-    # Picks the Spindle deployment and is checked against the server.
-    model_name: str
-
-    async def run(self, client: tinker.ServiceClient, ctx: TinkerContext) -> Any:
-        """Train with ``client``, which already points at Spindle."""
-        ...

@@ -1,4 +1,4 @@
-"""Run a TinkerProgram against a Spindle server, inside the driver container."""
+"""Run a program against a Spindle server, inside the driver container."""
 
 from __future__ import annotations
 
@@ -84,8 +84,7 @@ async def run_program(program, *, run, base_url, log_dir, max_tokens=None):
     """Run ``program`` in the Modal container ``launch()`` spawns."""
     import tinker
 
-    from modal_dojo.tinker import TinkerContext
-
+    from .context import TinkerContext
     from .reporting import run_lifecycle
 
     # The driver owns its single-use container, so every ServiceClient in it,

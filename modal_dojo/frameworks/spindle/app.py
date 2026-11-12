@@ -1,4 +1,4 @@
-"""Launch a TinkerProgram's driver in a detached Modal app, like Slime and Miles."""
+"""Launch a Spindle driver in a detached Modal app, like Slime and Miles."""
 
 from __future__ import annotations
 
@@ -84,17 +84,11 @@ def launch(recipe, *, show_output: bool = True) -> TrainingRun:
 
 
 def _max_tokens(program) -> int | None:
-    from .cookbook import CookbookRL
-
-    return program.config.max_tokens if isinstance(program, CookbookRL) else None
+    return program.config.max_tokens
 
 
 def _dataset_name(program) -> str:
-    from .cookbook import CookbookRL
-
-    if isinstance(program, CookbookRL):
-        return type(program.config.dataset_builder).__name__
-    return type(program).__name__
+    return type(program.config.dataset_builder).__name__
 
 
 def build_spindle_app(
@@ -112,7 +106,7 @@ def build_spindle_app(
         resolve_caller_context,
     )
 
-    # Pickle the caller's programs, reward functions and builders by value.
+    # Pickle the caller's reward functions and builders by value.
     _, caller_script = resolve_caller_context()
     image = (
         modal.Image.debian_slim(python_version="3.12")
@@ -200,12 +194,10 @@ def spindle_requirements() -> list[str]:
 
 def ship_harbor_tasks(program, image):
     """Add the task directories a Harbor builder uses, at paths the container sees."""
-    from .cookbook import CookbookRL
-
-    if not isinstance(program, CookbookRL):
-        return program, image
     import chz
     from tinker_cookbook.recipes.harbor_rl.harbor_env import HarborDatasetBuilder
+
+    from .cookbook import CookbookRL
 
     builder = program.config.dataset_builder
     if not isinstance(builder, HarborDatasetBuilder):
