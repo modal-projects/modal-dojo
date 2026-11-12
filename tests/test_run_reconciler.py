@@ -127,11 +127,9 @@ def test_dead_modal_app_without_train_result_is_cancelled():
         now=now,
         has_train_result=False,
         app_live=False,
-        modal_app_state=99,
     )
     assert decision.should_terminalize is True
     assert decision.reason == "stale_modal_app_terminated"
-    assert decision.modal_app_state == 99
 
 
 def test_live_modal_app_stays_running():
@@ -234,7 +232,7 @@ def test_reconcile_orphan_runs_persists_cancelled_status(fake_volume, monkeypatc
 
     results = reconcile_orphan_runs(
         now=now,
-        get_lifecycle_state=lambda _app_id: None,
+        get_app_live=lambda _app_id: None,
         has_train_result=lambda _run_id: False,
     )
     assert len(results) == 1
@@ -263,7 +261,7 @@ def test_reconcile_orphan_runs_skips_run_with_train_result(fake_volume):
 
     results = reconcile_orphan_runs(
         now=now,
-        get_lifecycle_state=lambda _app_id: 99,
+        get_app_live=lambda _app_id: False,
         has_train_result=lambda run_id: run_id == "orphan-2",
     )
     assert results == []
@@ -299,17 +297,22 @@ def test_load_running_runs_reads_canonical_store_not_only_summary(fake_volume):
     assert {run.training_run_id for run in loaded} == {"canonical-only"}
 
 
-def test_resolve_app_liveness_fetches_lifecycle_once():
-    from modal_dojo.common.modal_lifecycle import resolve_app_liveness
+def test_app_live_status_reads_stop_time(monkeypatch):
+    from types import SimpleNamespace
 
-    calls: list[str] = []
+    import modal.experimental
 
-    def get_state(app_id: str) -> int:
-        calls.append(app_id)
-        return 99
+    from modal_dojo.common.modal_lifecycle import app_live_status
 
-    state, live = resolve_app_liveness("ap-123", get_lifecycle_state=get_state)
+    lifecycles = {
+        "ap-live": SimpleNamespace(stopped_at=None),
+        "ap-dead": SimpleNamespace(stopped_at=object()),
+    }
+    monkeypatch.setattr(
+        modal.experimental, "get_app_lifecycle", lambda app_id: lifecycles[app_id]
+    )
 
-    assert calls == ["ap-123"]
-    assert state == 99
-    assert live is False
+    assert app_live_status("ap-live") is True
+    assert app_live_status("ap-dead") is False
+    assert app_live_status("ap-unknown") is None
+    assert app_live_status("") is None
