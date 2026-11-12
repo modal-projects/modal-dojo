@@ -771,7 +771,7 @@ def test_headers_carry_proxy_credentials_when_required(
 def test_headers_require_configured_proxy_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(endpoint_module, "modal_proxy_auth_headers", lambda: {})
+    monkeypatch.setattr(endpoint_module, "modal_proxy_auth_headers", dict)
 
     with pytest.raises(DojoConfigError, match="MODAL_KEY and MODAL_SECRET"):
         _endpoint(requires_proxy_auth=True)._headers()
@@ -953,7 +953,7 @@ def test_chat_requires_proxy_credentials_before_posting(
     def _post(*_: Any, **__: Any) -> _FakeResponse:
         raise AssertionError("chat must not post without proxy credentials")
 
-    monkeypatch.setattr(endpoint_module, "modal_proxy_auth_headers", lambda: {})
+    monkeypatch.setattr(endpoint_module, "modal_proxy_auth_headers", dict)
     monkeypatch.setattr(endpoint_module.httpx, "post", _post)
 
     with pytest.raises(DojoConfigError, match="Proxy authentication requires"):

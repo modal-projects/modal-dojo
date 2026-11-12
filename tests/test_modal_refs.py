@@ -164,5 +164,5 @@ def test_unnameable_modal_handle_gets_clear_error(monkeypatch) -> None:
     )
     monkeypatch.setattr(original, "_load", None)
 
-    with pytest.raises(ModalCaptureError, match="Function.from_name"):
+    with pytest.raises(ModalCaptureError, match=r"Function\.from_name"):
         cloudpickle.dumps(helper)

@@ -96,7 +96,7 @@ def _patch_file(path: Path) -> None:
     if needs_rollout:
         rollout_pattern = re.compile(
             r"^(?P<indent>[ \t]*)rollout_manager, num_rollout_per_epoch = create_rollout_manager\(args, pgs\[\"rollout\"\]\)",
-            re.M,
+            re.MULTILINE,
         )
 
         def _rollout_replacement(match: re.Match[str]) -> str:
@@ -115,7 +115,7 @@ def _patch_file(path: Path) -> None:
             r"^(?P<indent>[ \t]*)(?P<line>rollout_data_ref = "
             r"ray\.get\(rollout_manager\.generate\.remote\("
             r"(?P<rollout_id>rollout_id)\)\))[ \t]*$",
-            re.M,
+            re.MULTILINE,
         )
 
         def _step_start_replacement(match: re.Match[str]) -> str:
@@ -139,7 +139,7 @@ def _patch_file(path: Path) -> None:
         # which knows rollout_id — right before the blocking train call.
         compute_log_probs_pattern = re.compile(
             r"^(?P<indent>[ \t]*)(?P<call>ray\.get\(actor_model\.async_train\(.*\))[ \t]*$",
-            re.M,
+            re.MULTILINE,
         )
 
         def _compute_log_probs_replacement(match: re.Match[str]) -> str:
@@ -159,7 +159,7 @@ def _patch_file(path: Path) -> None:
     if needs_offload_rollout:
         offload_rollout_pattern = re.compile(
             r"^(?P<indent>[ \t]*)ray\.get\(rollout_manager\.offload\.remote\(\)\)",
-            re.M,
+            re.MULTILINE,
         )
 
         def _offload_rollout_replacement(match: re.Match[str]) -> str:
@@ -179,7 +179,7 @@ def _patch_file(path: Path) -> None:
         offload_train_pattern = re.compile(
             r"^(?P<indent>[ \t]*)(?P<call>offload_train\("
             r"actor_trains(?:_this_step)?\))[ \t]*$",
-            re.M,
+            re.MULTILINE,
         )
 
         def _offload_train_replacement(match: re.Match[str]) -> str:
@@ -203,7 +203,7 @@ def _patch_file(path: Path) -> None:
             r"[ \t\r\n]*rollout_id,[ \t\r\n]*args\.save_interval,"
             r"[ \t\r\n]*num_rollout_per_epoch,[ \t\r\n]*args\.num_rollout"
             r"[ \t\r\n]*\):)",
-            re.M,
+            re.MULTILINE,
         )
 
         def _checkpoint_save_replacement(match: re.Match[str]) -> str:
@@ -225,7 +225,7 @@ def _patch_file(path: Path) -> None:
             r"^(?P<indent>[ \t]*)if should_run_periodic_action\("
             r"rollout_id, args\.eval_interval, num_rollout_per_epoch\):[ \t]*\n"
             r"(?P<body>[ \t]+ray\.get\(rollout_manager\.eval\.remote\(rollout_id\)\)[ \t]*\n)",
-            re.M,
+            re.MULTILINE,
         )
 
         def _substep_finish_replacement(match: re.Match[str]) -> str:
@@ -245,7 +245,7 @@ def _patch_file(path: Path) -> None:
         substep_start_pattern = re.compile(
             r"^(?P<indent>[ \t]*)if args\.eval_interval is not None and "
             r"rollout_id == 0 and not args\.skip_eval_before_train:[ \t]*$",
-            re.M,
+            re.MULTILINE,
         )
 
         def _substep_start_replacement(match: re.Match[str]) -> str:
@@ -266,7 +266,7 @@ def _patch_file(path: Path) -> None:
             r"^(?P<indent>[ \t]*)if args\.eval_interval is not None and "
             r"rollout_id == 0 and not args\.skip_eval_before_train:[ \t]*\n"
             r"(?P<body>[ \t]+ray\.get\(rollout_manager\.eval\.remote\(rollout_id\)\)[ \t]*\n)",
-            re.M,
+            re.MULTILINE,
         )
 
         def _eval_begin_replacement(match: re.Match[str]) -> str:
@@ -290,7 +290,7 @@ def _patch_file(path: Path) -> None:
             r"^(?P<indent>[ \t]*)if should_run_periodic_action\("
             r"rollout_id, args\.eval_interval, num_rollout_per_epoch\):[ \t]*\n"
             r"(?P<body>[ \t]+ray\.get\(rollout_manager\.eval\.remote\(rollout_id\)\)[ \t]*\n)",
-            re.M,
+            re.MULTILINE,
         )
 
         def _eval_end_replacement(match: re.Match[str]) -> str:
@@ -312,7 +312,7 @@ def _patch_file(path: Path) -> None:
             r"^(?P<indent>[ \t]*)(?P<line>rollout_data_ref = "
             r"ray\.get\(rollout_manager\.generate\.remote\("
             r"(?P<rollout_id>rollout_id)\)\))[ \t]*$",
-            re.M,
+            re.MULTILINE,
         )
 
         def _generate_rollout_replacement(match: re.Match[str]) -> str:
@@ -378,7 +378,7 @@ def _patch_file(path: Path) -> None:
             r"[ \t\r\n]*rollout_id,[ \t\r\n]*args\.save_interval,"
             r"[ \t\r\n]*num_rollout_per_epoch,[ \t\r\n]*args\.num_rollout"
             r"[ \t\r\n]*\):)",
-            re.M,
+            re.MULTILINE,
         )
 
         def _step_finish_replacement(match: re.Match[str]) -> str:

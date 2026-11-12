@@ -37,7 +37,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
             r"create_rollout_manager\(args, pgs\[\"rollout\"\]\)|"
             r"inference_controller, rollout_executor, num_rollout_per_epoch = "
             r"await create_rollout_components\(args\)))[ \t]*$",
-            re.M,
+            re.MULTILINE,
         ),
     ),
     (
@@ -48,7 +48,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
             r"^(?P<indent>[ \t]*)(?P<line>rollout_data\w* = await "
             r"(?:rollout_manager\.generate\.remote|rollout_executor\.get)"
             r"\(rollout_id\))[ \t]*$",
-            re.M,
+            re.MULTILINE,
         ),
     ),
     (
@@ -60,7 +60,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         re.compile(
             r"^(?P<indent>[ \t]*)(?P<line>await actor_model\.train\("
             r"rollout_id, rollout_data[^\n]*\))[ \t]*$",
-            re.M,
+            re.MULTILINE,
         ),
     ),
     (
@@ -71,7 +71,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
             r"^(?P<indent>[ \t]*)(?P<line>await "
             r"(?:rollout_manager\.offload\.remote|inference_controller\.offload)\("
             r"[^\n]*\))[ \t]*$",
-            re.M,
+            re.MULTILINE,
         ),
     ),
     (
@@ -80,7 +80,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "rollout_id",
         re.compile(
             r"^(?P<indent>[ \t]*)(?P<line>await offload_train\(\))[ \t]*$",
-            re.M,
+            re.MULTILINE,
         ),
     ),
     (
@@ -91,7 +91,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
             r"^(?P<indent>[ \t]*)(?P<line>await (?:actor_model\.update_weights\("
             r"rollout_id=rollout_id\)|update_weights\(args, actor_model, "
             r"rollout_executor, inference_controller, rollout_id=rollout_id\)))[ \t]*$",
-            re.M,
+            re.MULTILINE,
         ),
     ),
 ]
@@ -103,7 +103,7 @@ _CHECKPOINT_SAVE_PATTERN = re.compile(
     r"[ \t\r\n]*rollout_id,[ \t\r\n]*args\.save_interval,"
     r"[ \t\r\n]*num_rollout_per_epoch,[ \t\r\n]*args\.num_rollout"
     r"[ \t\r\n]*\):)",
-    re.M,
+    re.MULTILINE,
 )
 
 
@@ -122,7 +122,12 @@ def _patch_file(path: Path) -> None:
         if marker in src:
             continue
 
-        def _replacement(match: re.Match[str]) -> str:
+        def _replacement(
+            match: re.Match[str],
+            marker: str = marker,
+            phase: str = phase,
+            rollout_id_expr: str = rollout_id_expr,
+        ) -> str:
             indent = match.group("indent")
             line = match.group("line")
             return (

@@ -691,10 +691,10 @@ def _wrap_calls(
     src: str,
     function: str,
     required: dict[str, str],
-    optional: dict[str, str] = {},
+    optional: dict[str, str] | None = None,
 ) -> str:
     """Wrap call statements within their original scopes."""
-    calls = required | optional
+    calls = required | (optional or {})
     spans = []
     seen = set()
 

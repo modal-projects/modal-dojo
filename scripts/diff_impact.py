@@ -190,15 +190,15 @@ def _paths_from_diff(diff_text: str) -> set[Path]:
                     paths.add(REPO_ROOT / raw)
             continue
 
-        if line.startswith("rename from ") or line.startswith("rename to "):
+        if line.startswith(("rename from ", "rename to ")):
             raw = line.split(" ", 2)[2].strip()
             if raw != "/dev/null":
                 paths.add(REPO_ROOT / raw)
             continue
 
-        if line.startswith("+++ ") or line.startswith("--- "):
+        if line.startswith(("+++ ", "--- ")):
             raw = line[4:].strip()
-            if raw.startswith("a/") or raw.startswith("b/"):
+            if raw.startswith(("a/", "b/")):
                 raw = raw[2:]
             if raw != "/dev/null":
                 paths.add(REPO_ROOT / raw)

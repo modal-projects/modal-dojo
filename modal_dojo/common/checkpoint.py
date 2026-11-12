@@ -195,11 +195,14 @@ def _conversion_gpu_spec(
 def convert_megatron_checkpoint_to_hf(
     checkpoint: Checkpoint,
     model: ModelConfig,
-    recipe: VllmRecipe | SglangRecipe = SglangRecipe(),
+    recipe: VllmRecipe | SglangRecipe | None = None,
 ) -> Checkpoint:
     """Convert a Megatron checkpoint to Hugging Face format."""
     if checkpoint.checkpoint_type == CheckpointType.hf:
         return checkpoint
+
+    if recipe is None:
+        recipe = SglangRecipe()
 
     checkpoints_volume_name = checkpoint.checkpoints_volume_name
     if checkpoints_volume_name in (None, ""):

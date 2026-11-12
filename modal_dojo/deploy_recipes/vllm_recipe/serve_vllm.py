@@ -132,5 +132,5 @@ def build_vllm_serve_app(
             print(*cmd)
             subprocess.Popen(" ".join(cmd), shell=True)
 
-    setattr(app, "Server", Server)
+    app.Server = Server
     return app
