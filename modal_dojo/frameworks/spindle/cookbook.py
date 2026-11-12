@@ -37,6 +37,15 @@ _PHASE_FUNCTIONS = {
 }
 
 
+def cookbook_rl(config) -> CookbookRL:
+    """Wrap a tinker-cookbook ``rl_train.Config`` for ``SpindleRecipe`` to run."""
+    from tinker_cookbook.rl.train import Config
+
+    if not isinstance(config, Config):
+        raise DojoConfigError("cookbook_rl takes a tinker-cookbook rl_train.Config")
+    return CookbookRL(config)
+
+
 class CookbookRL:
     """tinker-cookbook's ``rl_train.main(config)``, run as ``run(client, ctx)``."""
 
