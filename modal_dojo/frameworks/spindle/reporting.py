@@ -102,15 +102,13 @@ async def run_lifecycle(run: TrainingRun):
     try:
         yield
     except BaseException as exc:
-        stopped = isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt))
-        if stopped:
+        if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
             # Stopping the Modal app cancels the driver.
             mark_run_stopped(run)
         else:
             mark_run_failed(run, exc)
         _end(run)
-        # A stopped container has only a short grace period to save STOPPED.
-        await _drain_reports(timeout=5.0 if stopped else None)
+        await _drain_reports()
         try:
             await run.save(is_async=True)
         except Exception:
@@ -123,12 +121,12 @@ async def run_lifecycle(run: TrainingRun):
     await run.save(is_async=True)
 
 
-async def _drain_reports(timeout: float | None = None) -> None:
+async def _drain_reports() -> None:
     """Land queued dashboard writes, which rewrite the run, before its final save."""
-    from modal_dojo.common.reporting import REPORT_DRAIN_TIMEOUT_SECONDS, drain
+    from modal_dojo.common.reporting import drain
 
     try:
-        await asyncio.to_thread(drain, timeout or REPORT_DRAIN_TIMEOUT_SECONDS)
+        await asyncio.to_thread(drain)
     except Exception:
         logger.exception("Could not drain Dojo reports")
 

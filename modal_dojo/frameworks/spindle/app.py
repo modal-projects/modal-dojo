@@ -150,10 +150,7 @@ def build_spindle_app(
         cpu=recipe.cpu,
         memory=recipe.memory,
         timeout=24 * 60 * 60,
-        # Spaced out, so a retry can outlast a Spindle trainer restarting.
-        retries=modal.Retries(
-            max_retries=recipe.max_retries, initial_delay=60.0, max_delay=60.0
-        ),
+        retries=modal.Retries(max_retries=recipe.max_retries, initial_delay=0.0),
         single_use_containers=True,
         serialized=True,
         name="train",
