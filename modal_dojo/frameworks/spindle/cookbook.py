@@ -1,4 +1,4 @@
-"""A tinker-cookbook RL config as the program the driver runs, reporting to Dojo."""
+"""A tinker-cookbook RL config as a TinkerProgram, reporting to Dojo."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ _PHASE_FUNCTIONS = {
 
 
 class CookbookRL:
-    """tinker-cookbook's ``rl_train.main(config)``, run as ``run(client, ctx)``."""
+    """tinker-cookbook's ``rl_train.main(config)`` as a TinkerProgram."""
 
     def __init__(self, config):
         if not callable(config.dataset_builder):
