@@ -6,8 +6,9 @@ Modal's documented API changes. Private modules (``modal._*``,
 ``_experimental_*`` methods carry no such promise.
 
 ``modal_dojo/common/_modal_compat.py`` is the single place allowed to use
-them, for operations Modal has no public API for yet. Every other entry in
-``ALLOWED`` is a debt with a reason; delete entries, do not add them.
+them, for operations Modal has no public API for yet. The other entries in
+``ALLOWED`` are tests that need a private name to do their job; each says
+why. Delete entries, do not add them.
 """
 
 from __future__ import annotations
@@ -49,18 +50,16 @@ ALLOWED = {
         "contract test: pins the `modal endpoint create` flags that "
         "Endpoint.launch() passes to the CLI"
     ),
-    "modal_dojo/common/modal_refs.py": (
-        "reads lazy handles' loader closures to pickle them by reference; goes "
-        "away once Modal handles are picklable or callbacks stop capturing them"
+    "tests/test_modal_refs.py": (
+        "builds fake and deliberately broken handles to test the reducers that "
+        "sit on _modal_compat.describe_handle"
     ),
-    "tests/test_modal_refs.py": "tests the reducers in modal_refs.py",
     "scripts/validate_model_configs.py": (
-        "registers by-value pickling with Modal's vendored cloudpickle; goes "
-        "away once user objects travel as an explicit payload"
+        "registers the validation dataset's module for by-value pickling with "
+        "Modal's vendored cloudpickle, which is what serialized=True pickles with"
     ),
     "tests/test_model_validation_registry.py": (
-        "pickles with Modal's serializer to mirror serialized=True; goes away "
-        "with the entry above"
+        "pickles with Modal's serializer to mirror serialized=True for the entry above"
     ),
 }
 

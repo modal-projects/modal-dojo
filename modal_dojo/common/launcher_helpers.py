@@ -96,6 +96,22 @@ def ship_callable(
     caller_script: str | None,
     fallback_name: str,
 ) -> tuple[Image, str]:
+    """Make a user callback importable in the image; return its import path.
+
+    The frameworks load hooks by dotted path, so every callback has to end up
+    as a module in the image:
+
+    - A function that ships with Modal Dojo is already there.
+    - A function from a file other than the launching script is shipped as
+      that file and imported normally.
+    - Anything else (defined in the launching script or a notebook, a lambda,
+      a closure) is pickled by value with cloudpickle into a generated
+      module. The launching script cannot be imported instead: that would run
+      it again inside the container, launch and all.
+
+    The last case needs matching local and image Python versions, as do the
+    training functions, which are registered with ``serialized=True``.
+    """
     fn_mod = getattr(fn, "__module__", None) or ""
     if fn_mod.startswith("modal_dojo"):
         return image, f"{fn_mod}.{getattr(fn, '__name__', fallback_name)}"
