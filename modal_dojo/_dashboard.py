@@ -1250,11 +1250,11 @@ def fastapi_app():
     async def _get_run_or_404(training_run_id: str) -> TrainingRun:
         try:
             return await TrainingRun.from_id(training_run_id, is_async=True)
-        except KeyError:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=f"TrainingRun {training_run_id!r} not found",
-            ) from None
+            ) from exc
 
     # ── Training runs ────────────────────────────────────────────────────
 
@@ -1364,11 +1364,11 @@ def fastapi_app():
     async def get_run(training_run_id: str):
         try:
             run = await TrainingRun.from_id(training_run_id, is_async=True)
-        except KeyError:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=f"Training run {training_run_id!r} not found",
-            ) from None
+            ) from exc
         try:
             result = await vol_get(
                 MetadataStore.TRAIN_RESULTS,
@@ -1631,10 +1631,10 @@ def fastapi_app():
             if entry.loaded_at is None:
                 try:
                     await _load_metrics(batch.training_run_id, entry)
-                except Exception:
+                except Exception as exc:
                     raise HTTPException(
                         status_code=503, detail="Metric store unavailable"
-                    ) from None
+                    ) from exc
             entry.dirty |= entry.metrics.merge_points(batch.points)
             try:
                 await _refresh_derived_metrics(batch.training_run_id, entry)
@@ -1714,11 +1714,11 @@ def fastapi_app():
             data = await run_in_threadpool(
                 vol_get, MetadataStore.TRAINING_ROLLOUTS, key
             )
-        except KeyError:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=f"Rollout {rollout_id} for run {training_run_id!r} not found",
-            ) from None
+            ) from exc
 
         if isinstance(data, dict):
             _apply_parsed(data.get("samples"))
@@ -2252,11 +2252,11 @@ def fastapi_app():
                 vol_get, MetadataStore.TRAIN_RESULTS, training_run_id
             )
             return JSONResponse(data)
-        except KeyError:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=f"No training result for {training_run_id!r}",
-            ) from None
+            ) from exc
 
     # ── Eval results ─────────────────────────────────────────────────────
 
@@ -2272,11 +2272,11 @@ def fastapi_app():
     async def eval_detail(eval_id: str):
         try:
             data = await run_in_threadpool(vol_get, MetadataStore.EVAL_RESULTS, eval_id)
-        except KeyError:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=f"EvalResult {eval_id!r} not found",
-            ) from None
+            ) from exc
         if isinstance(data, dict):
             _apply_parsed(data.get("rows"))
         return JSONResponse(data)
