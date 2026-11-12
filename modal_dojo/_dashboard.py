@@ -253,6 +253,16 @@ _MISSING_TOKEN_DUMMY = "modal-dojo-missing-token-dummy-never-issued"
 # Suffix on the metric chunk files this container writes (one per process).
 METRIC_WRITER_ID = _secrets.token_hex(4)
 METRIC_CHUNK_FILE = re.compile(r"(?P<chunk>chunk-\d+)-[0-9A-Za-z]+\.json")
+# Another writer's copy is folded away only once it has sat unwritten this
+# long. A live replica rewrites its copy within seconds of new points, and the
+# volume has no compare-and-delete, so deleting a copy still being written
+# could drop points flushed between the unchanged-check and the delete.
+METRIC_FOLD_GRACE_S = 300
+# How long after writing a chunk copy this container checks it still exists.
+# A fold that checked an older version of the copy can delete it just after
+# a rewrite; the points are still in memory here, so a missing copy is simply
+# written again. Must outlast a fold's re-list→delete gap (well under this).
+METRIC_RECHECK_AFTER_S = 30
 
 
 def _is_local() -> bool:
@@ -797,6 +807,8 @@ def fastapi_app():
         def __init__(self) -> None:
             self.metrics = RunMetrics()
             self.dirty: set[str] = set()
+            # chunk -> when to confirm this container's copy wasn't deleted
+            self.recheck: dict[str, float] = {}
             self.loaded_at: float | None = None
             self.lock = asyncio.Lock()
             # How this run's steps are priced; resolved from its record once.
@@ -850,11 +862,16 @@ def fastapi_app():
         entry.loaded_at = time.monotonic()
 
         mine = f"-{METRIC_WRITER_ID}.json"
-        fold = {
-            chunk: [f for f in chunk_files if not f["path"].endswith(mine)]
-            for chunk, chunk_files in copies.items()
-            if len(chunk_files) > 1
-        }
+        settled_before = time.time() - METRIC_FOLD_GRACE_S
+        fold: dict[str, list[JsonDict]] = {}
+        for chunk, chunk_files in copies.items():
+            settled = [
+                f
+                for f in chunk_files
+                if not f["path"].endswith(mine) and f["mtime"] < settled_before
+            ]
+            if len(chunk_files) > 1 and settled:
+                fold[chunk] = settled
         if not fold:
             return
         try:
@@ -866,23 +883,31 @@ def fastapi_app():
                 },
                 is_async=True,
             )
+            entry.recheck.update(
+                dict.fromkeys(fold, time.monotonic() + METRIC_RECHECK_AFTER_S)
+            )
             entry.dirty -= set(fold)
             # Only drop copies untouched since they were read: a replica that
             # rewrote its copy meanwhile may hold points this merge lacks.
+            # (The grace period above is what makes this check meaningful.)
             current, failed = await vol_list_metadata_with_failures(
                 store, is_async=True
             )
             if failed:
                 return
             seen = {f["path"]: (f["mtime"], f["size"]) for f in current}
-            for chunk_files in fold.values():
-                for f in chunk_files:
-                    if seen.get(f["path"]) == (f["mtime"], f["size"]):
-                        await asyncio.to_thread(
-                            _metadata_vol_remove,
-                            store,
-                            f["path"].rsplit("/", 1)[-1].removesuffix(".json"),
-                        )
+            stale = [
+                f["path"].rsplit("/", 1)[-1].removesuffix(".json")
+                for chunk_files in fold.values()
+                for f in chunk_files
+                if seen.get(f["path"]) == (f["mtime"], f["size"])
+            ]
+            await bounded_gather_with_retries(
+                [
+                    lambda key=key: asyncio.to_thread(_metadata_vol_remove, store, key)
+                    for key in stale
+                ]
+            )
         except Exception as exc:
             print(f"[dashboard] metric chunk fold failed: {exc}", flush=True)
 
@@ -897,7 +922,30 @@ def fastapi_app():
                 },
                 is_async=True,
             )
+            entry.recheck.update(
+                dict.fromkeys(entry.dirty, time.monotonic() + METRIC_RECHECK_AFTER_S)
+            )
             entry.dirty.clear()
+
+    async def _recheck_metrics(
+        training_run_id: str, entry: MetricEntry, *, all_pending: bool = False
+    ) -> None:
+        """Mark dirty any due chunk whose copy another replica's fold deleted
+        after this container rewrote it. Caller holds the lock."""
+        now = time.monotonic()
+        due = [c for c, at in entry.recheck.items() if all_pending or at <= now]
+        if not due:
+            return
+        files, failed = await vol_list_metadata_with_failures(
+            metric_series_store(training_run_id), is_async=True
+        )
+        if failed:
+            return  # retried on the next pass
+        present = {f["path"].rsplit("/", 1)[-1] for f in files}
+        for chunk in due:
+            del entry.recheck[chunk]
+            if f"{chunk}-{METRIC_WRITER_ID}.json" not in present:
+                entry.dirty.add(chunk)
 
     # ── Derived metrics ──────────────────────────────────────────────────
     # Every run's tokens, throughput and cost per step (``dojo/*``), computed
@@ -947,11 +995,15 @@ def fastapi_app():
                 for row, metrics in points.items()
             )
 
-    async def _flush_dirty_metrics() -> None:
+    async def _flush_dirty_metrics(*, final: bool = False) -> None:
         for training_run_id, entry in list(metric_cache.items()):
-            if entry.dirty:
+            now = time.monotonic()
+            if entry.dirty or any(final or at <= now for at in entry.recheck.values()):
                 try:
                     async with entry.lock:
+                        await _recheck_metrics(
+                            training_run_id, entry, all_pending=final
+                        )
                         await _flush_metrics(training_run_id, entry)
                 except Exception as exc:
                     print(f"[dashboard] metric flush failed: {exc}", flush=True)
@@ -974,7 +1026,7 @@ def fastapi_app():
     async def _stop_metric_flush_loop() -> None:
         if metric_flush_stop is not None:
             metric_flush_stop.set()
-        await _flush_dirty_metrics()
+        await _flush_dirty_metrics(final=True)
 
     def _rebuild_timing_lanes(entry: TimingEntry) -> None:
         records = dict(entry.persisted_records)

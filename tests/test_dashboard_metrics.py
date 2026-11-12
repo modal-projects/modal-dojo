@@ -346,3 +346,37 @@ def test_metric_series_splits_the_table_per_key_and_downsamples():
     assert list(out) == ["a", "x"]
     assert out["a"] == [[3, 1.0, None]]
     assert out["x"] == [[0, 0.0, 100.0], [9, 9.0, 109.0]]
+
+
+def test_fold_leaves_recently_written_copies_alone(fake_volume, monkeypatch, tmp_path):
+    """A copy written inside the grace period may belong to a live replica
+    that is about to rewrite it, so it is merged on read but never deleted."""
+    _save_run(TrainingRunStatus.COMPLETED)
+    metadata.vol_put(STORE, "chunk-000000-aaaa", {"steps": {"0": {"a": 1.0}}})
+    metadata.vol_put(STORE, "chunk-000000-bbbb", {"steps": {"1": {"a": 2.0}}})
+    # FakeVolume stamps every file with mtime=1; a grace reaching back past
+    # the epoch makes them all "just written".
+    monkeypatch.setattr(_dashboard, "METRIC_FOLD_GRACE_S", time.time() + 60)
+    with _client(monkeypatch, tmp_path) as client:
+        series = client.get(f"/api/runs/{RUN_ID}/metrics").json()["series"]
+    assert series == {"a": [[0, 1.0, None], [1, 2.0, None]]}
+    assert {"chunk-000000-aaaa.json", "chunk-000000-bbbb.json"} <= set(
+        _chunk_files(fake_volume)
+    )
+
+
+def test_rewrites_own_copy_that_a_fold_deleted(fake_volume, monkeypatch, tmp_path):
+    """Another replica's fold can delete this container's copy just after a
+    rewrite it never saw; the recheck notices and writes it again."""
+    _save_run()
+    own = f"chunk-000000-{WRITER}.json"
+    with _client(monkeypatch, tmp_path) as client:
+        client.post(
+            "/api/metric-points",
+            json=_batch([(0, {"a": 1.0})], final=True),
+            headers=AUTH,
+        )
+        assert own in _chunk_files(fake_volume)
+        del fake_volume.files[f"{STORE}/{own}"]
+    # Shutdown rechecks every copy written since the last check.
+    assert _chunk_files(fake_volume)[own]["steps"] == {"0": {"a": 1.0}}
