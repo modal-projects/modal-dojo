@@ -178,7 +178,7 @@ def test_shard_failure_is_raised_on_every_rank(
 ) -> None:
     monkeypatch.setenv("LOCAL_RANK", "0")
     dist = FakeDist(is_coordinator=False)
-    with pytest.raises(RuntimeError, match="shard commit failed.*upload timeout"):
+    with pytest.raises(RuntimeError, match=r"shard commit failed.*upload timeout"):
         tdc.commit_checkpoint_volume_across_ranks(
             "vol", dist, lambda: None, commit=lambda _: UPLOAD_TIMEOUT
         )

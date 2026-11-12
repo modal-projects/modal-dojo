@@ -162,5 +162,5 @@ def build_sglang_serve_app(
 
             stop_server(getattr(self, "proc", None))
 
-    setattr(app, "SGLangEndpoint", SGLangEndpoint)
+    app.SGLangEndpoint = SGLangEndpoint
     return app

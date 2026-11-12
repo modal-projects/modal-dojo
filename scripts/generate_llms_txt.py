@@ -34,8 +34,7 @@ def flatten_doc_id(entry: str) -> str:
     suffix_at = path.rfind(".")
     if suffix_at > path.rfind("/"):
         path = path[:suffix_at]
-    if path.endswith("/index"):
-        path = path[: -len("/index")]
+    path = path.removesuffix("/index")
     parts = [part for part in path.split("/") if part]
     if len(parts) <= 2:
         return path
@@ -67,7 +66,7 @@ def _guide_section_sort_key(section: str) -> tuple[int, str]:
 
 def _is_badge_line(line: str) -> bool:
     stripped = line.strip()
-    return stripped.startswith("[![") or stripped.startswith("![")
+    return stripped.startswith(("[![", "!["))
 
 
 def _item(label: str, url: str) -> str:

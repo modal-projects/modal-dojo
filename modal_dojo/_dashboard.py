@@ -898,17 +898,20 @@ def fastapi_app():
             await _flush_dirty_metrics()
 
     metric_flush_stop: asyncio.Event | None = None
+    metric_flush_task: asyncio.Task[None] | None = None
 
     @web.on_event("startup")
     async def _start_metric_flush_loop() -> None:
-        nonlocal metric_flush_stop
+        nonlocal metric_flush_stop, metric_flush_task
         metric_flush_stop = asyncio.Event()
-        asyncio.create_task(_metric_flush_loop(metric_flush_stop))
+        metric_flush_task = asyncio.create_task(_metric_flush_loop(metric_flush_stop))
 
     @web.on_event("shutdown")
     async def _stop_metric_flush_loop() -> None:
         if metric_flush_stop is not None:
             metric_flush_stop.set()
+        if metric_flush_task is not None:
+            await metric_flush_task
         await _flush_dirty_metrics()
 
     def _rebuild_timing_lanes(entry: TimingEntry) -> None:
@@ -1251,7 +1254,7 @@ def fastapi_app():
             raise HTTPException(
                 status_code=404,
                 detail=f"TrainingRun {training_run_id!r} not found",
-            )
+            ) from None
 
     # ── Training runs ────────────────────────────────────────────────────
 
@@ -1365,7 +1368,7 @@ def fastapi_app():
             raise HTTPException(
                 status_code=404,
                 detail=f"Training run {training_run_id!r} not found",
-            )
+            ) from None
         try:
             result = await vol_get(
                 MetadataStore.TRAIN_RESULTS,
@@ -1460,7 +1463,7 @@ def fastapi_app():
         lock = component_compile_locks.setdefault(digest, asyncio.Lock())
         try:
             async with lock:
-                if bundle.is_file():
+                if await run_in_threadpool(bundle.is_file):
                     return
                 data = await run_in_threadpool(_read_component_source, source, digest)
                 try:
@@ -1539,7 +1542,7 @@ def fastapi_app():
         await _refresh_dashboard_component_volume()
         source = _component_source_path(manifest)
         cache_root = Path("/tmp/training-gym-dashboard-components")
-        cache_root.mkdir(parents=True, exist_ok=True)
+        await run_in_threadpool(cache_root.mkdir, parents=True, exist_ok=True)
         bundle = cache_root / f"{digest}.js"
 
         if not bundle.is_file():
@@ -1631,7 +1634,7 @@ def fastapi_app():
                 except Exception:
                     raise HTTPException(
                         status_code=503, detail="Metric store unavailable"
-                    )
+                    ) from None
             entry.dirty |= entry.metrics.merge_points(batch.points)
             try:
                 await _refresh_derived_metrics(batch.training_run_id, entry)
@@ -1715,7 +1718,7 @@ def fastapi_app():
             raise HTTPException(
                 status_code=404,
                 detail=f"Rollout {rollout_id} for run {training_run_id!r} not found",
-            )
+            ) from None
 
         if isinstance(data, dict):
             _apply_parsed(data.get("samples"))
@@ -2200,7 +2203,7 @@ def fastapi_app():
         try:
             client = await get_modal_client()
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Modal auth: {exc!s}")
+            raise HTTPException(status_code=502, detail=f"Modal auth: {exc!s}") from exc
         if client is None:
             raise HTTPException(
                 status_code=503,
@@ -2217,7 +2220,9 @@ def fastapi_app():
         try:
             resp = await client.stub.AppFetchLogs(req)
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"AppFetchLogs: {exc!s}")
+            raise HTTPException(
+                status_code=502, detail=f"AppFetchLogs: {exc!s}"
+            ) from exc
 
         logs = _parse_log_batches(resp.batches)
         has_more, next_until = _compute_next_page(logs, max_lines)
@@ -2251,7 +2256,7 @@ def fastapi_app():
             raise HTTPException(
                 status_code=404,
                 detail=f"No training result for {training_run_id!r}",
-            )
+            ) from None
 
     # ── Eval results ─────────────────────────────────────────────────────
 
@@ -2271,7 +2276,7 @@ def fastapi_app():
             raise HTTPException(
                 status_code=404,
                 detail=f"EvalResult {eval_id!r} not found",
-            )
+            ) from None
         if isinstance(data, dict):
             _apply_parsed(data.get("rows"))
         return JSONResponse(data)

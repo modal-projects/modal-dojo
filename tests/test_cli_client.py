@@ -21,7 +21,7 @@ def configured_dashboard_url(monkeypatch):
         "get_dashboard_url",
         lambda: "https://example.test",
     )
-    monkeypatch.setattr(client_module, "modal_proxy_auth_headers", lambda: {})
+    monkeypatch.setattr(client_module, "modal_proxy_auth_headers", dict)
     monkeypatch.setattr(client_module, "get_cli_token_from_config", lambda: "")
     monkeypatch.setattr(client_module, "save_cli_token_to_config", lambda _t: None)
     monkeypatch.setattr(client_module, "fetch_cli_token", lambda: "")
