@@ -292,8 +292,9 @@ class BaseTrainRecipe(ABC, metaclass=_UnwrapDojoErrorMeta):
         fall back to those.
         """
         val = getattr(self, self._ESCAPE_HATCH_FIELD, None)
-        if isinstance(val, dict):
-            return tuple(val)
+        values = self._escape_hatch_values()
+        if values or isinstance(val, dict):
+            return tuple(values)
         return tuple(getattr(self, "_materialized_config_keys", ()) or ())
 
     def _escape_hatch_values(self) -> dict[str, Any]:
@@ -330,7 +331,10 @@ class BaseTrainRecipe(ABC, metaclass=_UnwrapDojoErrorMeta):
             else:
                 out.pop(key, None)
         if hatch in out:
-            out[self._ESCAPE_HATCH_FLAG] = out.pop(hatch)
+            raw = out.pop(hatch)
+            out[self._ESCAPE_HATCH_FLAG] = (
+                values or raw if raw is None or isinstance(raw, dict) else raw
+            )
         return out
 
     def _fields(

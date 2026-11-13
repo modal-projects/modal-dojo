@@ -107,11 +107,89 @@ TrainConfig(
 ).train()
 ```
 
-Prompt and answer datasets also work too:
+Prompt and answer datasets also work:
 
 ```python
 pairs = HuggingFaceDataset("statworx/haiku", input_column="keywords", output_column="text")
 ```
+
+### Miles: conversations and pre-tokenized data
+
+Miles SFT uses Dojo's built-in replay; you do not need a custom rollout function.
+The model must already have a working Miles training recipe. Changing the loss
+mask does not add support for a new model architecture.
+
+| `loss_mask_type` | Input and behavior |
+| --- | --- |
+| `qwen`, `qwen3`, `distill_qwen` | Miles' existing template-specific masks. The default remains `qwen`; it is not a universal mask for every tokenizer. |
+| `chat_template` | Render with the model's own fast tokenizer and train assistant turns, including their end-of-turn tokens. Qwen3.5's Miles preset selects this automatically. |
+| `pretokenized` | Require `metadata.input_ids` and `metadata.loss_mask` on every row. Replay the exact tokens and targets without rendering a chat template. |
+
+For example, configure a supported Miles preset with
+`loss_type="sft_loss", loss_mask_type="chat_template"`. The
+`apply_chat_template_kwargs` setting also applies to this mode, so thinking
+settings and tool formatting can match inference. Assistant messages with
+`step_loss_mask=0` remain context but are not supervised.
+
+Some templates rewrite earlier assistant turns, such as dropping past
+reasoning, or append a footer only at the end of a conversation. Dojo refuses
+to infer a multi-turn mask if those changes move the target spans. For agent
+traces, use one example per model decision: keep the preceding conversation as
+context, mark earlier assistant messages with `step_loss_mask=0`, and supervise
+only the final decision. Alternatively, render and tokenize the examples
+beforehand with the model's encoder.
+
+Pre-tokenized rows need no placeholder prompt or label. For a custom
+`DatasetConfig`, return rows in this shape from `rows()`:
+
+```python
+# tokens is the complete sequence from your model's tokenizer/encoder.
+# prompt_length is the number of context tokens before the target decision.
+row = {
+    "metadata": {
+        "input_ids": tokens,
+        "loss_mask": [0] * prompt_length + [1] * (len(tokens) - prompt_length),
+    }
+}
+```
+
+Set the recipe's `loss_mask_type="pretokenized"` to require this format. A mask
+can also contain multiple supervised spans, with zeros for user messages,
+tool results and any assistant turns that should remain context. Dojo accepts
+pre-tokenized rows in every Miles mask mode; they always take precedence over
+chat rendering. When loading them with `HuggingFaceDataset`, use
+`input_format="messages"` or `"raw"` to retain the metadata column; `"text"`
+converts prompt/answer columns and discards other columns.
+
+Token IDs must be nonnegative integers. Masks must have exactly one 0/1 entry
+per token, at least one target, and a zero at the first token (there is no
+preceding token from which to predict it). Validation runs while materializing
+the dataset. Samples exceeding `rollout_max_context_len` fail instead of being
+silently truncated. Use the same model revision, tokenizer, prompt format,
+thinking settings and end tokens for data preparation and inference. Check
+that decoding the tokens marked 1 gives exactly the intended targets.
+
+### SFT settings and validation
+
+SFT trains on the supplied targets: it does not generate answers or invoke a
+reward function. Dojo averages loss over target tokens and aligns the rollout
+batch with the global training batch. Provide at least one complete batch.
+Miles SFT disables rollout log-probabilities, mismatch correction, reward
+normalization and expert-routing replay, even if the RL preset enables them.
+LoRA SFT automatically sets `lora_train_only=True`, so it does not need serving
+engines or adapter synchronization.
+
+Choose the learning rate, schedule and training duration for your dataset;
+switching an RL preset to SFT does not tune them. Start with one optimizer
+step (`num_rollout=1`), inspect the masked targets and finite loss, then run a
+short smoke test. Keep a held-out split for checkpoint evaluation, and split
+related examples by their original conversation or task to avoid leakage.
+For one-example-per-decision data, supervise each target once rather than
+retraining the preceding assistant turns in every example. Use `num_epoch`
+for a fixed number of dataset passes or `num_rollout` for a fixed step budget.
+Checkpoint and optimizer-save settings remain those of your recipe; retain
+optimizer state when you intend to resume training. Internal `eval_dataset`
+is not yet supported for SFT; evaluate saved checkpoints separately.
 
 ## Reinforcement learning
 

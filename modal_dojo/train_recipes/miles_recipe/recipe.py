@@ -110,6 +110,15 @@ _HOOK_PATH_CONFIG_KEYS = {
     "custom_megatron_before_train_step_hook": "modal_dojo_custom_megatron_before_train_step_hook_path",
 }
 
+# Dojo's SFT rollout: Miles' own, plus pre-tokenized rows and chat_template masks.
+SFT_ROLLOUT_FUNCTION = "modal_dojo.frameworks.miles.sft_rollout.generate_rollout"
+SFT_LOSS_MASK_KEY = "modal_dojo_sft_loss_mask"
+CHAT_TEMPLATE_MASK = "chat_template"
+DOJO_SFT_MASKS = {CHAT_TEMPLATE_MASK, "pretokenized"}
+MilesLossMaskType = Literal[
+    "qwen", "qwen3", "distill_qwen", "chat_template", "pretokenized"
+]
+
 _HOOK_WRAPPER_PATHS = {
     "custom_rollout_log_function": "modal_dojo.frameworks.miles.phase_reporting.log_rollout_data",
     "custom_eval_rollout_log_function": "modal_dojo.frameworks.miles.phase_reporting.log_eval_rollout_data",
@@ -263,8 +272,15 @@ class MilesRecipe(BaseTrainRecipe):
         loss_mask_type:
             Chat-template loss mask for SFT. Miles choices are ``qwen``,
             ``qwen3``, and ``distill_qwen`` (upstream default ``qwen``).
-            Emitted only under ``sft_loss`` when not the default. Miles has
-            no ``qwen3_5`` mask; presets that need it raise under SFT.
+            Emitted only under ``sft_loss`` when not the default.
+            ``chat_template`` marks every assistant turn through the
+            tokenizer's own chat template, for any template that renders a
+            conversation's prefixes as prefixes of the whole. Whatever the
+            choice, a row whose ``metadata`` holds ``input_ids`` and
+            ``loss_mask`` trains on exactly those tokens, for models whose
+            prompt format is not a chat template.
+            ``pretokenized`` requires those two metadata fields on every row;
+            no chat template or placeholder conversation is needed.
         num_epoch:
             Passes over the dataset. Replaces ``num_rollout`` when set.
         use_tis:
@@ -581,7 +597,7 @@ class MilesRecipe(BaseTrainRecipe):
     entropy_coef: float = 0.0
     calculate_per_token_loss: bool = False
     loss_type: Literal["policy_loss", "sft_loss"] = "policy_loss"
-    loss_mask_type: Literal["qwen", "qwen3", "distill_qwen"] = "qwen"
+    loss_mask_type: MilesLossMaskType = "qwen"
     use_tis: bool = False
 
     # ── Dynamic sampling (DAPO) ────────────────────────────────────────────
@@ -722,7 +738,6 @@ class MilesRecipe(BaseTrainRecipe):
     # ── Validators ───────────────────────────────────────────────────────────
 
     _SKIP_FIELDS: ClassVar[frozenset[str]] = frozenset(_MILES_SKIP)
-    sft_supported: ClassVar[bool] = True
 
     @model_validator(mode="after")
     def _resolve_callable_paths(self) -> "MilesRecipe":
@@ -744,6 +759,27 @@ class MilesRecipe(BaseTrainRecipe):
         if cfg != (self.extra_config or {}):
             object.__setattr__(self, "extra_config", cfg)
         return self
+
+    def _escape_hatch_values(self) -> dict[str, Any]:
+        """Derive SFT settings on every launch, leaving the RL preset reusable."""
+        cfg = dict(super()._escape_hatch_values())
+        cfg.pop(SFT_LOSS_MASK_KEY, None)
+        if self.loss_type == "sft_loss":
+            mode = cfg.get("loss_mask_type", self.loss_mask_type)
+            if mode in DOJO_SFT_MASKS:
+                cfg[SFT_LOSS_MASK_KEY] = mode
+            # Static examples have no sampled logprobs, rewards, or routed
+            # experts. Presets may enable these in extra_config for RL.
+            cfg.update(
+                use_rollout_logprobs=False,
+                get_mismatch_metrics=False,
+                rewards_normalization=False,
+                use_rollout_routing_replay=False,
+                use_tis=False,
+            )
+            if cfg.get("lora_rank", self.lora_rank):
+                cfg["lora_train_only"] = True
+        return cfg
 
     @model_validator(mode="after")
     def _validate_gpu_allocation(self) -> "MilesRecipe":
@@ -925,20 +961,18 @@ class MilesRecipe(BaseTrainRecipe):
                     eval_dataset_path=eval_dataset_path,
                 )
             )
-        if self.loss_type == "sft_loss" and not self.sft_supported:
-            raise DojoConfigError(
-                f"{type(self).__name__} requires loss_mask_type='qwen3_5' for "
-                "SFT, but Miles only supports qwen/qwen3/distill_qwen. Use a "
-                "Slime recipe for SFT on this model."
-            )
         _apply_loss_type_fields(
             fields,
             self._escape_hatch_values(),
-            sft_rollout_function="miles.rollout.sft_rollout.generate_rollout",
+            sft_rollout_function=SFT_ROLLOUT_FUNCTION,
         )
         if self.metrics is not None:
             fields.update(self._metrics_to_fields(self.metrics))
         out = self._emit_fields(fields)
+        if out.get("loss_mask_type") in DOJO_SFT_MASKS:
+            # Miles' argparse choices are fixed; the rollout reads the mode
+            # from the derived runtime config instead.
+            out["loss_mask_type"] = None
         for src, dst in _HOOK_PATH_FLAGS.items():
             if src in _HOOK_WRAPPER_PATHS:
                 out[dst] = _HOOK_WRAPPER_PATHS[src]
