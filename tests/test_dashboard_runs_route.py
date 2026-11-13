@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime, timezone
 from queue import Queue
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from modal.types import LogEntry as ModalLogEntry
 
 from modal_dojo import _dashboard
 from modal_dojo.common import reporting
@@ -345,50 +347,54 @@ def test_runs_route_isolates_invalid_run_records(fake_volume, monkeypatch, tmp_p
     assert [run["training_run_id"] for run in response.json()] == ["run-route-1"]
 
 
+def _fake_modal_logs(monkeypatch, *, stream=None, fetch=None):
+    """Point the dashboard's Modal client and ``App.logs`` at fakes."""
+    monkeypatch.setenv("MODAL_TOKEN_ID", "test-token-id")
+    monkeypatch.setenv("MODAL_TOKEN_SECRET", "test-token-secret")
+
+    async def from_credentials(*_args, **_kwargs):
+        return SimpleNamespace()
+
+    calls: list[dict] = []
+
+    class FakeLogs:
+        async def stream(self):
+            for item in stream or []:
+                if isinstance(item, Exception):
+                    raise item
+                yield item
+
+        async def fetch(self, **kwargs):
+            calls.append(kwargs)
+            for item in fetch or []:
+                yield item
+
+    monkeypatch.setattr("modal.client._Client.from_credentials", from_credentials)
+    monkeypatch.setattr(
+        "modal.app._App._new_remote",
+        staticmethod(lambda *_a, **_k: SimpleNamespace(logs=FakeLogs())),
+    )
+    return calls
+
+
+def _modal_log(message: str, ts: float) -> ModalLogEntry:
+    return ModalLogEntry(
+        message=message,
+        timestamp=datetime.fromtimestamp(ts, timezone.utc),
+        source="stdout",
+        object_id="ap-1",
+        context_ids=["fu-1", "ta-1"],
+    )
+
+
 def test_run_log_stream_events_always_include_json_data(
     fake_volume, monkeypatch, tmp_path
 ):
     _save_records()
-    monkeypatch.setenv("MODAL_TOKEN_ID", "test-token-id")
-    monkeypatch.setenv("MODAL_TOKEN_SECRET", "test-token-secret")
-
-    batch = SimpleNamespace(
-        entry_id="entry-1",
-        task_id="task-1",
-        items=[
-            SimpleNamespace(data="first\n", timestamp=100.0),
-            SimpleNamespace(data="second\n", timestamp=101.0),
-        ],
-        app_done=True,
+    _fake_modal_logs(
+        monkeypatch,
+        stream=[_modal_log("first\n", 100.0), _modal_log("second\n", 101.0)],
     )
-
-    class FakeAppGetLogs:
-        def __init__(self):
-            self.calls = 0
-
-        def unary_stream(self, _request):
-            self.calls += 1
-
-            async def stream():
-                if self.calls == 1:
-                    raise RuntimeError("temporary failure")
-                yield batch
-
-            return stream()
-
-    fake_rpc = FakeAppGetLogs()
-    fake_modal_client = SimpleNamespace(
-        stub=SimpleNamespace(AppGetLogs=fake_rpc),
-    )
-
-    async def from_credentials(*_args, **_kwargs):
-        return fake_modal_client
-
-    async def no_sleep(_seconds):
-        return None
-
-    monkeypatch.setattr("modal.client._Client.from_credentials", from_credentials)
-    monkeypatch.setattr(_dashboard.asyncio, "sleep", no_sleep)
 
     with _client(monkeypatch, tmp_path) as client:
         response = client.get("/api/runs/run-route-1/logs/stream?max_lines_per_sec=1")
@@ -396,20 +402,58 @@ def test_run_log_stream_events_always_include_json_data(
     assert response.status_code == 200
     blocks = [block for block in response.text.split("\n\n") if block]
     assert [block.splitlines()[0] for block in blocks] == [
-        "event: reconnect",
-        'data: {"task_id": "task-1", "line": "first\\n", "ts": 100.0}',
+        'data: {"task_id": "ta-1", "line": "first\\n", "source": "stdout", "ts": 100.0}',
         "event: dropped",
         "event: done",
     ]
-    reconnect_data = blocks[0].splitlines()[1]
-    assert json.loads(reconnect_data.removeprefix("data: ")) == {
-        "reason": "temporary failure"
-    }
     for block in blocks:
         data_line = next(
             line for line in block.splitlines() if line.startswith("data: ")
         )
         assert isinstance(json.loads(data_line.removeprefix("data: ")), dict)
+
+
+def test_run_log_stream_reports_modal_failure(fake_volume, monkeypatch, tmp_path):
+    _save_records()
+    _fake_modal_logs(monkeypatch, stream=[RuntimeError("stream gave up")])
+
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.get("/api/runs/run-route-1/logs/stream")
+
+    blocks = [block for block in response.text.split("\n\n") if block]
+    assert len(blocks) == 1
+    assert blocks[0].splitlines()[0] == "event: error"
+    assert "stream gave up" in blocks[0]
+
+
+def test_run_logs_returns_newest_lines_in_window(fake_volume, monkeypatch, tmp_path):
+    _save_records()
+    calls = _fake_modal_logs(
+        monkeypatch,
+        fetch=[
+            _modal_log("old\n", 100.0),
+            _modal_log("", 100.5),
+            _modal_log("mid\n", 101.0),
+            _modal_log("new\n", 102.0),
+        ],
+    )
+
+    with _client(monkeypatch, tmp_path) as client:
+        response = client.get(
+            "/api/runs/run-route-1/logs",
+            params={"since": "50", "until": "200", "max_lines": 2, "search": " mid "},
+        )
+
+    assert response.status_code == 200
+    assert [entry["line"] for entry in response.json()["logs"]] == ["mid\n", "new\n"]
+    assert set(response.json()) == {"logs"}
+    assert calls == [
+        {
+            "since": datetime.fromtimestamp(50, timezone.utc),
+            "until": datetime.fromtimestamp(200, timezone.utc),
+            "search_text": "mid",
+        }
+    ]
 
 
 @pytest.mark.parametrize("bound", ["since", "until"])
