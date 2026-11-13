@@ -368,7 +368,7 @@ def _image() -> modal.Image:
                 SLIME_GIT_REPOSITORY,
                 SLIME_GIT_REVISION,
             ),
-            "uv pip install --system modal==1.6.1 'datasets==5.1.0' 'huggingface_hub==2.2.0'",
+            "uv pip install --system modal==1.6.4 'datasets==5.1.0' 'huggingface_hub==2.2.0'",
         )
         .add_local_python_source(
             "modal_dojo", "tutorials.coding_agent", copy=True
