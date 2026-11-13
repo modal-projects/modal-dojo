@@ -1,9 +1,11 @@
-"""Helpers for tinker-cookbook configs that SpindleRecipe runs."""
+"""Tinker code that SpindleRecipe runs on Modal against Spindle."""
 
 from __future__ import annotations
 
 from importlib import import_module
 from typing import Any
+
+from modal_dojo.tinker.program import TinkerContext, TinkerProgram
 
 # These need modal-dojo[spindle], so they load on first use.
 _LAZY = {
@@ -12,6 +14,8 @@ _LAZY = {
 }
 
 __all__ = [
+    "TinkerContext",
+    "TinkerProgram",
     "cookbook_rl",
     "rl_dataset_builder",
 ]
