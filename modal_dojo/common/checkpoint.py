@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import posixpath
 import time
@@ -25,13 +26,19 @@ from modal_dojo.deploy_recipes import SglangRecipe, VllmRecipe
 
 _CHECKPOINTS_MOUNT_FALLBACK = "/checkpoints"
 _CONVERT_COMPLETE_MARKER = ".training_gym_convert_complete"
+_ADAPTER_DIR = "adapter"
 
 
 class CheckpointType(Enum):
-    """Whether a checkpoint is Hugging Face or Megatron weights."""
+    """Whether a checkpoint is Hugging Face weights, Megatron weights, or a LoRA adapter.
+
+    ``lora_adapter`` is a Miles native-LoRA ``iter_*/adapter`` directory: the
+    trained adapter only, served on top of the run's base model.
+    """
 
     hf = "hf"
     megatron = "megatron"
+    lora_adapter = "lora_adapter"
 
 
 @dataclass
@@ -39,9 +46,10 @@ class Checkpoint:
     """A complete training checkpoint discovered on a Modal Volume.
 
     Attributes:
-        checkpoint_type: Hugging Face or Megatron layout.
+        checkpoint_type: Hugging Face, Megatron, or LoRA adapter layout.
         name: Volume directory basename, such as ``iter_0000050``.
-        path: Absolute path on the checkpoints volume mount.
+        path: Absolute path on the checkpoints volume mount. For a LoRA
+            adapter, the ``iter_*/adapter`` directory.
         timestamp: POSIX mtime of the checkpoint directory.
         training_run_id: Training run that wrote this checkpoint.
         app_name: Modal app name for the run.
@@ -84,6 +92,27 @@ def volume_relative_path(path: str, mount_path: str) -> str:
     return "" if relative_path == "." else relative_path
 
 
+def _is_complete_lora_adapter(
+    volume: Volume, adapter_rel: str, names: set[str]
+) -> bool:
+    """Whether a Miles native-LoRA ``adapter/`` directory has every rank shard.
+
+    Miles writes ``META.json`` with the save's ``world_size`` next to one
+    ``adapter_megatron_rank<N>.pt`` per rank; a save interrupted part-way is
+    missing some of them.
+    """
+    if not {"META.json", "adapter_config.json"} <= names:
+        return False
+    try:
+        meta = json.loads(b"".join(volume.read_file(f"{adapter_rel}/META.json")))
+    except (FileNotFoundError, NotFoundError, ValueError):
+        return False
+    world_size = meta.get("world_size") if isinstance(meta, dict) else None
+    if not isinstance(world_size, int) or world_size < 1:
+        return False
+    return all(f"adapter_megatron_rank{rank}.pt" in names for rank in range(world_size))
+
+
 def _list_checkpoints(
     checkpoint_dir: str,
     checkpoints_volume_name: str,
@@ -122,12 +151,15 @@ def _list_checkpoints(
     prefix = f"{rel}/" if rel else ""
     top_level = []
     child_names: dict[str, set[str]] = {}
+    adapter_names: dict[str, set[str]] = {}
     for entry in entries:
         parts = entry.path.removeprefix(prefix).split("/")
         if len(parts) == 1:
             top_level.append(entry)
         elif len(parts) == 2:
             child_names.setdefault(parts[0], set()).add(parts[1])
+        elif len(parts) == 3 and parts[1] == _ADAPTER_DIR:
+            adapter_names.setdefault(parts[0], set()).add(parts[2])
 
     tracker_rel = f"{rel}/{TORCH_DIST_TRACKER_NAME}" if rel else TORCH_DIST_TRACKER_NAME
     try:
@@ -144,18 +176,31 @@ def _list_checkpoints(
         if not name.startswith("iter_") or name.endswith("_hf"):
             continue
         iteration = parse_torch_dist_iteration(name)
-        if (
-            tracker_iteration is None
-            or iteration is None
-            or iteration > tracker_iteration
-            or not is_complete_torch_dist_checkpoint(child_names.get(name, set()))
+        if iteration is None or (
+            tracker_iteration is not None and iteration > tracker_iteration
         ):
+            continue
+        if tracker_iteration is not None and is_complete_torch_dist_checkpoint(
+            child_names.get(name, set())
+        ):
+            checkpoint_type = CheckpointType.megatron
+            path = posixpath.join(checkpoint_dir, name)
+        elif _is_complete_lora_adapter(
+            volume,
+            posixpath.join(rel, name, _ADAPTER_DIR)
+            if rel
+            else f"{name}/{_ADAPTER_DIR}",
+            adapter_names.get(name, set()),
+        ):
+            checkpoint_type = CheckpointType.lora_adapter
+            path = posixpath.join(checkpoint_dir, name, _ADAPTER_DIR)
+        else:
             continue
         checkpoints.append(
             Checkpoint(
-                checkpoint_type=CheckpointType.megatron,
+                checkpoint_type=checkpoint_type,
                 name=name,
-                path=posixpath.join(checkpoint_dir, name),
+                path=path,
                 timestamp=float(getattr(entry, "mtime", 0.0)),
                 training_run_id=training_run_id,
                 app_name=app_name,
@@ -200,6 +245,12 @@ def convert_megatron_checkpoint_to_hf(
     """Convert a Megatron checkpoint to Hugging Face format."""
     if checkpoint.checkpoint_type == CheckpointType.hf:
         return checkpoint
+    if checkpoint.checkpoint_type == CheckpointType.lora_adapter:
+        raise DojoConfigError(
+            f"{checkpoint.path} is a LoRA adapter, not full model weights. Serve it "
+            "with CustomDeployment.launch or TrainingRun.serve, which load it on "
+            "top of the base model."
+        )
 
     if recipe is None:
         recipe = SglangRecipe()
@@ -334,17 +385,25 @@ def convert_native_lora_checkpoint_to_peft(
 ) -> str:
     """Convert a Miles native-LoRA ``iter_*/adapter`` directory to a PEFT adapter at ``<adapter_path>_hf``."""
     adapter_path = adapter_path.rstrip("/")
-    volume_relative_path(adapter_path, checkpoints_mount_path)
+    output_path = f"{adapter_path}_hf"
+    output_rel = volume_relative_path(output_path, checkpoints_mount_path)
     model_ref = model.model_name or model.model_path
     if not model_ref:
         raise DojoConfigError(
             "Cannot convert a LoRA adapter without model_name or model_path."
         )
 
-    hf_cache_volume = Volume.from_name("huggingface-cache", create_if_missing=True)
     checkpoints_volume = Volume.from_name(
         checkpoints_volume_name, create_if_missing=False
     )
+    # The converter writes adapter_config.json after the weights.
+    try:
+        b"".join(checkpoints_volume.read_file(f"{output_rel}/adapter_config.json"))
+    except (FileNotFoundError, NotFoundError):
+        pass
+    else:
+        return output_path
+    hf_cache_volume = Volume.from_name("huggingface-cache", create_if_missing=True)
     import importlib.util
 
     from modal_dojo.common import hf_secrets
@@ -408,7 +467,7 @@ def convert_native_lora_checkpoint_to_peft(
         with conversion_app.run():
             return convert_native_lora_to_peft.remote(
                 input_dir=adapter_path,
-                output_dir=f"{adapter_path}_hf",
+                output_dir=output_path,
                 model_ref=model_ref,
                 revision=model.revision,
             )
