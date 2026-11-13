@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from modal_dojo.common.modal_lifecycle import resolve_app_liveness
+from modal_dojo.common.modal_lifecycle import app_live_status
 from modal_dojo.common.run import TrainingRun, TrainingRunStatus
 from modal_dojo.utils.metadata import (
     MetadataStore,
@@ -32,7 +32,6 @@ QUEUEABLE_STAGES = frozenset({"initializing", "download_model", "convert_model"}
 class ReconcileDecision:
     should_terminalize: bool
     reason: str | None = None
-    modal_app_state: int | None = None
 
 
 @dataclass(frozen=True)
@@ -89,7 +88,6 @@ def reconcile_decision(
     now: int,
     has_train_result: bool,
     app_live: bool | None,
-    modal_app_state: int | None = None,
 ) -> ReconcileDecision:
     if run.status != TrainingRunStatus.RUNNING:
         return ReconcileDecision(False)
@@ -99,11 +97,7 @@ def reconcile_decision(
     app_id = str(run.modal_app_id or "").strip()
 
     if app_id and app_live is False:
-        return ReconcileDecision(
-            True,
-            reason="stale_modal_app_terminated",
-            modal_app_state=modal_app_state,
-        )
+        return ReconcileDecision(True, reason="stale_modal_app_terminated")
 
     if not app_id:
         pre_app_at = _pre_app_anchor(run)
@@ -113,11 +107,7 @@ def reconcile_decision(
     if app_id and app_live is None and _is_queued_pre_active(run):
         unreachable_at = _progress_updated_at(run) or _pre_app_anchor(run)
         if unreachable_at and now - unreachable_at >= PRE_APP_TIMEOUT_SECONDS:
-            return ReconcileDecision(
-                True,
-                reason="stale_modal_app_unreachable",
-                modal_app_state=modal_app_state,
-            )
+            return ReconcileDecision(True, reason="stale_modal_app_unreachable")
 
     if _is_queued_pre_active(run):
         queued_at = _progress_updated_at(run)
@@ -132,11 +122,7 @@ def reconcile_decision(
     if app_id and app_live is None:
         last_activity = _run_last_activity(run)
         if last_activity and now - last_activity >= STALE_ACTIVE_TIMEOUT_SECONDS:
-            return ReconcileDecision(
-                True,
-                reason="stale_running_no_update",
-                modal_app_state=modal_app_state,
-            )
+            return ReconcileDecision(True, reason="stale_running_no_update")
 
     return ReconcileDecision(False)
 
@@ -186,27 +172,24 @@ def reconcile_orphan_runs(
     *,
     dry_run: bool = False,
     now: int | None = None,
-    get_lifecycle_state: Callable[[str], int | None] | None = None,
+    get_app_live: Callable[[str], bool | None] | None = None,
     has_train_result: Callable[[str], bool] | None = None,
 ) -> list[ReconcileResult]:
     """Terminalize orphaned ``running`` runs. Returns reconciled run summaries."""
     now_ts = int(now if now is not None else time.time())
     has_result = has_train_result or _default_has_train_result
+    get_live = get_app_live or app_live_status
 
     results: list[ReconcileResult] = []
     for run in _load_running_runs():
         app_id = str(run.modal_app_id or "").strip()
-        modal_app_state, app_live = resolve_app_liveness(
-            app_id,
-            get_lifecycle_state=get_lifecycle_state,
-        )
+        app_live = get_live(app_id) if app_id else None
 
         decision = reconcile_decision(
             run,
             now=now_ts,
             has_train_result=has_result(run.training_run_id),
             app_live=app_live,
-            modal_app_state=modal_app_state,
         )
         if not decision.should_terminalize or not decision.reason:
             continue
@@ -216,8 +199,6 @@ def reconcile_orphan_runs(
         metadata = dict(run.metadata or {})
         metadata["terminal_reason"] = decision.reason
         metadata["reconciled_at"] = finished_at
-        if decision.modal_app_state is not None:
-            metadata["last_known_modal_app_state"] = decision.modal_app_state
 
         run.status = TrainingRunStatus.CANCELLED
         run.metadata = metadata
