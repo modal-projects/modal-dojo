@@ -1832,3 +1832,27 @@ dialog {
   font-size: 0.875rem;
   line-height: 1.5;
 }
+
+.sl-markdown-content table:has(tr.model-row) {
+  display: table;
+  width: 100%;
+}
+
+.sl-markdown-content tr.model-row {
+  cursor: pointer;
+  scroll-margin-top: calc(var(--sl-nav-height) + 1rem);
+}
+
+.sl-markdown-content tr.model-row:hover,
+.sl-markdown-content tr.model-row.open {
+  background: var(--sl-color-gray-6);
+}
+
+.sl-markdown-content tr.model-code:not(:has(details[open])),
+.sl-markdown-content tr.model-code summary {
+  display: none;
+}
+
+.sl-markdown-content tr.model-row a {
+  white-space: nowrap;
+}
