@@ -39,6 +39,8 @@ PKG_ROOT = REPO_ROOT / "modal_dojo"
 # fails on a rename or deletion.
 REMOTE_ONLY = frozenset(
     {
+        # Imports the internal modal-evals SDK, which the Modal Evals runner Image carries.
+        "modal_dojo.evaluation_runner.dataset",
         "modal_dojo.common.megatron_patches.patch_checkpoint_save",
         "modal_dojo.common.megatron_patches.patch_dist_ckpt_nofork",
         "modal_dojo.common.megatron_patches.patch_dist_ckpt_quantized",
