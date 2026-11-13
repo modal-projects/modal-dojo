@@ -1,5 +1,6 @@
 """Template-independent SFT loss masks and Dojo's Miles SFT rollout."""
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -13,12 +14,6 @@ from modal_dojo.common.sft_loss_mask import (
 )
 from modal_dojo.frameworks.miles import sft_rollout
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
-
-# Rendering a chat template needs jinja2, which Dojo does not depend on.
-needs_jinja = pytest.mark.skipif(
-    __import__("importlib").util.find_spec("jinja2") is None,
-    reason="jinja2 not installed",
-)
 
 CHATML = (
     "{% for m in messages %}<|im_start|>{{ m.role }}\n{{ m.content }}<|im_end|>\n{% endfor %}"
@@ -71,7 +66,6 @@ def _trained_text(tok, ids, mask) -> list[str]:
     return spans
 
 
-@needs_jinja
 def test_chat_template_mask_marks_every_assistant_turn() -> None:
     tok = _tokenizer()
     ids, mask = chat_template_loss_mask(tok, MESSAGES)
@@ -87,7 +81,6 @@ def test_chat_template_mask_marks_every_assistant_turn() -> None:
     ]
 
 
-@needs_jinja
 def test_step_loss_mask_zero_turn_is_context_only() -> None:
     tok = _tokenizer()
     messages = [dict(m) for m in MESSAGES]
@@ -96,7 +89,6 @@ def test_step_loss_mask_zero_turn_is_context_only() -> None:
     assert _trained_text(tok, ids, mask) == ["See you.<|im_end|>\n"]
 
 
-@needs_jinja
 def test_template_that_rewrites_past_turns_is_refused() -> None:
     with pytest.raises(LossMaskError, match="pre-tokenize"):
         chat_template_loss_mask(_tokenizer(LAST_ONLY), MESSAGES)
@@ -125,6 +117,11 @@ def test_custom_render_replaces_the_template() -> None:
         ({"input_ids": [1, 2], "loss_mask": [0, 2]}, "only 0 and 1"),
         ({"input_ids": [1, 2], "loss_mask": [0, 0]}, "trains no token"),
         ({"input_ids": [1, 2]}, "both be lists"),
+        ({"input_ids": [1, 2], "loss_mask": [1, 1]}, "first token"),
+        ({"input_ids": [-1, 2], "loss_mask": [0, 1]}, "nonnegative integers"),
+        ({"input_ids": [1.9, 2], "loss_mask": [0, 1]}, "nonnegative integers"),
+        ({"input_ids": [True, 2], "loss_mask": [0, 1]}, "nonnegative integers"),
+        ({"input_ids": [1, 2], "loss_mask": [0, 1.0]}, "only 0 and 1"),
     ],
 )
 def test_pretokenized_rows_are_validated(metadata, match) -> None:
@@ -171,7 +168,6 @@ def test_rollout_uses_pretokenized_rows_without_a_tokenizer(monkeypatch) -> None
     assert group[0].loss_mask == [1, 0, 1]
 
 
-@needs_jinja
 def test_rollout_chat_template_mode(monkeypatch) -> None:
     tok = _tokenizer()
     monkeypatch.setattr(sft_rollout, "_tokenizer", lambda args: tok)
@@ -202,9 +198,16 @@ def _dataset():
     )
 
 
-def test_recipe_routes_chat_template_mask_through_config() -> None:
-    recipe = MilesRecipe(loss_type="sft_loss", loss_mask_type="chat_template")
-    assert recipe.extra_config["modal_dojo_sft_loss_mask"] == "chat_template"
+@pytest.mark.parametrize("mode", ["chat_template", "pretokenized"])
+def test_recipe_routes_dojo_mask_through_config(mode, tmp_path) -> None:
+    import yaml
+    from modal_dojo.frameworks.miles.modal_helpers.utils import prepare_miles_config
+
+    recipe = MilesRecipe(loss_type="sft_loss", loss_mask_type=mode)
+    prepare_miles_config(recipe, None, str(tmp_path))
+    with open(recipe.extra_config) as f:
+        runtime = yaml.safe_load(f)
+    assert runtime["modal_dojo_sft_loss_mask"] == mode
     args = recipe.cli_args(dataset=_dataset())
     values = dict(zip(args, args[1:]))
     assert (
@@ -213,9 +216,14 @@ def test_recipe_routes_chat_template_mask_through_config() -> None:
     assert "--loss-mask-type" not in args
 
 
-def test_lora_sft_is_train_only() -> None:
-    args = MilesRecipe(loss_type="sft_loss", lora_rank=8).cli_args(dataset=_dataset())
-    assert "--lora-train-only" in args
+def test_lora_sft_is_train_only(tmp_path) -> None:
+    import yaml
+    from modal_dojo.frameworks.miles.modal_helpers.utils import prepare_miles_config
+
+    recipe = MilesRecipe(loss_type="sft_loss", lora_rank=8)
+    prepare_miles_config(recipe, None, str(tmp_path))
+    with open(recipe.extra_config) as f:
+        assert yaml.safe_load(f)["lora_train_only"] is True
     rl = MilesRecipe(lora_rank=8).cli_args(dataset=_dataset())
     assert "--lora-train-only" not in rl
 
@@ -225,3 +233,119 @@ def test_recipe_keeps_native_mask_types_on_the_flag() -> None:
     assert "modal_dojo_sft_loss_mask" not in (recipe.extra_config or {})
     args = recipe.cli_args(dataset=_dataset())
     assert args[args.index("--loss-mask-type") + 1] == "qwen3"
+
+
+def test_switching_mask_does_not_leave_stale_runtime_mode(tmp_path):
+    import yaml
+    from modal_dojo.frameworks.miles.modal_helpers.utils import prepare_miles_config
+
+    original = MilesRecipe(loss_type="sft_loss", loss_mask_type="chat_template")
+    original.cli_args()
+    recipe = replace(original, loss_mask_type="qwen3")
+    prepare_miles_config(recipe, None, str(tmp_path))
+    with open(recipe.extra_config) as f:
+        runtime = yaml.safe_load(f)
+    assert "modal_dojo_sft_loss_mask" not in runtime
+    args = recipe.cli_args()
+    assert args[args.index("--loss-mask-type") + 1] == "qwen3"
+    assert original.extra_config is None
+
+
+def test_effective_mask_in_extra_config_never_becomes_an_invalid_cli_choice(tmp_path):
+    from modal_dojo.frameworks.miles.modal_helpers.utils import prepare_miles_config
+
+    recipe = MilesRecipe(
+        loss_type="sft_loss", extra_config={"loss_mask_type": "chat_template"}
+    )
+    for materialize in (False, True):
+        if materialize:
+            prepare_miles_config(recipe, None, str(tmp_path))
+        assert "--loss-mask-type" not in recipe.cli_args()
+        assert (
+            recipe._escape_hatch_values()["modal_dojo_sft_loss_mask"] == "chat_template"
+        )
+
+
+def test_deepseek_sft_disables_rl_inputs_without_mutating_the_preset(tmp_path):
+    import yaml
+    from modal_dojo.common.launcher_utils import serialize_recipe_params
+    from modal_dojo.frameworks.miles.modal_helpers.utils import prepare_miles_config
+    from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash_lora import (
+        DeepSeek_V4_1_Flash_LoRA_Recipe,
+    )
+
+    rl = DeepSeek_V4_1_Flash_LoRA_Recipe()
+    original = dict(rl.extra_config)
+    recipe = replace(rl, loss_type="sft_loss", loss_mask_type="pretokenized")
+    effective = serialize_recipe_params(recipe)
+    prepare_miles_config(recipe, None, str(tmp_path))
+    with open(recipe.extra_config) as f:
+        runtime = yaml.safe_load(f)
+    for key in (
+        "use_rollout_logprobs",
+        "get_mismatch_metrics",
+        "rewards_normalization",
+        "use_rollout_routing_replay",
+        "use_tis",
+    ):
+        assert runtime[key] is False
+        assert effective[key] is False
+    assert runtime["lora_train_only"] is True
+    assert effective["lora_train_only"] is True
+    assert rl.extra_config == original
+    assert (
+        replace(rl, loss_type="policy_loss")._escape_hatch_values()[
+            "use_rollout_logprobs"
+        ]
+        is True
+    )
+
+
+def test_single_decision_mask_allows_history_rewriting_template():
+    messages = [dict(m) for m in MESSAGES]
+    messages[2]["step_loss_mask"] = 0
+    tok = _tokenizer(LAST_ONLY)
+    ids, mask = chat_template_loss_mask(tok, messages)
+    assert _trained_text(tok, ids, mask) == ["See you.<|im_end|>\n"]
+
+
+def test_rollout_passes_chat_template_kwargs(monkeypatch):
+    template = CHATML.replace(
+        "{{ m.content }}", "{{ m.content if enable_thinking else 'no thinking' }}"
+    )
+    tok = _tokenizer(template)
+    monkeypatch.setattr(sft_rollout, "_tokenizer", lambda args: tok)
+    args = _args(
+        modal_dojo_sft_loss_mask="chat_template",
+        apply_chat_template_kwargs='{"enable_thinking": false}',
+    )
+    ids, mask, _ = sft_rollout.tokens_and_mask(
+        args, SimpleNamespace(prompt=MESSAGES, metadata={})
+    )
+    assert _trained_text(tok, ids, mask) == ["no thinking<|im_end|>\n"] * 2
+
+
+def test_pretokenized_mode_requires_tokens_without_loading_a_tokenizer(monkeypatch):
+    monkeypatch.setattr(
+        sft_rollout, "_tokenizer", lambda args: pytest.fail("tokenizer loaded")
+    )
+    with pytest.raises(LossMaskError, match="requires metadata"):
+        sft_rollout.tokens_and_mask(
+            _args(modal_dojo_sft_loss_mask="pretokenized"),
+            SimpleNamespace(prompt=[], metadata={}),
+        )
+
+
+def test_rollout_refuses_oversized_pretokenized_samples():
+    sample = SimpleNamespace(
+        prompt=[], metadata={"input_ids": [1, 2, 3], "loss_mask": [0, 1, 1]}
+    )
+    with pytest.raises(LossMaskError, match="rollout_max_context_len=2"):
+        sft_rollout.generate_rollout(
+            _args(rollout_batch_size=1, rollout_max_context_len=2), 0, _Buffer([sample])
+        )
+
+
+def test_rollout_refuses_partial_batches():
+    with pytest.raises(ValueError, match="Incomplete SFT batch"):
+        sft_rollout.generate_rollout(_args(), 0, _Buffer([]))

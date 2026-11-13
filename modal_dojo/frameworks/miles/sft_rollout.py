@@ -16,10 +16,15 @@ rollout would. Per sample, in order:
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
-from modal_dojo.common.sft_loss_mask import chat_template_loss_mask, pretokenized
+from modal_dojo.common.sft_loss_mask import (
+    LossMaskError,
+    chat_template_loss_mask,
+    pretokenized,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,10 +77,19 @@ def tokens_and_mask(args, sample) -> tuple[list[int], list[int], str]:
     metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
     if given := pretokenized(metadata):
         return (*given, "pretokenized")
+    if mask_mode(args) == "pretokenized":
+        raise LossMaskError(
+            "pretokenized SFT requires metadata.input_ids and metadata.loss_mask"
+        )
     tools = metadata.get("tools")
     if mask_mode(args) == CHAT_TEMPLATE:
+        kwargs = getattr(args, "apply_chat_template_kwargs", None) or {}
+        if isinstance(kwargs, str):
+            kwargs = json.loads(kwargs)
         return (
-            *chat_template_loss_mask(_tokenizer(args), sample.prompt, tools),
+            *chat_template_loss_mask(
+                _tokenizer(args), sample.prompt, tools, template_kwargs=kwargs
+            ),
             CHAT_TEMPLATE,
         )
     return (*_miles_mask(args, sample.prompt, tools), args.loss_mask_type)
@@ -84,14 +98,26 @@ def tokens_and_mask(args, sample) -> tuple[list[int], list[int], str]:
 def generate_rollout(args, rollout_id, data_buffer, evaluation=False):
     """Samples for one SFT step, as ``miles.rollout.sft_rollout.generate_rollout``."""
     del rollout_id
-    assert not evaluation, "SFT has no evaluation rollout"
-    assert args.rollout_global_dataset
+    if evaluation or not args.rollout_global_dataset:
+        raise ValueError("SFT replay requires the training dataset")
 
     global _SAMPLE_LOGGED
     samples = data_buffer.get_samples(args.rollout_batch_size)
+    if len(samples) != args.rollout_batch_size:
+        raise ValueError(
+            "Incomplete SFT batch; provide at least one full batch of rows"
+        )
     for i, group in enumerate(samples):
         (sample,) = group
         token_ids, loss_mask, source = tokens_and_mask(args, sample)
+        if 1 not in loss_mask:
+            raise LossMaskError(f"SFT sample {i} has no target token")
+        context = getattr(args, "rollout_max_context_len", None)
+        if context is not None and len(token_ids) > context:
+            raise LossMaskError(
+                f"SFT sample {i} has {len(token_ids)} tokens, exceeding "
+                f"rollout_max_context_len={context}; split it before training"
+            )
         response_length = len(loss_mask) - loss_mask.index(1)
         sample.tokens = token_ids
         sample.response_length = response_length

@@ -292,10 +292,10 @@ def test_sft_none_global_batch_size_uses_rollout_batch_size() -> None:
     assert values["--rollout-batch-size"] == str(recipe.rollout_batch_size)
 
 
-def test_miles_qwen35_sft_raises() -> None:
+def test_miles_qwen35_sft_defaults_to_its_own_chat_template() -> None:
     recipe = Qwen3_5_4B_Miles_Recipe(loss_type="sft_loss")
-    with pytest.raises(DojoConfigError, match="qwen3_5"):
-        recipe.cli_args(dataset=_dataset())
+    assert "--loss-mask-type" not in recipe.cli_args(dataset=_dataset())
+    assert recipe._escape_hatch_values()["modal_dojo_sft_loss_mask"] == "chat_template"
 
 
 def test_sft_extra_config_batch_keeps_rollout_in_sync() -> None:

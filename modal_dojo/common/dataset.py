@@ -128,8 +128,19 @@ class DatasetConfig(ABC):
 
 
 class _SftDataset(DatasetConfig):
-    def __init__(self, inner: DatasetConfig) -> None:
-        if isinstance(inner, HuggingFaceDataset) and inner.input_format == "raw":
+    def __init__(
+        self,
+        inner: DatasetConfig,
+        *,
+        allow_pretokenized: bool = False,
+        require_pretokenized: bool = False,
+        metadata_key: str = "metadata",
+    ) -> None:
+        if (
+            isinstance(inner, HuggingFaceDataset)
+            and inner.input_format == "raw"
+            and not allow_pretokenized
+        ):
             raise DojoConfigError(
                 "input_format='raw' is not supported with loss_type='sft_loss'"
             )
@@ -138,6 +149,9 @@ class _SftDataset(DatasetConfig):
                 "HarborDataset is not supported with loss_type='sft_loss'"
             )
         self._inner = inner
+        self._allow_pretokenized = allow_pretokenized
+        self._require_pretokenized = require_pretokenized
+        self._metadata_key = metadata_key
 
     def __getattr__(self, name: str) -> Any:
         if name == "_inner":
@@ -146,7 +160,13 @@ class _SftDataset(DatasetConfig):
 
     def cache_key(self) -> str | None:
         key = self._inner.cache_key()
-        return None if key is None else f"{key}:sft"
+        if key is None:
+            return None
+        if self._allow_pretokenized:
+            return (
+                f"{key}:sft-tokens-v1:{self._require_pretokenized}:{self._metadata_key}"
+            )
+        return f"{key}:sft"
 
     def input_key(self) -> str:
         return self._inner.input_key()
@@ -155,8 +175,33 @@ class _SftDataset(DatasetConfig):
         return None
 
     def rows(self) -> Iterable[DatasetRow]:
+        from modal_dojo.common.sft_loss_mask import LossMaskError, pretokenized
+
         input_key, label_key = self._inner.input_key(), self._inner.label_key()
-        for row in self._inner.rows():
+        for index, row in enumerate(self._inner.rows()):
+            if self._allow_pretokenized:
+                try:
+                    tokens = pretokenized(row.get(self._metadata_key))
+                except LossMaskError as exc:
+                    raise DojoConfigError(f"SFT row {index}: {exc}") from exc
+                if tokens is not None:
+                    # Miles' dataset reader still expects an input column. An
+                    # empty conversation avoids rendering or length-filtering
+                    # unrelated text; the rollout consumes only the metadata.
+                    yield {**row, input_key: []}
+                    continue
+                if self._require_pretokenized:
+                    raise DojoConfigError(
+                        f"SFT row {index} needs {self._metadata_key}.input_ids "
+                        f"and {self._metadata_key}.loss_mask"
+                    )
+                if (
+                    isinstance(self._inner, HuggingFaceDataset)
+                    and self._inner.input_format == "raw"
+                ):
+                    raise DojoConfigError(
+                        "Raw SFT rows must supply pre-tokenized metadata"
+                    )
             messages = row.get(input_key)
             if messages is None:
                 raise DojoConfigError(

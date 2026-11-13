@@ -208,6 +208,82 @@ def test_sft_dataset_rejects_incomplete_rows(row):
         list(_SftDataset(PairDataset(row)).rows())
 
 
+def test_miles_pretokenized_rows_materialize_and_replay_without_dummy_text(tmp_path):
+    from types import SimpleNamespace
+    from modal_dojo.frameworks.miles.sft_rollout import generate_rollout
+
+    metadata = {"input_ids": [5, 6, 7, 8], "loss_mask": [0, 1, 0, 1]}
+    dataset = _SftDataset(
+        PairDataset({"metadata": metadata}),
+        allow_pretokenized=True,
+        require_pretokenized=True,
+    )
+    path = tmp_path / "train.jsonl"
+    dataset.write(str(path))
+    dataset.validate_written(str(path))
+    row = json.loads(path.read_text())
+    assert row == {"messages": [], "metadata": metadata}
+    assert dataset.label_key() is None
+    sample = SimpleNamespace(prompt=row["messages"], metadata=row["metadata"])
+    buffer = SimpleNamespace(get_samples=lambda n: [[sample]])
+    args = SimpleNamespace(rollout_global_dataset=True, rollout_batch_size=1)
+    ((out,),) = generate_rollout(args, 0, buffer)
+    assert out.tokens == metadata["input_ids"]
+    assert out.response_length == 3
+    assert out.loss_mask == [1, 0, 1]
+
+
+def test_miles_pretokenized_rows_are_validated_during_materialization():
+    dataset = _SftDataset(
+        PairDataset({"metadata": {"input_ids": [1, 2], "loss_mask": [0, 0]}}),
+        allow_pretokenized=True,
+    )
+    with pytest.raises(DojoConfigError, match=r"SFT row 0.*trains no token"):
+        list(dataset.rows())
+
+
+def test_required_pretokenized_mode_rejects_conversation_rows():
+    dataset = _SftDataset(
+        PairDataset({"messages": [USER, ASSISTANT]}),
+        allow_pretokenized=True,
+        require_pretokenized=True,
+    )
+    with pytest.raises(DojoConfigError, match=r"needs metadata\.input_ids"):
+        list(dataset.rows())
+
+
+def test_pretokenized_custom_metadata_column_and_cache_isolation():
+    class CachedPairDataset(PairDataset):
+        def cache_key(self):
+            return "same-data"
+
+    inner = CachedPairDataset({"encoded": {"input_ids": [1, 2], "loss_mask": [0, 1]}})
+    dataset = _SftDataset(inner, allow_pretokenized=True, metadata_key="encoded")
+    assert list(dataset.rows())[0]["messages"] == []
+    assert (
+        len(
+            {
+                dataset.cache_key(),
+                _SftDataset(inner).cache_key(),
+                _SftDataset(inner, allow_pretokenized=True).cache_key(),
+                _SftDataset(
+                    inner, allow_pretokenized=True, require_pretokenized=True
+                ).cache_key(),
+            }
+        )
+        == 4
+    )
+
+
+def test_slime_does_not_accept_token_only_rows_without_a_supported_rollout():
+    with pytest.raises(DojoConfigError, match="missing a prompt"):
+        list(
+            _SftDataset(
+                PairDataset({"metadata": {"input_ids": [1, 2], "loss_mask": [0, 1]}})
+            ).rows()
+        )
+
+
 def test_sft_rejects_eval_dataset():
     with pytest.raises(DojoConfigError, match="eval_dataset"):
         BaseTrainRecipe._validate_datasets(

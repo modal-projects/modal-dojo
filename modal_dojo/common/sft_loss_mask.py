@@ -52,14 +52,20 @@ def pretokenized(metadata: Any) -> tuple[list[int], list[int]] | None:
             f"metadata.{INPUT_IDS_KEY} has {len(ids)} tokens but "
             f"metadata.{LOSS_MASK_KEY} has {len(mask)} entries"
         )
-    if any(m not in (0, 1) for m in mask):
+    if any(type(t) is not int or t < 0 for t in ids):
+        raise LossMaskError(f"metadata.{INPUT_IDS_KEY} must hold nonnegative integers")
+    if any(not isinstance(m, (int, bool)) or m not in (0, 1) for m in mask):
         raise LossMaskError(f"metadata.{LOSS_MASK_KEY} must hold only 0 and 1")
     if 1 not in mask:
         raise LossMaskError(f"metadata.{LOSS_MASK_KEY} trains no token")
-    return [int(t) for t in ids], [int(m) for m in mask]
+    if mask[0]:
+        raise LossMaskError(
+            "the first token needs loss_mask=0: it has no preceding context"
+        )
+    return list(ids), [int(m) for m in mask]
 
 
-def template_render(tokenizer: Any) -> Render:
+def template_render(tokenizer: Any, template_kwargs: dict | None = None) -> Render:
     """``render(messages, tools, add_generation_prompt)`` through the tokenizer's
     chat template."""
     if not getattr(tokenizer, "chat_template", None):
@@ -68,6 +74,17 @@ def template_render(tokenizer: Any) -> Render:
             f"(metadata.{INPUT_IDS_KEY} and metadata.{LOSS_MASK_KEY}) or set "
             "chat_template_path"
         )
+    kwargs = dict(template_kwargs or {})
+    reserved = {
+        "tools",
+        "tokenize",
+        "add_generation_prompt",
+        "return_dict",
+    } & kwargs.keys()
+    if reserved:
+        raise LossMaskError(
+            "SFT controls these chat-template arguments: " + ", ".join(sorted(reserved))
+        )
 
     def render(messages, tools=None, add_generation_prompt=False) -> str:
         return tokenizer.apply_chat_template(
@@ -75,6 +92,7 @@ def template_render(tokenizer: Any) -> Render:
             tools=tools,
             tokenize=False,
             add_generation_prompt=add_generation_prompt,
+            **kwargs,
         )
 
     return render
@@ -140,11 +158,15 @@ def chat_template_loss_mask(
     messages: Sequence[dict],
     tools: list[dict] | None = None,
     render: Render | None = None,
+    *,
+    template_kwargs: dict | None = None,
 ) -> tuple[list[int], list[int]]:
     """Token ids and loss mask for a multi-turn conversation, every trained
     assistant turn marked, through ``render`` (the tokenizer's chat template by
     default)."""
-    text, spans = assistant_spans(messages, render or template_render(tokenizer), tools)
+    text, spans = assistant_spans(
+        messages, render or template_render(tokenizer, template_kwargs), tools
+    )
     if not spans:
         raise LossMaskError("the conversation has no assistant turn to train")
     ids, mask = tokens_in_spans(tokenizer, text, spans)
