@@ -590,7 +590,8 @@ def reconcile() -> None:
     if outcome.runs:
         print(f"Reconciled {len(outcome.runs)} orphaned run(s):")
         for result in outcome.runs:
-            print(f"  {result.training_run_id}: {result.reason}")
+            stopped = " (stopped Modal app)" if result.stopped_modal_app else ""
+            print(f"  {result.training_run_id}: {result.reason}{stopped}")
     else:
         print("No orphaned runs to reconcile.")
 
