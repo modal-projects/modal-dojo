@@ -1,6 +1,7 @@
 """Stop Megatron's torch_dist writer from ``os.fork()``ing out of a Ray actor.
 
-Slime pins a pre-#3633 Megatron whose ``write_preloaded_data_multiproc``
+Slime and the Inkling Miles image pin a pre-#3633 Megatron whose
+``write_preloaded_data_multiproc``
 does ``mp.get_context("fork"); ctx.Process(...); p.start()``. From a
 multithreaded CUDA/Ray actor that ``os.fork()`` raises
 ``BlockingIOError: [Errno 11] Resource temporarily unavailable`` (EAGAIN)

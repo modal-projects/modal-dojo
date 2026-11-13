@@ -1,6 +1,6 @@
 [project]
 name = "modal-dojo"
-version = "0.1.1"
+version = "0.1.3"
 description = "Get started with LLM training on Modal."
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -77,7 +77,31 @@ extend-exclude = ["tutorials/**", "*.md"]
 # Pin the rule selection explicitly so linting is deterministic across ruff
 # releases. ruff 0.16 expanded the *default* rule set for projects without an
 # explicit select, which turned CI red overnight. This mirrors ruff's historical
-# default select (E4/E7/E9 + F) so linting matches what we've been enforcing,
-# independent of the installed ruff version.
+# default select (E4/E7/E9 + F), with additional correctness guards.
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
+select = [
+    "ASYNC",
+    "B",
+    "DTZ",
+    "E4",
+    "E7",
+    "E9",
+    "EXE",
+    "F",
+    "FURB",
+    "G",
+    "ISC",
+    "LOG",
+    "PIE",
+    "PLE",
+    "RUF006",
+    "RUF043",
+    "TRY400",
+]
+ignore = [
+    "ASYNC109",
+    "ASYNC110",
+    "B905",
+    "DTZ005",
+    "ISC004",
+]

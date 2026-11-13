@@ -1,0 +1,156 @@
+name: Publish Miles image
+
+on:
+  workflow_dispatch:
+    inputs:
+      miles_ref:
+        description: "radixark/miles branch, tag, or commit to build"
+        required: true
+        default: main
+        type: string
+      sglang_commit:
+        description: "Full SGLang commit SHA (sgl-project/sglang, sglang-miles branch)"
+        required: true
+        type: string
+      megatron_commit:
+        description: "Full Megatron commit SHA (radixark/Megatron-LM, miles-main branch)"
+        required: true
+        type: string
+      tag:
+        description: "Docker Hub tag for modalresearch/miles (e.g. dev-20261109)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-miles-image-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on:
+      group: modal-dojo-image-builders
+    timeout-minutes: 360
+    steps:
+      - name: Validate publish settings
+        env:
+          IMAGE_TAG: ${{ inputs.tag }}
+          SGLANG_COMMIT: ${{ inputs.sglang_commit }}
+          MEGATRON_COMMIT: ${{ inputs.megatron_commit }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ ! "$IMAGE_TAG" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]; then
+            echo "::error::Invalid Docker image tag."
+            exit 1
+          fi
+          for pin in SGLANG_COMMIT MEGATRON_COMMIT; do
+            if [[ ! "${!pin}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::${pin} must be a full 40-character lowercase commit SHA."
+              exit 1
+            fi
+          done
+          if [[ -z "$DOCKERHUB_USERNAME" || -z "$DOCKERHUB_TOKEN" ]]; then
+            echo "::error::Set the DOCKERHUB_USERNAME and DOCKERHUB_TOKEN Actions secrets."
+            exit 1
+          fi
+
+      - name: Check out Miles
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: radixark/miles
+          ref: ${{ inputs.miles_ref }}
+          persist-credentials: false
+
+      - name: Fix pinned source fetches
+        run: |
+          if ! grep -q '^ARG MEGATRON_COMMIT=' docker/Dockerfile; then
+            grep -q '^ARG MEGATRON_BRANCH=' docker/Dockerfile
+            grep -Fq 'cd Megatron-LM &&' docker/Dockerfile
+            awk '
+              { print }
+              /^ARG MEGATRON_BRANCH=/ { print "ARG MEGATRON_COMMIT=\"\"" }
+            ' docker/Dockerfile > docker/Dockerfile.patched
+            mv docker/Dockerfile.patched docker/Dockerfile
+            sed -i \
+              's/cd Megatron-LM \&\&/cd Megatron-LM \&\& git checkout -f ${MEGATRON_COMMIT} \&\& git submodule update --init --recursive \&\&/' \
+              docker/Dockerfile
+          fi
+
+          # Fail if upstream changes any command this workaround replaces.
+          for command in \
+            'git fetch origin ${SGLANG_BRANCH}' \
+            'git checkout -f ${MEGATRON_COMMIT}' \
+            'git checkout ${MILES_COMMIT}'; do
+            if ! grep -Fq "$command" docker/Dockerfile; then
+              echo "::error::Expected Dockerfile command not found: $command"
+              exit 1
+            fi
+          done
+          sed -i \
+            -e 's/git fetch origin ${SGLANG_BRANCH}/git fetch --depth=1 origin ${SGLANG_COMMIT}/' \
+            -e 's/git checkout -f ${MEGATRON_COMMIT}/git fetch --depth=1 origin ${MEGATRON_COMMIT} \&\& git checkout -f ${MEGATRON_COMMIT}/' \
+            -e 's/git checkout ${MILES_COMMIT}/git fetch --depth=1 origin ${MILES_COMMIT} \&\& git checkout ${MILES_COMMIT}/' \
+            docker/Dockerfile
+
+      - name: Fix DeepSelect shallow clone
+        run: |
+          # Some older DeepSeek Dockerfiles only do a shallow clone before checkout.
+          if grep -Fq 'git clone --recursive --depth 1 https://github.com/deepseek-ai/DeepSelect.git /tmp/DeepSelect' docker/Dockerfile; then
+            grep -Fq 'cd /tmp/DeepSelect && git checkout 0f03b68748b304863fdf0181a11458d04ae533a9' docker/Dockerfile
+            sed -i \
+              -e 's|git clone --recursive --depth 1 https://github.com/deepseek-ai/DeepSelect.git /tmp/DeepSelect|git clone --depth 1 https://github.com/deepseek-ai/DeepSelect.git /tmp/DeepSelect|' \
+              -e 's|cd /tmp/DeepSelect \&\& git checkout 0f03b68748b304863fdf0181a11458d04ae533a9|cd /tmp/DeepSelect \&\& git fetch --depth=1 origin 0f03b68748b304863fdf0181a11458d04ae533a9 \&\& git checkout --detach FETCH_HEAD|' \
+              docker/Dockerfile
+          fi
+
+      - name: Resolve Miles commit
+        id: miles
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and publish
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          pull: true
+          tags: modalresearch/miles:${{ inputs.tag }}
+          build-args: |
+            MILES_COMMIT=${{ steps.miles.outputs.sha }}
+            SGLANG_COMMIT=${{ inputs.sglang_commit }}
+            MEGATRON_COMMIT=${{ inputs.megatron_commit }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/radixark/miles
+            org.opencontainers.image.revision=${{ steps.miles.outputs.sha }}
+
+      - name: Summarize published image
+        env:
+          IMAGE_TAG: ${{ inputs.tag }}
+          MILES_SHA: ${{ steps.miles.outputs.sha }}
+          SGLANG_COMMIT: ${{ inputs.sglang_commit }}
+          MEGATRON_COMMIT: ${{ inputs.megatron_commit }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo '### Published Miles image'
+            echo "- Image: \`modalresearch/miles:${IMAGE_TAG}\`"
+            echo "- Digest: \`modalresearch/miles@${IMAGE_DIGEST}\`"
+            echo "- Miles commit: \`${MILES_SHA}\`"
+            echo "- SGLang commit: \`${SGLANG_COMMIT}\`"
+            echo "- Megatron commit: \`${MEGATRON_COMMIT}\`"
+            echo '- Platform: `linux/amd64`'
+          } >> "$GITHUB_STEP_SUMMARY"

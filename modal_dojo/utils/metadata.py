@@ -494,7 +494,7 @@ def _read_metadata_records(
             )
             records: list[dict[str, Any]] = []
             failure: BaseException | None = None
-            for entry, result in zip(entries, results, strict=True):
+            for _entry, result in zip(entries, results, strict=True):
                 if result is None:
                     continue
                 if isinstance(result, BaseException):

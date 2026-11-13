@@ -10,6 +10,8 @@ import time
 import uuid
 from dataclasses import dataclass
 
+from rich.text import Text
+
 from .errors import CLIError
 from .output import print_note
 from .setup import ProxyAuthMode, setup
@@ -109,7 +111,9 @@ class ModalResources:
                 text=True,
                 timeout=10,
             )
-            containers = json.loads(result.stdout)
+            # Jupyter sets FORCE_COLOR=1, so Modal's Rich output includes ANSI
+            # codes even with --json. See https://github.com/modal-projects/modal-dojo/pull/787.
+            containers = json.loads(Text.from_ansi(result.stdout).plain)
             if not isinstance(containers, list):
                 raise ValueError(f"Unexpected container list for {app_id}")
             if not containers:

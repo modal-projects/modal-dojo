@@ -8,10 +8,16 @@ import random
 import re
 import tempfile
 import threading
+from argparse import Namespace
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from typing import TYPE_CHECKING, Protocol
 
 import modal
 from PIL import Image
+
+if TYPE_CHECKING:
+    from modal_dojo import Endpoint, ParsedResponse
 
 
 _JS_FENCE = re.compile(r"```(?:javascript|js)\s*\n(.*?)```", re.DOTALL)
@@ -45,7 +51,9 @@ _KNOWN = frozenset(BRUSH_METHODS) | {"load"}
 MIN_PAINT_FRACTION = 0.005
 
 
-def extract_sketch(response: str, parse_response) -> str | None:
+def extract_sketch(
+    response: str, parse_response: Callable[[str], "ParsedResponse"]
+) -> str | None:
     parsed = parse_response(response)
     m = _JS_FENCE.search(parsed.content or "")
     if not m:
@@ -331,7 +339,9 @@ Which one is the better hibiscus watercolour? Prefer a recognisable flower with 
 Answer with strict JSON only: {"winner": "A" or "B", "why": "<8 words>"}"""
 
 
-def judge_pair(candidate: bytes, reference: bytes, flip: bool, judge):
+def judge_pair(
+    candidate: bytes, reference: bytes, flip: bool, judge: "Endpoint"
+) -> float | None:
     def uri(png: bytes) -> str:
         return "data:image/png;base64," + base64.b64encode(png).decode()
 
@@ -374,7 +384,7 @@ def judge_pair(candidate: bytes, reference: bytes, flip: bool, judge):
     return float((winner == "A") != flip)
 
 
-def judge_win_rate(png: bytes, judge) -> tuple[float | None, dict]:
+def judge_win_rate(png: bytes, judge: "Endpoint") -> tuple[float | None, dict]:
     refs = pick_references(JUDGE_REFS)
     jobs = [(ref, flip) for ref in refs for flip in (False, True)]
     with ThreadPoolExecutor(max_workers=max(len(jobs), 1)) as pool:
@@ -423,7 +433,7 @@ def length_score(source: str) -> float:
 
 
 def score_png(
-    png: bytes | None, code: str, judge, render_meta: dict
+    png: bytes | None, code: str, judge: "Endpoint", render_meta: dict
 ) -> tuple[float | None, dict, bytes | None]:
     if png is None:
         if render_meta.get("render") == "unavailable":
@@ -452,7 +462,13 @@ def score_png(
     return round(reward, 4), meta, png
 
 
-def skip_infra_rewards(args, samples):
+class RewardedSample(Protocol):
+    reward: float | None
+
+
+def skip_infra_rewards(
+    args: Namespace, samples: list[RewardedSample]
+) -> tuple[list[float], list[float]]:
     raw = []
     kept = []
     for sample in samples:

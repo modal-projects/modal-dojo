@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal
 from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
-from modal_dojo.common.patches import encode_patch
+from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
 from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
@@ -46,7 +46,13 @@ def _encode_patches(*names: str) -> list[str]:
 
 
 def _image_patches() -> list[str]:
-    return _encode_patches(*_SHARED_PATCHES)
+    # Only this image's Megatron predates NVIDIA/Megatron-LM#3633, so it alone still
+    # forks out of the Ray actor on torch_dist save. Newer Miles images skip it.
+    nofork = encode_patch("patch_dist_ckpt_nofork", _MEGATRON_PATCHES)
+    return [
+        f"echo {nofork} | base64 -d | python3",
+        *_encode_patches(*_SHARED_PATCHES),
+    ]
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
@@ -55,7 +61,10 @@ class _InklingSmallRecipe(MilesRecipe):
 
     modality: Literal["text", "vision"] = "text"
 
-    docker_image: str = "radixark/miles:dev-202608041247"
+    docker_image: str = (
+        "modalresearch/miles:dojo-dev-202608041247-1@sha256:"
+        "feff3d2eb432de7bd513b4d0df52f70d0b00e5429ba5610a4176d73f286a0c92"
+    )
     image_run_commands: list[str] = field(default_factory=_image_patches)
     memory: tuple[int, int] = (1024, int(2 * 1024 * 1024))
 

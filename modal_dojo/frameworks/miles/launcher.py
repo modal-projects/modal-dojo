@@ -8,7 +8,7 @@ import subprocess
 import shutil
 import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from modal import App, Image, __version__ as MODAL_VERSION
 
@@ -122,7 +122,6 @@ _REPORTING_PATCH_COMMANDS = (
 _PATCH_DIST_CKPT_QUANTIZED_B64 = encode_patch(
     "patch_dist_ckpt_quantized", _MEGATRON_PATCHES
 )
-_PATCH_DIST_CKPT_NOFORK_B64 = encode_patch("patch_dist_ckpt_nofork", _MEGATRON_PATCHES)
 _PATCH_CHECKPOINT_SAVE_B64 = encode_patch("patch_checkpoint_save", _MEGATRON_PATCHES)
 _PATCH_CHECKPOINT_COMMIT_B64 = encode_patch(
     "patch_checkpoint_commit", _MEGATRON_PATCHES
@@ -182,7 +181,6 @@ def _build_miles_base_image(
             f"rm -rf {HF_CACHE_PATH} 2>/dev/null || true",
             f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3",
             f"echo {_PATCH_DIST_CKPT_QUANTIZED_B64} | base64 -d | python3",
-            f"echo {_PATCH_DIST_CKPT_NOFORK_B64} | base64 -d | python3",
             (
                 f"if test -f {_MEGATRON_TORCH_STRATEGY_PY}; then "
                 f"echo {_PATCH_CHECKPOINT_SAVE_B64} | base64 -d | python3; "
@@ -269,10 +267,10 @@ def _remap_kernel_cache_dirs(
         "SGLANG_CACHE_DIR",
     ):
         cache_dir = environment.get(key)
-        if cache_dir and Path(cache_dir).is_relative_to(CHECKPOINTS_PATH):
+        if cache_dir and PurePosixPath(cache_dir).is_relative_to(CHECKPOINTS_PATH):
             environment[key] = str(
-                Path(checkpoints_mount_path)
-                / Path(cache_dir).relative_to(CHECKPOINTS_PATH)
+                PurePosixPath(checkpoints_mount_path)
+                / PurePosixPath(cache_dir).relative_to(CHECKPOINTS_PATH)
             )
     return environment
 
@@ -785,13 +783,11 @@ def build_miles_app(
                     await _prepare_shared_inputs()
             except BaseException as exc:
                 os.makedirs(os.path.dirname(prep_error), exist_ok=True)
-                with open(prep_error, "w") as f:
-                    f.write(repr(exc))
+                await asyncio.to_thread(Path(prep_error).write_text, repr(exc))
                 await checkpoints_volume.commit.aio()
                 raise
             os.makedirs(os.path.dirname(prep_marker), exist_ok=True)
-            with open(prep_marker, "w") as f:
-                f.write(str(time.time()))
+            await asyncio.to_thread(Path(prep_marker).write_text, str(time.time()))
             await checkpoints_volume.commit.aio()
         else:
             deadline = time.time() + download_timeout + dataset_timeout
@@ -801,11 +797,11 @@ def build_miles_app(
                     data_volume.reload.aio(),
                     checkpoints_volume.reload.aio(),
                 )
-                if os.path.exists(prep_marker):
+                if await asyncio.to_thread(os.path.exists, prep_marker):
                     break
-                if os.path.exists(prep_error):
-                    with open(prep_error) as f:
-                        raise RuntimeError(f"Head preparation failed: {f.read()}")
+                if await asyncio.to_thread(os.path.exists, prep_error):
+                    error = await asyncio.to_thread(Path(prep_error).read_text)
+                    raise RuntimeError(f"Head preparation failed: {error}")
                 if time.time() > deadline:
                     raise RuntimeError("Timed out waiting for head preparation marker")
                 await asyncio.sleep(5)
