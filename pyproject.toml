@@ -33,6 +33,15 @@ spindle = [
     "tml-renderers==0.2.0",
     "tinker-cookbook==0.5.9",
 ]
+# Adds deploying a Spindle server per run, the fallback to an existing server.
+spindle-deploy = [
+    "modal-dojo[spindle]",
+    "modal-spindle==0.1.5; python_version == '3.12'",
+]
+
+# modal-spindle is not on PyPI; `uv sync --extra spindle-deploy` from a checkout installs this release.
+[tool.uv.sources]
+modal-spindle = { git = "https://github.com/modal-projects/spindle.git", tag = "v0.1.5" }
 
 [build-system]
 requires = ["hatchling"]

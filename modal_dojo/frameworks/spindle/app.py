@@ -17,6 +17,10 @@ if TYPE_CHECKING:
 
 # Harbor sandboxes build from task directories, which are shipped to here.
 HARBOR_TASKS_PATH = "/root/harbor_tasks"
+# The spindle-deploy extra's release; modal-spindle is not on PyPI.
+SPINDLE_DEPLOY_REQUIREMENT = (
+    "modal-spindle @ git+https://github.com/modal-projects/spindle.git@v0.1.5"
+)
 
 
 def launch(recipe, *, show_output: bool = True) -> TrainingRun:
@@ -38,8 +42,12 @@ def launch(recipe, *, show_output: bool = True) -> TrainingRun:
     program = recipe.program
     max_tokens = _max_tokens(program)
     # Fail on a bad key, model or context before creating a run or an app.
-    server = check_server(
-        recipe.base_url, recipe._api_key, program.model_name, max_tokens=max_tokens
+    server = (
+        check_server(
+            recipe.base_url, recipe._api_key, program.model_name, max_tokens=max_tokens
+        )
+        if recipe.deploy_config is None
+        else {}
     )
     training_run_id = create_hash(
         program.model_name, "", f"SpindleRecipe:{Framework.SPINDLE.value}", "", ""
@@ -112,7 +120,10 @@ def build_spindle_app(
         modal.Image.debian_slim(python_version="3.12")
         # tinker-cookbook records the code state with git.
         .apt_install("git")
-        .uv_pip_install(*spindle_requirements())
+        .uv_pip_install(
+            *spindle_requirements(),
+            *([SPINDLE_DEPLOY_REQUIREMENT] if recipe.deploy_config else []),
+        )
         .add_local_python_source("modal_dojo", copy=True)
     )
     image = mount_caller_source(mount_tools_dir(image), caller_script)
@@ -122,6 +133,7 @@ def build_spindle_app(
     )
     checkpoints = volumes[checkpoints_path]
     base_url = recipe.base_url
+    deploy_config = recipe.deploy_config
     app = modal.App(
         training_run_id,
         tags=build_app_tags(
@@ -137,7 +149,11 @@ def build_spindle_app(
         volumes=volumes,
         # The key stays out of the pickled function.
         secrets=[
-            modal.Secret.from_dict({"TINKER_API_KEY": recipe._api_key}),
+            *(
+                [modal.Secret.from_dict({"TINKER_API_KEY": recipe._api_key})]
+                if recipe._api_key
+                else []
+            ),
             *proxy_auth_secrets(),
             *hf_secrets(),
         ],
@@ -145,6 +161,9 @@ def build_spindle_app(
         memory=recipe.memory,
         timeout=24 * 60 * 60,
         retries=modal.Retries(max_retries=recipe.max_retries, initial_delay=0.0),
+        # Modal reschedules a preempted input whatever its retries, which would
+        # deploy a second server and could leak the first one's GPU apps.
+        nonpreemptible=deploy_config is not None,
         single_use_containers=True,
         serialized=True,
         name="train",
@@ -167,6 +186,7 @@ def build_spindle_app(
                 base_url=base_url,
                 log_dir=log_dir,
                 max_tokens=max_tokens,
+                deploy_config=deploy_config,
             )
         finally:
             await checkpoints.commit.aio()
