@@ -17,7 +17,7 @@ from modal_dojo.common import (
     proxy_auth_secrets,
 )
 from modal_dojo.common.checkpoint import Checkpoint
-from modal_dojo.common.dataset import DatasetConfig, HarborDataset, _SftDataset
+from modal_dojo.common.dataset import DatasetConfig, HarborTasks, _SftDataset
 from modal_dojo.common.framework import (
     Framework,
     mount_tools_dir,
@@ -79,6 +79,7 @@ from modal_dojo.train_recipes.miles_recipe.recipe import (
 from modal_dojo.common.budget import driver_budget_env
 from modal_dojo.common.budget_stop_patch import encoded_patch as budget_stop_patch
 from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
+from modal_dojo.frameworks.miles import harbor
 from modal_dojo.frameworks.miles.modal_helpers.utils import (
     build_train_cmd,
     get_checkpoint_conversion_policy,
@@ -101,10 +102,8 @@ RDMA_RUNTIME_INSTALL_COMMAND = (
     "--reinstall libibverbs1 ibverbs-providers && "
     "rm -rf /var/lib/apt/lists/*"
 )
-# v0.8.0+ makes per-task CPU/memory requests configurable via enforcement
-# policies ("limit"/"ignore"), letting sandboxes burst on Modal and bill by
-# actual CPU-/RAM-second usage instead of over-provisioning a static reservation.
-HARBOR_PKG_VERSION = "0.8.0"
+HARBOR_PKG_VERSION = "0.25.0"
+HARBOR_TASKS_PATH = "/root/harbor_tasks"
 
 _MILES_PATCHES = Path(__file__).parent / "modal_helpers" / "patches"
 _PATCH_SGLANG_ABORT_B64 = encode_patch("patch_sglang_abort", _MILES_PATCHES)
@@ -173,9 +172,9 @@ def _unresumable_save_dirs(save_root: str) -> list[str]:
 
 def _build_miles_base_image(
     recipe: MilesRecipe,
-    dataset: DatasetConfig | None = None,
-    eval_dataset: DatasetConfig | None = None,
     caller_script: str | None = None,
+    *,
+    uses_harbor: bool = False,
 ) -> Image:
     image = (
         Image.from_registry(recipe.docker_image)
@@ -234,8 +233,8 @@ def _build_miles_base_image(
         image = recipe.image_overlay(image)
         recipe.image_overlay = None
 
-    if isinstance(dataset, HarborDataset) or isinstance(eval_dataset, HarborDataset):
-        image = image.uv_pip_install(f"harbor=={HARBOR_PKG_VERSION}")
+    if uses_harbor:
+        image = image.uv_pip_install(f"harbor[modal]=={HARBOR_PKG_VERSION}")
 
     image = apply_metric_image(image, recipe.metrics)
     image = image.add_local_python_source("modal_dojo", copy=True)
@@ -257,6 +256,25 @@ def _build_miles_base_image(
     )
 
     return image
+
+
+def _ship_harbor_tasks(
+    image: Image, *datasets: DatasetConfig | None
+) -> tuple[Image, list[DatasetConfig | None]]:
+    remote_roots: dict[Path, str] = {}
+    shipped = []
+    for ds in datasets:
+        if isinstance(ds, HarborTasks):
+            local = ds._resolve_task_root()
+            if local not in remote_roots:
+                remote_roots[local] = f"{HARBOR_TASKS_PATH}/{len(remote_roots)}"
+                image = image.add_local_dir(
+                    local, remote_path=remote_roots[local], copy=True
+                )
+            ds = copy.copy(ds)
+            ds.path = remote_roots[local]
+        shipped.append(ds)
+    return image, shipped
 
 
 def _remap_kernel_cache_dirs(
@@ -368,7 +386,13 @@ def build_miles_app(
 
     _caller_module, caller_script = resolve_caller_context()
 
-    image = _build_miles_base_image(miles, dataset, eval_dataset, caller_script)
+    uses_harbor = isinstance(dataset, HarborTasks)
+    image = _build_miles_base_image(miles, caller_script, uses_harbor=uses_harbor)
+    if uses_harbor:
+        image, (dataset, eval_dataset) = _ship_harbor_tasks(
+            image, dataset, eval_dataset
+        )
+        miles.extra_config = {**harbor.AGENT_CONFIG, **(miles.extra_config or {})}
     # Encoded patch scripts belong in the image, not every worker's closure.
     # Keeping them here can exceed Modal's 64 KiB serialized-function limit.
     miles.image_run_commands = []
