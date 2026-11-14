@@ -53,6 +53,7 @@ Repo: https://github.com/modal-projects/modal-dojo
 - [Teaching a robot arm to move blocks](https://dojo.modal.dev/tutorials/pick_and_place)
 - [Massively-parallel hyperparameter sweeps](https://dojo.modal.dev/tutorials/param_sweep)
 - [Frontier-scale training](https://dojo.modal.dev/tutorials/multinode)
+- [Training an agent harness on Harbor tasks](https://dojo.modal.dev/tutorials/pi_harbor)
 
 ## Reference
 
@@ -97,7 +98,8 @@ Repo: https://github.com/modal-projects/modal-dojo
 ### Datasets
 
 - [DatasetConfig](https://dojo.modal.dev/reference/datasetconfig)
-- [HarborDataset](https://dojo.modal.dev/reference/harbordataset)
+- [HarborAgent](https://dojo.modal.dev/reference/harboragent)
+- [HarborTasks](https://dojo.modal.dev/reference/harbortasks)
 - [HuggingFaceDataset](https://dojo.modal.dev/reference/huggingfacedataset)
 - [MultimodalDataset](https://dojo.modal.dev/reference/multimodaldataset)
 - [OnlineRollout](https://dojo.modal.dev/reference/onlinerollout)

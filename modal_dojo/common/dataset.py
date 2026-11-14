@@ -13,9 +13,6 @@ from enum import Enum
 from typing import Any, Literal
 import hashlib
 import json
-import random
-import shutil
-import tomllib
 from pathlib import Path
 
 from modal_dojo.common.errors import DojoConfigError
@@ -133,9 +130,9 @@ class _SftDataset(DatasetConfig):
             raise DojoConfigError(
                 "input_format='raw' is not supported with loss_type='sft_loss'"
             )
-        if isinstance(inner, HarborDataset):
+        if isinstance(inner, HarborTasks):
             raise DojoConfigError(
-                "HarborDataset is not supported with loss_type='sft_loss'"
+                "HarborTasks is not supported with loss_type='sft_loss'"
             )
         self._inner = inner
 
@@ -298,348 +295,70 @@ class HuggingFaceDataset(DatasetConfig):
             ds.to_json(path, orient="records", lines=True)
 
 
-class HarborDataset(DatasetConfig):
-    """A dataset loaded from Harbor tasks.
+class HarborAgent:
+    """A Harbor agent harness that solves each Harbor task in its own Modal Sandbox.
 
     Attributes:
-        dataset_name: Harbor dataset ID.
-        path: Local Harbor dataset path.
-        task_root: Local directory containing Harbor tasks.
-        task_glob: Glob used to select task directories.
-        task_names: Explicit task directory names to select.
-        instruction_path: Relative path to each task instruction.
-        label_metadata_path: Relative JSON or TOML metadata path.
-        test_data_dir: Relative directory containing test data.
-        prompt_template: Template applied to each task instruction.
-        system_prompt: System message added to each prompt.
-        train_size: Number of tasks in the training split.
-        eval_size: Number of tasks in the evaluation split.
-        train_repeats: Repetitions of each training row.
-        eval_repeats: Repetitions of each evaluation row.
-        shuffle_tasks: Shuffle tasks before splitting.
-        shuffle_seed: Seed used to shuffle tasks.
+        name: Harbor agent name, such as ``"pi"``.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+class HarborTasks(DatasetConfig):
+    """Harbor tasks, each solved by an agent in its own Modal Sandbox.
+
+    Attributes:
+        agent: Agent that solves each task.
+        path: Local directory whose subdirectories are Harbor tasks.
+        task_glob: Glob, relative to ``path``, selecting task directories.
     """
 
     _type: DatasetType = DatasetType.HARBOR
 
-    def __init__(
-        self,
-        *,
-        split: Literal["all", "train", "eval"] = "train",
-        dataset_name: str = "",
-        path: str | None = None,
-        task_root: str = "",
-        task_glob: str = "*",
-        task_names: list[str] | None = None,
-        instruction_path: str = "instruction.md",
-        label_metadata_path: str | None = None,
-        test_data_dir: str | None = None,
-        prompt_template: str = "{instruction}",
-        system_prompt: str = "",
-        train_size: int | None = None,
-        eval_size: int | None = None,
-        train_repeats: int = 1,
-        eval_repeats: int = 1,
-        shuffle_tasks: bool = False,
-        shuffle_seed: int = 0,
-        always_download: bool = False,
-    ) -> None:
-        if split not in ("all", "train", "eval"):
-            raise DojoConfigError(f"split must be one of all/train/eval, got {split!r}")
-        self.split = split
-        self.dataset_name = dataset_name
+    def __init__(self, *, agent: HarborAgent, path: str, task_glob: str = "*") -> None:
+        self.agent = agent
         self.path = path
-        self.task_root = task_root
         self.task_glob = task_glob
-        self.task_names = task_names
-        self.instruction_path = instruction_path
-        self.label_metadata_path = label_metadata_path
-        self.test_data_dir = test_data_dir
-        self.prompt_template = prompt_template
-        self.system_prompt = system_prompt
-        self.train_size = train_size
-        self.eval_size = eval_size
-        self.train_repeats = train_repeats
-        self.eval_repeats = eval_repeats
-        self.shuffle_tasks = shuffle_tasks
-        self.shuffle_seed = shuffle_seed
-        self.always_download = always_download
-
-    def cache_key(self) -> str | None:
-        if self.always_download:
-            return None
-        return _materialization_fingerprint(
-            {
-                "dataset_name": self.dataset_name,
-                "path": self.path,
-                "task_root": self.task_root,
-                "task_glob": self.task_glob,
-                "task_names": self.task_names,
-                "instruction_path": self.instruction_path,
-                "label_metadata_path": self.label_metadata_path,
-                "test_data_dir": self.test_data_dir,
-                "prompt_template": self.prompt_template,
-                "system_prompt": self.system_prompt,
-                "train_size": self.train_size,
-                "eval_size": self.eval_size,
-                "train_repeats": self.train_repeats,
-                "eval_repeats": self.eval_repeats,
-                "shuffle_tasks": self.shuffle_tasks,
-                "shuffle_seed": self.shuffle_seed,
-                "split": self.split,
-            }
-        )
 
     def input_key(self) -> str:
         return "messages"
 
     def label_key(self) -> str:
-        return "label"
-
-    def _harbor_dataset_ref(self) -> str:
-        if "@" in self.dataset_name:
-            return self.dataset_name
-        return f"{self.dataset_name}@latest"
-
-    def _harbor_cache_dir(self) -> Path:
-        slug = self._harbor_dataset_ref().replace("/", "--").replace("@", "--")
-        return Path.home() / ".cache" / "harbor" / "datasets" / slug
-
-    def _download_harbor_dataset(self, cache_dir: Path) -> None:
-        import subprocess
-
-        ref = self._harbor_dataset_ref()
-        harbor_bin = shutil.which("harbor")
-        if harbor_bin is not None:
-            cmd = [
-                harbor_bin,
-                "datasets",
-                "download",
-                ref,
-                "--output-dir",
-                str(cache_dir),
-            ]
-        else:
-            uvx_bin = shutil.which("uvx")
-            if uvx_bin is None:
-                raise FileNotFoundError(
-                    "Harbor CLI not found. Install `harbor` or `uvx` to download "
-                    f"{self.dataset_name!r}."
-                )
-            cmd = [
-                uvx_bin,
-                "harbor",
-                "datasets",
-                "download",
-                ref,
-                "--output-dir",
-                str(cache_dir),
-            ]
-        subprocess.run(cmd, check=True)
-
-    def _pull_harbor_dataset(self) -> Path:
-        cache_dir = self._harbor_cache_dir()
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        if not any(cache_dir.rglob(self.instruction_path)):
-            self._download_harbor_dataset(cache_dir)
-        task_root = self._discover_task_root(cache_dir)
-        if not any(task_root.rglob(self.instruction_path)):
-            raise FileNotFoundError(f"No Harbor tasks found under {cache_dir}")
-        return task_root
-
-    def _discover_task_root(self, search_root: Path) -> Path:
-        task_dirs = sorted(
-            {
-                instruction_file.parent
-                for instruction_file in search_root.rglob(self.instruction_path)
-                if instruction_file.is_file()
-            }
-        )
-        if not task_dirs:
-            return search_root
-        if len(task_dirs) == 1:
-            return task_dirs[0].parent
-        import os
-
-        return Path(os.path.commonpath([str(path) for path in task_dirs]))
+        return None
 
     def _resolve_task_root(self) -> Path:
-        if self.path:
-            task_root = Path(self.path).resolve()
-        elif self.dataset_name:
-            task_root = self._pull_harbor_dataset()
-        elif self.task_root:
-            task_root = Path(self.task_root).resolve()
-        else:
-            raise DojoConfigError(
-                f"{type(self).__name__} requires dataset_name, path, or task_root"
-            )
+        task_root = Path(self.path).resolve()
         if not task_root.exists():
             raise FileNotFoundError(f"task root does not exist: {task_root}")
         if not task_root.is_dir():
             raise DojoConfigError(f"task root is not a directory: {task_root}")
         return task_root
 
-    def _candidate_task_dirs(self, task_root: Path) -> list[Path]:
-        if self.task_names is not None:
-            return [
-                (task_root / name).resolve()
-                for name in self.task_names
-                if (task_root / name).is_dir()
-            ]
-        return sorted(
-            path.resolve() for path in task_root.glob(self.task_glob) if path.is_dir()
-        )
-
-    def _iter_task_dirs(self) -> list[Path]:
-        task_root = self._resolve_task_root()
-        task_dirs = self._candidate_task_dirs(task_root)
-        if not task_dirs:
-            discovered_root = self._discover_task_root(task_root)
-            if discovered_root != task_root:
-                task_root = discovered_root
-                task_dirs = self._candidate_task_dirs(task_root)
-        if self.shuffle_tasks:
-            rng = random.Random(self.shuffle_seed)
-            rng.shuffle(task_dirs)
-        if not task_dirs:
-            raise DojoConfigError(f"No Harbor tasks found under {task_root}")
-        if self.train_size is not None:
-            max_tasks = self.train_size + (self.eval_size or 0)
-            task_dirs = task_dirs[:max_tasks]
-        return task_dirs
-
-    def _read_label_metadata(self, task_dir: Path) -> dict[str, Any]:
-        if not self.label_metadata_path:
-            return {}
-        metadata_path = task_dir / self.label_metadata_path
-        if not metadata_path.exists():
-            return {}
-        if metadata_path.suffix == ".json":
-            data = json.loads(metadata_path.read_text(encoding="utf-8"))
-        elif metadata_path.suffix == ".toml":
-            data = tomllib.loads(metadata_path.read_text(encoding="utf-8"))
-        else:
-            raise DojoConfigError(
-                f"Unsupported label metadata file type for {metadata_path}; expected .json or .toml"
-            )
-        if not isinstance(data, dict):
-            raise DojoConfigError(
-                f"Label metadata must decode to an object: {metadata_path}"
-            )
-        return data
-
-    def _read_test_data(self, task_dir: Path) -> list[dict[str, str]]:
-        assert self.test_data_dir is not None
-        tests_dir = task_dir / self.test_data_dir
-        test_cases: list[dict[str, str]] = []
-        if not tests_dir.is_dir():
-            return test_cases
-        for in_file in sorted(tests_dir.glob("*.in")):
-            out_file = in_file.with_suffix(".out")
-            if out_file.exists():
-                test_cases.append(
-                    {
-                        "input": in_file.read_text(encoding="utf-8"),
-                        "expected_output": out_file.read_text(encoding="utf-8"),
-                    }
-                )
-        return test_cases
-
-    def _build_label(self, task_root: Path, task_dir: Path) -> dict[str, Any]:
-        rel = task_dir.relative_to(task_root)
-        rel_with_root = (Path(task_root.name) / rel).as_posix()
-        label: dict[str, Any] = {
-            "harbor_task_name": task_dir.name,
-            "harbor_task_path": task_dir.as_posix(),
-            "harbor_task_rel": rel_with_root,
-        }
-        label.update(self._read_label_metadata(task_dir))
-        if self.test_data_dir:
-            label["test_cases"] = self._read_test_data(task_dir)
-        return label
-
-    def _format_prompt(
-        self, *, instruction: str, task_dir: Path, label: dict[str, Any]
-    ) -> str:
-        context = {
-            "instruction": instruction,
-            "task_name": task_dir.name,
-            "task_path": task_dir.as_posix(),
-            **label,
-        }
-        return self.prompt_template.format(**context).strip()
-
-    def _build_row(self, task_root: Path, task_dir: Path) -> dict[str, Any]:
-        instruction_file = task_dir / self.instruction_path
-        if not instruction_file.exists():
+    def _build_row(self, task_dir: Path) -> dict[str, Any]:
+        instruction_file = task_dir / "instruction.md"
+        if not instruction_file.is_file():
             raise FileNotFoundError(
-                f"instruction file does not exist for Harbor task {task_dir.name}: {instruction_file}"
+                f"Harbor task {task_dir.name} has no instruction.md: {instruction_file}"
             )
         instruction = instruction_file.read_text(encoding="utf-8").strip()
-        label = self._build_label(task_root, task_dir)
-        user_prompt = self._format_prompt(
-            instruction=instruction, task_dir=task_dir, label=label
-        )
-        messages = []
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
-        messages.append({"role": "user", "content": user_prompt})
         return {
-            self.input_key(): messages,
-            self.label_key(): json.dumps(label, separators=(",", ":")),
+            self.input_key(): [{"role": "user", "content": instruction}],
+            "metadata": {
+                "harbor_task_path": task_dir.as_posix(),
+                "harbor_agent": self.agent.name,
+            },
         }
 
-    @staticmethod
-    def _repeat_rows(rows: list[dict[str, Any]], repeats: int) -> list[dict[str, Any]]:
-        repeats = max(1, repeats)
-        return [row for row in rows for _ in range(repeats)]
-
-    def load(self, split: Literal["all", "train", "eval"] = "all") -> Any:
-        task_root = self._resolve_task_root()
-        out = []
-        for task_dir in self._iter_task_dirs():
-            instruction_file = task_dir / self.instruction_path
-            if not instruction_file.exists():
-                raise FileNotFoundError(
-                    f"instruction file does not exist for Harbor task {task_dir.name}: {instruction_file}"
-                )
-            label = self._build_label(task_root, task_dir)
-            out.append(
-                {
-                    "task_name": task_dir.name,
-                    "task_path": task_dir.as_posix(),
-                    "instruction": instruction_file.read_text(encoding="utf-8").strip(),
-                    "label": label,
-                }
-            )
-        if self.train_size is not None:
-            if split == "train":
-                return out[: self.train_size]
-            if split == "eval":
-                return out[self.train_size : self.train_size + (self.eval_size or 0)]
-        return out
-
     def rows(self) -> Iterable[DatasetRow]:
-        task_root = self._resolve_task_root()
-        base_rows = [
-            self._build_row(task_root, task_dir) for task_dir in self._iter_task_dirs()
-        ]
-        if self.split == "all":
-            return base_rows
-        if self.train_size is None:
-            selected = base_rows
-        else:
-            train_size = max(1, min(int(self.train_size), len(base_rows)))
-            if self.split == "train":
-                selected = base_rows[:train_size]
-            else:
-                selected = (
-                    base_rows[train_size : train_size + (self.eval_size or 0)]
-                    or base_rows
-                )
-        repeats = self.train_repeats if self.split == "train" else self.eval_repeats
-        return self._repeat_rows(selected, int(repeats))
+        root = self._resolve_task_root()
+        task_dirs = sorted(p for p in root.glob(self.task_glob) if p.is_dir())
+        if not task_dirs:
+            raise DojoConfigError(
+                f"No Harbor tasks match {self.task_glob!r} under {root}"
+            )
+        return [self._build_row(task_dir) for task_dir in task_dirs]
 
 
 class MultimodalDataset(DatasetConfig):

@@ -41,8 +41,12 @@
       "link": "/reference/gpuallocationerror"
     },
     {
-      "label": "HarborDataset",
-      "link": "/reference/harbordataset"
+      "label": "HarborAgent",
+      "link": "/reference/harboragent"
+    },
+    {
+      "label": "HarborTasks",
+      "link": "/reference/harbortasks"
     },
     {
       "label": "HFModelConfiguration",
