@@ -56,8 +56,9 @@
     timingRunStart,
   } from "../lib/timing.js";
 
-  // Newest historical log lines fetched for the selected time range.
-  const HIST_MAX_LINES = 2000;
+  // Newest historical log entries fetched for the selected time range. Matches
+  // the CLI's `--tail` maximum (MAX_LOG_TAIL) and Modal's per-fetch limit.
+  const HIST_MAX_LINES = 20000;
 
   /** @typedef {"summary" | "metrics" | "rollouts" | "logs"} TabId */
   const DETAIL_TABS = new Set(["summary", "metrics", "rollouts", "logs"]);

@@ -148,9 +148,8 @@ export async function fetchRollout(trainingRunId, rolloutId) {
 // A run's historical logs, read through Modal's logs API.
 //
 // Resolves to the newest `maxLines` log entries between `since` and `until`,
-// oldest first; one entry can hold several lines. To reach earlier entries,
-// move `until` back: there is no paging cursor. Omitted bounds default to the
-// run's lifetime, and `maxLines` defaults to 100 on the server.
+// oldest first; one entry can hold several lines. Omitted bounds default to
+// the run's lifetime, and `maxLines` defaults to 100 on the server.
 export async function fetchRunLogs(
   trainingRunId,
   { since, until, maxLines, search, signal } = {},
