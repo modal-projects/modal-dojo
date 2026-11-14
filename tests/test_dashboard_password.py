@@ -146,8 +146,6 @@ def stub_deploy(monkeypatch):
     dashboard = SimpleNamespace(
         app=mocks.app,
         fastapi_app=Mock(get_web_url=lambda: "https://dash.test"),
-        ensure_creds_secret=lambda **_k: True,
-        MODAL_CREDS_SECRET_NAME="creds",
     )
     monkeypatch.setattr(
         cli_setup, "_load_dashboard_for_deploy", lambda *_a, **_k: dashboard
