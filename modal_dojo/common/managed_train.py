@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING, Any
 
+from modal_dojo.common.budget import Budget
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.train import TrainConfig
 
@@ -39,7 +40,7 @@ class ManagedTrainConfig:
 
     ```python
     env = Environment(dataset=my_dataset, reward_fn=my_reward)
-    run = ManagedTrainConfig(Qwen3_5_4B(), env, num_rollout=100).train()
+    run = ManagedTrainConfig(Qwen3_5_4B(), env, Budget(max_cost_usd=50)).train()
     ```
 
     The recipe is the model's preset (slime's if it has one, otherwise
@@ -48,7 +49,10 @@ class ManagedTrainConfig:
     - ``custom_rm_function`` is ``environment.reward_fn``, and
       ``custom_generate_function`` is ``environment.generate_fn`` when it has
       one.
-    - ``num_rollout`` is the number of training steps.
+    - It keeps doing rollouts and training on them until any limit of
+      ``budget`` runs out, then saves a final checkpoint and stops (see
+      ``Budget``). With no ``max_rollouts``, learning-rate schedules that
+      decay over ``num_rollout`` effectively stay constant.
     - ``rollout_batch_size`` is capped at the number of tasks. When that cap
       applies, ``global_batch_size`` becomes ``rollout_batch_size *
       n_samples_per_prompt``: one on-policy update per rollout.
@@ -60,7 +64,8 @@ class ManagedTrainConfig:
     Attributes:
         model: The model to train. It must have a recipe preset.
         environment: Tasks, rollout, and reward to train on.
-        num_rollout: Training steps (rollouts).
+        budget: When to stop: after so many rollouts, dollars, or hours,
+            whichever runs out first.
         recipe_overrides: Recipe fields to set on top of the preset, such as
             ``{"n_samples_per_prompt": 8, "lr": 1e-6}``.
         train_config: The ``TrainConfig`` this builds.
@@ -70,14 +75,17 @@ class ManagedTrainConfig:
         self,
         model: ModelConfig,
         environment: Environment,
-        num_rollout: int,
+        budget: Budget,
         recipe_overrides: dict[str, Any] | None = None,
     ) -> None:
-        if num_rollout < 1:
-            raise DojoConfigError(f"num_rollout must be at least 1, got {num_rollout}")
+        if not isinstance(budget, Budget):
+            raise DojoConfigError(
+                f"budget must be a Budget, got {type(budget).__name__}; for a "
+                "fixed number of steps use Budget(max_rollouts=...)"
+            )
         self.model = model
         self.environment = environment
-        self.num_rollout = num_rollout
+        self.budget = budget
         self.recipe_overrides = dict(recipe_overrides or {})
         self.train_config = TrainConfig(
             dataset=environment.dataset,
@@ -90,6 +98,11 @@ class ManagedTrainConfig:
         env = self.environment
         overrides = self.recipe_overrides
         unknown = set(overrides) - {f.name for f in dataclasses.fields(preset)}
+        governed = {"num_rollout", "budget"} & set(overrides)
+        if governed:
+            raise DojoConfigError(
+                f"Set {sorted(governed)} through budget, not recipe_overrides"
+            )
         if unknown:
             raise DojoConfigError(
                 f"Unknown {type(preset).__name__} field(s) in recipe_overrides: "
@@ -97,7 +110,8 @@ class ManagedTrainConfig:
             )
 
         derived: dict[str, Any] = {
-            "num_rollout": self.num_rollout,
+            "num_rollout": self.budget.num_rollout,
+            "budget": self.budget,
             "custom_rm_function": env.reward_fn,
         }
         if env.generate_fn is not None:

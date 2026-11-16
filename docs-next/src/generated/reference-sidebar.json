@@ -1,6 +1,10 @@
 {
   "sdk": [
     {
+      "label": "Budget",
+      "link": "/reference/budget"
+    },
+    {
       "label": "Checkpoint",
       "link": "/reference/checkpoint"
     },

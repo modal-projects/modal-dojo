@@ -6,6 +6,7 @@ import modal
 from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
+from modal_dojo.common.budget import Budget, validate_recipe_budget
 from modal_dojo.common.dataset import DatasetConfig
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.metric_mirror import DashboardMetricConfig
@@ -77,6 +78,7 @@ _MILES_SKIP = {
     "custom_megatron_before_train_step_hook",
     "train_function_kwargs",
     "max_retries",
+    "budget",
     # Conversion-only parallelism and scratch: launcher-side, never forwarded to
     # the miles CLI.
     "conversion_tensor_model_parallel_size",
@@ -465,6 +467,11 @@ class MilesRecipe(BaseTrainRecipe):
         max_retries:
             Modal retries for the training function. Each retry resumes from
             the last checkpoint.
+        budget:
+            Stop early once training has cost or taken this much, after
+            saving a final checkpoint. ``num_rollout`` is still the most
+            rollouts it runs and must equal ``budget.max_rollouts`` when that
+            is set; ``ManagedTrainConfig`` sets it from the budget.
         capture_trace:
             Attach sampled per-request execution traces to recorded rollouts.
         trace_sample_limit:
@@ -706,6 +713,7 @@ class MilesRecipe(BaseTrainRecipe):
     image_env: dict[str, str] = field(default_factory=dict)
     train_function_kwargs: dict[str, Any] = field(default_factory=dict)
     max_retries: int = 10
+    budget: Budget | None = None
     substep_timing: Literal["auto", "off"] = "auto"
 
     # ── Per-sample execution tracing (dashboard timeline) ───────────────────
@@ -750,6 +758,7 @@ class MilesRecipe(BaseTrainRecipe):
         validate_multi_node_gpu_count(resolve_gpu_allocation(self), self.gpu_type)
         validate_expandable_segments_env(self, "miles")
         validate_loss_and_sampling_args(self, "miles")
+        validate_recipe_budget(self)
         return self
 
     @model_validator(mode="after")

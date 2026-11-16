@@ -1,6 +1,7 @@
 import pytest
 
 from modal_dojo import (
+    Budget,
     DatasetConfig,
     Environment,
     Gemma4_26B_A4B,
@@ -44,11 +45,12 @@ def test_environment_holds_dataset_and_functions():
 def test_uses_preset_and_wires_environment():
     env = Environment(_Rows(1), exact_match, generate_fn=multi_turn)
 
-    managed = ManagedTrainConfig(Qwen3_5_4B(), env, num_rollout=7)
+    managed = ManagedTrainConfig(Qwen3_5_4B(), env, Budget(max_rollouts=7))
 
     recipe = managed.recipe
     assert type(recipe) is Qwen3_5_4B_Recipe
     assert recipe.num_rollout == 7
+    assert recipe.budget == Budget(max_rollouts=7)
     assert recipe.custom_rm_function is exact_match
     assert recipe.extra_config["custom_generate_function_path"].endswith("multi_turn")
     # One task: the batch shrinks to it, one update per rollout.
@@ -63,7 +65,7 @@ def test_overrides_win_and_are_checked():
     recipe = ManagedTrainConfig(
         Qwen3_5_4B(),
         env,
-        num_rollout=3,
+        Budget(max_rollouts=3),
         recipe_overrides={"n_samples_per_prompt": 8, "lr": 1e-6},
     ).recipe
     assert (recipe.n_samples_per_prompt, recipe.global_batch_size) == (8, 8)
@@ -73,15 +75,22 @@ def test_overrides_win_and_are_checked():
 
     with pytest.raises(DojoConfigError, match="not_a_field"):
         ManagedTrainConfig(
-            Qwen3_5_4B(), env, num_rollout=3, recipe_overrides={"not_a_field": 1}
+            Qwen3_5_4B(),
+            env,
+            Budget(max_rollouts=3),
+            recipe_overrides={"not_a_field": 1},
         )
-    with pytest.raises(DojoConfigError, match="num_rollout"):
-        ManagedTrainConfig(Qwen3_5_4B(), env, num_rollout=0)
+    with pytest.raises(DojoConfigError, match="through budget"):
+        ManagedTrainConfig(
+            Qwen3_5_4B(), env, Budget(max_hours=1), recipe_overrides={"num_rollout": 5}
+        )
+    with pytest.raises(DojoConfigError, match="must be a Budget"):
+        ManagedTrainConfig(Qwen3_5_4B(), env, 10)
 
 
 def test_keeps_preset_batch_when_tasks_suffice():
     recipe = ManagedTrainConfig(
-        Qwen3_5_4B(), Environment(_Rows(3), exact_match), num_rollout=1
+        Qwen3_5_4B(), Environment(_Rows(3), exact_match), Budget(max_rollouts=1)
     ).recipe
     preset = Qwen3_5_4B_Recipe()
     assert (recipe.rollout_batch_size, recipe.global_batch_size) == (
@@ -92,11 +101,20 @@ def test_keeps_preset_batch_when_tasks_suffice():
 
 def test_falls_back_to_miles_and_rejects_unknown_models():
     env = Environment(_Rows(1), exact_match)
-    recipe = ManagedTrainConfig(Gemma4_26B_A4B(), env, num_rollout=1).recipe
+    recipe = ManagedTrainConfig(Gemma4_26B_A4B(), env, Budget(max_rollouts=1)).recipe
     assert isinstance(recipe, MilesRecipe)
 
     class Unknown(ModelConfig):
         model_name = "org/unknown"
 
     with pytest.raises(DojoConfigError, match="No recipe preset"):
-        ManagedTrainConfig(Unknown(), env, num_rollout=1)
+        ManagedTrainConfig(Unknown(), env, Budget(max_rollouts=1))
+
+
+def test_cost_and_time_budgets_run_until_spent():
+    budget = Budget(max_cost_usd=25, max_hours=2)
+    recipe = ManagedTrainConfig(
+        Qwen3_5_4B(), Environment(_Rows(4), exact_match), budget
+    ).recipe
+    assert recipe.budget is budget
+    assert recipe.num_rollout == budget.num_rollout  # stops on cost or time

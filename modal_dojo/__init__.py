@@ -35,6 +35,7 @@ _EXPORTS = {
         "modal_dojo.common.metric_mirror",
         "DashboardMetricConfig",
     ),
+    "Budget": ("modal_dojo.common.budget", "Budget"),
     "DatasetConfig": ("modal_dojo.common.dataset", "DatasetConfig"),
     "Environment": ("modal_dojo.common.environment", "Environment"),
     "ManagedTrainConfig": (
@@ -242,6 +243,7 @@ __all__ = [
     "convert_megatron_checkpoint_to_hf",
     "convert_native_lora_checkpoint_to_peft",
     "DashboardMetricConfig",
+    "Budget",
     "DatasetConfig",
     "Environment",
     "ManagedTrainConfig",

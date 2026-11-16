@@ -76,6 +76,8 @@ from modal_dojo.train_recipes.miles_recipe.recipe import (
     HF_CACHE_PATH,
     MilesRecipe,
 )
+from modal_dojo.common.budget import driver_budget_env
+from modal_dojo.common.budget_stop_patch import encoded_patch as budget_stop_patch
 from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
 from modal_dojo.frameworks.miles.modal_helpers.utils import (
     build_train_cmd,
@@ -111,6 +113,7 @@ _PATCH_ROLLOUT_STATUS_B64 = encode_patch(
 )
 _PATCH_ADVANTAGE_DIST_B64 = encode_patch("patch_advantage_distribution", _MILES_PATCHES)
 _PATCH_SUBSTEP_TIMING_B64 = encode_patch("patch_substep_timing", _MILES_PATCHES)
+_PATCH_BUDGET_STOP_B64 = budget_stop_patch(MILES_ROOT)
 _PATCH_ZERO_STD_B64 = encode_patch("patch_zero_std_metrics", _MILES_PATCHES)
 
 _REPORTING_PATCH_COMMANDS = (
@@ -329,6 +332,11 @@ def apply_source_overlays(image: Image, miles: MilesRecipe) -> Image:
             f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3"
             " || echo 'WARNING: substep timing patch did not apply to the"
             " miles_git_ref checkout; substep timings will be missing'",
+        )
+    if miles.budget is not None:
+        # After every other patch: it edits the driver loop as they leave it.
+        image = image.run_commands(
+            f"echo {_PATCH_BUDGET_STOP_B64} | base64 -d | python3"
         )
     return image
 
@@ -703,6 +711,7 @@ def build_miles_app(
         framework_status_url: str = "",
         framework_status_token: str = "",
     ):
+        started_at = time.time()  # a Budget counts from here
         cluster, modal_app_id, modal_app_url = await start_training_cluster(
             miles,
             (hf_cache_volume, data_volume, checkpoints_volume),
@@ -945,6 +954,7 @@ def build_miles_app(
                 extra_env={
                     "MODAL_DOJO_TRAINING_RUN_ID": training_run_id,
                     "MODAL_DOJO_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
+                    **driver_budget_env(miles, started_at=started_at),
                     **shared.training_reporting_env(
                         miles, model, app_name, framework_status_url
                     ),

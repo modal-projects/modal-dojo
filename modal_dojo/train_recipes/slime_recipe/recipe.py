@@ -8,6 +8,7 @@ import modal
 from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
+from modal_dojo.common.budget import Budget, validate_recipe_budget
 from modal_dojo.common.dataset import DatasetConfig
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.metric_mirror import DashboardMetricConfig
@@ -85,6 +86,7 @@ _SLIME_SKIP = {
     "image_env",
     "train_function_kwargs",
     "max_retries",
+    "budget",
     "substep_timing",
     "conversion_pipeline_model_parallel_size",
     "conversion_tensor_model_parallel_size",
@@ -416,6 +418,11 @@ class SlimeRecipe(BaseTrainRecipe):
         max_retries:
             Modal retries for the training function. Each retry resumes from
             the last checkpoint.
+        budget:
+            Stop early once training has cost or taken this much, after
+            saving a final checkpoint. ``num_rollout`` is still the most
+            rollouts it runs and must equal ``budget.max_rollouts`` when that
+            is set; ``ManagedTrainConfig`` sets it from the budget.
         capture_trace:
             Attach sampled per-request execution traces to recorded rollouts.
         trace_sample_limit:
@@ -601,6 +608,7 @@ class SlimeRecipe(BaseTrainRecipe):
     image_env: dict[str, str] = field(default_factory=dict)
     train_function_kwargs: dict[str, Any] = field(default_factory=dict)
     max_retries: int = 3
+    budget: Budget | None = None
     substep_timing: Literal["auto", "off"] = "auto"
 
     # ── Per-sample execution tracing (dashboard timeline) ───────────────────
@@ -671,6 +679,7 @@ class SlimeRecipe(BaseTrainRecipe):
         validate_megatron_actor_parallelism(self)
         validate_expandable_segments_env(self, "slime")
         validate_loss_and_sampling_args(self, "slime")
+        validate_recipe_budget(self)
         return self
 
     # ── Container → slime flag converters ────────────────────────────────────
