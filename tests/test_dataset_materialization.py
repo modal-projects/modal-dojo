@@ -222,7 +222,10 @@ def test_miles_pretokenized_rows_materialize_and_replay_without_dummy_text(tmp_p
     dataset.write(str(path))
     dataset.validate_written(str(path))
     row = json.loads(path.read_text())
-    assert row == {"messages": [], "metadata": metadata}
+    assert row == {
+        "messages": [{"role": "user", "content": ""}],
+        "metadata": metadata,
+    }
     assert dataset.label_key() is None
     sample = SimpleNamespace(prompt=row["messages"], metadata=row["metadata"])
     buffer = SimpleNamespace(get_samples=lambda n: [[sample]])
@@ -259,7 +262,7 @@ def test_pretokenized_custom_metadata_column_and_cache_isolation():
 
     inner = CachedPairDataset({"encoded": {"input_ids": [1, 2], "loss_mask": [0, 1]}})
     dataset = _SftDataset(inner, allow_pretokenized=True, metadata_key="encoded")
-    assert list(dataset.rows())[0]["messages"] == []
+    assert list(dataset.rows())[0]["messages"] == [{"role": "user", "content": ""}]
     assert (
         len(
             {

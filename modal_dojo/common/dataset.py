@@ -164,7 +164,7 @@ class _SftDataset(DatasetConfig):
             return None
         if self._allow_pretokenized:
             return (
-                f"{key}:sft-tokens-v1:{self._require_pretokenized}:{self._metadata_key}"
+                f"{key}:sft-tokens-v2:{self._require_pretokenized}:{self._metadata_key}"
             )
         return f"{key}:sft"
 
@@ -185,10 +185,9 @@ class _SftDataset(DatasetConfig):
                 except LossMaskError as exc:
                     raise DojoConfigError(f"SFT row {index}: {exc}") from exc
                 if tokens is not None:
-                    # Miles' dataset reader still expects an input column. An
-                    # empty conversation avoids rendering or length-filtering
-                    # unrelated text; the rollout consumes only the metadata.
-                    yield {**row, input_key: []}
+                    # Miles' processors require a nonempty conversation even
+                    # for text-only rows. Replay uses only the token metadata.
+                    yield {**row, input_key: [{"role": "user", "content": ""}]}
                     continue
                 if self._require_pretokenized:
                     raise DojoConfigError(
