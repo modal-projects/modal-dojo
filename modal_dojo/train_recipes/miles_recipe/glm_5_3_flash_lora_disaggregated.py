@@ -1,4 +1,4 @@
-"""GLM-5.3-Flash merged LoRA with rollout on Stitch."""
+"""GLM-5.3-Flash merged LoRA, disaggregated: rollout on a Stitch engine pool outside the training cluster."""
 
 from dataclasses import field
 from typing import ClassVar
@@ -9,10 +9,10 @@ from pydantic.dataclasses import dataclass
 from modal_dojo.common.models.base import ModelConfig
 from modal_dojo.common.models.glm_5_3_flash import GLM_5_3_Flash_LoRA
 from modal_dojo.train_recipes.base import MicroBatchSize
-from modal_dojo.train_recipes.miles_recipe.stitch_lora import (
+from modal_dojo.train_recipes.miles_recipe.disaggregated_lora import (
     MILES_ENVIRONMENT,
-    _Stitch_LoRA_Recipe,
-    stitch_lora_extra_config,
+    _Disaggregated_LoRA_Recipe,
+    disaggregated_lora_extra_config,
 )
 
 
@@ -35,7 +35,7 @@ def _environment() -> dict[str, str]:
 
 
 def _extra_config() -> dict:
-    return stitch_lora_extra_config(
+    return disaggregated_lora_extra_config(
         # The absorbed DSA never runs kv_b_proj as a linear, so it takes no adapter.
         exclude_modules="*.self_attn.kv_b_proj",
         log_probs_chunk_size=2048,
@@ -51,7 +51,7 @@ def _extra_config() -> dict:
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class GLM_5_3_Flash_LoRA_Stitch_Recipe(_Stitch_LoRA_Recipe):
+class GLM_5_3_Flash_LoRA_Disaggregated_Recipe(_Disaggregated_LoRA_Recipe):
     """GLM-5.3-Flash, rank-32 merged LoRA on every linear but ``kv_b_proj`` (routed experts shared-outer), fully async on Stitch.
 
     The trainer is one 8-GPU B300 node holding the frozen BF16 base (TP2 with sequence parallelism, EP8). Rollout

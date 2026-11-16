@@ -1,4 +1,4 @@
-"""Muse Spark Open merged LoRA with rollout on Stitch."""
+"""Muse Spark Open merged LoRA, disaggregated: rollout on a Stitch engine pool outside the training cluster."""
 
 from dataclasses import field
 from typing import ClassVar
@@ -9,14 +9,14 @@ from pydantic.dataclasses import dataclass
 from modal_dojo.common.models.base import ModelConfig
 from modal_dojo.common.models.muse_spark import Muse_Spark_Open
 from modal_dojo.train_recipes.base import MicroBatchSize
-from modal_dojo.train_recipes.miles_recipe.stitch_lora import (
-    _Stitch_LoRA_Recipe,
-    stitch_lora_extra_config,
+from modal_dojo.train_recipes.miles_recipe.disaggregated_lora import (
+    _Disaggregated_LoRA_Recipe,
+    disaggregated_lora_extra_config,
 )
 
 
 def _extra_config() -> dict:
-    return stitch_lora_extra_config(
+    return disaggregated_lora_extra_config(
         log_probs_chunk_size=4096,
         rollout_max_prompt_len=2048,
         # Megatron takes it as a list; Miles sets ["p2p"] before applying this config.
@@ -34,7 +34,7 @@ def _extra_config() -> dict:
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class Muse_Spark_Open_LoRA_Stitch_Recipe(_Stitch_LoRA_Recipe):
+class Muse_Spark_Open_LoRA_Disaggregated_Recipe(_Disaggregated_LoRA_Recipe):
     """Muse Spark Open, rank-32 merged LoRA on every linear (routed experts shared-outer), fully async on Stitch.
 
     The trainer is two 8-GPU B300 nodes holding the frozen BF16 base (PP2, CP8 all-to-all, EP8; ~113 GiB of base per

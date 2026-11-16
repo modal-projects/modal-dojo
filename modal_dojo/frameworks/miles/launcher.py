@@ -239,7 +239,7 @@ def _build_miles_base_image(
     image = image.uv_pip_install("randomname==0.2.1", f"modal=={MODAL_VERSION}")
     if recipe.stitch:
         image = image.run_commands(stitch.NVCOMP_INSTALL).uv_pip_install(
-            stitch.REQUIREMENT
+            stitch.PACKAGE_SPEC
         )
     image = mount_tools_dir(image)
     image = mount_caller_source(image, caller_script)
@@ -685,7 +685,8 @@ def build_miles_app(
 
     @contextlib.asynccontextmanager
     async def stitch_rollout():
-        from stitch.run import PoolConfig, RunConfig, create_run
+        from stitch.run import PoolConfig as InferencePoolConfig
+        from stitch.run import RunConfig, create_run
         from stitch.sglang import SGLangConfig
 
         # The run doesn't exist yet; its URLs don't change the engines' flags.
@@ -731,7 +732,7 @@ def build_miles_app(
             checkpoint=recipe.hf_checkpoint or model.model_path,
             versions=versions,
             engine=SGLangConfig(server_args=flags, env=environment),
-            pool=PoolConfig(
+            pool=InferencePoolConfig(
                 gpu=f"{miles.gpu_type}:{gpus}",
                 # Per GPU: its scheduler process, and host memory for its share of the checkpoint load.
                 cpu=8 * gpus,

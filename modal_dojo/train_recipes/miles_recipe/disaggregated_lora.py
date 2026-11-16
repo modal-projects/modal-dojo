@@ -1,4 +1,6 @@
-"""What every merged-LoRA recipe on Stitch shares: a frozen BF16 base trained on B300s, rollout on Stitch engines.
+"""What the disaggregated merged-LoRA recipes share: the trainer holds a frozen BF16 base on B300s, and rollout runs
+outside the training cluster on an autoscaled Stitch engine pool (``colocate=False`` alone keeps the engines inside
+the cluster).
 
 Training is fully async. Each version's merged adapter reaches the engines as a weight delta, with checksums.
 Score centering with masked importance sampling learns from the sampler's own top-k candidates, which corrects
@@ -27,8 +29,8 @@ MILES_ENVIRONMENT = {
 }
 
 
-def stitch_lora_extra_config(**model: Any) -> dict[str, Any]:
-    """The transfer and loss settings every Stitch LoRA recipe uses, with the model's own on top."""
+def disaggregated_lora_extra_config(**model: Any) -> dict[str, Any]:
+    """The transfer and loss settings every disaggregated LoRA recipe uses, with the model's own on top."""
     return {
         "fully_async": True,
         "update_weight_transfer_mode": "weight-delta",
@@ -50,7 +52,7 @@ def stitch_lora_extra_config(**model: Any) -> dict[str, Any]:
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class _Stitch_LoRA_Recipe(MilesRecipe):
+class _Disaggregated_LoRA_Recipe(MilesRecipe):
     gpu_type: str = "B300"
     colocate: bool = False
     stitch: bool = True
@@ -85,4 +87,4 @@ class _Stitch_LoRA_Recipe(MilesRecipe):
     weight_decay: float = 0.0
 
     sglang_enable_dp_lm_head: bool = True
-    extra_config: dict | None = field(default_factory=stitch_lora_extra_config)
+    extra_config: dict | None = field(default_factory=disaggregated_lora_extra_config)

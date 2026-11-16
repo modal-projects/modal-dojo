@@ -1,4 +1,4 @@
-"""DeepSeek V4.1 Flash merged LoRA with rollout on Stitch."""
+"""DeepSeek V4.1 Flash merged LoRA, disaggregated: rollout on a Stitch engine pool outside the training cluster."""
 
 from dataclasses import field
 from typing import ClassVar
@@ -9,10 +9,10 @@ from pydantic.dataclasses import dataclass
 from modal_dojo.common.models.base import ModelConfig
 from modal_dojo.common.models.deepseek_v41_flash import DeepSeek_V4_1_Flash_LoRA
 from modal_dojo.train_recipes.base import MicroBatchSize
-from modal_dojo.train_recipes.miles_recipe.stitch_lora import (
+from modal_dojo.train_recipes.miles_recipe.disaggregated_lora import (
     MILES_ENVIRONMENT,
-    _Stitch_LoRA_Recipe,
-    stitch_lora_extra_config,
+    _Disaggregated_LoRA_Recipe,
+    disaggregated_lora_extra_config,
 )
 
 
@@ -31,7 +31,7 @@ def _environment() -> dict[str, str]:
 
 
 def _extra_config() -> dict:
-    return stitch_lora_extra_config(
+    return disaggregated_lora_extra_config(
         log_probs_chunk_size=2048,
         moe_router_freeze_gate=True,
         freeze_e_score_correction_bias=True,
@@ -47,7 +47,7 @@ def _extra_config() -> dict:
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class DeepSeek_V4_1_Flash_LoRA_Stitch_Recipe(_Stitch_LoRA_Recipe):
+class DeepSeek_V4_1_Flash_LoRA_Disaggregated_Recipe(_Disaggregated_LoRA_Recipe):
     """DeepSeek V4.1 Flash, rank-32 merged LoRA on every linear (routed experts shared-outer), fully async on Stitch.
 
     The trainer is one 8-GPU B300 node holding the frozen BF16 base (TP1, CP4 with all-gathered KV, EP8) and packs

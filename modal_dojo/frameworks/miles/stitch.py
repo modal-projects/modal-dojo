@@ -4,7 +4,7 @@ import json
 import subprocess
 import sys
 
-REQUIREMENT = "stitch @ git+https://github.com/modal-projects/stitch@577df133690afa8df84e2153ddcba7544a739a76"
+PACKAGE_SPEC = "stitch @ git+https://github.com/modal-projects/stitch@577df133690afa8df84e2153ddcba7544a739a76"
 # Weight deltas are compressed and decompressed on the GPUs with nvCOMP.
 NVCOMP_INSTALL = "python3 -m pip install --no-deps nvidia-libnvcomp-cu13==5.3.0.16"
 _PER_ENGINE_FLAGS = (

@@ -64,9 +64,9 @@ _EXPORTS = {
         "modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash_lora",
         "DeepSeek_V4_1_Flash_LoRA_Recipe",
     ),
-    "DeepSeek_V4_1_Flash_LoRA_Stitch_Recipe": (
+    "DeepSeek_V4_1_Flash_LoRA_Disaggregated_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
-        "DeepSeek_V4_1_Flash_LoRA_Stitch_Recipe",
+        "DeepSeek_V4_1_Flash_LoRA_Disaggregated_Recipe",
     ),
     "DeepSeek_V4_1_Flash_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
@@ -88,9 +88,9 @@ _EXPORTS = {
         "modal_dojo.train_recipes.miles_recipe",
         "GLM_5_3_Flash_LoRA_Recipe",
     ),
-    "GLM_5_3_Flash_LoRA_Stitch_Recipe": (
+    "GLM_5_3_Flash_LoRA_Disaggregated_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
-        "GLM_5_3_Flash_LoRA_Stitch_Recipe",
+        "GLM_5_3_Flash_LoRA_Disaggregated_Recipe",
     ),
     "GLM_5_3_Flash_LoRA_256k_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
@@ -143,9 +143,9 @@ _EXPORTS = {
         "modal_dojo.train_recipes.miles_recipe",
         "Muse_Spark_Open_64k_Recipe",
     ),
-    "Muse_Spark_Open_LoRA_Stitch_Recipe": (
+    "Muse_Spark_Open_LoRA_Disaggregated_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
-        "Muse_Spark_Open_LoRA_Stitch_Recipe",
+        "Muse_Spark_Open_LoRA_Disaggregated_Recipe",
     ),
     "ParsedResponse": ("modal_dojo.common.models", "ParsedResponse"),
     "Qwen3_0_6B": ("modal_dojo.common.models", "Qwen3_0_6B"),
@@ -257,7 +257,7 @@ __all__ = [
     "DeepSeek_V4_1_Flash_Recipe",
     "DeepSeek_V4_1_Flash_LoRA",
     "DeepSeek_V4_1_Flash_LoRA_Recipe",
-    "DeepSeek_V4_1_Flash_LoRA_Stitch_Recipe",
+    "DeepSeek_V4_1_Flash_LoRA_Disaggregated_Recipe",
     "Gemma4_26B_A4B",
     "Gemma4_26B_A4B_Recipe",
     "GLM_4_7",
@@ -265,7 +265,7 @@ __all__ = [
     "GLM_5_3_Flash",
     "GLM_5_3_Flash_LoRA",
     "GLM_5_3_Flash_LoRA_Recipe",
-    "GLM_5_3_Flash_LoRA_Stitch_Recipe",
+    "GLM_5_3_Flash_LoRA_Disaggregated_Recipe",
     "GLM_5_3_Flash_LoRA_256k_Recipe",
     "HarborDataset",
     "EvalConfig",
@@ -299,7 +299,7 @@ __all__ = [
     "MilesRecipe",
     "Muse_Spark_Open",
     "Muse_Spark_Open_64k_Recipe",
-    "Muse_Spark_Open_LoRA_Stitch_Recipe",
+    "Muse_Spark_Open_LoRA_Disaggregated_Recipe",
     "ParsedResponse",
     "Qwen3_0_6B",
     "Qwen3_0_6B_Recipe",
