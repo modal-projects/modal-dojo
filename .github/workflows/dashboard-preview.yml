@@ -65,6 +65,8 @@ jobs:
       MODAL_TOKEN_ID: ${{ secrets.PREVIEW_MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.PREVIEW_MODAL_TOKEN_SECRET }}
       MODAL_ENVIRONMENT: dojo
+      # dojo defaults to an image builder version modal 1.6.1 can't use.
+      MODAL_IMAGE_BUILDER_VERSION: "2025.06"
     steps:
       - uses: actions/checkout@v4.4.0
 
@@ -125,6 +127,8 @@ jobs:
       MODAL_TOKEN_ID: ${{ secrets.PREVIEW_MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.PREVIEW_MODAL_TOKEN_SECRET }}
       MODAL_ENVIRONMENT: dojo
+      # dojo defaults to an image builder version modal 1.6.1 can't use.
+      MODAL_IMAGE_BUILDER_VERSION: "2025.06"
     steps:
       - uses: actions/checkout@v4.4.0
 
