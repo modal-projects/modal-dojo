@@ -180,7 +180,10 @@ def _build_miles_base_image(
         .entrypoint([])
         .run_commands(
             f"rm -rf {HF_CACHE_PATH} 2>/dev/null || true",
-            f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3",
+            f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3"
+            " || echo 'WARNING: sglang abort patch did not apply to the"
+            " docker_image miles; transient router failures during rollout"
+            " cleanup may crash the run'",
             f"echo {_PATCH_DIST_CKPT_QUANTIZED_B64} | base64 -d | python3",
             (
                 f"if test -f {_MEGATRON_TORCH_STRATEGY_PY}; then "
@@ -479,6 +482,11 @@ def build_miles_app(
         checkpoints_volume.reload()
 
         save_path = str(miles.ref_load)
+        # Miles loads a Hugging Face ref_load (one with a config.json) directly.
+        if os.path.isfile(os.path.join(save_path, "config.json")):
+            print(f"{save_path} is a Hugging Face checkpoint; skipping conversion.")
+            flush_status_reporter(timeout_seconds=2.0)
+            return None
         if has_torch_dist_checkpoint(
             save_path, is_complete=is_complete_torch_dist_checkpoint_storage
         ):

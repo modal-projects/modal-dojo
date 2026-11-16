@@ -160,6 +160,11 @@ class MilesRecipe(BaseTrainRecipe):
             Megatron pipeline-parallel size for the actor.
         context_parallel_size:
             Megatron context-parallel size; multiplies the effective context length.
+        allgather_cp:
+            Split each sequence over context-parallel ranks by all-gathering keys and values instead of
+            zigzag; DeepSeek V4 needs it.
+        dsv4_impl:
+            DeepSeek V4 attention implementation; Miles' default when unset.
         expert_model_parallel_size:
             Expert-parallel size for MoE; must divide the model's ``num_experts``.
         expert_tensor_parallel_size:
@@ -530,6 +535,8 @@ class MilesRecipe(BaseTrainRecipe):
     sequence_parallel: bool = False
     pipeline_model_parallel_size: int = 1
     context_parallel_size: int = 1
+    allgather_cp: bool = False
+    dsv4_impl: str | None = None
     expert_model_parallel_size: int = 1
     expert_tensor_parallel_size: int = 1
     decoder_last_pipeline_num_layers: int | None = None
