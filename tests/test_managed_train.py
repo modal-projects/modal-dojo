@@ -118,3 +118,29 @@ def test_cost_and_time_budgets_run_until_spent():
     ).recipe
     assert recipe.budget is budget
     assert recipe.num_rollout == budget.num_rollout  # stops on cost or time
+
+
+def test_context_length_sets_rollout_and_batch_limits():
+    env = Environment(_Rows(1), exact_match, max_context_len=32_768)
+    recipe = ManagedTrainConfig(Qwen3_5_4B(), env, Budget(max_rollouts=1)).recipe
+    assert recipe.rollout_max_response_len == recipe.eval_max_response_len == 32_767
+    assert recipe.max_tokens_per_gpu == 32_768
+    assert recipe.extra_config["rollout_max_context_len"] == 32_768
+
+    small = Environment(_Rows(1), exact_match, max_context_len=1024)
+    recipe = ManagedTrainConfig(Qwen3_5_4B(), small, Budget(max_rollouts=1)).recipe
+    assert recipe.max_tokens_per_gpu == Qwen3_5_4B_Recipe().max_tokens_per_gpu
+
+    miles = ManagedTrainConfig(Gemma4_26B_A4B(), env, Budget(max_rollouts=1)).recipe
+    assert miles.rollout_max_response_len == 32_767
+
+    overridden = ManagedTrainConfig(
+        Qwen3_5_4B(),
+        env,
+        Budget(max_rollouts=1),
+        recipe_overrides={"rollout_max_response_len": 4096},
+    ).recipe
+    assert overridden.rollout_max_response_len == 4096
+
+    with pytest.raises(DojoConfigError, match="max_context_len"):
+        Environment(_Rows(1), exact_match, max_context_len=1)

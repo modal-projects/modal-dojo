@@ -35,6 +35,23 @@ def _preset_recipe(model: ModelConfig) -> SlimeRecipe | MilesRecipe:
     return recipe
 
 
+def _context_fields(preset: SlimeRecipe | MilesRecipe, context: int) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "rollout_max_response_len": context - 1,
+        "eval_max_response_len": context - 1,
+    }
+    if isinstance(preset.max_tokens_per_gpu, int):
+        fields["max_tokens_per_gpu"] = max(preset.max_tokens_per_gpu, context)
+    if hasattr(preset, "max_seq_len"):
+        fields["max_seq_len"] = context
+    else:
+        fields["extra_config"] = {
+            **(preset.extra_config or {}),
+            "rollout_max_context_len": context,
+        }
+    return fields
+
+
 # TODO: add to the API reference once the API shape is final.
 @exclude_from_api_reference
 class ManagedTrainConfig:
@@ -101,6 +118,8 @@ class ManagedTrainConfig:
         }
         if env.generate_fn is not None:
             derived["custom_generate_function"] = env.generate_fn
+        if env.max_context_len is not None:
+            derived.update(_context_fields(preset, env.max_context_len))
         num_tasks = len(list(env.dataset.rows()))
         if num_tasks < preset.rollout_batch_size:
             samples = overrides.get("n_samples_per_prompt", preset.n_samples_per_prompt)
