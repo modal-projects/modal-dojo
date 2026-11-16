@@ -721,36 +721,34 @@ def build_miles_app(
         checkout = (
             [_sglang_checkout(miles.sglang_git_ref)] if miles.sglang_git_ref else []
         )
-        run = await asyncio.to_thread(
-            create_run,
-            RunConfig(
-                run_id=training_run_id,
-                image=miles.docker_image,
-                image_commands=[stitch.NVCOMP_INSTALL, *checkout],
-                volumes={
-                    checkpoints_mount_path: checkpoints_volume_name,
-                    str(DATA_PATH): data_volume.name,
-                },
-                checkpoint=recipe.hf_checkpoint or model.model_path,
-                versions=versions,
-                engine=SGLangConfig(server_args=flags, env=environment),
-                pool=PoolConfig(
-                    gpu=f"{miles.gpu_type}:{gpus}",
-                    # Per GPU: its scheduler process, and host memory for its share of the checkpoint load.
-                    cpu=8 * gpus,
-                    memory=65536 * gpus,
-                    min_containers=miles.gpu_allocation.rollout_engines,
-                    max_containers=miles.gpu_allocation.rollout_engines,
-                ),
+        config = RunConfig(
+            run_id=training_run_id,
+            image=miles.docker_image,
+            image_commands=[stitch.NVCOMP_INSTALL, *checkout],
+            volumes={
+                checkpoints_mount_path: checkpoints_volume_name,
+                str(DATA_PATH): data_volume.name,
+            },
+            checkpoint=recipe.hf_checkpoint or model.model_path,
+            versions=versions,
+            engine=SGLangConfig(server_args=flags, env=environment),
+            pool=PoolConfig(
+                gpu=f"{miles.gpu_type}:{gpus}",
+                # Per GPU: its scheduler process, and host memory for its share of the checkpoint load.
+                cpu=8 * gpus,
+                memory=65536 * gpus,
+                min_containers=miles.gpu_allocation.rollout_engines,
+                max_containers=miles.gpu_allocation.rollout_engines,
             ),
         )
+        run = await asyncio.to_thread(create_run, config)
         try:
             # An engine's cold start outlasts the trainer's.
             engines = miles.gpu_allocation.rollout_engines
             print(f"Waiting for {engines} Stitch engines to load the checkpoint")
             while (await asyncio.to_thread(run.status))["catching_up"] < engines:
                 await asyncio.sleep(10)
-            yield run
+            yield run, config
         finally:
             await asyncio.to_thread(run.stop)
 
@@ -907,7 +905,9 @@ def build_miles_app(
             shared.training_run_lifecycle(
                 run_record, framework_status_token
             ) as set_status,
-            stitch_rollout() if miles.stitch else contextlib.nullcontext() as rollout,
+            stitch_rollout()
+            if miles.stitch
+            else contextlib.nullcontext((None, None)) as (rollout, rollout_config),
         ):
             save_root = checkpoint_dir
             apply_scoped_save(miles, save_root)
@@ -1041,7 +1041,7 @@ def build_miles_app(
                         {
                             # Stitch's URLs take Dojo's Modal proxy token.
                             "MILES_ROLLOUT_EXTERNAL_API_KEY": f"{os.environ['MODAL_KEY']}.{os.environ['MODAL_SECRET']}",
-                            "STITCH_VERSIONS_VOLUME": data_volume.name,
+                            "STITCH_VERSIONS_VOLUME": rollout_config.versions_volume,
                         }
                         if rollout is not None
                         else {}
