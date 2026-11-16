@@ -1,4 +1,4 @@
-"""Train a model on an environment without writing a recipe."""
+"""Train a model on an environment with the model's preset recipe."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 
 
 def _preset_recipe(model: ModelConfig) -> SlimeRecipe | MilesRecipe:
-    """The model's tuned recipe: slime's preset if it has one, else Miles'."""
     from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
     from modal_dojo.train_recipes.slime_recipe.recipe import SlimeRecipe
 
@@ -36,11 +35,10 @@ def _preset_recipe(model: ModelConfig) -> SlimeRecipe | MilesRecipe:
     return recipe
 
 
-# TODO: add a reference page once the Environment / ManagedTrainConfig / Budget
-# API shape is final; until then these stay out of the generated SDK reference.
+# TODO: add to the API reference once the API shape is final.
 @exclude_from_api_reference
 class ManagedTrainConfig:
-    """Train a model on an environment using the model's preset recipe.
+    """Train a model on an environment with its preset recipe until ``budget`` runs out.
 
     ```python
     run = ManagedTrainConfig(
@@ -50,32 +48,12 @@ class ManagedTrainConfig:
     ).train()
     ```
 
-    The recipe is the model's preset (slime's if it has one, otherwise
-    Miles'), with the environment wired in:
-
-    - ``custom_rm_function`` is ``environment.reward_fn``, and
-      ``custom_generate_function`` is ``environment.generate_fn`` when it has
-      one.
-    - It keeps doing rollouts and training on them until any limit of
-      ``budget`` runs out, then saves a final checkpoint and stops (see
-      ``Budget``). With no ``max_rollouts``, learning-rate schedules that
-      decay over ``num_rollout`` effectively stay constant.
-    - ``rollout_batch_size`` is capped at the number of tasks. When that cap
-      applies, ``global_batch_size`` becomes ``rollout_batch_size *
-      n_samples_per_prompt``: one on-policy update per rollout.
-
-    ``recipe_overrides`` are recipe fields applied last, so they win over
-    both the preset and the values above. The resulting ``TrainConfig`` is
-    ``train_config``; ``train()`` and ``launch()`` run it.
-
     Attributes:
-        model: The model to train. It must have a recipe preset.
-        environment: Tasks, rollout, and reward to train on.
-        budget: When to stop: after so many rollouts, dollars, or hours,
-            whichever runs out first.
-        recipe_overrides: Recipe fields to set on top of the preset, such as
-            ``{"n_samples_per_prompt": 8, "lr": 1e-6}``.
-        train_config: The ``TrainConfig`` this builds.
+        model: The model to train; it needs a slime or Miles preset.
+        environment: The dataset, reward, and optional rollout.
+        budget: When to stop.
+        recipe_overrides: Recipe fields applied on top of the preset.
+        train_config: The built ``TrainConfig``.
     """
 
     def __init__(
@@ -132,13 +110,10 @@ class ManagedTrainConfig:
 
     @property
     def recipe(self) -> SlimeRecipe | MilesRecipe:
-        """The recipe ``train_config`` trains with."""
         return self.train_config.recipe
 
     def train(self, *, show_output: bool = True) -> TrainingRun:
-        """Run ``train_config`` and wait for it; see ``TrainConfig.train``."""
         return self.train_config.train(show_output=show_output)
 
     def launch(self, *, show_output: bool = True) -> TrainingRun:
-        """Start ``train_config`` detached; see ``TrainConfig.launch``."""
         return self.train_config.launch(show_output=show_output)

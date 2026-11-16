@@ -1,20 +1,7 @@
-"""Make slime's and Miles' driver loops stop on a ``Budget``, saving first.
+"""Patch slime/Miles ``train.py`` to save and stop when a ``Budget`` runs out.
 
-Run at image build (``base64 -d | python3``) with ``main(<framework root>)``
-appended; see ``encoded_patch``. Patches ``train.py`` and ``train_async.py``.
-
-Both frameworks run ``for rollout_id in range(args.start_rollout_id,
-args.num_rollout)`` and save when ``should_run_periodic_action(rollout_id,
-args.save_interval, ..., args.num_rollout)`` says so, synchronously on the
-last rollout (``rollout_id == args.num_rollout - 1``). The patch asks
-``modal_dojo.common.budget.budget_final`` before that check. When it says the
-budget is spent, it makes this rollout the last one (``args.num_rollout =
-rollout_id + 1``), forces the save even without a ``save_interval``, and
-breaks out of the loop after the rest of the iteration. Without a budget,
-``budget_final`` is always False and the loop is unchanged.
-
-Edits are made at line positions found with ``ast``, leaving the rest of the
-file as other patches wrote it; apply this after them.
+Before the save check, a spent budget makes the current rollout the last one
+(forcing a synchronous save); the loop then breaks. Apply after other patches.
 """
 
 from __future__ import annotations
@@ -71,7 +58,6 @@ def _is_save_check(node: ast.AST) -> bool:
 
 
 def patch_source(src: str) -> str:
-    """``src`` with its rollout loop stopping on a budget."""
     if MARKER in src:
         return src
     tree = ast.parse(src)
@@ -92,7 +78,6 @@ def patch_source(src: str) -> str:
     if not header[save.col_offset :].startswith("if "):
         raise RuntimeError("budget patch: unexpected save check layout")
 
-    # Edit bottom-up so earlier line numbers stay valid.
     lines.insert(
         loop.body[-1].end_lineno,
         f"{body}if _md_final:  # {MARKER}\n{body}    break\n",
@@ -123,6 +108,5 @@ def main(root: str) -> None:
 
 
 def encoded_patch(root: str) -> str:
-    """This script, run against ``root``, as a base64 image-build command."""
     script = Path(__file__).read_text() + f"\n\nmain({root!r})\n"
     return base64.b64encode(script.encode()).decode()

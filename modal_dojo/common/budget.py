@@ -1,12 +1,4 @@
-"""Training budgets: stop after so many rollouts, dollars, or hours.
-
-A ``Budget`` rides on the recipe. The launcher turns it into the
-``MODAL_DOJO_BUDGET`` environment variable for the training driver, and a
-patch on the framework's driver loop (``budget_stop_patch``) asks
-``budget_final`` after every rollout whether to stop. When it says yes, the
-loop takes its usual final-rollout path, which saves a checkpoint
-synchronously, and exits.
-"""
+"""Stop training after a number of rollouts, dollars, or hours."""
 
 from __future__ import annotations
 
@@ -22,34 +14,21 @@ from modal_dojo.common.errors import DojoConfigError
 
 BUDGET_ENV = "MODAL_DOJO_BUDGET"
 
-#: ``num_rollout`` for a budget with no rollout limit: training stops on cost
-#: or time instead.
 UNBOUNDED_ROLLOUTS = 1_000_000
 
 
-# TODO: add a reference page once the Environment / ManagedTrainConfig / Budget
-# API shape is final; until then these stay out of the generated SDK reference.
+# TODO: add to the API reference once the API shape is final.
 @exclude_from_api_reference
 @dataclass(frozen=True)
 class Budget:
-    """How much training to do. Training stops when any limit runs out.
+    """When to stop training: the first limit to run out ends the run.
 
-    Whichever limit runs out first, the run finishes the rollout in progress,
-    saves one last checkpoint, and stops. Limits are checked between
-    rollouts, so a run overshoots by up to one rollout plus the final save.
-
-    ```python
-    Budget(max_rollouts=200)                    # a fixed number of steps
-    Budget(max_cost_usd=50)                     # as many as $50 buys
-    Budget(max_hours=6, max_cost_usd=100)       # whichever comes first
-    ```
+    The run then saves a final checkpoint. Limits are checked between rollouts.
 
     Attributes:
-        max_rollouts: Rollouts (training steps) to run.
-        max_cost_usd: Estimated spend: the run's training GPUs at the
-            workspace's list price per GPU-hour, from when its training
-            function starts. Sandboxes, CPU, and storage are not counted.
-        max_hours: Wall-clock hours from when the training function starts.
+        max_rollouts: Rollouts to run.
+        max_cost_usd: Estimated GPU spend at list price.
+        max_hours: Wall-clock hours since the training function started.
     """
 
     max_rollouts: int | None = None
@@ -78,7 +57,6 @@ class Budget:
 
     @property
     def num_rollout(self) -> int:
-        """The recipe's ``num_rollout`` under this budget."""
         return (
             int(self.max_rollouts)
             if self.max_rollouts is not None
@@ -88,7 +66,6 @@ class Budget:
     def driver_env(
         self, *, started_at: float, gpus: int, gpu_hour_usd: float | None
     ) -> dict[str, str]:
-        """The driver's ``MODAL_DOJO_BUDGET`` for a run started at ``started_at``."""
         usd_per_second = None
         if self.max_cost_usd is not None:
             if gpu_hour_usd is None or gpus < 1:
@@ -107,7 +84,6 @@ class Budget:
 
 
 def exhausted(state: dict[str, Any], now: float) -> str | None:
-    """Which time or cost limit ``state`` has reached at ``now``, if any."""
     elapsed = now - state["started_at"]
     if state.get("max_seconds") is not None and elapsed >= state["max_seconds"]:
         return f"time: {elapsed / 3600:.2f} of {state['max_seconds'] / 3600:g} hours"
@@ -119,11 +95,7 @@ def exhausted(state: dict[str, Any], now: float) -> str | None:
 
 
 def budget_final(args: Any, rollout_id: int) -> bool:
-    """Whether ``rollout_id`` is the run's last; called by the patched driver.
-
-    True on the budget's last rollout, or once its time or cost runs out.
-    Always False for a run without a budget, which keeps its own behavior.
-    """
+    """Whether to save and stop after ``rollout_id``; called by the patched loop."""
     raw = os.environ.get(BUDGET_ENV)
     if not raw:
         return False
@@ -141,11 +113,6 @@ def budget_final(args: Any, rollout_id: int) -> bool:
 
 
 def driver_budget_env(recipe: Any, *, started_at: float) -> dict[str, str]:
-    """The training driver's budget env vars for ``recipe``; empty without one.
-
-    Called in the training function, which prices the run's GPUs at the
-    workspace's list rate when the budget has a cost limit.
-    """
     budget = getattr(recipe, "budget", None)
     if budget is None:
         return {}
@@ -162,7 +129,6 @@ def driver_budget_env(recipe: Any, *, started_at: float) -> dict[str, str]:
 
 
 def validate_recipe_budget(recipe: Any) -> None:
-    """A recipe's ``num_rollout`` must match its budget's rollout limit."""
     budget = getattr(recipe, "budget", None)
     if budget is None or budget.max_rollouts is None:
         return
