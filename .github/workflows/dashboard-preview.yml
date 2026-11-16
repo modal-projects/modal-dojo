@@ -64,7 +64,7 @@ jobs:
     env:
       MODAL_TOKEN_ID: ${{ secrets.PREVIEW_MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.PREVIEW_MODAL_TOKEN_SECRET }}
-      MODAL_ENVIRONMENT: training-gym
+      MODAL_ENVIRONMENT: dojo
     steps:
       - uses: actions/checkout@v4.4.0
 
@@ -124,7 +124,7 @@ jobs:
     env:
       MODAL_TOKEN_ID: ${{ secrets.PREVIEW_MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.PREVIEW_MODAL_TOKEN_SECRET }}
-      MODAL_ENVIRONMENT: training-gym
+      MODAL_ENVIRONMENT: dojo
     steps:
       - uses: actions/checkout@v4.4.0
 

@@ -58,9 +58,7 @@ PreviewType: TypeAlias = Literal["dashboard", "docs"]
 
 # Where a dashboard preview sends `/api` when the PR didn't bring its own
 # backend (see scripts/previews/dashboard_api.py).
-DEPLOYED_DASHBOARD_HOST = (
-    "modal-labs-training-gym--dojo-dashboard-fastapi-app.modal.run"
-)
+DEPLOYED_DASHBOARD_HOST = "modal-labs-dojo--dojo-dashboard-fastapi-app.modal.run"
 
 
 def _docs_nginx_refresh_inc(redirects: dict[str, str]) -> str:

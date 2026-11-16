@@ -24,7 +24,7 @@ jobs:
     env:
       MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-      MODAL_ENVIRONMENT: training-gym
+      MODAL_ENVIRONMENT: dojo
     steps:
       - uses: actions/checkout@v4.4.0
 
