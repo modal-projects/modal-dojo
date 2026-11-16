@@ -791,7 +791,8 @@ class MilesRecipe(BaseTrainRecipe):
     @model_validator(mode="after")
     def _validate_context_budget(self) -> "MilesRecipe":
         """Check explicit context budgets using effective CLI values."""
-        overrides = self._escape_hatch_values()
+        # Normalize user settings without persisting derived SFT-only flags.
+        overrides = super()._escape_hatch_values()
         # Existing workload adapters still use the old cap. Recipes declaring
         # the newer flag must also remove that unsupported key from their YAML.
         if hasattr(self, "max_seq_len") and "rollout_max_context_len" in overrides:

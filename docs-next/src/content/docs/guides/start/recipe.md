@@ -133,9 +133,11 @@ settings and tool formatting can match inference. Assistant messages with
 
 Some templates rewrite earlier assistant turns, such as dropping past
 reasoning, or append a footer only at the end of a conversation. Dojo refuses
-to infer a multi-turn mask if those changes move the target spans. For agent
-traces, use one example per model decision: keep the preceding conversation as
-context, mark earlier assistant messages with `step_loss_mask=0`, and supervise
+to infer a multi-turn mask if those changes move the target spans. Tokens
+overlapping a target boundary are supervised as whole tokens, matching
+Transformers' assistant masks. For agent traces, use one example per model
+decision: keep the preceding conversation as context, mark earlier assistant
+messages with `step_loss_mask=0`, and supervise
 only the final decision. Alternatively, render and tokenize the examples
 beforehand with the model's encoder.
 
@@ -164,10 +166,11 @@ converts prompt/answer columns and discards other columns.
 Token IDs must be nonnegative integers. Masks must have exactly one 0/1 entry
 per token, at least one target, and a zero at the first token (there is no
 preceding token from which to predict it). Validation runs while materializing
-the dataset. Samples exceeding `rollout_max_context_len` fail instead of being
-silently truncated. Use the same model revision, tokenizer, prompt format,
-thinking settings and end tokens for data preparation and inference. Check
-that decoding the tokens marked 1 gives exactly the intended targets.
+the dataset. Samples exceeding `max_seq_len` (or `rollout_max_context_len` on
+older Miles images) fail instead of being silently truncated. Use the same
+model revision, tokenizer, prompt format, thinking settings and end tokens for
+data preparation and inference. Inspect the decoded targets, including boundary
+tokens and end tokens, before scaling up.
 
 ### SFT settings and validation
 

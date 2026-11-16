@@ -1,20 +1,7 @@
-"""Loss masks for supervised fine-tuning that do not depend on one chat template.
+"""Validate pre-tokenized SFT rows or derive assistant masks from chat templates.
 
-Miles' ``MultiTurnLossMaskGenerator`` knows three template families (``qwen``,
-``qwen3``, ``distill_qwen``) and calls ``tokenizer.apply_chat_template`` as soon
-as it is built, so it cannot serve a model whose tokenizer has a different
-template or none at all (DeepSeek-V4.1 ships its prompt format as Python).
-Two template-independent paths live here:
-
-* **Pre-tokenized rows.** A row whose ``metadata`` holds ``input_ids`` and
-  ``loss_mask`` trains on exactly those tokens. Any model works, whatever renders
-  its prompts.
-* **Chat-template spans.** Render the conversation with the tokenizer's own chat
-  template, find each assistant turn's characters by rendering the prefixes
-  before and after it, and mark the tokens inside those characters through the
-  tokenizer's offset mapping. This holds for any template whose rendering of a
-  conversation's prefix is a prefix of the whole rendering, and checks that it
-  is rather than training on misplaced tokens.
+Template masks require stable conversation prefixes and tokenizer offsets.
+Custom encoders supply explicit token IDs and masks instead.
 """
 
 from __future__ import annotations
@@ -131,7 +118,7 @@ def assistant_spans(
 def tokens_in_spans(
     tokenizer: Any, text: str, spans: Sequence[tuple[int, int]]
 ) -> tuple[list[int], list[int]]:
-    """Tokenize ``text`` and mark the tokens lying wholly inside ``spans``."""
+    """Mark every token overlapping a target, including boundary merges."""
     try:
         encoded = tokenizer(text, add_special_tokens=False, return_offsets_mapping=True)
     except NotImplementedError as err:  # slow tokenizers have no offsets
@@ -143,12 +130,10 @@ def tokens_in_spans(
     for k, (start, end) in enumerate(offsets):
         while j < len(ordered) and ordered[j][1] <= start:
             j += 1
-        if (
-            j < len(ordered)
-            and end > start
-            and ordered[j][0] <= start
-            and end <= ordered[j][1]
-        ):
+        # Like Transformers' assistant masks, include a boundary token if any
+        # of its characters belong to the target. Requiring full containment
+        # silently drops answer text or merged whitespace (e.g. Qwen3.5's \n\n).
+        if j < len(ordered) and end > start and end > ordered[j][0]:
             mask[k] = 1
     return list(ids), mask
 
@@ -157,19 +142,18 @@ def chat_template_loss_mask(
     tokenizer: Any,
     messages: Sequence[dict],
     tools: list[dict] | None = None,
-    render: Render | None = None,
     *,
     template_kwargs: dict | None = None,
 ) -> tuple[list[int], list[int]]:
-    """Token ids and loss mask for a multi-turn conversation, every trained
-    assistant turn marked, through ``render`` (the tokenizer's chat template by
-    default)."""
+    """Tokenize a conversation and mask its supervised assistant turns."""
     text, spans = assistant_spans(
-        messages, render or template_render(tokenizer, template_kwargs), tools
+        messages, template_render(tokenizer, template_kwargs), tools
     )
     if not spans:
         raise LossMaskError("the conversation has no assistant turn to train")
     ids, mask = tokens_in_spans(tokenizer, text, spans)
     if 1 not in mask:
         raise LossMaskError("no token falls inside an assistant turn")
+    if mask[0]:
+        raise LossMaskError("the first target token needs preceding context")
     return ids, mask

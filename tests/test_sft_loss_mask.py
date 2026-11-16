@@ -11,6 +11,7 @@ from modal_dojo.common.sft_loss_mask import (
     LossMaskError,
     chat_template_loss_mask,
     pretokenized,
+    tokens_in_spans,
 )
 from modal_dojo.frameworks.miles import sft_rollout
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
@@ -99,15 +100,33 @@ def test_tokenizer_without_template_is_refused() -> None:
         chat_template_loss_mask(_tokenizer(None), MESSAGES)
 
 
-def test_custom_render_replaces_the_template() -> None:
-    tok = _tokenizer(None)
+@pytest.mark.parametrize("merge", [("x", "a"), ("c", "y")])
+def test_boundary_tokens_match_transformers_assistant_masks(merge):
+    # The target is "abc"; merging either edge with context must not silently
+    # turn it into "bc" or "ab" while the remaining target still looks valid.
+    vocab = {token: i for i, token in enumerate([*"pxabcyq", "".join(merge)])}
+    backend = Tokenizer(models.BPE(vocab=vocab, merges=[merge]))
+    tok = PreTrainedTokenizerFast(tokenizer_object=backend)
+    tok.chat_template = "px{% generation %}abc{% endgeneration %}yq"
+    expected = tok.apply_chat_template(
+        [{"role": "user", "content": "unused"}],
+        return_dict=True,
+        return_assistant_tokens_mask=True,
+    )
+    ids, mask = tokens_in_spans(tok, "pxabcyq", [(2, 5)])
+    assert ids == expected["input_ids"]
+    assert mask == expected["assistant_masks"]
+    assert sum(mask) == 3
 
-    def render(messages, tools=None, add_generation_prompt=False):
-        text = "".join(f"[{m['role']}]{m['content']}[end]" for m in messages)
-        return text + ("[assistant]" if add_generation_prompt else "")
 
-    ids, mask = chat_template_loss_mask(tok, MESSAGES, render=render)
-    assert _trained_text(tok, ids, mask) == ["Hello![end]", "See you.[end]"]
+def test_chat_template_requires_context_before_first_target():
+    tok = _tokenizer("{% for m in messages %}{{ m.content }}{% endfor %}")
+    messages = [
+        {"role": "user", "content": ""},
+        {"role": "assistant", "content": "Answer"},
+    ]
+    with pytest.raises(LossMaskError, match="needs preceding context"):
+        chat_template_loss_mask(tok, messages)
 
 
 @pytest.mark.parametrize(
@@ -180,11 +199,6 @@ def test_rollout_chat_template_mode(monkeypatch) -> None:
     first = out[0][0]
     assert sum(first.loss_mask) == sum(chat_template_loss_mask(tok, MESSAGES)[1])
     assert len(first.loss_mask) == first.response_length
-
-
-def test_rollout_reads_mode_from_custom_config() -> None:
-    args = _args(custom_config={"modal_dojo_sft_loss_mask": "chat_template"})
-    assert sft_rollout.mask_mode(args) == "chat_template"
 
 
 def _dataset():
@@ -301,6 +315,22 @@ def test_deepseek_sft_disables_rl_inputs_without_mutating_the_preset(tmp_path):
     )
 
 
+def test_context_alias_normalization_does_not_persist_sft_flags():
+    from modal_dojo.train_recipes.miles_recipe.muse_spark import (
+        Muse_Spark_Open_64k_Recipe,
+    )
+
+    original = {"rollout_max_context_len": 65536, "use_rollout_logprobs": True}
+    recipe = Muse_Spark_Open_64k_Recipe(loss_type="sft_loss", extra_config=original)
+    assert recipe._escape_hatch_values()["use_rollout_logprobs"] is False
+    assert recipe.extra_config == {"use_rollout_logprobs": True}
+    assert recipe.max_seq_len == 65536
+    assert replace(recipe, loss_type="policy_loss").extra_config == {
+        "use_rollout_logprobs": True
+    }
+    assert original["rollout_max_context_len"] == 65536
+
+
 def test_single_decision_mask_allows_history_rewriting_template():
     messages = [dict(m) for m in MESSAGES]
     messages[2]["step_loss_mask"] = 0
@@ -336,13 +366,14 @@ def test_pretokenized_mode_requires_tokens_without_loading_a_tokenizer(monkeypat
         )
 
 
-def test_rollout_refuses_oversized_pretokenized_samples():
+@pytest.mark.parametrize("context_field", ["rollout_max_context_len", "max_seq_len"])
+def test_rollout_refuses_oversized_pretokenized_samples(context_field):
     sample = SimpleNamespace(
         prompt=[], metadata={"input_ids": [1, 2, 3], "loss_mask": [0, 1, 1]}
     )
-    with pytest.raises(LossMaskError, match="rollout_max_context_len=2"):
+    with pytest.raises(LossMaskError, match=f"{context_field}=2"):
         sft_rollout.generate_rollout(
-            _args(rollout_batch_size=1, rollout_max_context_len=2), 0, _Buffer([sample])
+            _args(rollout_batch_size=1, **{context_field: 2}), 0, _Buffer([sample])
         )
 
 

@@ -64,25 +64,18 @@ def _miles_mask(args, messages, tools):
     return _MASK_GENERATOR.get_loss_mask(messages, tools=tools)
 
 
-def mask_mode(args) -> str | None:
-    mode = getattr(args, SFT_LOSS_MASK_KEY, None)
-    for container in ("extra_config", "custom_config"):
-        values = getattr(args, container, None)
-        if mode is None and isinstance(values, dict):
-            mode = values.get(SFT_LOSS_MASK_KEY)
-    return mode
-
-
 def tokens_and_mask(args, sample) -> tuple[list[int], list[int], str]:
     metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
     if given := pretokenized(metadata):
         return (*given, "pretokenized")
-    if mask_mode(args) == "pretokenized":
+    # Miles merges custom-config YAML keys directly into its args namespace.
+    mode = getattr(args, SFT_LOSS_MASK_KEY, None)
+    if mode == "pretokenized":
         raise LossMaskError(
             "pretokenized SFT requires metadata.input_ids and metadata.loss_mask"
         )
     tools = metadata.get("tools")
-    if mask_mode(args) == CHAT_TEMPLATE:
+    if mode == CHAT_TEMPLATE:
         kwargs = getattr(args, "apply_chat_template_kwargs", None) or {}
         if isinstance(kwargs, str):
             kwargs = json.loads(kwargs)
@@ -112,11 +105,16 @@ def generate_rollout(args, rollout_id, data_buffer, evaluation=False):
         token_ids, loss_mask, source = tokens_and_mask(args, sample)
         if 1 not in loss_mask:
             raise LossMaskError(f"SFT sample {i} has no target token")
-        context = getattr(args, "rollout_max_context_len", None)
+        context_field = (
+            "max_seq_len"
+            if getattr(args, "max_seq_len", None) is not None
+            else "rollout_max_context_len"
+        )
+        context = getattr(args, context_field, None)
         if context is not None and len(token_ids) > context:
             raise LossMaskError(
                 f"SFT sample {i} has {len(token_ids)} tokens, exceeding "
-                f"rollout_max_context_len={context}; split it before training"
+                f"{context_field}={context}; split it before training"
             )
         response_length = len(loss_mask) - loss_mask.index(1)
         sample.tokens = token_ids

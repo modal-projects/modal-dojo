@@ -332,9 +332,9 @@ class BaseTrainRecipe(ABC, metaclass=_UnwrapDojoErrorMeta):
                 out.pop(key, None)
         if hatch in out:
             raw = out.pop(hatch)
-            out[self._ESCAPE_HATCH_FLAG] = (
-                values or raw if raw is None or isinstance(raw, dict) else raw
-            )
+            if raw is None or isinstance(raw, dict):
+                raw = values or raw
+            out[self._ESCAPE_HATCH_FLAG] = raw
         return out
 
     def _fields(
