@@ -751,11 +751,7 @@ def build_miles_app(
         )
         run = await asyncio.to_thread(create_run, config)
         try:
-            # An engine's cold start outlasts the trainer's.
-            engines = miles.gpu_allocation.rollout_engines
-            print(f"Waiting for {engines} Stitch engines to load the checkpoint")
-            while (await asyncio.to_thread(run.status))["catching_up"] < engines:
-                await asyncio.sleep(10)
+            # Miles generates only once the run serves its first version (ExternalRollout.serve).
             yield run, config
         finally:
             await asyncio.to_thread(run.stop)
