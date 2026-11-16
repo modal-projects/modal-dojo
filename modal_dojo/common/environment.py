@@ -15,8 +15,11 @@ class Environment:
     def reward_fn(args, sample, **kwargs) -> float:
         return float(sample.response.strip() == sample.label)
 
-    env = Environment(dataset=my_dataset, reward_fn=reward_fn)
-    run = ManagedTrainConfig(Qwen3_5_4B(), env, num_rollout=20).train()
+    run = ManagedTrainConfig(
+        Qwen3_5_4B(),
+        Environment(dataset=my_dataset, reward_fn=reward_fn),
+        Budget(max_rollouts=20),
+    ).train()
     ```
 
     Subclasses package a source of tasks with its own scoring, and may build

@@ -39,8 +39,11 @@ class ManagedTrainConfig:
     """Train a model on an environment using the model's preset recipe.
 
     ```python
-    env = Environment(dataset=my_dataset, reward_fn=my_reward)
-    run = ManagedTrainConfig(Qwen3_5_4B(), env, Budget(max_cost_usd=50)).train()
+    run = ManagedTrainConfig(
+        Qwen3_5_4B(),
+        Environment(dataset=my_dataset, reward_fn=my_reward),
+        Budget(max_cost_usd=50, max_hours=6),
+    ).train()
     ```
 
     The recipe is the model's preset (slime's if it has one, otherwise
