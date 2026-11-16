@@ -60,7 +60,9 @@ class ManagedTrainConfig:
     ```python
     run = ManagedTrainConfig(
         Qwen3_5_4B(),
-        Environment(dataset=my_dataset, reward_fn=my_reward),
+        Environment(
+            dataset=my_dataset, reward_fn=my_reward, max_context_len=32_768
+        ),
         Budget(max_cost_usd=50, max_hours=6),
     ).train()
     ```
