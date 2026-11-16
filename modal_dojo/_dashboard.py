@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode
 from typing import (
     TYPE_CHECKING,
+    Any,
     Annotated,
     Awaitable,
     Callable,
@@ -32,8 +33,6 @@ import modal
 from modal.exception import Error
 
 if TYPE_CHECKING:
-    from modal._logs_manager import _AppLogsManager
-    from modal.client import _Client
     from modal.types import LogEntry as ModalLogEntry
 
 # Imported at module scope so FastAPI can resolve endpoint annotations such as
@@ -290,20 +289,6 @@ def _resolve_log_window(
     if until_ts <= 0:
         until_ts = now
     return max(0.0, since_ts), until_ts
-
-
-def _app_logs(client: _Client, app_id: str) -> _AppLogsManager:
-    """Return Modal's public ``App.logs`` for an app ID.
-
-    Modal has no public way to get an ``App`` from an ID, and training apps
-    run ephemeral, so ``App.lookup`` can't find them by name.
-    ``_new_remote`` builds the handle without an RPC; everything after it is
-    the public logs API.
-    """
-    from modal.app import _App
-
-    app = _App._new_remote(None, app_id, environment_name="", client=client)
-    return app.logs
 
 
 def _log_entry(entry: ModalLogEntry) -> LogEntry:
@@ -946,10 +931,10 @@ def fastapi_app():
 
     # ── Shared Modal client ───────────────────────────────────────────────
     # Opens a client at startup and reuses it across all requests.
-    modal_client: _Client | None = None
+    modal_client: Any | None = None
     modal_client_lock = asyncio.Lock()
 
-    async def get_modal_client() -> _Client | None:
+    async def get_modal_client() -> Any | None:
         """Return the shared, connection-open Modal client.
 
         Creates it once (guarded by a lock) and reuses it thereafter. Returns
@@ -964,11 +949,11 @@ def fastapi_app():
         if not token_id or not token_secret:
             return None
 
-        from modal.client import _Client
+        from modal_dojo.common._modal_compat import open_async_client
 
         async with modal_client_lock:
             if modal_client is None:
-                modal_client = await _Client.from_credentials(token_id, token_secret)
+                modal_client = await open_async_client(token_id, token_secret)
             return modal_client
 
     @web.on_event("startup")
@@ -1988,6 +1973,8 @@ def fastapi_app():
         """
         import json
 
+        from modal_dojo.common._modal_compat import app_logs
+
         run = await _get_run_or_404(training_run_id)
 
         app_id = (run.modal_app_id or "").strip()
@@ -2033,7 +2020,7 @@ def fastapi_app():
 
             try:
                 async with contextlib.aclosing(
-                    _app_logs(client, app_id).stream()
+                    app_logs(client, app_id).stream()
                 ) as entries:
                     async for entry in entries:
                         if await request.is_disconnected():
@@ -2108,6 +2095,8 @@ def fastapi_app():
         from collections import deque
         from datetime import datetime, timezone
 
+        from modal_dojo.common._modal_compat import app_logs
+
         if max_lines < 0:
             raise HTTPException(status_code=400, detail="max_lines must be positive")
 
@@ -2159,7 +2148,7 @@ def fastapi_app():
         # Modal yields oldest-first; keep only the newest ``max_lines``.
         logs: deque[LogEntry] = deque(maxlen=max_lines)
         try:
-            async for entry in _app_logs(client, app_id).fetch(
+            async for entry in app_logs(client, app_id).fetch(
                 since=datetime.fromtimestamp(since_ts, timezone.utc),
                 until=datetime.fromtimestamp(until_ts, timezone.utc),
                 search_text=search.strip(),

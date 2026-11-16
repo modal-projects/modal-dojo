@@ -369,10 +369,12 @@ def _fake_modal_logs(monkeypatch, *, stream=None, fetch=None):
             for item in fetch or []:
                 yield item
 
-    monkeypatch.setattr("modal.client._Client.from_credentials", from_credentials)
     monkeypatch.setattr(
-        "modal.app._App._new_remote",
-        staticmethod(lambda *_a, **_k: SimpleNamespace(logs=FakeLogs())),
+        "modal_dojo.common._modal_compat.open_async_client", from_credentials
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common._modal_compat.app_logs",
+        lambda *_a, **_k: FakeLogs(),
     )
     return calls
 

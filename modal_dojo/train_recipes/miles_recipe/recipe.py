@@ -756,24 +756,35 @@ class MilesRecipe(BaseTrainRecipe):
     def _validate_context_budget(self) -> "MilesRecipe":
         """Check explicit context budgets using effective CLI values."""
         overrides = self._escape_hatch_values()
+        # Existing workload adapters still use the old cap. Recipes declaring
+        # the newer flag must also remove that unsupported key from their YAML.
+        if hasattr(self, "max_seq_len") and "rollout_max_context_len" in overrides:
+            overrides = dict(overrides)
+            legacy_context = overrides.pop("rollout_max_context_len")
+            if "max_seq_len" not in overrides:
+                object.__setattr__(self, "max_seq_len", legacy_context)
+            object.__setattr__(self, "extra_config", overrides)
 
         def value(name: str) -> int | None:
             raw = overrides.get(name, getattr(self, name, None))
             return raw if isinstance(raw, int) and not isinstance(raw, bool) else None
 
-        context = value("rollout_max_context_len")
+        context_field = (
+            "max_seq_len"
+            if value("max_seq_len") is not None
+            else "rollout_max_context_len"
+        )
+        context = value(context_field)
         if context is None:
             return self
         prompt = value("rollout_max_prompt_len")
         response = value("rollout_max_response_len")
         if prompt is not None and response is not None and prompt + response > context:
-            raise DojoConfigError(
-                "Prompt and response budgets exceed rollout_max_context_len"
-            )
+            raise DojoConfigError(f"Prompt and response budgets exceed {context_field}")
         for name in ("seq_length", "sglang_context_length"):
             capacity = value(name)
             if capacity is not None and capacity < context:
-                raise DojoConfigError(f"{name} must cover rollout_max_context_len")
+                raise DojoConfigError(f"{name} must cover {context_field}")
         return self
 
     @model_validator(mode="after")
