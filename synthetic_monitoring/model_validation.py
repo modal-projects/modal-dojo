@@ -38,7 +38,8 @@ probe_image = (
     modal.Image.debian_slim(python_version="3.12")
     .uv_sync(uv_project_dir=str(REPO_ROOT), extra_options="--no-dev")
     .uv_pip_install("slack-sdk==3.27.1", "matplotlib==3.10.1")
-    .env({"MODAL_ENVIRONMENT": MODAL_ENV})
+    # dojo defaults to an image builder version modal 1.6.1 can't use.
+    .env({"MODAL_ENVIRONMENT": MODAL_ENV, "MODAL_IMAGE_BUILDER_VERSION": "2025.06"})
     .add_local_python_source("modal_dojo", "synthetic_monitoring", "scripts")
     .add_local_dir(
         str(REPO_ROOT / "dashboards" / "frontend"),
