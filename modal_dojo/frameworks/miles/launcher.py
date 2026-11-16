@@ -180,10 +180,7 @@ def _build_miles_base_image(
         .entrypoint([])
         .run_commands(
             f"rm -rf {HF_CACHE_PATH} 2>/dev/null || true",
-            f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3"
-            " || echo 'WARNING: sglang abort patch did not apply to the"
-            " docker_image miles; transient router failures during rollout"
-            " cleanup may crash the run'",
+            f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3",
             f"echo {_PATCH_DIST_CKPT_QUANTIZED_B64} | base64 -d | python3",
             (
                 f"if test -f {_MEGATRON_TORCH_STRATEGY_PY}; then "
@@ -219,10 +216,7 @@ def _build_miles_base_image(
             ignore=["**/__pycache__", "**/*.pyc", "**/.git", "**/.venv"],
         )
         image = image.run_commands(
-            f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3"
-            " || echo 'WARNING: sglang abort patch did not apply to the"
-            " local_miles checkout; transient router failures during rollout"
-            " cleanup may crash the run'",
+            f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3",
             *_REPORTING_PATCH_COMMANDS,
         )
 
@@ -333,10 +327,7 @@ def apply_source_overlays(image: Image, miles: MilesRecipe) -> Image:
             f"cd {MILES_ROOT} && git fetch --depth=1 -- origin"
             f" {shlex.quote(miles.miles_git_ref)} && git checkout -f FETCH_HEAD",
             # The checkout just reverted the patched miles sources.
-            f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3"
-            " || echo 'WARNING: sglang abort patch did not apply to the"
-            " miles_git_ref checkout; transient router failures during rollout"
-            " cleanup may crash the run'",
+            f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3",
             *_REPORTING_PATCH_COMMANDS,
             f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3"
             " || echo 'WARNING: substep timing patch did not apply to the"
