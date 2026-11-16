@@ -77,6 +77,7 @@ from modal_dojo.train_recipes.miles_recipe.recipe import (
     MilesRecipe,
 )
 from modal_dojo.common.budget import driver_budget_env
+from modal_dojo.common.fallback import mark_training_started
 from modal_dojo.common.budget_stop_patch import encoded_patch as budget_stop_patch
 from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
 from modal_dojo.frameworks.miles.modal_helpers.utils import (
@@ -712,6 +713,7 @@ def build_miles_app(
         framework_status_token: str = "",
     ):
         started_at = time.time()  # a Budget counts from here
+        mark_training_started(training_run_id)  # capacity granted; see Fallback
         cluster, modal_app_id, modal_app_url = await start_training_cluster(
             miles,
             (hf_cache_volume, data_volume, checkpoints_volume),
