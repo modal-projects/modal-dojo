@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.errors import DojoConfigError
 
 BUDGET_ENV = "MODAL_DOJO_BUDGET"
@@ -26,6 +27,9 @@ BUDGET_ENV = "MODAL_DOJO_BUDGET"
 UNBOUNDED_ROLLOUTS = 1_000_000
 
 
+# TODO: add a reference page once the Environment / ManagedTrainConfig / Budget
+# API shape is final; until then these stay out of the generated SDK reference.
+@exclude_from_api_reference
 @dataclass(frozen=True)
 class Budget:
     """How much training to do. Training stops when any limit runs out.

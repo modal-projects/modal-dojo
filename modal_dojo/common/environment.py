@@ -5,9 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.dataset import DatasetConfig
 
 
+# TODO: add a reference page once the Environment / ManagedTrainConfig / Budget
+# API shape is final; until then these stay out of the generated SDK reference.
+@exclude_from_api_reference
 class Environment:
     """A training dataset and the reward function that scores responses to it.
 

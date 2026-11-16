@@ -6,6 +6,7 @@ import dataclasses
 from typing import TYPE_CHECKING, Any
 
 from modal_dojo.common.budget import Budget
+from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.train import TrainConfig
 
@@ -35,6 +36,9 @@ def _preset_recipe(model: ModelConfig) -> SlimeRecipe | MilesRecipe:
     return recipe
 
 
+# TODO: add a reference page once the Environment / ManagedTrainConfig / Budget
+# API shape is final; until then these stay out of the generated SDK reference.
+@exclude_from_api_reference
 class ManagedTrainConfig:
     """Train a model on an environment using the model's preset recipe.
 
