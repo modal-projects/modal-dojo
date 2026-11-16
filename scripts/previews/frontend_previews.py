@@ -164,12 +164,18 @@ class PreviewDeployment:
         print(f"Deployed {self.type} preview to {self.url} ({self.sandbox_id})")
 
     def terminate(self):
-        print(f"Terminating {self.type} deploy for {self.artifact} ({self.sandbox_id})")
-
-        sb = modal.Sandbox.from_id(self.sandbox_id)
-        sb.terminate(wait=False)
-
-        print(f"Requested termination of sandbox {self.sandbox_id}")
+        # A deploy that fails after terminate() is persisted with no sandbox;
+        # there's nothing to stop, and from_id(None) would raise and wedge
+        # every later deploy for this PR.
+        if self.sandbox_id is None:
+            print(f"No sandbox to terminate for {self.type} deploy of {self.artifact}")
+        else:
+            print(
+                f"Terminating {self.type} deploy for {self.artifact} ({self.sandbox_id})"
+            )
+            sb = modal.Sandbox.from_id(self.sandbox_id)
+            sb.terminate(wait=False)
+            print(f"Requested termination of sandbox {self.sandbox_id}")
 
         self.sandbox_id = None
         self.url = None
