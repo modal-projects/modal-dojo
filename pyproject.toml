@@ -16,6 +16,7 @@ dependencies = [
     "cloudpickle~=3.1.2",
     "datasets~=5.1.0",
     "httpx~=0.28.1",
+    "jinja2~=3.1.6",
     "packaging~=26.3",
     "pydantic~=2.14.1",
     "fastapi~=0.162.0",

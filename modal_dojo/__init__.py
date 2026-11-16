@@ -46,6 +46,10 @@ _EXPORTS = {
     "Sandbox": ("modal_dojo.common.sandbox", "Sandbox"),
     "SandboxResult": ("modal_dojo.common.sandbox", "SandboxResult"),
     "HarborDataset": ("modal_dojo.common.dataset", "HarborDataset"),
+    "HarborEnvironment": (
+        "modal_dojo.common.harbor_environment",
+        "HarborEnvironment",
+    ),
     "MetricConfig": ("modal_dojo.common.metrics", "MetricConfig"),
     "TrackioConfig": ("modal_dojo.common.trackio", "TrackioConfig"),
     "EvalConfig": ("modal_dojo.common.eval", "EvalConfig"),
@@ -263,6 +267,7 @@ __all__ = [
     "GLM_5_3_Flash_LoRA_Recipe",
     "GLM_5_3_Flash_LoRA_256k_Recipe",
     "HarborDataset",
+    "HarborEnvironment",
     "EvalConfig",
     "EvalConfigDurable",
     "EvalResult",
