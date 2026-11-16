@@ -180,7 +180,9 @@ batch with the global training batch. Provide at least one complete batch.
 Miles SFT disables rollout log-probabilities, mismatch correction, reward
 normalization and expert-routing replay, even if the RL preset enables them.
 LoRA SFT automatically sets `lora_train_only=True`, so it does not need serving
-engines or adapter synchronization.
+engines or adapter synchronization. Use a working LoRA recipe: adapter
+injection still requires the model's Bridge or native LoRA provider, and
+setting `lora_rank` alone is not sufficient for every preset.
 
 Choose the learning rate, schedule and training duration for your dataset;
 switching an RL preset to SFT does not tune them. Start with one optimizer
