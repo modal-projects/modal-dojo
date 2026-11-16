@@ -83,7 +83,10 @@ jobs:
       # the PR's API changes.
       - name: Deploy dashboard API preview
         id: api
+        # Without pipefail, `| tee` hides a failed deploy and the last log line
+        # gets passed on as the API URL.
         run: |
+          set -o pipefail
           uv run python scripts/previews/dashboard_api.py deploy ${{ github.event.pull_request.number }} | tee api.log
           echo "url=$(tail -n 1 api.log)" >> "$GITHUB_OUTPUT"
 
