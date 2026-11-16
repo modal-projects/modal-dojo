@@ -14,7 +14,7 @@
     "@tailwindcss/vite": "^4.3.2",
     "svelte": "^5.28.2",
     "tailwindcss": "^4.3.2",
-    "vite": "^6.3.2"
+    "vite": "^6.4.6"
   },
   "dependencies": {
     "date-fns": "^4.1.0",
