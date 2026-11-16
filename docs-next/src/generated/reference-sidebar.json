@@ -37,6 +37,10 @@
       "link": "/reference/endpoint"
     },
     {
+      "label": "Environment",
+      "link": "/reference/environment"
+    },
+    {
       "label": "GpuAllocationError",
       "link": "/reference/gpuallocationerror"
     },
@@ -51,6 +55,10 @@
     {
       "label": "HuggingFaceDataset",
       "link": "/reference/huggingfacedataset"
+    },
+    {
+      "label": "ManagedTrainConfig",
+      "link": "/reference/managedtrainconfig"
     },
     {
       "label": "MetricConfig",

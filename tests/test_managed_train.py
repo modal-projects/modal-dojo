@@ -1,0 +1,102 @@
+import pytest
+
+from modal_dojo import (
+    DatasetConfig,
+    Environment,
+    Gemma4_26B_A4B,
+    ManagedTrainConfig,
+    ModelConfig,
+    Qwen3_5_4B,
+    Qwen3_5_4B_Recipe,
+)
+from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
+
+
+class _Rows(DatasetConfig):
+    def __init__(self, n: int) -> None:
+        self.n = n
+
+    def input_key(self) -> str:
+        return "prompt"
+
+    def label_key(self) -> str:
+        return "label"
+
+    def rows(self):
+        return [{"prompt": f"q{i}", "label": "a"} for i in range(self.n)]
+
+
+async def exact_match(args, sample, **kwargs) -> float:
+    return float(sample.response.strip() == sample.label)
+
+
+async def multi_turn(args, sample, sampling_params):
+    return sample
+
+
+def test_environment_holds_dataset_and_functions():
+    dataset = _Rows(1)
+    env = Environment(dataset=dataset, reward_fn=exact_match)
+    assert (env.dataset, env.reward_fn, env.generate_fn) == (dataset, exact_match, None)
+
+
+def test_uses_preset_and_wires_environment():
+    env = Environment(_Rows(1), exact_match, generate_fn=multi_turn)
+
+    managed = ManagedTrainConfig(Qwen3_5_4B(), env, num_rollout=7)
+
+    recipe = managed.recipe
+    assert type(recipe) is Qwen3_5_4B_Recipe
+    assert recipe.num_rollout == 7
+    assert recipe.custom_rm_function is exact_match
+    assert recipe.extra_config["custom_generate_function_path"].endswith("multi_turn")
+    # One task: the batch shrinks to it, one update per rollout.
+    assert recipe.rollout_batch_size == 1
+    assert recipe.global_batch_size == recipe.n_samples_per_prompt
+    assert managed.train_config.dataset is env.dataset
+    assert recipe.lr == Qwen3_5_4B_Recipe().lr  # preset values kept
+
+
+def test_overrides_win_and_are_checked():
+    env = Environment(_Rows(1), exact_match)
+    recipe = ManagedTrainConfig(
+        Qwen3_5_4B(),
+        env,
+        num_rollout=3,
+        recipe_overrides={"n_samples_per_prompt": 8, "lr": 1e-6},
+    ).recipe
+    assert (recipe.n_samples_per_prompt, recipe.global_batch_size) == (8, 8)
+    assert recipe.lr == 1e-6
+    assert recipe.custom_generate_function is None
+    assert "custom_generate_function_path" not in (recipe.extra_config or {})
+
+    with pytest.raises(DojoConfigError, match="not_a_field"):
+        ManagedTrainConfig(
+            Qwen3_5_4B(), env, num_rollout=3, recipe_overrides={"not_a_field": 1}
+        )
+    with pytest.raises(DojoConfigError, match="num_rollout"):
+        ManagedTrainConfig(Qwen3_5_4B(), env, num_rollout=0)
+
+
+def test_keeps_preset_batch_when_tasks_suffice():
+    recipe = ManagedTrainConfig(
+        Qwen3_5_4B(), Environment(_Rows(3), exact_match), num_rollout=1
+    ).recipe
+    preset = Qwen3_5_4B_Recipe()
+    assert (recipe.rollout_batch_size, recipe.global_batch_size) == (
+        preset.rollout_batch_size,
+        preset.global_batch_size,
+    )
+
+
+def test_falls_back_to_miles_and_rejects_unknown_models():
+    env = Environment(_Rows(1), exact_match)
+    recipe = ManagedTrainConfig(Gemma4_26B_A4B(), env, num_rollout=1).recipe
+    assert isinstance(recipe, MilesRecipe)
+
+    class Unknown(ModelConfig):
+        model_name = "org/unknown"
+
+    with pytest.raises(DojoConfigError, match="No recipe preset"):
+        ManagedTrainConfig(Unknown(), env, num_rollout=1)
