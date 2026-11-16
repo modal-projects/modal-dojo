@@ -46,7 +46,7 @@ exclude = ["dashboards/frontend/node_modules", "dashboards/frontend/dist"]
 modal-dojo = "modal_dojo.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/modal-projects/modal-dojo"
+Homepage = "https://github.com/modal-labs/modal-dojo"
 Documentation = "https://dojo.modal.dev"
 
 [dependency-groups]

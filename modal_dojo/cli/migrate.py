@@ -112,7 +112,7 @@ class ModalResources:
                 timeout=10,
             )
             # Jupyter sets FORCE_COLOR=1, so Modal's Rich output includes ANSI
-            # codes even with --json. See https://github.com/modal-projects/modal-dojo/pull/787.
+            # codes even with --json. See https://github.com/modal-labs/modal-dojo/pull/787.
             containers = json.loads(Text.from_ansi(result.stdout).plain)
             if not isinstance(containers, list):
                 raise ValueError(f"Unexpected container list for {app_id}")
