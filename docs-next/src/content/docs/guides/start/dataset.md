@@ -70,39 +70,22 @@ modal secret create huggingface-secret HF_TOKEN=hf_...
 
 ## Harbor
 
-A [Harbor dataset](https://dojo.modal.dev/reference/harbordataset) provides a series of tasks, each containing instructions, files for the coding environment, and tests.
+[`HarborTasks`](https://dojo.modal.dev/reference/harbortasks) trains an agent harness on [Harbor](https://docs.harborframework.com/) tasks. Each task is a directory with an `instruction.md`, the environment the agent works in, and tests that score its work. During a rollout, the agent solves the task in its own Modal Sandbox, every model call it makes is recorded for training, and the task's tests provide the reward.
 
 ```python
-from modal_dojo import HarborDataset
+from modal_dojo import HarborAgent, HarborTasks
 
-hello_dataset = HarborDataset(dataset_name="harbor/hello-world")
+dataset = HarborTasks(agent=HarborAgent("pi"), path="/path/to/tasks")
 ```
 
-If you have the files installed locally, you can instead use the filepath:
+`path` is a local directory whose subdirectories are tasks. Use `task_glob` to choose which of them a dataset includes, for example to keep training and evaluation tasks apart:
 
 ```python
-hello_dataset = HarborDataset(path="/path/to/task_root")
+train_dataset = HarborTasks(agent=HarborAgent("pi"), path="tasks", task_glob="train-*")
+eval_dataset = HarborTasks(agent=HarborAgent("pi"), path="tasks", task_glob="eval-*")
 ```
 
-Some tasks provide additional metadata:
-
-```python
-hello_dataset = HarborDataset(
-    # ...
-    label_metadata_path="task.toml",
-    test_data_dir="tests",
-)
-```
-
-During training, each task will be converted into a single user prompt. Like `HuggingFaceDataset`, you can optionally provide a system prompt or override the template for the user message. However, if the metadata contains variables, you can also use them in `prompt_template`!
-
-```python
-hello_dataset = HarborDataset(
-    # ...
-    system_prompt="You are an expert Python programmer.",
-    prompt_template="Perform task {task_name} stored at {task_path}: {instruction}",
-)
-```
+`HarborTasks` works with Miles recipes. If one of `dataset` and `eval_dataset` is a `HarborTasks`, the other must be one too.
 
 ## Creating a custom dataset
 

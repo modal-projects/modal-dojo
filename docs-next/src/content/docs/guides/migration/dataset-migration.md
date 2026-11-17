@@ -10,15 +10,12 @@ New versions of the Modal Dojo feature a reworked `DatasetConfig` API that is si
 
 Previously, a `DatasetConfig` instance was responsible for both a train and eval split. In the new API, each `DatasetConfig` instance now maintains only one split. To have a separate evaluation dataset, you must instantiate an additional `DatasetConfig` instance.
 
-For example, with `HarborDataset`:
+For example, with `HuggingFaceDataset`:
 
 ```python
-# Before
-dataset = HarborDataset(dataset_name="harbor/hello-world")
-
 # After
-train_dataset = HarborDataset(dataset_name="harbor/hello-world", split="train")
-eval_dataset = HarborDataset(dataset_name="harbor/hello-world", split="eval")
+train_dataset = HuggingFaceDataset("openai/gsm8k", hf_split="train[:1000]", ...)
+eval_dataset = HuggingFaceDataset("openai/gsm8k", hf_split="train[1000:]", ...)
 ```
 
 If you use a recipe with a defined `eval_interval`, you must pass in an `eval_dataset` to your `TrainConfig` separately. This will supply an additional dataset so Slime or Miles can use it internally for evaluations:
@@ -98,7 +95,7 @@ You then implement these additional methods to migrate other aspects of your dat
 
 These fields have been removed:
 
-* `always_prepare` has been removed on the base `DatasetConfig` class. For `HuggingFaceDataset` and `HarborDataset`, this functionality is now provided by the `always_download` property. For custom subclasses, returning `None` from `cache_key()` is equivalent to setting `always_prepare` to `True`.
+* `always_prepare` has been removed on the base `DatasetConfig` class. For `HuggingFaceDataset`, this functionality is now provided by the `always_download` property. For custom subclasses, returning `None` from `cache_key()` is equivalent to setting `always_prepare` to `True`.
 * `writes_eval_paths` has been removed, as evaluation datasets are now completely separate from training datasets.
 * `dataset_id` and `name` have been removed altogether.
 
@@ -159,40 +156,18 @@ Finally, some fields and methods have been replaced or renamed:
 * `always_prepare` has been renamed to `always_download`.
 * `n_rows` has been removed. You should migrate to [Hugging Face's native slicing syntax instead.](https://dojo.modal.dev/guides/dataset#hugging-face)
 
-## Using the new HarborDataset API
+## Using the new HarborTasks API
 
-Previously, you defined one `HarborDataset` instance for both training and evaluation. In the new API, you define two instances and vary the `split` parameter, as well as the number of `train_repeats` or `eval_repeats`:
+[`HarborTasks`](https://dojo.modal.dev/reference/harbortasks) trains an agent harness on Harbor tasks with Miles recipes. It runs the agent on each task in its own Modal Sandbox and uses the task's tests as the reward.
+
+Like other datasets in the new API, each `HarborTasks` instance holds one split. Define one instance for training and one for evaluation, passing in the `agent` that solves each task, the local task directory `path`, and a `task_glob` that selects that dataset's tasks:
 
 ```python
-# Before
-dataset = HarborDataset(
-    path="/path/to/tasks",
-    train_size=80,
-    eval_size=20,
-    shuffle_tasks=True,
-    shuffle_seed=42,
-    label_metadata_path="task.toml",
-    train_repeats=4,
-    eval_repeats=1,
-)
-
-
-# After
-options = dict(
-    path="/path/to/tasks",
-    train_size=80,
-    eval_size=20,
-    shuffle_tasks=True,
-    shuffle_seed=42,
-    label_metadata_path="task.toml",
-)
-train_dataset = HarborDataset(split="train", train_repeats=4, **options)
-eval_dataset = HarborDataset(split="eval", eval_repeats=1, **options)
+train_dataset = HarborTasks(agent=HarborAgent("pi"), path="/path/to/tasks", task_glob="train-*")
+eval_dataset = HarborTasks(agent=HarborAgent("pi"), path="/path/to/tasks", task_glob="eval-*")
 ```
 
-If you were previously using `EvalConfig` with your `HarborDataset`, your evaluation function will now receive preformatted rows instead of task records, identical to what your generate and reward functions receive. Each row will contain:
-* A `messages` list containing messages for the model
-* A JSON-encoded `label` containing metadata for the task
+To sample each task more than once, set the recipe's `n_samples_per_prompt` and `n_samples_per_eval_prompt`.
 
 ## Adapting your MultimodalDataset instances
 
@@ -258,4 +233,4 @@ Previously, many `DatasetConfig` initializers allowed you to pass in arbitrary k
 
 To verify your dataset before training, inspect a row from it using `rows()` and check that your prompt and label columns match what you expect.
 
-For Hugging Face and Harbor datasets, confirm that your evaluation function accepts the same row structure as your reward function.
+For Hugging Face datasets, confirm that your evaluation function accepts the same row structure as your reward function.

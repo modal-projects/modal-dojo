@@ -3,7 +3,7 @@ import pickle
 
 import pytest
 
-from modal_dojo.common.dataset import DatasetConfig, HarborDataset, _SftDataset
+from modal_dojo.common.dataset import DatasetConfig, _SftDataset
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.launcher_helpers import (
     write_dataset_if_needed,
@@ -126,47 +126,6 @@ def test_eval_dataset_fields_must_match_training_dataset():
         BaseTrainRecipe._validate_datasets(
             RowsDataset("train"), OtherChatTemplateDataset("eval")
         )
-
-
-def test_harbor_instances_select_discrete_splits(tmp_path):
-    for name in ("one", "two", "three"):
-        task = tmp_path / name
-        task.mkdir()
-        (task / "instruction.md").write_text(f"solve {name}")
-
-    train = HarborDataset(
-        task_root=str(tmp_path),
-        split="train",
-        train_size=2,
-        eval_size=1,
-        train_repeats=2,
-    )
-    evaluation = HarborDataset(
-        task_root=str(tmp_path),
-        split="eval",
-        train_size=2,
-        eval_size=1,
-    )
-
-    train_rows = list(train.rows())
-    eval_rows = list(evaluation.rows())
-    assert len(train_rows) == 4
-    assert len(eval_rows) == 1
-    train_prompts = {row["messages"][0]["content"] for row in train_rows}
-    assert eval_rows[0]["messages"][0]["content"] not in train_prompts
-    assert train.cache_key() != evaluation.cache_key()
-
-
-def test_harbor_always_download_disables_materialization_reuse():
-    dataset = HarborDataset(
-        dataset_name="harbor/example",
-        always_download=True,
-    )
-
-    assert dataset.cache_key() is None
-    assert BaseTrainRecipe._resolve_data_paths(
-        dataset
-    ) != BaseTrainRecipe._resolve_data_paths(dataset)
 
 
 class PairDataset(DatasetConfig):
