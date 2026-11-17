@@ -387,7 +387,9 @@ def test_run_log_stream_events_always_include_json_data(
     async def no_sleep(_seconds):
         return None
 
-    monkeypatch.setattr("modal.client._Client.from_credentials", from_credentials)
+    monkeypatch.setattr(
+        "modal_dojo.common._modal_compat.open_async_client", from_credentials
+    )
     monkeypatch.setattr(_dashboard.asyncio, "sleep", no_sleep)
 
     with _client(monkeypatch, tmp_path) as client:

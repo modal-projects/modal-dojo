@@ -21,6 +21,9 @@ from astro_redirects import redirect_status, refresh_map_from_tarball  # noqa: E
 image = (
     modal.Image.debian_slim()
     .pip_install("PyGithub==2.6.1")
+    # deploy_preview builds the sandbox images from inside this container, and
+    # dojo defaults to an image builder version modal 1.6.1 can't use.
+    .env({"MODAL_IMAGE_BUILDER_VERSION": "2025.06"})
     .add_local_file(_ASTRO_REDIRECTS, "/root/astro_redirects.py", copy=True)
     # Modal rejects a copy=True step after a mounted add_local_*, so the
     # mounted directory goes last.
@@ -58,9 +61,7 @@ PreviewType: TypeAlias = Literal["dashboard", "docs"]
 
 # Where a dashboard preview sends `/api` when the PR didn't bring its own
 # backend (see scripts/previews/dashboard_api.py).
-DEPLOYED_DASHBOARD_HOST = (
-    "modal-labs-training-gym--dojo-dashboard-fastapi-app.modal.run"
-)
+DEPLOYED_DASHBOARD_HOST = "modal-labs-dojo--dojo-dashboard-fastapi-app.modal.run"
 
 
 def _docs_nginx_refresh_inc(redirects: dict[str, str]) -> str:
@@ -163,12 +164,18 @@ class PreviewDeployment:
         print(f"Deployed {self.type} preview to {self.url} ({self.sandbox_id})")
 
     def terminate(self):
-        print(f"Terminating {self.type} deploy for {self.artifact} ({self.sandbox_id})")
-
-        sb = modal.Sandbox.from_id(self.sandbox_id)
-        sb.terminate(wait=False)
-
-        print(f"Requested termination of sandbox {self.sandbox_id}")
+        # A deploy that fails after terminate() is persisted with no sandbox;
+        # there's nothing to stop, and from_id(None) would raise and wedge
+        # every later deploy for this PR.
+        if self.sandbox_id is None:
+            print(f"No sandbox to terminate for {self.type} deploy of {self.artifact}")
+        else:
+            print(
+                f"Terminating {self.type} deploy for {self.artifact} ({self.sandbox_id})"
+            )
+            sb = modal.Sandbox.from_id(self.sandbox_id)
+            sb.terminate(wait=False)
+            print(f"Requested termination of sandbox {self.sandbox_id}")
 
         self.sandbox_id = None
         self.url = None
@@ -225,7 +232,7 @@ def refresh_sandboxes():
     print("Refreshing sandboxes")
 
     gh = Github()
-    repo = gh.get_repo("modal-projects/modal-dojo")
+    repo = gh.get_repo("modal-labs/modal-dojo")
 
     prs = defaultdict(list)
     for (pr_number, _), deployment in list(deployments.items()):

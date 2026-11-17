@@ -8,7 +8,7 @@ The Training Gym has been renamed to Modal Dojo. This guide will break down how 
 
 ## Package, imports, and environment variables
 
-The repository has been renamed to [modal-dojo](https://github.com/modal-projects/modal-dojo), and the Python package is now imported as `modal_dojo`.
+The repository has been renamed to [modal-dojo](https://github.com/modal-labs/modal-dojo), and the Python package is now imported as `modal_dojo`.
 
 To replace your existing Training Gym dependency:
 

@@ -15,12 +15,7 @@ from modal_dojo.common.modal_refs import (
 
 
 def _modal_repr(value) -> str:
-    original = next(
-        attr_value
-        for attr_name, attr_value in value.__dict__.items()
-        if attr_name.startswith("_sync_original")
-    )
-    return original._rep
+    return repr(value)
 
 
 def test_modal_function_handle_fails_without_modal_dojo_reducer(monkeypatch) -> None:
