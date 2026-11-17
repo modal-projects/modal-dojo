@@ -561,6 +561,12 @@ table.resizable-table.sticky-first-column tr.row-selected td:first-child {
   border-color: #3b2a37;
 }
 
+.status-queued {
+  background: #35301f;
+  color: #fbbf24;
+  border-color: #4d4227;
+}
+
 .status-completed,
 .status-ready {
   background: #273823;

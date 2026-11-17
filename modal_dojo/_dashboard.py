@@ -1181,6 +1181,54 @@ def fastapi_app():
             await run_in_threadpool(vol_put_summary_items, summary_store, items)
         return items
 
+    async def _annotate_queue_reasons(summaries: list[RunSummary]) -> None:
+        queued = [
+            summary
+            for summary in summaries
+            if summary.display_status == "queued" and summary.modal_app_id
+        ]
+        if not queued:
+            return
+        client = await get_modal_client()
+        if client is None:
+            return
+        from modal_dojo.common._modal_compat import (
+            app_environment_name,
+            list_environments,
+        )
+
+        try:
+            environments = {item.name: item for item in await list_environments(client)}
+        except Exception:
+            return
+        names = await asyncio.gather(
+            *(app_environment_name(client, summary.modal_app_id) for summary in queued),
+            return_exceptions=True,
+        )
+        for summary, name in zip(queued, names):
+            environment = environments.get(name) if isinstance(name, str) else None
+            if environment is None:
+                continue
+            if environment.spend_limit_reached:
+                summary.queue_reason = "Environment spend limit reached"
+            elif (
+                environment.max_concurrent_gpus > 0
+                and environment.current_concurrent_gpus
+                >= environment.max_concurrent_gpus
+            ):
+                summary.queue_reason = (
+                    f"Environment GPU limit — {environment.current_concurrent_gpus}/"
+                    f"{environment.max_concurrent_gpus} GPUs in use"
+                )
+            elif (
+                environment.max_concurrent_tasks > 0
+                and environment.current_concurrent_tasks
+                >= environment.max_concurrent_tasks
+            ):
+                summary.queue_reason = "Environment task limit reached"
+            else:
+                summary.queue_reason = "Waiting for GPU capacity"
+
     async def load_runs() -> list[JsonDict]:
         run_records = await load_list_summary(MetadataStore.TRAINING_RUNS_SUMMARY)
         try:
@@ -1190,10 +1238,9 @@ def fastapi_app():
         except Exception:
             # A result-store outage must not hide otherwise healthy run records.
             result_records = []
-        return [
-            summary.model_dump(mode="json")
-            for summary in build_run_summaries(run_records, result_records)
-        ]
+        summaries = build_run_summaries(run_records, result_records)
+        await _annotate_queue_reasons(summaries)
+        return [summary.model_dump(mode="json") for summary in summaries]
 
     async def load_train_results() -> list[JsonDict]:
         return await load_list_summary(MetadataStore.TRAIN_RESULTS_SUMMARY)
@@ -1363,7 +1410,9 @@ def fastapi_app():
             )
         except KeyError:
             result = None
-        return build_run_summary(run.model_dump(mode="json"), result)
+        summary = build_run_summary(run.model_dump(mode="json"), result)
+        await _annotate_queue_reasons([summary])
+        return summary
 
     def _component_manifest(
         run: TrainingRun, component_type: str, digest: str | None = None

@@ -111,3 +111,28 @@ def stream_app_logs(
             last_entry_id=last_entry_id,
         )
     )
+
+
+async def list_environments(client: Any) -> list[Any]:
+    """Return ``EnvironmentListItem``s with concurrency limits and usage.
+
+    Private because ``modal.Environment.objects.list()`` drops the
+    ``max_concurrent_*``/``current_concurrent_*`` fields when it builds
+    ``EnvironmentMetadata``.
+    """
+    from google.protobuf.empty_pb2 import Empty
+
+    resp = await client.stub.EnvironmentList(Empty())
+    return list(resp.items)
+
+
+async def app_environment_name(client: Any, app_id: str) -> str:
+    """Return the name of the environment the App runs in.
+
+    Private because the public ``AppInfo`` drops ``environment_name`` from
+    the ``AppHandleMetadata`` the RPC returns.
+    """
+    from modal_proto import api_pb2
+
+    resp = await client.stub.AppGetInfo(api_pb2.AppGetInfoRequest(app_id=app_id))
+    return resp.info.environment_name
