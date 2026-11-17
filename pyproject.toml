@@ -12,6 +12,7 @@ classifiers = [
 ]
 dependencies = [
     "modal==1.6.1",
+    "synchronicity~=0.12.6",
     "click~=8.5.0",
     "cloudpickle~=3.1.2",
     "datasets~=5.1.0",
@@ -23,6 +24,14 @@ dependencies = [
     "rich~=15.0.0",
     "requests~=2.34.2",
     "transformers~=5.20.2",
+]
+
+[project.optional-dependencies]
+# tinker-cookbook client for an existing Spindle server.
+spindle = [
+    "tinker==0.35.0",
+    "tml-renderers==0.2.0",
+    "tinker-cookbook==0.5.9",
 ]
 
 [build-system]
