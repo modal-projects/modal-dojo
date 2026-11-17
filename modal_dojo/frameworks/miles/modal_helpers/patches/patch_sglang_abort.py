@@ -9,6 +9,7 @@ Ray job after useful rollout data has already been collected.
 Executed at image-build time via ``python3 <this file>``.
 """
 
+import textwrap
 from pathlib import Path
 
 path = Path("/root/miles/miles/rollout/sglang_rollout.py")
@@ -18,29 +19,32 @@ if not path.exists():
     raise SystemExit(0)
 
 src = path.read_text()
-old = """    if parse(sglang_router.__version__) <= parse("0.2.1") or args.use_miles_router:
+blocks = (
+    """    if parse(sglang_router.__version__) <= parse("0.2.1") or args.use_miles_router:
         response = await get(f"http://{args.sglang_router_ip}:{args.sglang_router_port}/list_workers")
         urls = response["urls"]
     else:
         response = await get(f"http://{args.sglang_router_ip}:{args.sglang_router_port}/workers")
         urls = [worker["url"] for worker in response["workers"]]
-"""
-new = """    try:
-        if parse(sglang_router.__version__) <= parse("0.2.1") or args.use_miles_router:
-            response = await get(f"http://{args.sglang_router_ip}:{args.sglang_router_port}/list_workers")
-            urls = response["urls"]
-        else:
-            response = await get(f"http://{args.sglang_router_ip}:{args.sglang_router_port}/workers")
-            urls = [worker["url"] for worker in response["workers"]]
-    except Exception as exc:
-        logger.warning(f"Failed to query SGLang workers for abort; continuing without abort fanout: {exc}")
+""",
+    # Miles after radixark/miles#4320.
+    """    response = await get(f"http://{args.sglang_router_ip}:{args.sglang_router_port}/workers")
+    urls = router_worker_base_urls([worker["url"] for worker in response["workers"]])
+""",
+)
+handler = f"""    except Exception as exc:
+        logger.warning(f"{marker}: {{exc}}")
         urls = []
 """
 
 if marker in src:
     print("SGLang abort patch already applied")
-elif old in src:
-    path.write_text(src.replace(old, new, 1))
-    print("Patched Miles SGLang abort cleanup")
 else:
-    raise RuntimeError("Could not find Miles SGLang abort block to patch")
+    for old in blocks:
+        if old in src:
+            new = "    try:\n" + textwrap.indent(old, "    ") + handler
+            path.write_text(src.replace(old, new, 1))
+            print("Patched Miles SGLang abort cleanup")
+            break
+    else:
+        raise RuntimeError("Could not find Miles SGLang abort block to patch")

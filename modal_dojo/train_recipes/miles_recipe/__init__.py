@@ -15,6 +15,9 @@ from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash_lora import (
 from modal_dojo.train_recipes.miles_recipe.glm_5_3_flash_256k import (
     GLM_5_3_Flash_LoRA_256k_Recipe,
 )
+from modal_dojo.train_recipes.miles_recipe.inkling_2_small import (
+    Inkling_2_Small_LoRA_Recipe,
+)
 from modal_dojo.train_recipes.miles_recipe.inkling import (
     Inkling_Small_LoRA_Recipe,
     Inkling_Small_Recipe,
@@ -43,6 +46,7 @@ __all__ = [
     "Gemma4_26B_A4B_Recipe",
     "GLM_5_3_Flash_LoRA_Recipe",
     "GLM_5_3_Flash_LoRA_256k_Recipe",
+    "Inkling_2_Small_LoRA_Recipe",
     "Inkling_Small_Recipe",
     "Inkling_Small_LoRA_Recipe",
     "Kimi_K3_LoRA_Recipe",
