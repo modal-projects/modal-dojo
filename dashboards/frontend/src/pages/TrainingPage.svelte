@@ -348,6 +348,9 @@
                     <a href={trainingRunDetailPath(run.run_id)} class="cell-open-button" onclick={(event) => selectRun(run.run_id, event)}>
                       <span class="flex flex-col items-start gap-[4px] min-w-0 max-w-full">
                         <StatusPill status={status} />
+                        {#if run.queue_reason}
+                          <span class="text-(--muted) text-[11px] leading-[14px] whitespace-normal">{run.queue_reason}</span>
+                        {/if}
                         {#if resumeBadge(run)}
                           <span class="[border:1px_solid_color-mix(in_srgb,var(--yellow,#fbbf24)_42%,transparent)] rounded-[999px] bg-[color-mix(in_srgb,var(--yellow,#fbbf24)_10%,transparent)] text-(--yellow,#fbbf24) text-[11px] leading-[14px] p-[1px_6px] whitespace-nowrap">{resumeBadge(run)}</span>
                         {/if}

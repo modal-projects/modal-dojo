@@ -734,10 +734,18 @@ class TrainConfig:
                             self.recipe, "megatron_to_hf_mode", ""
                         )
                         needs_conversion = megatron_to_hf_mode != "bridge"
-                        download_status, convert_status = (
-                            (SlimeStatus.DOWNLOAD_MODEL, SlimeStatus.CONVERT_MODEL)
+                        download_status, convert_status, initializing_status = (
+                            (
+                                SlimeStatus.DOWNLOAD_MODEL,
+                                SlimeStatus.CONVERT_MODEL,
+                                SlimeStatus.INITIALIZING,
+                            )
                             if isinstance(self.recipe, SlimeRecipe)
-                            else (MilesStatus.DOWNLOAD_MODEL, MilesStatus.CONVERT_MODEL)
+                            else (
+                                MilesStatus.DOWNLOAD_MODEL,
+                                MilesStatus.CONVERT_MODEL,
+                                MilesStatus.INITIALIZING,
+                            )
                         )
                         _set_status(download_status, is_active=False)
                         app.download.remote(
@@ -754,6 +762,7 @@ class TrainConfig:
                                 framework_status_token=framework_status_token,
                             )
 
+                        _set_status(initializing_status, is_active=False)
                         function_call = app.train.spawn(
                             modal_app_id=modal_app_id,
                             modal_app_url=modal_app_url,

@@ -50,16 +50,16 @@ _SFT_STAGE_LABELS = {
     "generate_rollouts": "Preparing batch",
     "weight_sync": "Training",
 }
-_QUEUEABLE_STAGES = {"download_model", "convert_model"}
+_QUEUEABLE_STAGES = {"initializing", "download_model", "convert_model"}
 
 
-def _display_status(status: str, *, has_train_result: bool) -> str:
+def _display_status(status: str, *, has_train_result: bool, is_queued: bool) -> str:
     normalized = status.strip().lower()
     if has_train_result or normalized == "completed":
         return "completed"
     if normalized in {"cancelled", "stopped", "failed"}:
         return normalized
-    return "pending"
+    return "queued" if is_queued else "pending"
 
 
 def _display_stage(
@@ -245,6 +245,7 @@ class RunSummary(BaseModel):
         "Stage",
         default="",
     )
+    queue_reason: str = ""
     training_type: Literal["sft", "rl"] = _run_list_field(
         "Type",
         default="rl",
@@ -730,6 +731,9 @@ def build_run_summary(
         display_status=_display_status(
             status,
             has_train_result=result_summary is not None,
+            is_queued=(
+                framework_progress is not None and framework_progress.is_active is False
+            ),
         ),
         display_stage=_display_stage(
             framework_status, framework_progress, training_type

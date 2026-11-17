@@ -187,7 +187,12 @@
     <section class="summary-section">
       <div class="kv">
         <span class="kv-key">Status</span>
-        <StatusPill status={getStatus(run)} />
+        <span class="flex flex-col items-start gap-[4px]">
+          <StatusPill status={getStatus(run)} />
+          {#if run.queue_reason}
+            <span class="text-(--muted) text-[11px] leading-[14px]">{run.queue_reason}</span>
+          {/if}
+        </span>
       </div>
       <div class="kv">
         <span class="kv-key">Type</span>
