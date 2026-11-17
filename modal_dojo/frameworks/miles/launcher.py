@@ -77,6 +77,7 @@ from modal_dojo.train_recipes.miles_recipe.recipe import (
     MilesRecipe,
 )
 from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
+from modal_dojo.frameworks.miles import stitch
 from modal_dojo.frameworks.miles.modal_helpers.utils import (
     build_train_cmd,
     get_checkpoint_conversion_policy,
@@ -179,7 +180,10 @@ def _build_miles_base_image(
         .entrypoint([])
         .run_commands(
             f"rm -rf {HF_CACHE_PATH} 2>/dev/null || true",
-            f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3",
+            f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3"
+            " || echo 'WARNING: sglang abort patch did not apply to the"
+            " docker_image miles; transient router failures during rollout"
+            " cleanup may crash the run'",
             f"echo {_PATCH_DIST_CKPT_QUANTIZED_B64} | base64 -d | python3",
             (
                 f"if test -f {_MEGATRON_TORCH_STRATEGY_PY}; then "
@@ -239,6 +243,10 @@ def _build_miles_base_image(
     # torchrun/Ray subprocesses do not inherit the Modal function wrapper's
     # injected SDK path. The cross-rank checkpoint commit hook imports it.
     image = image.uv_pip_install("randomname==0.2.1", f"modal=={MODAL_VERSION}")
+    if recipe.stitch:
+        image = image.run_commands(stitch.NVCOMP_INSTALL).uv_pip_install(
+            stitch.PACKAGE_SPEC
+        )
     image = mount_tools_dir(image)
     image = mount_caller_source(image, caller_script)
 
@@ -309,12 +317,16 @@ def build_ray_runtime_env(
     return {"env_vars": env_vars}
 
 
+def _sglang_checkout(ref: str) -> str:
+    return (
+        f"cd {SGLANG_ROOT} && git fetch --depth=1 -- origin"
+        f" {shlex.quote(ref)} && git checkout -f FETCH_HEAD"
+    )
+
+
 def apply_source_overlays(image: Image, miles: MilesRecipe) -> Image:
     if miles.sglang_git_ref:
-        image = image.run_commands(
-            f"cd {SGLANG_ROOT} && git fetch --depth=1 -- origin"
-            f" {shlex.quote(miles.sglang_git_ref)} && git checkout -f FETCH_HEAD"
-        )
+        image = image.run_commands(_sglang_checkout(miles.sglang_git_ref))
 
     if miles.miles_git_ref:
         image = image.run_commands(
@@ -383,6 +395,8 @@ def build_miles_app(
         training_run_id=training_run_id,
     )
     recorded_checkpoint_dir = checkpoint_dir if configured_recipe_save(miles) else ""
+    # Off the checkpoint Volume: an engine's first reload costs time for every GB it read from that Volume.
+    versions = f"{DATA_PATH}/{training_run_id}/versions"
 
     tags = build_app_tags(
         framework="miles",
@@ -468,6 +482,11 @@ def build_miles_app(
         checkpoints_volume.reload()
 
         save_path = str(miles.ref_load)
+        # Miles loads a Hugging Face ref_load (one with a config.json) directly.
+        if os.path.isfile(os.path.join(save_path, "config.json")):
+            print(f"{save_path} is a Hugging Face checkpoint; skipping conversion.")
+            flush_status_reporter(timeout_seconds=2.0)
+            return None
         if has_torch_dist_checkpoint(
             save_path, is_complete=is_complete_torch_dist_checkpoint_storage
         ):
@@ -673,6 +692,71 @@ def build_miles_app(
 
         flush_status_reporter(timeout_seconds=2.0)
 
+    @contextlib.asynccontextmanager
+    async def stitch_rollout():
+        from stitch.run import PoolConfig as InferencePoolConfig
+        from stitch.run import RunConfig, create_run
+        from stitch.sglang import SGLangConfig
+
+        # The run doesn't exist yet; its URLs don't change the engines' flags.
+        recipe = copy.copy(miles)
+        unset = stitch.extra_config("http://unset", "http://unset", versions)
+        recipe.extra_config = {**(recipe.extra_config or {}), **unset}
+        prepare_miles_config(recipe, model, tempfile.mkdtemp())
+        command = model_args_command(recipe, MILES_ROOT)
+        argv = (
+            (
+                await asyncio.to_thread(
+                    subprocess.run,
+                    shlex.split(command),
+                    stdout=subprocess.PIPE,
+                    text=True,
+                    check=True,
+                )
+            ).stdout.split()
+            if command
+            else []
+        )
+        argv += recipe.cli_args(
+            dataset=dataset,
+            eval_dataset=eval_dataset,
+            dataset_path=dataset_path,
+            eval_dataset_path=eval_dataset_path,
+            model=model,
+        )
+        flags, gpus = await asyncio.to_thread(
+            stitch.engine_flags, argv, {**os.environ, **environment}
+        )
+        checkout = (
+            [_sglang_checkout(miles.sglang_git_ref)] if miles.sglang_git_ref else []
+        )
+        config = RunConfig(
+            run_id=training_run_id,
+            image=miles.docker_image,
+            image_commands=[stitch.NVCOMP_INSTALL, *checkout],
+            volumes={
+                checkpoints_mount_path: checkpoints_volume_name,
+                str(DATA_PATH): data_volume.name,
+            },
+            checkpoint=recipe.hf_checkpoint or model.model_path,
+            versions=versions,
+            engine=SGLangConfig(server_args=flags, env=environment),
+            pool=InferencePoolConfig(
+                gpu=f"{miles.gpu_type}:{gpus}",
+                # Per GPU: its scheduler process, and host memory for its share of the checkpoint load.
+                cpu=8 * gpus,
+                memory=65536 * gpus,
+                min_containers=miles.gpu_allocation.rollout_engines,
+                max_containers=miles.gpu_allocation.rollout_engines,
+            ),
+        )
+        run = await asyncio.to_thread(create_run, config)
+        try:
+            # Miles generates only once the run serves its first version (ExternalRollout.serve).
+            yield run, config
+        finally:
+            await asyncio.to_thread(run.stop)
+
     _multi_node = miles.total_nodes > 1
 
     train_secrets = [
@@ -822,11 +906,21 @@ def build_miles_app(
             return
         assert run_record is not None
 
-        async with shared.training_run_lifecycle(
-            run_record, framework_status_token
-        ) as set_status:
+        async with (
+            shared.training_run_lifecycle(
+                run_record, framework_status_token
+            ) as set_status,
+            stitch_rollout()
+            if miles.stitch
+            else contextlib.nullcontext((None, None)) as (rollout, rollout_config),
+        ):
             save_root = checkpoint_dir
             apply_scoped_save(miles, save_root)
+            if rollout is not None:
+                miles.extra_config = {
+                    **(miles.extra_config or {}),
+                    **stitch.extra_config(rollout.url, rollout.generate_url, versions),
+                }
             prepare_miles_config(miles, model, tempfile.mkdtemp())
 
             os.makedirs(save_root, exist_ok=True)
@@ -947,6 +1041,15 @@ def build_miles_app(
                     "MODAL_DOJO_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
                     **shared.training_reporting_env(
                         miles, model, app_name, framework_status_url
+                    ),
+                    **(
+                        {
+                            # Stitch's URLs take Dojo's Modal proxy token.
+                            "MILES_ROLLOUT_EXTERNAL_API_KEY": f"{os.environ['MODAL_KEY']}.{os.environ['MODAL_SECRET']}",
+                            "STITCH_VERSIONS_VOLUME": rollout_config.versions_volume,
+                        }
+                        if rollout is not None
+                        else {}
                     ),
                 },
                 framework_status_token=framework_status_token,

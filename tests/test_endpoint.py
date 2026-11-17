@@ -413,6 +413,7 @@ def test_launch_covers_every_pinned_endpoint_create_flag() -> None:
         "custom_hf_revision",
         "custom_hf_token",
         "compute_regions",
+        "shared",
     }
 
     click_dests = frozenset(

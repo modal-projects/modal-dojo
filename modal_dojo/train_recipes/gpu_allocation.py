@@ -96,7 +96,8 @@ def resolve_gpu_allocation(config: Any, *, warn: bool = True) -> GpuAllocation:
         if debug_rollout:
             actor_gpus = critic_gpus = 0
 
-    total_gpus = actor_gpus + critic_gpus + rollout_gpus
+    in_cluster_rollout_gpus = 0 if getattr(config, "stitch", False) else rollout_gpus
+    total_gpus = actor_gpus + critic_gpus + in_cluster_rollout_gpus
     max_gpus = _max_gpus_per_container(getattr(config, "gpu_type", None))
     if actor_nodes == 1 and total_gpus <= max_gpus:
         gpus_per_node = total_gpus
