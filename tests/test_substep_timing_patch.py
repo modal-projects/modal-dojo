@@ -48,9 +48,9 @@ DRIVERS = [
     ),
     (
         "miles",
-        "miles/train.py.status.output",
+        "miles/legacy/train.py.status.output",
         "train.py",
-        "miles/train.py.timing.output",
+        "miles/legacy/train.py.timing.output",
         {
             "evaluate_rollouts",
             "generate_rollouts",
@@ -65,9 +65,9 @@ DRIVERS = [
     ),
     (
         "miles",
-        "miles/train_async.py.status.output",
+        "miles/legacy/train_async.py.status.output",
         "train_async.py",
-        "miles/train_async.py.timing.output",
+        "miles/legacy/train_async.py.timing.output",
         {
             "evaluate_rollouts",
             "wait_for_rollout",
@@ -95,35 +95,92 @@ DRIVERS = [
             "evaluate_rollouts_end",
         },
     ),
+    # The pinned image's executor-based drivers. Weight sync for the sync loop
+    # is timed in placement_group.py (see test_miles_executor_package_matches_golden).
+    (
+        "miles",
+        "miles/train.py.status.output",
+        "train.py",
+        "miles/train.py.timing.output",
+        {
+            "initialize_rollout",
+            "initialize_training",
+            "prepare_rollout",
+            "generate_rollouts",
+            "offload_rollout",
+            "onload_train",
+            "train_models",
+            "checkpoint_save",
+            "clear_train_memory",
+            "offload_train",
+            "onload_rollout_weights",
+            "onload_rollout_kv",
+            "prepare_eval",
+            "evaluate_rollouts",
+        },
+    ),
+    (
+        "miles",
+        "miles/train_async.py.status.output",
+        "train_async.py",
+        "miles/train_async.py.timing.output",
+        {
+            "initialize_rollout",
+            "initialize_training",
+            "wait_for_rollout",
+            "wait_for_next_rollout",
+            "train_models",
+            "offload_train",
+            "checkpoint_save",
+            "weight_sync",
+            "initial_weight_sync",
+            "prepare_eval",
+            "evaluate_rollouts",
+            "evaluate_rollouts_end",
+        },
+    ),
 ]
 
+# Pre-executor miles (rollout_manager.py). The pinned image no longer ships this
+# layout, so these fixtures are frozen copies; the patch still supports it.
 MILES_PACKAGE_TARGETS = [
     (
         "miles/ray/rollout/rollout_manager.py",
-        "miles/rollout_manager.py.input",
-        "miles/rollout_manager.py.timing.output",
+        "miles/legacy/rollout_manager.py.input",
+        "miles/legacy/rollout_manager.py.timing.output",
     ),
     (
         "miles/rollout/rm_hub/__init__.py",
-        "miles/rm_hub_init.py.input",
-        "miles/rm_hub_init.py.timing.output",
+        "miles/legacy/rm_hub_init.py.input",
+        "miles/legacy/rm_hub_init.py.timing.output",
     ),
     (
         "miles/rollout/sglang_rollout.py",
-        "miles/sglang_rollout.py.input",
-        "miles/sglang_rollout.py.timing.output",
+        "miles/legacy/sglang_rollout.py.input",
+        "miles/legacy/sglang_rollout.py.timing.output",
     ),
     (
         "miles/backends/megatron_utils/actor.py",
-        "miles/actor.py.input",
-        "miles/actor.py.timing.output",
+        "miles/legacy/actor.py.input",
+        "miles/legacy/actor.py.timing.output",
     ),
     (
         "miles/backends/megatron_utils/model.py",
-        "miles/model.py.input",
-        "miles/model.py.timing.output",
+        "miles/legacy/model.py.input",
+        "miles/legacy/model.py.timing.output",
     ),
 ]
+
+# The pinned image's executor layout: package path -> snapshot name. These are
+# the files patch_executor_package instruments, fetched by
+# scripts/fetch_miles_patch_snapshots.py.
+MILES_EXECUTOR_FILES = {
+    "miles/ray/rollout/rollout_executor.py": "rollout_executor.py",
+    "miles/backends/megatron_utils/actor.py": "actor.py",
+    "miles/backends/megatron_utils/model.py": "model.py",
+    "miles/ray/placement_group.py": "placement_group.py",
+    "miles/ray/train/group.py": "train_group.py",
+}
 
 SLIME_PACKAGE_TARGETS = [
     (
@@ -182,6 +239,14 @@ def _patched(patcher, tmp_path, fixture: str, entrypoint: str) -> str:
     return work.read_text()
 
 
+def _records_phase(patched: str, phase: str) -> bool:
+    """Anchor patches use ``_tg_rec.phase``; executor patches ``_tg_time_phase``."""
+    return (
+        re.search(rf"_tg_(?:rec\.phase|time_phase)\(.*'{re.escape(phase)}'", patched)
+        is not None
+    )
+
+
 @pytest.mark.parametrize(
     "framework, fixture, entrypoint, golden, expected_phases", DRIVERS
 )
@@ -201,7 +266,7 @@ def test_patch_matches_golden(
     )
     assert "with _tg_role('driver', rollout_id) as _tg_rec:" in patched
     for phase in expected_phases:
-        assert f"with _tg_rec.phase('{phase}'):" in patched
+        assert _records_phase(patched, phase), phase
     compile(patched, entrypoint, "exec")
 
 
@@ -240,6 +305,44 @@ def test_miles_package_patch_matches_golden(
     if target.scope is not None:
         assert "_tg_role('rollout', rollout_id)" in patched or "_tg_mrec(" in patched
     compile(patched, path, "exec")
+
+
+def test_miles_executor_package_matches_golden(miles, tmp_path, request, capsys):
+    for path, name in MILES_EXECUTOR_FILES.items():
+        work = tmp_path / path
+        work.parent.mkdir(parents=True, exist_ok=True)
+        work.write_text((TESTDATA / "miles" / f"{name}.input").read_text())
+
+    miles.patch_executor_package(tmp_path)
+    assert "skipped" not in capsys.readouterr().out
+
+    # group.py is instrumented only when placement_group.py doesn't own the
+    # weight sync; either way exactly one of them carries those phases.
+    patched = {
+        name: (tmp_path / path).read_text()
+        for path, name in MILES_EXECUTOR_FILES.items()
+    }
+    instrumented = {n for n, src in patched.items() if miles.PREAMBLE_MARKER in src}
+    assert instrumented >= {"rollout_executor.py", "actor.py", "model.py"}
+    assert len(instrumented & {"placement_group.py", "train_group.py"}) == 1
+    for name in instrumented:
+        golden_path = TESTDATA / "miles" / f"{name}.timing.output"
+        if request.config.getoption("--rewrite"):
+            golden_path.write_text(patched[name])
+            continue
+        assert patched[name] == golden_path.read_text(), (
+            f"golden mismatch for {name}; rerun with --rewrite to accept"
+        )
+        compile(patched[name], name, "exec")
+    for phase in (
+        "generate_samples",
+        "reward_post_process",
+        "compute_log_probs",
+        "forward_backward",
+        "optimizer_step",
+        "weight_sync",
+    ):
+        assert any(f"'{phase}'" in patched[n] for n in instrumented), phase
 
 
 @pytest.mark.parametrize("path, fixture, golden", SLIME_PACKAGE_TARGETS)
@@ -306,7 +409,7 @@ def test_preamble_stays_below_future_imports(patchers):
 def test_a_moved_anchor_fails_the_build(miles, tmp_path):
     """Half-instrumented timing is worse than none: a lane would just be absent."""
     work = tmp_path / "train.py"
-    source = (TESTDATA / "miles/train.py.status.output").read_text()
+    source = (TESTDATA / "miles/legacy/train.py.status.output").read_text()
     work.write_text(
         source.replace("await offload_train()", "await offload_train(args)")
     )
@@ -316,7 +419,7 @@ def test_a_moved_anchor_fails_the_build(miles, tmp_path):
 
 def test_a_duplicate_anchor_fails_the_build(miles, tmp_path):
     work = tmp_path / "train_async.py"
-    source = (TESTDATA / "miles/train_async.py.status.output").read_text()
+    source = (TESTDATA / "miles/legacy/train_async.py.status.output").read_text()
     source = source.replace(
         "await critic_model.offload()",
         "await critic_model.offload()\n                await critic_model.offload()",
@@ -342,7 +445,7 @@ def test_package_patch_failure_is_best_effort(
 
 def test_async_training_offloads_are_separate_from_train(miles, tmp_path):
     patched = _patched(
-        miles, tmp_path, "miles/train_async.py.status.output", "train_async.py"
+        miles, tmp_path, "miles/legacy/train_async.py.status.output", "train_async.py"
     )
     critic_train = patched.index("with _tg_rec.phase('train_models'):")
     critic_offload = patched.index("with _tg_rec.phase('offload_train'):")

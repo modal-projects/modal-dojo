@@ -46,7 +46,7 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "rollout_id",
         re.compile(
             r"^(?P<indent>[ \t]*)(?P<line>rollout_data\w* = await "
-            r"(?:rollout_manager\.generate\.remote|rollout_executor\.get)"
+            r"(?:rollout_manager\.generate\.remote|rollout_executor\.get(?:\.remote)?)"
             r"\(rollout_id\))[ \t]*$",
             re.MULTILINE,
         ),
@@ -89,8 +89,8 @@ _LINE_INJECTIONS: list[tuple[str, str, str, re.Pattern[str]]] = [
         "rollout_id",
         re.compile(
             r"^(?P<indent>[ \t]*)(?P<line>await (?:actor_model\.update_weights\("
-            r"rollout_id=rollout_id\)|update_weights\(args, actor_model, "
-            r"rollout_executor, inference_controller, rollout_id=rollout_id\)))[ \t]*$",
+            r"rollout_id=rollout_id\)|update_weights\((?:args, )?actor_model, "
+            r"rollout_executor, (?:inference_controller, )?rollout_id=rollout_id\)))[ \t]*$",
             re.MULTILINE,
         ),
     ),

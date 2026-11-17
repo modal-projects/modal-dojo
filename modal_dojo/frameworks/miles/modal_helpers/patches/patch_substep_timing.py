@@ -706,13 +706,16 @@ def _wrap_calls(
             value = node.value
             if isinstance(value, ast.Await):
                 value = value.value
-            if (
-                isinstance(value, ast.Call)
-                and (name := ast.unparse(value.func)) in calls
-            ):
-                spans.append((node.lineno, node.end_lineno, calls[name]))
-                seen.add(name)
-                return
+            if isinstance(value, ast.Call):
+                name = ast.unparse(value.func)
+                # Ray-actor layouts call `x.remote(...)` where worker-handle
+                # layouts call `x(...)`; both are the same timed call.
+                if name not in calls:
+                    name = name.removesuffix(".remote")
+                if name in calls:
+                    spans.append((node.lineno, node.end_lineno, calls[name]))
+                    seen.add(name)
+                    return
         for child in ast.iter_child_nodes(node):
             visit(child)
 
@@ -912,11 +915,16 @@ def patch_executor_package(root: Path) -> None:
                     "_tg_mrec(rollout_id, 'critic' if self.role == 'critic' else 'actor')",
                 )
             elif kind == "model":
+                forward_backward = (
+                    "run_forward_backward_pass"
+                    if "run_forward_backward_pass(" in src
+                    else "forward_backward_func"
+                )
                 src = _wrap_calls(
                     src,
                     "train_one_step",
                     {
-                        "run_forward_backward_pass": _phase("forward_backward"),
+                        forward_backward: _phase("forward_backward"),
                         "optimizer.step": _phase("optimizer_step"),
                     },
                 )
