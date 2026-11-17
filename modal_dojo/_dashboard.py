@@ -1216,7 +1216,16 @@ def fastapi_app():
             recipe = summary.config.get("recipe")
             if isinstance(recipe, dict):
                 allocated = recipe.get("allocated_gpus")
-                if isinstance(allocated, (int, float)) and allocated > 0:
+                if not isinstance(allocated, (int, float)) or allocated <= 0:
+                    nodes = recipe.get("actor_num_nodes")
+                    per_node = recipe.get("actor_num_gpus_per_node")
+                    allocated = (
+                        nodes * per_node
+                        if isinstance(nodes, (int, float))
+                        and isinstance(per_node, (int, float))
+                        else 0
+                    )
+                if allocated > 0:
                     requested_gpus = int(allocated)
             if environment.spend_limit_reached:
                 summary.queue_reason = "Environment spend limit reached"
