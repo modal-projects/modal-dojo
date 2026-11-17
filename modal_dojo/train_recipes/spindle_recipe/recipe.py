@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.errors import DojoConfigError
 
 if TYPE_CHECKING:
+    import modal
+
     from modal_dojo.common.run import TrainingRun
     from modal_dojo.frameworks.spindle.cookbook import CookbookRL
 
@@ -42,6 +44,7 @@ class SpindleRecipe:
         max_retries: int = 3,
         cpu: float = 4.0,
         memory: int = 8192,
+        image_overlay: Callable[[modal.Image], modal.Image] | None = None,
     ):
         try:
             import chz
@@ -76,6 +79,7 @@ class SpindleRecipe:
         self.max_retries = max_retries
         self.cpu = cpu
         self.memory = memory
+        self.image_overlay = image_overlay
         self._api_key = api_key
 
     def launch(self, *, show_output: bool = True) -> TrainingRun:

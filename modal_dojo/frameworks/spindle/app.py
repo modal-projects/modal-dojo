@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import dataclasses
 import secrets
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from modal_dojo.common.errors import DojoConfigError
@@ -14,9 +12,6 @@ if TYPE_CHECKING:
     import modal
 
     from modal_dojo.common.run import TrainingRun
-
-# Harbor sandboxes build from task directories, which are shipped to here.
-HARBOR_TASKS_PATH = "/root/harbor_tasks"
 
 
 def launch(recipe, *, show_output: bool = True) -> TrainingRun:
@@ -116,7 +111,9 @@ def build_spindle_app(
         .add_local_python_source("modal_dojo", copy=True)
     )
     image = mount_caller_source(mount_tools_dir(image), caller_script)
-    program, image = ship_harbor_tasks(recipe.program, image)
+    if recipe.image_overlay is not None:
+        image = recipe.image_overlay(image)
+    program = recipe.program
     _, checkpoints_path, volumes = create_training_volumes(
         None, volume_prefix=Framework.SPINDLE.value
     )
@@ -190,28 +187,3 @@ def spindle_requirements() -> list[str]:
             requirement.marker = None
             pins.append(str(requirement))
     return pins
-
-
-def ship_harbor_tasks(program, image):
-    """Add the task directories a Harbor builder uses, at paths the container sees."""
-    import chz
-    from tinker_cookbook.recipes.harbor_rl.harbor_env import HarborDatasetBuilder
-
-    from .cookbook import CookbookRL
-
-    builder = program.config.dataset_builder
-    if not isinstance(builder, HarborDatasetBuilder):
-        return program, image
-
-    shipped: dict[Path, str] = {}
-    tasks = []
-    for task in builder.tasks:
-        if task.task_dir not in shipped:
-            remote = f"{HARBOR_TASKS_PATH}/{len(shipped)}/{task.task_dir.name}"
-            image = image.add_local_dir(task.task_dir, remote_path=remote)
-            shipped[task.task_dir] = remote
-        tasks.append(dataclasses.replace(task, task_dir=Path(shipped[task.task_dir])))
-    config = chz.replace(
-        program.config, dataset_builder=chz.replace(builder, tasks=tasks)
-    )
-    return CookbookRL(config), image
