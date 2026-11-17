@@ -79,7 +79,6 @@ from modal_dojo.common.run_list import (
     run_list_field_metadata,
 )
 from modal_dojo.common.run_summary import (
-    ConfigSummary,
     JsonDict,
     RunSummary,
     build_run_summary,
@@ -1214,11 +1213,11 @@ def fastapi_app():
             if environment is None:
                 continue
             requested_gpus = 1
-            config = summary.config_summary
-            if isinstance(config, ConfigSummary):
-                requested = config.actor_num_nodes * config.actor_num_gpus_per_node
-                if requested > 0:
-                    requested_gpus = requested
+            recipe = summary.config.get("recipe")
+            if isinstance(recipe, dict):
+                allocated = recipe.get("allocated_gpus")
+                if isinstance(allocated, (int, float)) and allocated > 0:
+                    requested_gpus = int(allocated)
             if environment.spend_limit_reached:
                 summary.queue_reason = "Environment spend limit reached"
             elif (
