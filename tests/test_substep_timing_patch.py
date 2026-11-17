@@ -3,7 +3,8 @@
 Anchors are literal source lines, so the test worth having is one that runs them
 over the sources they were written for: ``tests/testdata`` holds slime's
 ``train.py`` after the rollout-status patcher (the state the timing patcher sees)
-and miles' two entrypoints as shipped in the pinned image. Regenerate the
+and miles' two entrypoints from before the executor layout (``miles/legacy``;
+the pinned image no longer ships them). Regenerate the
 expected output with ``uv run pytest tests/test_substep_timing_patch.py
 --rewrite``.
 """
