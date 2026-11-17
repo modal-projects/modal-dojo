@@ -53,7 +53,7 @@ model = Qwen3_VL_8B()
 #
 # Each scene is a table with four colored blocks and three trays, all placed
 # randomly from a seed. The simulator, in
-# [sim.py](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/pick_and_place/sim.py),
+# [sim.py](https://github.com/modal-labs/modal-dojo/blob/main/tutorials/pick_and_place/sim.py),
 # grabs the block under the pick point, drops it over the place point, and lets
 # MuJoCo physics decide where it lands.
 #
