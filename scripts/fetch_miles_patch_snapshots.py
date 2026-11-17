@@ -19,13 +19,8 @@ TESTDATA_DIR = REPO_ROOT / "tests" / "testdata" / "miles"
 MILES_SOURCE_PATHS = {
     "train.py": "/root/miles/train.py",
     "train_async.py": "/root/miles/train_async.py",
-    # The executor layout split rollout_manager.py into these; the timing patch
-    # instruments them instead (patch_substep_timing.patch_executor_package).
-    "rollout_executor.py": "/root/miles/miles/ray/rollout/rollout_executor.py",
-    "placement_group.py": "/root/miles/miles/ray/placement_group.py",
-    "train_group.py": "/root/miles/miles/ray/train/group.py",
-    "actor.py": "/root/miles/miles/backends/megatron_utils/actor.py",
-    "model.py": "/root/miles/miles/backends/megatron_utils/model.py",
+    # The package-file fixtures (rollout_manager.py, actor.py, ...) are frozen
+    # pre-executor-layout sources: the pinned image no longer has that layout.
     "log_utils.py": "/root/miles/miles/backends/training_utils/log_utils.py",
 }
 

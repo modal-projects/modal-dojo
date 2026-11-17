@@ -50,7 +50,7 @@ DRIVERS = [
         "miles",
         "miles/legacy/train.py.status.output",
         "train.py",
-        "miles/legacy/train.py.timing.output",
+        "miles/train.py.timing.output",
         {
             "evaluate_rollouts",
             "generate_rollouts",
@@ -67,7 +67,7 @@ DRIVERS = [
         "miles",
         "miles/legacy/train_async.py.status.output",
         "train_async.py",
-        "miles/legacy/train_async.py.timing.output",
+        "miles/train_async.py.timing.output",
         {
             "evaluate_rollouts",
             "wait_for_rollout",
@@ -97,33 +97,31 @@ DRIVERS = [
     ),
 ]
 
-# Pre-executor miles (rollout_manager.py). The pinned image no longer ships this
-# layout, so these fixtures are frozen copies; the patch still supports it.
 MILES_PACKAGE_TARGETS = [
     (
         "miles/ray/rollout/rollout_manager.py",
-        "miles/legacy/rollout_manager.py.input",
-        "miles/legacy/rollout_manager.py.timing.output",
+        "miles/rollout_manager.py.input",
+        "miles/rollout_manager.py.timing.output",
     ),
     (
         "miles/rollout/rm_hub/__init__.py",
-        "miles/legacy/rm_hub_init.py.input",
-        "miles/legacy/rm_hub_init.py.timing.output",
+        "miles/rm_hub_init.py.input",
+        "miles/rm_hub_init.py.timing.output",
     ),
     (
         "miles/rollout/sglang_rollout.py",
-        "miles/legacy/sglang_rollout.py.input",
-        "miles/legacy/sglang_rollout.py.timing.output",
+        "miles/sglang_rollout.py.input",
+        "miles/sglang_rollout.py.timing.output",
     ),
     (
         "miles/backends/megatron_utils/actor.py",
-        "miles/legacy/actor.py.input",
-        "miles/legacy/actor.py.timing.output",
+        "miles/actor.py.input",
+        "miles/actor.py.timing.output",
     ),
     (
         "miles/backends/megatron_utils/model.py",
-        "miles/legacy/model.py.input",
-        "miles/legacy/model.py.timing.output",
+        "miles/model.py.input",
+        "miles/model.py.timing.output",
     ),
 ]
 
@@ -287,7 +285,7 @@ def test_a_conditional_phase_is_timed_inside_its_branch(patchers, tmp_path):
 
 def test_patching_twice_is_a_no_op(miles, tmp_path, capsys):
     work = tmp_path / "train.py"
-    work.write_text((TESTDATA / "miles/train.py.status.output").read_text())
+    work.write_text((TESTDATA / "miles/legacy/train.py.status.output").read_text())
     miles._patch_file(work, miles.ENTRYPOINTS["train.py"])
     once = work.read_text()
     miles._patch_file(work, miles.ENTRYPOINTS["train.py"])
