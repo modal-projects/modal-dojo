@@ -21,6 +21,9 @@ from astro_redirects import redirect_status, refresh_map_from_tarball  # noqa: E
 image = (
     modal.Image.debian_slim()
     .pip_install("PyGithub==2.6.1")
+    # deploy_preview builds the sandbox images from inside this container, and
+    # dojo defaults to an image builder version modal 1.6.1 can't use.
+    .env({"MODAL_IMAGE_BUILDER_VERSION": "2025.06"})
     .add_local_file(_ASTRO_REDIRECTS, "/root/astro_redirects.py", copy=True)
     # Modal rejects a copy=True step after a mounted add_local_*, so the
     # mounted directory goes last.
