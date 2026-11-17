@@ -79,6 +79,7 @@ from modal_dojo.common.run_list import (
     run_list_field_metadata,
 )
 from modal_dojo.common.run_summary import (
+    ConfigSummary,
     JsonDict,
     RunSummary,
     build_run_summary,
@@ -1189,7 +1190,10 @@ def fastapi_app():
         ]
         if not queued:
             return
-        client = await get_modal_client()
+        try:
+            client = await get_modal_client()
+        except Exception:
+            return
         if client is None:
             return
         from modal_dojo.common._modal_compat import (
@@ -1209,12 +1213,26 @@ def fastapi_app():
             environment = environments.get(name) if isinstance(name, str) else None
             if environment is None:
                 continue
+            requested_gpus = 1
+            config = summary.config_summary
+            if isinstance(config, ConfigSummary):
+                requested = config.actor_num_nodes * config.actor_num_gpus_per_node
+                if requested > 0:
+                    requested_gpus = requested
             if environment.spend_limit_reached:
                 summary.queue_reason = "Environment spend limit reached"
             elif (
                 environment.max_concurrent_gpus > 0
-                and environment.current_concurrent_gpus
-                >= environment.max_concurrent_gpus
+                and requested_gpus > environment.max_concurrent_gpus
+            ):
+                summary.queue_reason = (
+                    f"Environment GPU limit — needs {requested_gpus} GPUs, "
+                    f"cap is {environment.max_concurrent_gpus}"
+                )
+            elif (
+                environment.max_concurrent_gpus > 0
+                and environment.current_concurrent_gpus + requested_gpus
+                > environment.max_concurrent_gpus
             ):
                 summary.queue_reason = (
                     f"Environment GPU limit — {environment.current_concurrent_gpus}/"

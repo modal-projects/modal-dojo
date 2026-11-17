@@ -762,13 +762,13 @@ class TrainConfig:
                                 framework_status_token=framework_status_token,
                             )
 
+                        _set_status(initializing_status, is_active=False)
                         function_call = app.train.spawn(
                             modal_app_id=modal_app_id,
                             modal_app_url=modal_app_url,
                             framework_status_url=framework_status_url,
                             framework_status_token=framework_status_token,
                         )
-                        _set_status(initializing_status, is_active=False)
                     except BaseException as exc:
                         launch_error = exc
 

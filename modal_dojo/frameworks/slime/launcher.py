@@ -808,6 +808,12 @@ def build_slime_app(
         framework_status_url: str = "",
         framework_status_token: str = "",
     ):
+        report_phase(
+            training_run_id,
+            SlimeStatus.INITIALIZING.value,
+            framework_status_url,
+            framework_status_token,
+        )
         cluster, modal_app_id, modal_app_url = await start_training_cluster(
             slime,
             (hf_cache_volume, data_volume, checkpoints_volume),
