@@ -138,7 +138,8 @@ def routed_clients(base_url: str, model_name: str, deployment: str | None):
 async def run_program(
     program, *, run, base_url, log_dir, requirements: Requirements, server_app=None
 ):
-    from .context import TinkerContext
+    from modal_dojo.tinker import TinkerContext
+
     from .reporting import run_lifecycle
 
     async with run_lifecycle(run):
