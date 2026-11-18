@@ -91,7 +91,8 @@ def deployment_name(config, scope: str) -> str:
         json.dumps([SPINDLE_VERSION, settings], sort_keys=True).encode()
     ).hexdigest()[:12]
     server = hashlib.sha256(scope.encode()).hexdigest()[:6]
-    return f"dojo-{config.name[:18]}-{digest}-{server}"
+    # Spindle prefixes this with '<frontend>-inference-'; Modal caps app names.
+    return f"dojo-{digest}-{server}"
 
 
 def request_json(client, method: str, path: str, **kwargs):

@@ -240,6 +240,7 @@ def test_real_spindle_preset_and_deployment_request():
     assert config.max_context_length == 32768
     assert config.trainer_gpu == "H100"
     assert config.trainer_gpus_per_node == 4
+    config.platform["frontend"] = deployment.SERVER_NAME
     routes = DeploymentRoutes.from_definitions([DeploymentConfig.create(config)])
     name = deployment.deployment_name(config, URL)
     compiled = asyncio.run(
@@ -247,6 +248,14 @@ def test_real_spindle_preset_and_deployment_request():
     )
     assert compiled.definition_id == name
     assert compiled.recipe.trainer_gpu == "H100"
+    from modal._utils.name_utils import check_object_name
+
+    for app_name in (
+        compiled.trainer_app_name,
+        compiled.inference_app_name,
+        f"{deployment.SERVER_NAME}-lora-{name}",
+    ):
+        check_object_name(app_name, "App")
     with pytest.raises(DojoConfigError, match="No bundled"):
         deployment.select_config(Requirements(MODEL, 64, 32, 1000000))
 
