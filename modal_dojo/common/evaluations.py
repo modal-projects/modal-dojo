@@ -1,6 +1,6 @@
 """Score training checkpoints with [Modal Evals](https://modal.com/evaluations).
 
-``TrainConfig(..., modal_evals=ModalEvalsConfig(checkpoint_interval=N))``
+``TrainConfig(..., eval=ModalEvalConfig(every_n_checkpoints=N))``
 publishes the dataset's ``eval_rows()`` (or ``eval_dataset.rows()``) as a
 private Modal Evals evaluation when the run launches, then evaluates every Nth
 checkpoint: a watcher serves it on a Modal Endpoint, runs the evaluation
@@ -29,6 +29,10 @@ from pydantic import ConfigDict, Field
 from pydantic.dataclasses import dataclass as pydantic_dataclass
 
 from modal_dojo._api_reference import exclude_from_api_reference
+from modal_dojo.common._modal_compat import (
+    lookup_active_endpoint_deployment,
+    lookup_workspace_name,
+)
 from modal_dojo.common.errors import DojoConfigError
 
 if TYPE_CHECKING:
@@ -95,37 +99,6 @@ async def _client(server: str | None) -> FlashEvalClient:
     return await FlashEvalClient.from_env(server)
 
 
-async def _active_deployment_id(endpoint_id: str, environment: str | None) -> str:
-    """The deployment an Endpoint serves, as `modal endpoint list` reads it."""
-    from modal_evals.modal_client import _Client
-    from modal_proto import api_pb2
-
-    client = await _Client.from_env()
-    created_before = time.time()
-    while True:
-        response = await client.stub.EndpointList(
-            api_pb2.EndpointListRequest(
-                environment_name=environment or "",
-                pagination=api_pb2.ListPagination(
-                    max_objects=100, created_before=created_before
-                ),
-            )
-        )
-        for item in response.items:
-            if item.endpoint_id == endpoint_id:
-                if not item.active_deployment_id:
-                    raise DojoConfigError(
-                        f"Endpoint {endpoint_id} has no active deployment to evaluate."
-                    )
-                return item.active_deployment_id
-        if len(response.items) < 100:
-            raise DojoConfigError(
-                f"Endpoint {endpoint_id} is not in environment "
-                f"{environment or 'default'!r}; pass environment= or deployment_id=."
-            )
-        created_before = response.items[-1].metadata.creation_info.created_at
-
-
 def _custom_target(deployment: CustomDeployment) -> CustomTarget:
     from modal_evals.targets import CustomTarget
 
@@ -157,7 +130,7 @@ async def _resolve_target(
         return ModalEndpointTarget(
             endpoint_id=target.endpoint_id,
             deployment_id=deployment_id
-            or await _active_deployment_id(target.endpoint_id, environment),
+            or await lookup_active_endpoint_deployment(target.endpoint_id, environment),
             single_replica=single_replica,
         )
     if isinstance(target, CustomDeployment):
@@ -617,14 +590,7 @@ class ModalEvalConfig:
 
 
 def _workspace_name() -> str:
-    async def lookup() -> str:
-        from google.protobuf.empty_pb2 import Empty
-        from modal.client import _Client
-
-        client = await _Client.from_env()
-        return (await client.stub.WorkspaceNameLookup(Empty())).workspace_name
-
-    return _LOOP.run(lookup())
+    return _LOOP.run(lookup_workspace_name())
 
 
 def prepare_eval(train_config: TrainConfig) -> EvaluationRelease:
