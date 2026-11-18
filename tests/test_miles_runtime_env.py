@@ -92,3 +92,24 @@ def test_metric_env_is_preserved(monkeypatch):
     assert env_vars["WANDB_RUN_ID"] == "abc"
     assert env_vars["WANDB_RESUME"] == "allow"
     assert env_vars["WANDB_API_KEY"] == "validated-key"
+
+
+def test_kernel_caches_follow_the_checkpoint_volume_mount():
+    environment = {
+        "TRITON_CACHE_DIR": "/checkpoints/kernel-cache/triton",
+        "TORCHINDUCTOR_CACHE_DIR": "/checkpoints/kernel-cache/inductor",
+        "TILELANG_CACHE_DIR": "/checkpoints/kernel-cache/tilelang",
+        "SGLANG_CACHE_DIR": "/tmp/sglang",
+        "OTHER_CACHE_DIR": "/checkpoints/other",
+    }
+
+    remapped = launcher._remap_kernel_cache_dirs(environment, "/custom/checkpoints")
+
+    assert remapped == {
+        "TRITON_CACHE_DIR": "/custom/checkpoints/kernel-cache/triton",
+        "TORCHINDUCTOR_CACHE_DIR": "/custom/checkpoints/kernel-cache/inductor",
+        "TILELANG_CACHE_DIR": "/custom/checkpoints/kernel-cache/tilelang",
+        "SGLANG_CACHE_DIR": "/tmp/sglang",
+        "OTHER_CACHE_DIR": "/checkpoints/other",
+    }
+    assert environment["TRITON_CACHE_DIR"] == "/checkpoints/kernel-cache/triton"

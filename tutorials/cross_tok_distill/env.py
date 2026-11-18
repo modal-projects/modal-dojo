@@ -8,14 +8,14 @@ from dataclasses import dataclass, field
 from functools import cache
 from typing import Any, Callable
 
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 from modal_dojo.common.dataset import DatasetConfig
 from modal_dojo.common.models.base import ToolCall
 
 
 @cache
-def _tokenizer(name: str):
+def _tokenizer(name: str) -> PreTrainedTokenizerBase:
     return AutoTokenizer.from_pretrained(name, trust_remote_code=True)
 
 
@@ -47,7 +47,7 @@ def _data_dir() -> str:
         import bfcl_eval
     except ImportError as e:
         raise ImportError(
-            "This requires the `bfcl-eval` package (`uv pip install bfcl-eval`); "
+            "This requires the `bfcl-eval` package (`uv pip install bfcl-eval==2026.3.23`); "
             "see https://pypi.org/project/bfcl-eval/."
         ) from e
     return os.path.join(os.path.dirname(bfcl_eval.__file__), "data")

@@ -37,8 +37,8 @@ class _BeamRecipe(MilesRecipe):
     _BEAM_ATTENTION_BACKENDS: ClassVar[tuple[str, ...]] = ("unfused",)
 
     docker_image: str = (
-        "radixark/miles:v0.1.2@sha256:"
-        "c81d8ba7b91571aac8e0bb2be372c6a9664e1ff7b88f518a8891861bae83e3b7"
+        "modalresearch/miles:dojo-v0.1.2@sha256:"
+        "87e4e1b582f8f673505e52e0a166c1feed9d6debfa65742ea3237664b4e790cd"
     )
     miles_git_ref: str | None = "819cfd23ab74de9975931597894500632dd708fc"
     sglang_git_ref: str | None = "9ac1c65bec3dc832766d03970e545da5bd6fcb6f"

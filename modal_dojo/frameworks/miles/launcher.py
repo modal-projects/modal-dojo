@@ -8,7 +8,7 @@ import subprocess
 import shutil
 import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from modal import App, Image, __version__ as MODAL_VERSION
 
@@ -76,6 +76,8 @@ from modal_dojo.train_recipes.miles_recipe.recipe import (
     HF_CACHE_PATH,
     MilesRecipe,
 )
+from modal_dojo.common.budget import driver_budget_env
+from modal_dojo.common.budget_stop_patch import encoded_patch as budget_stop_patch
 from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
 from modal_dojo.frameworks.miles.modal_helpers.utils import (
     build_train_cmd,
@@ -111,6 +113,7 @@ _PATCH_ROLLOUT_STATUS_B64 = encode_patch(
 )
 _PATCH_ADVANTAGE_DIST_B64 = encode_patch("patch_advantage_distribution", _MILES_PATCHES)
 _PATCH_SUBSTEP_TIMING_B64 = encode_patch("patch_substep_timing", _MILES_PATCHES)
+_PATCH_BUDGET_STOP_B64 = budget_stop_patch(MILES_ROOT)
 _PATCH_ZERO_STD_B64 = encode_patch("patch_zero_std_metrics", _MILES_PATCHES)
 
 _REPORTING_PATCH_COMMANDS = (
@@ -122,7 +125,6 @@ _REPORTING_PATCH_COMMANDS = (
 _PATCH_DIST_CKPT_QUANTIZED_B64 = encode_patch(
     "patch_dist_ckpt_quantized", _MEGATRON_PATCHES
 )
-_PATCH_DIST_CKPT_NOFORK_B64 = encode_patch("patch_dist_ckpt_nofork", _MEGATRON_PATCHES)
 _PATCH_CHECKPOINT_SAVE_B64 = encode_patch("patch_checkpoint_save", _MEGATRON_PATCHES)
 _PATCH_CHECKPOINT_COMMIT_B64 = encode_patch(
     "patch_checkpoint_commit", _MEGATRON_PATCHES
@@ -182,7 +184,6 @@ def _build_miles_base_image(
             f"rm -rf {HF_CACHE_PATH} 2>/dev/null || true",
             f"echo {_PATCH_SGLANG_ABORT_B64} | base64 -d | python3",
             f"echo {_PATCH_DIST_CKPT_QUANTIZED_B64} | base64 -d | python3",
-            f"echo {_PATCH_DIST_CKPT_NOFORK_B64} | base64 -d | python3",
             (
                 f"if test -f {_MEGATRON_TORCH_STRATEGY_PY}; then "
                 f"echo {_PATCH_CHECKPOINT_SAVE_B64} | base64 -d | python3; "
@@ -240,7 +241,7 @@ def _build_miles_base_image(
     image = image.add_local_python_source("modal_dojo", copy=True)
     # torchrun/Ray subprocesses do not inherit the Modal function wrapper's
     # injected SDK path. The cross-rank checkpoint commit hook imports it.
-    image = image.uv_pip_install("randomname", f"modal=={MODAL_VERSION}")
+    image = image.uv_pip_install("randomname==0.2.1", f"modal=={MODAL_VERSION}")
     image = mount_tools_dir(image)
     image = mount_caller_source(image, caller_script)
 
@@ -269,10 +270,10 @@ def _remap_kernel_cache_dirs(
         "SGLANG_CACHE_DIR",
     ):
         cache_dir = environment.get(key)
-        if cache_dir and Path(cache_dir).is_relative_to(CHECKPOINTS_PATH):
+        if cache_dir and PurePosixPath(cache_dir).is_relative_to(CHECKPOINTS_PATH):
             environment[key] = str(
-                Path(checkpoints_mount_path)
-                / Path(cache_dir).relative_to(CHECKPOINTS_PATH)
+                PurePosixPath(checkpoints_mount_path)
+                / PurePosixPath(cache_dir).relative_to(CHECKPOINTS_PATH)
             )
     return environment
 
@@ -331,6 +332,10 @@ def apply_source_overlays(image: Image, miles: MilesRecipe) -> Image:
             f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3"
             " || echo 'WARNING: substep timing patch did not apply to the"
             " miles_git_ref checkout; substep timings will be missing'",
+        )
+    if miles.budget is not None:
+        image = image.run_commands(
+            f"echo {_PATCH_BUDGET_STOP_B64} | base64 -d | python3"
         )
     return image
 
@@ -705,6 +710,7 @@ def build_miles_app(
         framework_status_url: str = "",
         framework_status_token: str = "",
     ):
+        started_at = time.time()
         cluster, modal_app_id, modal_app_url = await start_training_cluster(
             miles,
             (hf_cache_volume, data_volume, checkpoints_volume),
@@ -785,13 +791,11 @@ def build_miles_app(
                     await _prepare_shared_inputs()
             except BaseException as exc:
                 os.makedirs(os.path.dirname(prep_error), exist_ok=True)
-                with open(prep_error, "w") as f:
-                    f.write(repr(exc))
+                await asyncio.to_thread(Path(prep_error).write_text, repr(exc))
                 await checkpoints_volume.commit.aio()
                 raise
             os.makedirs(os.path.dirname(prep_marker), exist_ok=True)
-            with open(prep_marker, "w") as f:
-                f.write(str(time.time()))
+            await asyncio.to_thread(Path(prep_marker).write_text, str(time.time()))
             await checkpoints_volume.commit.aio()
         else:
             deadline = time.time() + download_timeout + dataset_timeout
@@ -801,11 +805,11 @@ def build_miles_app(
                     data_volume.reload.aio(),
                     checkpoints_volume.reload.aio(),
                 )
-                if os.path.exists(prep_marker):
+                if await asyncio.to_thread(os.path.exists, prep_marker):
                     break
-                if os.path.exists(prep_error):
-                    with open(prep_error) as f:
-                        raise RuntimeError(f"Head preparation failed: {f.read()}")
+                if await asyncio.to_thread(os.path.exists, prep_error):
+                    error = await asyncio.to_thread(Path(prep_error).read_text)
+                    raise RuntimeError(f"Head preparation failed: {error}")
                 if time.time() > deadline:
                     raise RuntimeError("Timed out waiting for head preparation marker")
                 await asyncio.sleep(5)
@@ -949,6 +953,7 @@ def build_miles_app(
                 extra_env={
                     "MODAL_DOJO_TRAINING_RUN_ID": training_run_id,
                     "MODAL_DOJO_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
+                    **driver_budget_env(miles, started_at=started_at),
                     **shared.training_reporting_env(
                         miles, model, app_name, framework_status_url
                     ),

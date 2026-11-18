@@ -9,6 +9,9 @@
 # operation in the Modal Dojo so you can move faster and spend less.
 
 import re
+from argparse import Namespace
+from collections.abc import Iterator
+from typing import Any, Protocol
 
 from datasets import load_dataset
 
@@ -30,7 +33,7 @@ from modal_dojo import (
 model = Qwen3_5_4B()
 
 
-def _letter_answer(row) -> bool:
+def _letter_answer(row: dict[str, Any]) -> bool:
     return bool(re.fullmatch(r"[A-J]", str(row["expected_answer"]).strip().upper()))
 
 
@@ -41,7 +44,7 @@ class OpenScienceDataset(DatasetConfig):
     def label_key(self) -> str:
         return "label"
 
-    def rows(self):
+    def rows(self) -> Iterator[dict[str, Any]]:
         ds = load_dataset(
             "nvidia/OpenScienceReasoning-2", split="train", streaming=True
         )
@@ -63,7 +66,12 @@ train_dataset = OpenScienceDataset()
 _BOXED_RE = re.compile(r"\\boxed\{([A-J])\}", re.IGNORECASE)
 
 
-async def letter_rm(args, sample, **kwargs) -> float:
+class RolloutSample(Protocol):
+    response: str
+    label: str
+
+
+async def letter_rm(args: Namespace, sample: RolloutSample, **kwargs: object) -> float:
     matches = _BOXED_RE.findall(sample.response or "")
     pred = matches[-1].upper() if matches else ""
     return float(bool(pred) and pred == sample.label)

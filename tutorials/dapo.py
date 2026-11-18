@@ -16,8 +16,11 @@
 
 import re
 import time
+from argparse import Namespace
+from typing import Any, Protocol
 
 from modal_dojo import (
+    Checkpoint,
     Endpoint,
     HuggingFaceDataset,
     Qwen3_5_4B,
@@ -34,7 +37,7 @@ from modal_dojo import (
 model = Qwen3_5_4B()
 
 
-def deploy_base_model():
+def deploy_base_model() -> Endpoint:
     print("deploying base model endpoint...")
     base_deployment = Endpoint.launch(
         model,
@@ -101,12 +104,12 @@ eval_dataset = HuggingFaceDataset(
 #
 # Let's get our baseline measure of performance.
 
-def run_eval(deployment, max_concurrency: int = 2) -> float:
+def run_eval(deployment: Endpoint, max_concurrency: int = 2) -> float:
     from concurrent.futures import ThreadPoolExecutor
 
     deployment.wait_until_ready()
 
-    def _score_one(example):
+    def _score_one(example: dict[str, Any]) -> float:
         msg = deployment.chat(
             example[eval_dataset.input_key()],
             chat_template_kwargs={"enable_thinking": True},
@@ -123,7 +126,7 @@ def run_eval(deployment, max_concurrency: int = 2) -> float:
     return percent_correct
 
 
-def run_baseline_evals(deployment):
+def run_baseline_evals(deployment: Endpoint) -> None:
     print("running base model evaluation...")
     base_mean = run_eval(deployment)
     print(f"percent correct: {base_mean:.1%}")
@@ -147,7 +150,15 @@ def run_baseline_evals(deployment):
 # and $L_\text{cache}$ to 2048, lower than the original values, 16384 and 4096,
 # respectively. These values, however, do maintain the paper's 4:1 ratio.
 
-async def dapo_overlong_rm(args, sample, **kwargs) -> float:
+class RolloutSample(Protocol):
+    response: str
+    label: str
+    response_length: int
+
+
+async def dapo_overlong_rm(
+    args: Namespace, sample: RolloutSample, **kwargs: object
+) -> float:
     response = model.parse_response(sample.response)
     base = score_answer(response.content, sample.label)
 
@@ -211,7 +222,7 @@ config = TrainConfig(
 )
 
 
-def train(config):
+def train(config: TrainConfig) -> Checkpoint:
     with config.launch() as run:
         print(f"run id: {run.training_run_id}")
         checkpoint = None
@@ -234,7 +245,7 @@ def train(config):
 # Let's run the same eval on the trained checkpoint.
 
 
-def deploy_trained_model(checkpoint):
+def deploy_trained_model(checkpoint: Checkpoint) -> Endpoint:
     print("deploying trained model endpoint...")
     trained_deployment = Endpoint.launch(
         model,
@@ -247,7 +258,7 @@ def deploy_trained_model(checkpoint):
     return trained_deployment
 
 
-def run_trained_evals(trained_deployment):
+def run_trained_evals(trained_deployment: Endpoint) -> None:
     print("running checkpoint evaluation...")
     trained_correct = run_eval(trained_deployment)
     print(f"percent correct: {trained_correct:.1%}")

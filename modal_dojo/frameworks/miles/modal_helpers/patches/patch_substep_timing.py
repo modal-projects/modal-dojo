@@ -582,14 +582,15 @@ def _patch_file(path: Path, wraps: list[tuple[str, str]]) -> None:
         print(f"{path.name} already patched for substep timing")
         return
 
-    if path.name == "train_async.py" and "create_rollout_components" in src:
+    executor_driver = "create_rollout_components" in src or "create_components" in src
+    if path.name == "train_async.py" and executor_driver:
         src = _patch_async_executor_driver(src, path)
         compile(src, str(path), "exec")
         path.write_text(src)
         print(f"Patched {path.name} for async executor-based substep timing")
         return
 
-    if path.name == "train.py" and "create_rollout_components" in src:
+    if path.name == "train.py" and executor_driver:
         src = _patch_executor_driver(src, path)
         compile(src, str(path), "exec")
         path.write_text(src)
@@ -691,10 +692,10 @@ def _wrap_calls(
     src: str,
     function: str,
     required: dict[str, str],
-    optional: dict[str, str] = {},
+    optional: dict[str, str] | None = None,
 ) -> str:
     """Wrap call statements within their original scopes."""
-    calls = required | optional
+    calls = required | (optional or {})
     spans = []
     seen = set()
 
@@ -730,19 +731,28 @@ def _phase(name: str) -> str:
 
 def _patch_async_executor_driver(src: str, path: Path) -> str:
     """Instrument the executor async loop without serializing its prefetch tasks."""
+    startup = (
+        {"create_components": _phase("initialize_components")}
+        if "create_components(" in src
+        else {
+            "create_rollout_components": _phase("initialize_rollout"),
+            "create_training_models": _phase("initialize_training"),
+        }
+    )
     src = _wrap_calls(
         src,
         "train",
         {
-            "create_rollout_components": _phase("initialize_rollout"),
-            "create_training_models": _phase("initialize_training"),
+            **startup,
             "actor_model.train": _phase("train_models"),
             "critic_model.train": _phase("train_models"),
             "save_training_model": _phase("checkpoint_save"),
             "rollout_executor.save": _phase("checkpoint_save"),
             "update_weights": "_tg_time_phase('weight_sync' if 'rollout_id' in locals() else 'initial_weight_sync')",
             "inference_controller.prepare_eval": _phase("prepare_eval"),
-            "eval_dispatcher.dispatch": _phase("evaluate_rollouts"),
+            # The pre-loop eval runs before any training; in-loop evals run
+            # after the step's training, which the dashboard labels separately.
+            "eval_dispatcher.dispatch": "_tg_time_phase('evaluate_rollouts_end' if 'rollout_id' in locals() else 'evaluate_rollouts')",
         },
         optional={
             "actor_model.offload": _phase("offload_train"),
@@ -750,7 +760,9 @@ def _patch_async_executor_driver(src: str, path: Path) -> str:
         },
     )
     # The driver awaits an already running rollout future at two synchronization
-    # points. Record wait time separately from the rollout worker's generation.
+    # points. Record wait time separately from the rollout worker's generation:
+    # the plain await takes this step's rollout, while the conditional await
+    # before the weight update drains the next step's prefetched rollout.
     waits = [
         node
         for node in ast.walk(_function(src, "train"))
@@ -765,8 +777,19 @@ def _patch_async_executor_driver(src: str, path: Path) -> str:
         raise RuntimeError(
             f"{path}: expected two async rollout waits, found {len(waits)}"
         )
-    for node in sorted(waits, key=lambda n: n.lineno, reverse=True):
-        src = _wrap_span(src, node.lineno, node.end_lineno, _phase("wait_for_rollout"))
+    current = [n for n in waits if isinstance(n.value, ast.Await)]
+    upcoming = [n for n in waits if isinstance(n.value, ast.IfExp)]
+    if len(current) != 1 or len(upcoming) != 1:
+        raise RuntimeError(
+            f"{path}: expected one direct and one conditional rollout wait, "
+            f"found {len(current)} and {len(upcoming)}"
+        )
+    for node, phase in sorted(
+        [(current[0], "wait_for_rollout"), (upcoming[0], "wait_for_next_rollout")],
+        key=lambda item: item[0].lineno,
+        reverse=True,
+    ):
+        src = _wrap_span(src, node.lineno, node.end_lineno, _phase(phase))
     src = _wrap_driver_loop(src, path)
     body = _function(src, "train").body
     loop_index = next(i for i, node in enumerate(body) if isinstance(node, ast.For))
@@ -777,10 +800,14 @@ def _patch_async_executor_driver(src: str, path: Path) -> str:
 
 
 def _patch_executor_driver(src: str, path: Path) -> str:
-    startup = {
-        "create_rollout_components": "initialize_rollout",
-        "create_training_models": "initialize_training",
-    }
+    startup = (
+        {"create_components": "initialize_components"}
+        if "create_components(" in src
+        else {
+            "create_rollout_components": "initialize_rollout",
+            "create_training_models": "initialize_training",
+        }
+    )
     calls = {name: _phase(phase) for name, phase in startup.items()}
     # Newer Miles wraps Ray actors in worker handles, which expose get directly.
     rollout_get = (

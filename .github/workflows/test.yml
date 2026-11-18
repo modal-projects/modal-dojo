@@ -10,25 +10,32 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         with:
           ref: ${{ github.head_ref || github.ref_name }}
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version-file: ".python-version"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v5.4.2
 
       - name: Install dependencies
         run: uv sync --locked --group dev
 
       - name: Verify generated files
+        shell: bash
         run: |
           uv run python -m scripts.generate_llms_txt
           git diff --exit-code -- docs-next/public/llms.txt
@@ -46,6 +53,16 @@ jobs:
         run: uv build
 
       - name: Smoke-test installed wheel
+        shell: python
         run: |
-          cd $(mktemp -d)
-          uvx --from $OLDPWD/dist/*.whl modal-dojo --help
+          import pathlib
+          import subprocess
+          import tempfile
+
+          wheel = next(pathlib.Path("dist").glob("*.whl")).resolve()
+          with tempfile.TemporaryDirectory() as directory:
+              subprocess.run(
+                  ["uvx", "--from", str(wheel), "modal-dojo", "--help"],
+                  cwd=directory,
+                  check=True,
+              )

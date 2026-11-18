@@ -21,9 +21,8 @@ import json
 import threading
 import time
 import uuid
-from collections.abc import Coroutine, Iterable, Mapping
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from dataclasses import dataclass
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import ConfigDict, Field
@@ -34,9 +33,8 @@ from modal_dojo.common.errors import DojoConfigError
 
 if TYPE_CHECKING:
     from modal_evals.client import FlashEvalClient
-    from modal_evals.proto import flash_eval_api_pb2
     from modal_evals.results import JobResults
-    from modal_evals.targets import CustomTarget, FlashEndpointTarget, RecipeTarget
+    from modal_evals.targets import CustomTarget, EvaluationTarget
 
     from modal_dojo.common.dataset import DatasetConfig
     from modal_dojo.common.deployment import CustomDeployment
@@ -44,9 +42,7 @@ if TYPE_CHECKING:
     from modal_dojo.common.models import ModelConfig
     from modal_dojo.common.train import TrainConfig
 
-    EvaluationTargetLike = (
-        Endpoint | CustomDeployment | FlashEndpointTarget | CustomTarget | RecipeTarget
-    )
+    EvaluationTargetLike = Endpoint | CustomDeployment | EvaluationTarget
 
 T = TypeVar("T")
 
@@ -145,39 +141,35 @@ def _custom_target(deployment: CustomDeployment) -> CustomTarget:
     )
 
 
-async def _target_proto(
+async def _resolve_target(
     target: EvaluationTargetLike,
     *,
     deployment_id: str | None,
     single_replica: bool,
     environment: str | None,
-) -> flash_eval_api_pb2.EvaluationTarget:
-    from modal_evals.publish import evaluation_target_to_proto
-    from modal_evals.targets import CustomTarget, FlashEndpointTarget, RecipeTarget
+) -> EvaluationTarget:
+    from modal_evals.targets import CustomTarget, ModalEndpointTarget, RecipeTarget
 
     from modal_dojo.common.deployment import CustomDeployment
     from modal_dojo.common.endpoint import Endpoint
 
-    resolved: FlashEndpointTarget | CustomTarget | RecipeTarget
     if isinstance(target, Endpoint):
-        resolved = FlashEndpointTarget(
+        return ModalEndpointTarget(
             endpoint_id=target.endpoint_id,
             deployment_id=deployment_id
             or await _active_deployment_id(target.endpoint_id, environment),
             single_replica=single_replica,
         )
-    elif isinstance(target, CustomDeployment):
+    if isinstance(target, CustomDeployment):
         if single_replica:
             raise ValueError("single_replica applies only to Modal Endpoints.")
-        resolved = _custom_target(target)
-    elif isinstance(target, (FlashEndpointTarget, CustomTarget, RecipeTarget)):
-        resolved = target
-    else:
-        raise TypeError(
-            "target must be an Endpoint, a CustomDeployment, or a modal_evals "
-            f"target, not {type(target).__name__}"
-        )
-    return evaluation_target_to_proto(resolved)
+        return _custom_target(target)
+    if isinstance(target, (ModalEndpointTarget, CustomTarget, RecipeTarget)):
+        return target
+    raise TypeError(
+        "target must be an Endpoint, a CustomDeployment, or a modal_evals "
+        f"target, not {type(target).__name__}"
+    )
 
 
 async def _release_id(
@@ -218,35 +210,45 @@ class EvaluationJob:
     environment: str | None = None
     server: str | None = None
 
-    async def _get(self) -> tuple[Any, str | None]:
+    async def _get(self, *, include_tasks: bool) -> JobResults:
         from modal_evals.proto import flash_eval_api_pb2
+        from modal_evals.results import JobResults
 
         client = await _client(self.server)
         try:
+            environment_id = await client.environment_id(self.environment)
             response = await client.get_job(
                 flash_eval_api_pb2.GetEvaluationJobRequest(
-                    environment_id=await client.environment_id(self.environment),
+                    environment_id=environment_id,
                     job_id=self.job_id,
                 )
             )
-            volume = await client.get_output_volume(response)
+            tasks = []
+            volume = None
+            if include_tasks:
+                tasks = await client.list_tasks(
+                    flash_eval_api_pb2.ListEvaluationTasksRequest(
+                        environment_id=environment_id, job_id=self.job_id
+                    )
+                )
+                volume = await client.get_output_volume(response)
+            return JobResults.from_response(
+                response, tasks, output_volume_id=volume.object_id if volume else None
+            )
         finally:
             await client.close()
-        return response, volume.object_id if volume is not None else None
 
     def results(self) -> JobResults:
         """The job's results so far: every task, trial, and attempt, with each
         trial's typed result values."""
         _require_modal_evals()
-        from modal_evals.results import JobResults
-
-        response, volume_id = _LOOP.run(self._get())
-        return JobResults.from_response(response, output_volume_id=volume_id)
+        return _LOOP.run(self._get(include_tasks=True))
 
     def status(self) -> str:
         """``pending``, ``running``, ``succeeded``, ``failed``, ``cancelling``,
         or ``cancelled``."""
-        return self.results().job.status
+        _require_modal_evals()
+        return _LOOP.run(self._get(include_tasks=False)).job.status
 
     def wait(self, timeout: float | None = None) -> JobResults:
         """Wait for the job to finish and return its results.
@@ -257,13 +259,11 @@ class EvaluationJob:
         deadline = None if timeout is None else time.monotonic() + timeout
         delay = _POLL_SECONDS
         while True:
-            results = self.results()
-            if results.job.status in _TERMINAL_STATUSES:
-                return results
+            status = self.status()
+            if status in _TERMINAL_STATUSES:
+                return self.results()
             if deadline is not None and time.monotonic() + delay > deadline:
-                raise TimeoutError(
-                    f"Evaluation job {self.job_id} is still {results.job.status}."
-                )
+                raise TimeoutError(f"Evaluation job {self.job_id} is still {status}.")
             time.sleep(delay)
             delay = min(delay * 2, _MAX_POLL_SECONDS)
 
@@ -335,7 +335,7 @@ def run_evaluation(
             release runs, or a release ID (``er-...``).
         target:
             An ``Endpoint``, an unauthenticated ``CustomDeployment``, or a
-            ``modal_evals`` target.
+            ``modal_evals`` target, bound to the release's ``inference_target`` parameter.
         params:
             Evaluation parameters, as the evaluation's ``Params`` declares.
         task_keys:
@@ -378,17 +378,23 @@ def run_evaluation(
         client = await _client(server)
         try:
             environment_id = await client.environment_id(environment)
+            inference_target = await _resolve_target(
+                target,
+                deployment_id=deployment_id,
+                single_replica=single_replica,
+                environment=environment,
+            )
             request = flash_eval_api_pb2.SubmitEvaluationJobRequest(
                 environment_id=environment_id,
                 idempotency_key=f"modal-dojo-{uuid.uuid4()}",
                 release_id=await _release_id(client, environment_id, evaluation),
-                target=await _target_proto(
-                    target,
-                    deployment_id=deployment_id,
-                    single_replica=single_replica,
-                    environment=environment,
+                params=ParseDict(
+                    {
+                        **(params or {}),
+                        "inference_target": inference_target.model_dump(mode="json"),
+                    },
+                    Struct(),
                 ),
-                params=ParseDict(dict(params or {}), Struct()),
                 task_keys=list(task_keys),
                 trials_per_task=trials_per_task,
                 trial_concurrency=trial_concurrency,

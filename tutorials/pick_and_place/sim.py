@@ -4,6 +4,11 @@ import os
 import random
 import re
 import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import mujoco
+    from PIL import Image
 
 if sys.platform.startswith("linux"):
     os.environ.setdefault("MUJOCO_GL", "osmesa")
@@ -63,11 +68,16 @@ def sample_scene(seed: int) -> dict:
     }
 
 
-def _box(half, pos, color, extra="") -> str:
+def _box(
+    half: tuple[float, ...],
+    pos: tuple[float, ...],
+    color: tuple[float, ...],
+    extra: str = "",
+) -> str:
     size = " ".join(f"{h:g}" for h in half)
-    pos = " ".join(f"{p:g}" for p in pos)
+    position = " ".join(f"{p:g}" for p in pos)
     rgba = " ".join(f"{c:g}" for c in (*color, 1))
-    return f'<geom type="box" size="{size}" pos="{pos}" rgba="{rgba}" {extra}/>'
+    return f'<geom type="box" size="{size}" pos="{position}" rgba="{rgba}" {extra}/>'
 
 
 def scene_xml(scene: dict) -> str:
@@ -105,7 +115,7 @@ def scene_xml(scene: dict) -> str:
 </mujoco>"""
 
 
-def build_world(scene: dict):
+def build_world(scene: dict) -> tuple["mujoco.MjModel", "mujoco.MjData"]:
     import mujoco
 
     model = mujoco.MjModel.from_xml_string(scene_xml(scene))
@@ -114,14 +124,16 @@ def build_world(scene: dict):
     return model, data
 
 
-def _snapshot(renderer, data, camera: str):
+def _snapshot(
+    renderer: "mujoco.Renderer", data: "mujoco.MjData", camera: str
+) -> "Image.Image":
     from PIL import Image
 
     renderer.update_scene(data, camera)
     return Image.fromarray(renderer.render())
 
 
-def _png(image) -> bytes:
+def _png(image: "Image.Image") -> bytes:
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()
@@ -156,7 +168,7 @@ def parse_command(text: str) -> tuple[float, float, float, float] | None:
     return values
 
 
-def execute(seed: int, command) -> dict:
+def execute(seed: int, command: tuple[float, float, float, float]) -> dict:
     import mujoco
     import numpy as np
 

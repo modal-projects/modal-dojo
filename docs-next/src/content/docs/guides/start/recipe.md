@@ -240,6 +240,6 @@ Since the containers use [Modal Images](https://modal.com/docs/guide/images) und
 ```python
 recipe = Qwen3_5_4B_Recipe(
     # ...
-    image_overlay=lambda image: image.pip_install("syllables"),
+    image_overlay=lambda image: image.pip_install("syllables==1.1.5"),
 )
 ```

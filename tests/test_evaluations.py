@@ -29,6 +29,51 @@ def test_train_config_takes_eval() -> None:
     assert TrainConfig.__dataclass_fields__["eval"].default is None
 
 
+def test_launch_keeps_training_running_when_eval_watcher_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from modal_dojo.cli import setup
+    from modal_dojo.common import config, train
+    from modal_dojo.common.dataset import HuggingFaceDataset
+    from modal_dojo.common.models import Qwen3_5_4B
+    from modal_dojo.train_recipes.miles_recipe import MilesRecipe
+
+    release = evaluations.EvaluationRelease("er-example", "dojo-example", 1)
+    phases = []
+
+    def prepare_eval(cfg):
+        phases.append("prepare")
+        return release
+
+    def launch_detached(run, **kwargs):
+        phases.append("launch")
+        run.function_call_id = "fc-example"
+        return run
+
+    def start_eval(cfg, run_id, prepared_release):
+        phases.append("watch")
+        assert prepared_release is release
+        raise RuntimeError("watcher unavailable")
+
+    monkeypatch.setattr(config, "require_migrated_config", lambda: None)
+    monkeypatch.setattr(config, "get_framework_status_url", lambda: None)
+    monkeypatch.setattr(setup, "ensure_dashboard_deployed", lambda: None)
+    monkeypatch.setattr(evaluations, "prepare_eval", prepare_eval)
+    monkeypatch.setattr(train, "launch_detached", launch_detached)
+    monkeypatch.setattr(evaluations, "start_eval", start_eval)
+
+    run = train.TrainConfig(
+        dataset=HuggingFaceDataset("org/data", input_column="q"),
+        model=Qwen3_5_4B(),
+        recipe=MilesRecipe(gpu_type="B200"),
+        eval=ModalEvalConfig(every_n_checkpoints=1),
+    ).launch(show_output=False)
+
+    assert run.function_call_id == "fc-example"
+    assert phases == ["prepare", "launch", "watch"]
+    assert "watcher unavailable" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize(
     ("names", "evaluated", "finished", "due"),
     [

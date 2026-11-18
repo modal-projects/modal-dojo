@@ -39,6 +39,7 @@ RUNNER_DEPENDENCIES = (
 
 
 class DatasetParams(evals.Params):
+    inference_target: evals.InferenceTarget
     temperature: float = Field(default=0.0, ge=0, le=2)
     max_tokens: int = Field(default=2048, ge=1)
 
@@ -83,7 +84,8 @@ async def score(
 async def run(
     ctx: evals.TrialContext[DatasetParams, DatasetTask],
 ) -> DatasetResult:
-    base_url = ctx.target.base_url.rstrip("/")
+    target = ctx.params.inference_target.connection()
+    base_url = target.base_url.rstrip("/")
     if not base_url.endswith("/v1"):
         base_url = f"{base_url}/v1"
     messages = json.loads(ctx.task.data.messages)
@@ -91,9 +93,9 @@ async def run(
     async with httpx.AsyncClient(timeout=None) as client:
         response = await client.post(
             f"{base_url}/chat/completions",
-            headers=dict(ctx.target.headers),
+            headers=dict(target.headers),
             json={
-                "model": ctx.target.model,
+                "model": target.model,
                 "messages": messages,
                 "temperature": ctx.params.temperature,
                 "max_tokens": ctx.params.max_tokens,

@@ -1,6 +1,8 @@
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from pydantic import BaseModel
 
@@ -25,15 +27,16 @@ def _deployment(*, unauthenticated: bool):
 def _target(target, **kwargs):
     options = {"deployment_id": None, "single_replica": False, "environment": None}
     return evaluations._LOOP.run(
-        evaluations._target_proto(target, **(options | kwargs))
+        evaluations._resolve_target(target, **(options | kwargs))
     )
 
 
 def test_custom_deployment_becomes_openai_compatible_target() -> None:
-    proto = _target(_deployment(unauthenticated=True))
-    assert proto.custom.base_url == "https://example--serve.modal.run/v1"
-    assert proto.custom.model == "my-model"
-    assert not proto.custom.HasField("api_key")
+    target = _target(_deployment(unauthenticated=True))
+    assert isinstance(target, modal_evals.CustomTarget)
+    assert target.base_url == "https://example--serve.modal.run/v1"
+    assert target.model == "my-model"
+    assert target.api_key is None
 
 
 def test_proxy_auth_custom_deployment_is_refused() -> None:
@@ -41,7 +44,7 @@ def test_proxy_auth_custom_deployment_is_refused() -> None:
         _target(_deployment(unauthenticated=False))
 
 
-def test_endpoint_becomes_flash_endpoint_target() -> None:
+def test_endpoint_becomes_modal_endpoint_target() -> None:
     from modal_dojo.common.endpoint import Endpoint
 
     endpoint = Endpoint(
@@ -50,10 +53,11 @@ def test_endpoint_becomes_flash_endpoint_target() -> None:
         model_name="m",
         requires_proxy_auth=True,
     )
-    proto = _target(endpoint, deployment_id="ed-def", single_replica=True)
-    assert proto.flash_endpoint.endpoint_id == "ep-abc"
-    assert proto.flash_endpoint.deployment_id == "ed-def"
-    assert proto.flash_endpoint.single_replica
+    target = _target(endpoint, deployment_id="ed-def", single_replica=True)
+    assert isinstance(target, modal_evals.ModalEndpointTarget)
+    assert target.endpoint_id == "ep-abc"
+    assert target.deployment_id == "ed-def"
+    assert target.single_replica
 
 
 async def _reward(args, sample, **kwargs) -> float:
@@ -93,6 +97,60 @@ def test_task_from_row_wraps_prompts_as_messages() -> None:
     )
     assert task.key == "q-7"
     assert json.loads(task.data.messages) == messages
+
+
+def test_dataset_trial_uses_bound_inference_target(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from modal_evals.local import test_evaluation as run_local_evaluation
+    from modal_evals.protocol import TrialSucceeded
+
+    from modal_dojo.evaluation_runner import dataset
+
+    def complete(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://example.test/v1/chat/completions"
+        assert json.loads(request.content)["model"] == "test-model"
+        return httpx.Response(200, json={"choices": [{"message": {"content": "2"}}]})
+
+    monkeypatch.setattr(
+        dataset,
+        "httpx",
+        SimpleNamespace(
+            AsyncClient=lambda **kwargs: httpx.AsyncClient(
+                transport=httpx.MockTransport(complete), **kwargs
+            )
+        ),
+    )
+    task = dataset.task_from_row(
+        0,
+        {"q": "1+1?", "a": "2"},
+        input_key="q",
+        label_key="a",
+        reward=dataset.pickle_reward(_reward),
+    )
+    evaluation = dataset.build_evaluation(
+        "dojo-example",
+        [task],
+        display_name="Arithmetic",
+        description="Score an arithmetic answer.",
+        max_concurrency=1,
+    )
+    target = modal_evals.CustomTarget(
+        base_url="https://example.test/v1", model="test-model"
+    )
+    run = evaluations._LOOP.run(
+        run_local_evaluation(
+            evaluation.definition(),
+            task_keys=(),
+            all_tasks=False,
+            params={"inference_target": target.model_dump(mode="json")},
+            output_root=tmp_path,
+            seed=0,
+        )
+    )
+    outcome = run.outcomes[task.key]
+    assert isinstance(outcome, TrialSucceeded), outcome
+    assert outcome.result["score"] == 1.0
 
 
 class _Dataset(BaseModel):
@@ -181,4 +239,47 @@ def test_run_evaluation_submits_latest_release(monkeypatch: pytest.MonkeyPatch) 
     assert request.params["temperature"] == 0
     assert dict(request.tags) == {"training_run_id": "run-1"}
     assert request.trial_concurrency == 4
-    assert request.target.custom.model == "my-model"
+    assert request.params["inference_target"]["kind"] == "custom"
+    assert request.params["inference_target"]["model"] == "my-model"
+
+
+def test_finished_job_scores_trials_from_task_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from modal_evals.proto import flash_eval_api_pb2 as api
+
+    class ResultsClient(_FakeClient):
+        async def get_job(self, request):
+            return api.GetEvaluationJobResponse(
+                job=api.EvaluationJob(
+                    job_id=request.job_id, status=api.EVALUATION_STATUS_SUCCEEDED
+                )
+            )
+
+        async def list_tasks(self, request):
+            assert request.job_id == "ej-1"
+            return [
+                api.EvaluationTask(
+                    task_id="task-1",
+                    task_key="row-000000",
+                    trials=[
+                        api.EvaluationTrial(
+                            trial_id="trial-1",
+                            status=api.EVALUATION_STATUS_SUCCEEDED,
+                            result={"score": 0.75},
+                        )
+                    ],
+                )
+            ]
+
+        async def get_output_volume(self, response):
+            return SimpleNamespace(object_id="vo-1")
+
+    async def client(server):
+        return ResultsClient()
+
+    monkeypatch.setattr(evaluations, "_client", client)
+    job = evaluations.EvaluationJob("ej-1")
+    results = job.wait()
+    assert job.mean("score", results) == 0.75
+    assert results.output_volume.url == "https://modal.com/id/vo-1"

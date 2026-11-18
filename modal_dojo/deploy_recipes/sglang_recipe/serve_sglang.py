@@ -1,8 +1,8 @@
 """SGLang serving helper — builds a Modal app that hosts a model via SGLang.
 
-The model is served by ``SGLangEndpoint``, a Modal *server* class registered
-with ``@app.server`` (Modal's low-latency routing service for
-inference workloads). The endpoint is the Modal class itself — its
+The model is served by ``modal_dojo.remote.serving.SGLangEndpoint``, a Modal
+*server* class registered with ``app.server`` (Modal's low-latency routing
+service for inference workloads). The endpoint is the Modal class itself — its
 ``@modal.enter()`` starts the ``sglang.launch_server`` subprocess, waits for
 the health endpoint, and runs a couple of warmup requests; its
 ``@modal.exit()`` tears the subprocess down. Modal proxies HTTP traffic
@@ -16,6 +16,7 @@ straight to the SGLang port, so there's no separate wrapper function.
 
 from __future__ import annotations
 
+import json
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
@@ -35,10 +36,10 @@ def build_sglang_serve_app(
     checkpoints_mount_path: str | None = None,
     unauthenticated: bool = False,
 ) -> "App":
-    import modal
     from modal import App, Image, Volume
 
     from modal_dojo.common import hf_secrets
+    from modal_dojo.remote import serving
 
     sglang_port = 8000
 
@@ -54,7 +55,7 @@ def build_sglang_serve_app(
         .entrypoint([])
         .run_commands("rm -rf /root/.cache/huggingface")
         # pydantic_core in the nightly image needs typing_extensions>=4.13 (Sentinel)
-        .uv_pip_install("typing_extensions>=4.13")
+        .uv_pip_install("typing_extensions==4.16.0")
     )
     # Brand-new model architectures (e.g. deepseek_v4 on older SGLang tags)
     # aren't in released transformers yet; install from git so AutoConfig
@@ -64,7 +65,7 @@ def build_sglang_serve_app(
     if recipe.install_transformers_from_git:
         image = image.run_commands(
             "uv pip install --python $(command -v python) --no-build-isolation "
-            "'transformers @ git+https://github.com/huggingface/transformers.git'"
+            "'transformers @ git+https://github.com/huggingface/transformers.git@66f51e76efd8542232b8bdd40ade7d1edbaac46f'"
         )
     image = image.env(image_env).add_local_python_source("modal_dojo", copy=True)
 
@@ -98,69 +99,32 @@ def build_sglang_serve_app(
     server_args = recipe.server_args(served_model_name=served_model_name)
     if revision:
         server_args["--revision"] = revision
-    _tp = recipe.tp
-    _dp = recipe.dp
 
-    @app.server(
+    app.SGLangEndpoint = app.server(
         image=image,
         gpu=gpu_spec,
         scaledown_window=10 * 60,
         startup_timeout=startup_timeout,
         volumes=volumes,
         secrets=hf_secrets(),
-        serialized=True,
+        env={
+            serving.SERVE_SPEC_ENV: json.dumps(
+                {
+                    "model_path": model_path,
+                    "served_model_name": served_model_name,
+                    "port": sglang_port,
+                    "tp": recipe.tp,
+                    "dp": recipe.dp,
+                    "server_args": server_args,
+                    "startup_timeout": startup_timeout,
+                }
+            )
+        },
         include_source=False,
         port=sglang_port,
         exit_grace_period=25,
         routing_region="us-east",
         target_concurrency=8,
         unauthenticated=unauthenticated,
-    )
-    class SGLangEndpoint:
-        @modal.enter()
-        def start(self):
-            from modal_dojo.deploy_recipes.sglang_recipe._sglang_endpoint import (
-                build_server_cmd,
-                rewrite_chat_template_kwargs,
-                start_server,
-                wait_for_server_ready,
-                warmup_chat_completions,
-            )
-
-            args = rewrite_chat_template_kwargs(server_args, model_path=model_path)
-            cmd = build_server_cmd(
-                model_path=model_path,
-                port=sglang_port,
-                tp=_tp,
-                dp=_dp,
-                extra_server_args=args,
-            )
-            self.proc = start_server(cmd)
-            wait_for_server_ready(
-                self.proc,
-                port=sglang_port,
-                timeout=float(startup_timeout),
-            )
-            warmup_chat_completions(
-                port=sglang_port,
-                payload={
-                    "model": served_model_name,
-                    "messages": [{"role": "user", "content": "Reply with exactly OK."}],
-                    "max_tokens": 8,
-                    "temperature": 0,
-                },
-                successful_requests=2,
-                request_timeout=60.0,
-            )
-            print(f"[modal-dojo] SGLang serving {served_model_name} ready.")
-
-        @modal.exit()
-        def stop(self):
-            from modal_dojo.deploy_recipes.sglang_recipe._sglang_endpoint import (
-                stop_server,
-            )
-
-            stop_server(getattr(self, "proc", None))
-
-    setattr(app, "SGLangEndpoint", SGLangEndpoint)
+    )(serving.SGLangEndpoint)
     return app

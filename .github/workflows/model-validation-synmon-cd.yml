@@ -28,16 +28,18 @@ jobs:
     env:
       MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-      MODAL_ENVIRONMENT: training-gym
+      MODAL_ENVIRONMENT: dojo
+      # dojo defaults to an image builder version modal 1.6.1 can't use.
+      MODAL_IMAGE_BUILDER_VERSION: "2025.06"
       UV_CACHE_DIR: /tmp/uv-cache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version-file: ".python-version"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v5.4.2
 
       - name: Sync dependencies
         run: uv sync

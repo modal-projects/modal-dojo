@@ -3,6 +3,7 @@ from __future__ import annotations
 from importlib import import_module
 
 _EXPORTS = {
+    "SpindleRecipe": ("modal_dojo.train_recipes.spindle_recipe", "SpindleRecipe"),
     "Beam_1_0_501B_A23B_LoRA_256k_Recipe": (
         "modal_dojo.train_recipes.miles_recipe",
         "Beam_1_0_501B_A23B_LoRA_256k_Recipe",
@@ -35,7 +36,13 @@ _EXPORTS = {
         "modal_dojo.common.metric_mirror",
         "DashboardMetricConfig",
     ),
+    "Budget": ("modal_dojo.common.budget", "Budget"),
     "DatasetConfig": ("modal_dojo.common.dataset", "DatasetConfig"),
+    "Environment": ("modal_dojo.common.environment", "Environment"),
+    "ManagedTrainConfig": (
+        "modal_dojo.common.managed_train",
+        "ManagedTrainConfig",
+    ),
     "Endpoint": ("modal_dojo.common.endpoint", "Endpoint"),
     "Sandbox": ("modal_dojo.common.sandbox", "Sandbox"),
     "SandboxResult": ("modal_dojo.common.sandbox", "SandboxResult"),
@@ -227,6 +234,7 @@ _EXPORTS = {
 }
 
 __all__ = [
+    "SpindleRecipe",
     "Beam_1_0_501B_A23B_LoRA_256k_Recipe",
     "Beam_1_0_501B_A23B",
     "Beam_1_0_501B_A23B_LoRA",
@@ -238,7 +246,10 @@ __all__ = [
     "convert_megatron_checkpoint_to_hf",
     "convert_native_lora_checkpoint_to_peft",
     "DashboardMetricConfig",
+    "Budget",
     "DatasetConfig",
+    "Environment",
+    "ManagedTrainConfig",
     "Endpoint",
     "Sandbox",
     "SandboxResult",

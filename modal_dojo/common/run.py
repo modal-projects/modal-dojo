@@ -9,6 +9,7 @@ import copy
 import math
 import inspect
 import os
+import posixpath
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from enum import Enum
@@ -299,6 +300,11 @@ class TrainingRun(BaseModel):
     def model(self) -> "ModelConfig":
         """Build a ``ModelConfig`` whose path targets the latest megatron checkpoint."""
         self._reload()
+        if self.framework is Framework.SPINDLE:
+            # TODO(helena): Export the LoRA adapter and merge with tinker_cookbook.weights.build_hf_model.
+            raise ValueError(
+                "Spindle checkpoint conversion to a serving model is not supported in v0."
+            )
         raw = self.source_model
         if raw is None:
             raise ValueError("No source_model on this TrainingRun.")
@@ -844,9 +850,9 @@ def torch_dist_resume_checkpoint(
 
 def run_scoped_save_root(save_root: str, training_run_id: str) -> str:
     save_root = str(save_root).rstrip("/") or "/"
-    if os.path.basename(save_root) == training_run_id:
+    if posixpath.basename(save_root) == training_run_id:
         return save_root
-    return os.path.join(save_root, training_run_id)
+    return posixpath.join(save_root, training_run_id)
 
 
 def mark_training_attempt_started(

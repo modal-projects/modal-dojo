@@ -18,7 +18,10 @@
 import base64
 import io
 import time
+from argparse import Namespace
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Protocol
 
 import jiwer
 import requests
@@ -26,6 +29,7 @@ import soundfile as sf
 from datasets import Audio, load_dataset
 
 from modal_dojo import (
+    Checkpoint,
     CustomDeployment,
     MultimodalDataset,
     Qwen3_ASR_1_7B,
@@ -44,7 +48,7 @@ from modal_dojo.common.config import modal_proxy_auth_headers
 model = Qwen3_ASR_1_7B()
 
 
-def deploy_base_model():
+def deploy_base_model() -> CustomDeployment:
     print("deploying base model deployment...")
     base_deployment = CustomDeployment.launch(
         model,
@@ -82,7 +86,7 @@ class EuroSpeechASRDataset(MultimodalDataset):
     hf_repo = "disco-eth/EuroSpeech"
     hf_config = "uk"
 
-    def __init__(self, *, hf_split: str, max_seconds: float = 3600):
+    def __init__(self, *, hf_split: str, max_seconds: float = 3600) -> None:
         self.hf_split = hf_split
         self.max_seconds = max_seconds
         super().__init__(modality="audio")
@@ -90,7 +94,7 @@ class EuroSpeechASRDataset(MultimodalDataset):
     def apply_chat_template(self) -> bool:
         return False
 
-    def source_rows(self):
+    def source_rows(self) -> Iterator[dict[str, Any]]:
         ds = load_dataset(
             self.hf_repo, self.hf_config, split=self.hf_split, streaming=True
         )
@@ -128,10 +132,10 @@ eval_dataset = EuroSpeechASRDataset(hf_split="validation", max_seconds=300)
 # Let's get our baseline measure of performance.
 
 
-def run_eval(deployment, max_concurrency: int = 2) -> float:
+def run_eval(deployment: CustomDeployment, max_concurrency: int = 2) -> float:
     deployment.wait_until_ready()
 
-    def _score_one(example):
+    def _score_one(example: dict[str, Any]) -> float:
         data_uri = example["audios"][0]
         reference = (example["label"] or "").lower().strip()
         b64 = data_uri.split(",", 1)[1] if data_uri.startswith("data:") else data_uri
@@ -159,7 +163,7 @@ def run_eval(deployment, max_concurrency: int = 2) -> float:
     return sum(wers) / len(wers) if wers else float("nan")
 
 
-def run_baseline_evals(deployment):
+def run_baseline_evals(deployment: CustomDeployment) -> None:
     print("running base model evaluation...")
     base_mean = run_eval(deployment)
     print(f"average WER: {base_mean:.1%}")
@@ -171,7 +175,12 @@ def run_baseline_evals(deployment):
 # negative WER so that lower WER leads to higher rewards.
 
 
-async def wer_rm(args, sample, **kwargs) -> float:
+class RolloutSample(Protocol):
+    response: str
+    label: str
+
+
+async def wer_rm(args: Namespace, sample: RolloutSample, **kwargs: object) -> float:
     return -score_transcript(sample.response, sample.label)
 
 
@@ -197,7 +206,7 @@ config = TrainConfig(
 )
 
 
-def train(config):
+def train(config: TrainConfig) -> Checkpoint:
     with config.launch() as run:
         print(f"run id: {run.training_run_id}")
         checkpoint = None
@@ -221,7 +230,7 @@ def train(config):
 # Let's run the same eval on the trained checkpoint.
 
 
-def deploy_trained_model(checkpoint):
+def deploy_trained_model(checkpoint: Checkpoint) -> CustomDeployment:
     print("deploying trained model deployment...")
     trained_deployment = CustomDeployment.launch(
         model,
@@ -233,7 +242,7 @@ def deploy_trained_model(checkpoint):
     return trained_deployment
 
 
-def run_trained_evals(trained_deployment):
+def run_trained_evals(trained_deployment: CustomDeployment) -> None:
     print("running checkpoint evaluation...")
     trained_mean = run_eval(trained_deployment)
     print(f"average WER: {trained_mean:.1%}")

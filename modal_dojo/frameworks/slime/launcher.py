@@ -19,6 +19,7 @@ import contextlib
 import os
 import shlex
 import subprocess
+import time
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -89,6 +90,8 @@ from .modal_helpers.utils import (
     prepare_slime_config,
     resolve_checkpoint_ref,
 )
+from modal_dojo.common.budget import driver_budget_env
+from modal_dojo.common.budget_stop_patch import encoded_patch as budget_stop_patch
 from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
 from modal_dojo.common.checkpoint import Checkpoint
 from modal_dojo.common.framework import Framework
@@ -120,7 +123,6 @@ _PATCH_BRIDGE_PER_TOKEN_LOSS_B64 = encode_patch(
 _PATCH_VLM_CRITIC_VALUE_HEAD_B64 = encode_patch(
     "patch_vlm_critic_value_head", _SLIME_PATCHES
 )
-_PATCH_STOP_TOKEN_DIAG_B64 = encode_patch("patch_stop_token_diagnostic", _SLIME_PATCHES)
 _PATCH_MULTIMODAL_PROMPT_FILTER_B64 = encode_patch(
     "patch_multimodal_prompt_filter", _SLIME_PATCHES
 )
@@ -177,7 +179,6 @@ _PATCH_SGLANG_TRTLLM_MOE_REPACK_B64 = encode_patch(
 _SLIME_ROOT_PATCHES_B64 = (
     _PATCH_MEGATRON_BRIDGE_B64,
     _PATCH_ADVANTAGES_B64,
-    _PATCH_STOP_TOKEN_DIAG_B64,
     _PATCH_QWEN3_ASR_EXPORT_B64,
     _PATCH_QWEN3_VL_EXPORT_B64,
     _PATCH_QWEN3_VL_TORCH_DIST_B64,
@@ -457,6 +458,8 @@ def build_slime_app(
         image = image.uv_pip_install(f"harbor=={HARBOR_PKG_VERSION}")
 
     image = _overlay_slime_source(image, slime)
+    if slime.budget is not None:
+        image = image.run_commands(*_patch_commands((budget_stop_patch(SLIME_ROOT),)))
 
     if slime.image_run_commands:
         image = image.run_commands(*slime.image_run_commands)
@@ -467,7 +470,7 @@ def build_slime_app(
         resolve_trackio_destination(slime.metrics)
     image = apply_metric_image(image, slime.metrics)
     image = image.add_local_python_source("modal_dojo", copy=True)
-    image = image.uv_pip_install("randomname")
+    image = image.uv_pip_install("randomname==0.2.1")
     image = mount_tools_dir(image)
     image = mount_caller_source(image, caller_script)
 
@@ -810,6 +813,7 @@ def build_slime_app(
         framework_status_url: str = "",
         framework_status_token: str = "",
     ):
+        started_at = time.time()
         cluster, modal_app_id, modal_app_url = await start_training_cluster(
             slime,
             (hf_cache_volume, data_volume, checkpoints_volume),
@@ -927,6 +931,7 @@ def build_slime_app(
                         if value
                     ),
                     "MASTER_ADDR": cluster.head_addr,
+                    **driver_budget_env(slime, started_at=started_at),
                     **shared.training_reporting_env(
                         slime, model, app_name, framework_status_url
                     ),

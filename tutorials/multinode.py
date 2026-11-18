@@ -15,10 +15,14 @@ import math
 import re
 import string
 import time
+from argparse import Namespace
+from collections.abc import Iterator
+from typing import Any, Protocol
 
 from datasets import load_dataset
 
 from modal_dojo import (
+    Checkpoint,
     DatasetConfig,
     Endpoint,
     GLM_4_7,
@@ -56,7 +60,7 @@ class DocQADataset(DatasetConfig):
     def label_key(self) -> str:
         return "label"
 
-    def rows(self):
+    def rows(self) -> Iterator[dict[str, Any]]:
         prompt_limit = GLM_4_7_Recipe.max_tokens_per_gpu - _ANSWER_TOKENS
         for row in load_dataset("Tongyi-Zhiwen/DocQA-RL-1.6K", split="train"):
             if int(row["extra_info"]["input_length"]) > prompt_limit:
@@ -84,7 +88,12 @@ def answers_equal(pred: str, label: str) -> bool:
         return _normalize(pred) == _normalize(label)
 
 
-async def docqa_rm(args, sample, **kwargs) -> float:
+class RolloutSample(Protocol):
+    response: str
+    label: str
+
+
+async def docqa_rm(args: Namespace, sample: RolloutSample, **kwargs: object) -> float:
     pred = scored_answer(model.parse_response(sample.response or "").content)
     return float(bool(pred) and answers_equal(pred, sample.label))
 
@@ -121,7 +130,7 @@ config = TrainConfig(
 )
 
 
-def train(config):
+def train(config: TrainConfig) -> Checkpoint:
     with config.launch() as run:
         print(f"run id: {run.training_run_id}")
         checkpoint = None
@@ -143,7 +152,7 @@ def train(config):
 # ## Test out the trained model
 
 
-def deploy_trained_model(checkpoint):
+def deploy_trained_model(checkpoint: Checkpoint) -> Endpoint:
     print("deploying trained model endpoint...")
     trained_deployment = Endpoint.launch(
         model,
@@ -156,7 +165,7 @@ def deploy_trained_model(checkpoint):
     return trained_deployment
 
 
-def run_trained_sample(trained_deployment):
+def run_trained_sample(trained_deployment: Endpoint) -> None:
     example = next(iter(dataset.rows()))
     msg = trained_deployment.chat(example[dataset.input_key()])
     print(msg.get("content") or msg.get("reasoning_content") or "")

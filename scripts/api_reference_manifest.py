@@ -30,11 +30,8 @@ def _group_for_module(module: str) -> str:
         return "datasets"
     if "train_recipes" in module:
         return "recipes"
-    if (
-        "deploy_recipes" in module
-        or module.endswith(".deployment")
-        or module.endswith(".endpoint")
-        or module.endswith(".sandbox")
+    if "deploy_recipes" in module or module.endswith(
+        (".deployment", ".endpoint", ".sandbox")
     ):
         return "deployment"
     return "training"

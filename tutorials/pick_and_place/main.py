@@ -29,10 +29,14 @@ import asyncio
 import base64
 import sys
 import time
+from argparse import Namespace
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any, Protocol
 
 from modal_dojo import (
+    Checkpoint,
     CustomDeployment,
     MultimodalDataset,
     Qwen3_VL_8B,
@@ -49,7 +53,7 @@ model = Qwen3_VL_8B()
 #
 # Each scene is a table with four colored blocks and three trays, all placed
 # randomly from a seed. The simulator, in
-# [sim.py](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/pick_and_place/sim.py),
+# [sim.py](https://github.com/modal-labs/modal-dojo/blob/main/tutorials/pick_and_place/sim.py),
 # grabs the block under the pick point, drops it over the place point, and lets
 # MuJoCo physics decide where it lands.
 #
@@ -88,11 +92,11 @@ PROMPT = (
 
 
 class PickAndPlaceDataset(MultimodalDataset):
-    def __init__(self, seeds):
+    def __init__(self, seeds: Iterable[int]) -> None:
         self.seeds = list(seeds)
         super().__init__(modality="image")
 
-    def source_rows(self):
+    def source_rows(self) -> Iterator[dict[str, Any]]:
         for seed in self.seeds:
             instruction = sim.sample_scene(seed)["instruction"]
             image = base64.b64encode(sim.overhead_image(seed)).decode("ascii")
@@ -113,7 +117,7 @@ eval_dataset = PickAndPlaceDataset(range(100_000, 100_100))
 # to deploy the base and trained models.
 
 
-def deploy_base_model():
+def deploy_base_model() -> CustomDeployment:
     print("deploying base model deployment...")
     base_deployment = CustomDeployment.launch(
         model,
@@ -132,8 +136,8 @@ def deploy_base_model():
 # from reading the instruction or from placement.
 
 
-def run_eval(deployment, max_concurrency: int = 8) -> None:
-    def _score_one(row):
+def run_eval(deployment: CustomDeployment, max_concurrency: int = 8) -> None:
+    def _score_one(row: dict[str, Any]) -> float:
         content = [
             {"type": "text", "text": row["prompt"].replace("<image>", "").strip()},
             {"type": "image_url", "image_url": {"url": row["images"][0]}},
@@ -151,7 +155,7 @@ def run_eval(deployment, max_concurrency: int = 8) -> None:
     print(f"success rate: {success:.1%}")
 
 
-def run_baseline_evals(deployment):
+def run_baseline_evals(deployment: CustomDeployment) -> None:
     print("running base model evaluation...")
     run_eval(deployment)
 
@@ -163,7 +167,15 @@ def run_baseline_evals(deployment):
 # can see what the model actually did in the dashboard's rollout view.
 
 
-async def pick_and_place_rm(args, sample, **kwargs) -> float:
+class RolloutSample(Protocol):
+    response: str
+    label: str
+    metadata: dict[str, Any] | None
+
+
+async def pick_and_place_rm(
+    args: Namespace, sample: RolloutSample, **kwargs: object
+) -> float:
     response = model.parse_response(sample.response or "").content
     reward, image = await asyncio.to_thread(
         score_response, response, int(sample.label)
@@ -197,14 +209,14 @@ config = TrainConfig(
         custom_rm_function=pick_and_place_rm,
         image_overlay=lambda image: (
             image.apt_install("libosmesa6")
-            .uv_pip_install("mujoco", "numpy", "pillow")
+            .uv_pip_install("mujoco==3.16.0", "numpy==2.5.3", "pillow==13.0.0")
             .add_local_file(sim.__file__, remote_path="/root/sim.py", copy=True)
         ),
     ),
 )
 
 
-def train(config):
+def train(config: TrainConfig) -> Checkpoint:
     with config.launch() as run:
         print(f"run id: {run.training_run_id}")
         checkpoint = None
@@ -228,7 +240,7 @@ def train(config):
 # Let's run the same eval on the trained checkpoint.
 
 
-def deploy_trained_model(checkpoint):
+def deploy_trained_model(checkpoint: Checkpoint) -> CustomDeployment:
     print("deploying trained model deployment...")
     trained_deployment = CustomDeployment.launch(
         model,
@@ -241,7 +253,7 @@ def deploy_trained_model(checkpoint):
     return trained_deployment
 
 
-def run_trained_evals(trained_deployment):
+def run_trained_evals(trained_deployment: CustomDeployment) -> None:
     print("running checkpoint evaluation...")
     run_eval(trained_deployment)
 

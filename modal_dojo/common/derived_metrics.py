@@ -9,9 +9,10 @@ downstream needs billing rates or timing records of its own.
 
 A training step's wall time comes from the driver's substep timing when
 there is any (it excludes checkpoint saves and evals), else from the
-framework's own ``perf/step_time``. Rows are numbered by arrival order of
-each source key, as mirrored rows merge several logging calls and the step
-in a row does not reliably number the value beside it.
+framework's own ``perf/step_time``. Metrics with a recorded ``rollout/step``
+axis retain that identity across resumes and missing points. Legacy metrics
+without an axis use each source key's arrival order; another step value in
+the same merged row is not evidence of that metric's axis.
 """
 
 from __future__ import annotations
@@ -84,6 +85,8 @@ class RunPricing:
     gpus: int
     gpu_hour_usd: float | None
     samples_per_step: int | None
+    # Some recipes plot rollout metrics against optimizer steps instead of IDs.
+    rollout_step_is_id: bool = True
 
     @property
     def usd_per_s(self) -> float | None:
@@ -113,6 +116,7 @@ class RunPricing:
             gpus=gpus,
             gpu_hour_usd=gpu_hour_cost(rates, gpu_type) if gpu_type else None,
             samples_per_step=samples_per_step(recipe),
+            rollout_step_is_id=not recipe.get("wandb_always_use_train_step", False),
         )
 
 
@@ -142,13 +146,26 @@ def driver_step_seconds(lanes: Mapping[str, Any]) -> dict[int, float]:
     return seconds
 
 
-def logged_per_step(table: StepTable, key: str) -> dict[int, tuple[int, float]]:
+def logged_per_step(
+    table: StepTable,
+    key: str,
+    step_keys: Mapping[int, Mapping[str, str | None]] | None = None,
+) -> dict[int, tuple[int, float]]:
     """A metric the framework logs once per step: ``{n: (row, value)}``,
-    numbered by arrival order with the table row it sits in."""
+    using its rollout axis when recorded, otherwise arrival order.
+
+    Timing keys are one-based rollout IDs; source rows stay unchanged.
+    """
     rows = [
         (row, metrics[key]) for row, metrics in sorted(table.items()) if key in metrics
     ]
-    return dict(enumerate(rows, start=1))
+    return {
+        (row + 1 if (step_keys or {}).get(row, {}).get(key) == "rollout/step" else n): (
+            row,
+            value,
+        )
+        for n, (row, value) in enumerate(rows, start=1)
+    }
 
 
 def _finite(value: object) -> float | None:
@@ -159,6 +176,8 @@ def derived_points(
     table: StepTable,
     measured_seconds: Mapping[int, float],
     pricing: RunPricing,
+    *,
+    step_keys: Mapping[int, Mapping[str, str | None]] | None = None,
 ) -> dict[int, dict[str, float]]:
     """The derived metrics each table row should carry, keyed by row.
 
@@ -167,13 +186,13 @@ def derived_points(
     GPU rate means no cost keys; no samples-per-step means no generated-token
     keys.
     """
-    response_len = logged_per_step(table, RESPONSE_LEN_KEY)
-    train_rate = logged_per_step(table, TRAIN_TOK_PER_S_KEY)
-    train_time = logged_per_step(table, TRAIN_TIME_KEY)
-    step_time = logged_per_step(table, STEP_TIME_KEY)
+    response_len = logged_per_step(table, RESPONSE_LEN_KEY, step_keys)
+    train_rate = logged_per_step(table, TRAIN_TOK_PER_S_KEY, step_keys)
+    train_time = logged_per_step(table, TRAIN_TIME_KEY, step_keys)
+    step_time = logged_per_step(table, STEP_TIME_KEY, step_keys)
 
     def seconds_for(n: int) -> tuple[int | None, float | None]:
-        if n in measured_seconds:
+        if pricing.rollout_step_is_id and n in measured_seconds:
             return None, measured_seconds[n]
         if n in step_time:
             row, value = step_time[n]

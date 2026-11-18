@@ -130,13 +130,12 @@ def _with_container_pythonpath(runtime_env: dict) -> dict:
         return runtime_env
 
     env_vars = dict(runtime_env.get("env_vars") or {})
-    entries = [
-        entry for entry in env_vars.get("PYTHONPATH", "").split(os.pathsep) if entry
-    ]
-    for entry in container_pythonpath.split(os.pathsep):
+    # Both paths belong to the Linux container running the Ray job.
+    entries = [entry for entry in env_vars.get("PYTHONPATH", "").split(":") if entry]
+    for entry in container_pythonpath.split(":"):
         if entry and entry not in entries:
             entries.append(entry)
-    env_vars["PYTHONPATH"] = os.pathsep.join(entries)
+    env_vars["PYTHONPATH"] = ":".join(entries)
     return {**runtime_env, "env_vars": env_vars}
 
 

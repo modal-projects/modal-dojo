@@ -11,7 +11,9 @@
 # [Harbor](https://docs.harborframework.com/).
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from modal_dojo import (
@@ -35,7 +37,7 @@ from tutorials.coding_agent.dataset import (
 # tasks with a mix of successes and failures, so that we only train on tasks
 # with useful GRPO learning signal.
 # Since this is verbose, we have a
-# [separate preprocessing script](https://github.com/modal-projects/modal-dojo/blob/main/tutorials/coding_agent/dataset.py).
+# [separate preprocessing script](https://github.com/modal-labs/modal-dojo/blob/main/tutorials/coding_agent/dataset.py).
 #
 # Run with:
 #
@@ -50,7 +52,7 @@ TRAIN_SUBSET = "train-300-mixed-reward-qwen3-6-27b-agentic-n8"
 EVAL_SUBSETS = ("eval",)
 
 class AgentTaskDataset(DatasetConfig):
-    def __init__(self, path: Path):
+    def __init__(self, path: Path) -> None:
         self.path = path
 
     def input_key(self) -> str:
@@ -62,7 +64,7 @@ class AgentTaskDataset(DatasetConfig):
     def apply_chat_template(self) -> bool:
         return False
 
-    def rows(self):
+    def rows(self) -> Iterator[dict[str, Any]]:
         with self.path.open() as source:
             for line in source:
                 if line.strip():
@@ -98,7 +100,7 @@ config = TrainConfig(
         image_run_commands=[
             "apt-get update && apt-get install -y --no-install-recommends "
             "rdma-core libibverbs1 ibverbs-providers",
-            "uv pip install --system modal==1.6.1 mini-swe-agent datasets",
+            "uv pip install --system modal==1.6.1 'mini-swe-agent==2.4.6' 'datasets==5.1.0'",
         ],
         image_env={"MSWEA_SILENT_STARTUP": "1"},
         app_tags={"agentic_rollout": "harbor"},
