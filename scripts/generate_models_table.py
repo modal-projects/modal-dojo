@@ -29,19 +29,31 @@ BASE_RECIPES = {"SlimeRecipe", "MilesRecipe"}
 FRAMEWORK_BASES = frozenset({*BASE_RECIPES, "MilesConfig"})
 MODEL_CONFIGS = {name.lower(): getattr(models, name) for name in models.__all__}
 FAMILY_RE = re.compile(r"^([A-Za-z]+(?:\d+(?:\.\d+)*|\d+)?)")
-HF_URL = "https://huggingface.co"
+DOCS_URL = "https://dojo.modal.dev"
+TUTORIALS = {"Qwen/Qwen3-ASR-1.7B": "audio_asr"}
 
 
 @dataclass(frozen=True)
-class ModelLink:
-    display_name: str
-    href: str
+class RecipeRow:
+    hf_id: str
+    config: str
+    recipe: str
+    other_recipes: tuple[str, ...] = ()
+
+    @property
+    def display_name(self) -> str:
+        slug = self.hf_id.rsplit("/", 1)[-1]
+        return slug[:1].upper() + slug[1:]
+
+    @property
+    def slug(self) -> str:
+        return re.sub(r"[^a-z0-9]+", "-", self.config.lower())
 
 
 @dataclass(frozen=True)
 class FamilyRow:
     family: str
-    models: tuple[ModelLink, ...]
+    rows: tuple[RecipeRow, ...]
 
 
 def model_key(recipe_name: str) -> str:
@@ -53,12 +65,6 @@ def family_of(hf_id: str) -> str:
     match = FAMILY_RE.match(slug)
     family = match.group(1) if match else slug
     return family.title() if family.islower() else family
-
-
-def model_link(hf_id: str) -> ModelLink:
-    slug = hf_id.rsplit("/", 1)[-1]
-    display_name = slug[:1].upper() + slug[1:]
-    return ModelLink(display_name=display_name, href=f"{HF_URL}/{hf_id}")
 
 
 def iter_registered_recipes() -> Iterator[tuple[str, Any, Any, str]]:
@@ -96,14 +102,15 @@ def collect_model_preset_names() -> frozenset[str]:
 
 
 def collect_models() -> tuple[FamilyRow, ...]:
-    families: dict[str, set[str]] = defaultdict(set)
+    families: dict[str, list[RecipeRow]] = defaultdict(list)
+    recipes: dict[type[ModelConfig], set[str]] = defaultdict(set)
     unmatched: list[str] = []
     for recipe_name, _recipe, config, module_path in iter_registered_recipes():
         model_name = getattr(config, "model_name", None)
         if not model_name:
             unmatched.append(f"{module_path}.{recipe_name}")
             continue
-        families[family_of(model_name)].add(model_name)
+        recipes[config].add(recipe_name)
     if unmatched:
         raise SystemExit(
             "No ModelConfig found for these recipes:\n  "
@@ -111,33 +118,102 @@ def collect_models() -> tuple[FamilyRow, ...]:
             + "\nSet model_config_class on the recipe, or export a matching "
             "ModelConfig from modal_dojo.common.models."
         )
+    for config, names in recipes.items():
+        recipe, *others = sorted(names, key=lambda name: (len(name), name))
+        families[family_of(config.model_name)].append(
+            RecipeRow(config.model_name, config.__name__, recipe, tuple(others))
+        )
     return tuple(
         FamilyRow(
             family=family,
-            models=tuple(
-                model_link(hf_id)
-                for hf_id in sorted(ids, key=lambda name: name.rsplit("/", 1)[-1])
-            ),
+            rows=tuple(sorted(rows, key=lambda r: (r.display_name, r.config))),
         )
-        for family, ids in sorted(families.items())
+        for family, rows in sorted(families.items())
     )
 
 
+def render_snippet(row: RecipeRow) -> list[str]:
+    tutorial = TUTORIALS.get(row.hf_id)
+    if tutorial:
+        return [
+            f"See the [tutorial]({DOCS_URL}/tutorials/{tutorial}) "
+            "for a runnable example.",
+        ]
+    return [
+        "```python",
+        "from modal_dojo import (",
+        "    HuggingFaceDataset,",
+        "    TrainConfig,",
+        f"    {row.config},",
+        f"    {row.recipe},",
+        ")",
+        "",
+        "config = TrainConfig(",
+        f"    model={row.config}(),",
+        "    dataset=HuggingFaceDataset(",
+        '        hf_repo="zhuzilin/dapo-math-17k",',
+        '        input_column="prompt",',
+        '        output_column="label",',
+        '        input_format="messages",',
+        "    ),",
+        f'    recipe={row.recipe}(rm_type="deepscaler"),'
+        + (f"  # or {', '.join(row.other_recipes)}" if row.other_recipes else ""),
+        ")",
+        "",
+        'if __name__ == "__main__":',
+        "    run = config.launch()",
+        "    print(run.training_run_id)",
+        "```",
+    ]
+
+
+def render_row(family: str, row: RecipeRow, paths: dict[str, str]) -> list[str]:
+    model = f'<a href="{DOCS_URL}{paths[row.config]}">{row.display_name}</a>'
+    cells = [
+        family,
+        model,
+    ]
+    return [
+        f'<tr class="model-row" data-model="{row.slug}">'
+        + "".join(f"<td>{cell}</td>" for cell in cells)
+        + "</tr>",
+        f'<tr class="model-code"><td colspan="{len(cells)}">',
+        f'<details id="model-{row.slug}" data-model="{row.slug}">',
+        f"<summary>Run {row.recipe}</summary>",
+        "",
+        *render_snippet(row),
+        "",
+        "</details>",
+        "</td></tr>",
+    ]
+
+
 def render_section(families: tuple[FamilyRow, ...]) -> str:
-    rows = []
-    for row in families:
-        items = "".join(
-            f"<li>[{model.display_name}]({model.href})</li>" for model in row.models
-        )
-        rows.append(f"| {row.family} | <ul>{items}</ul> |")
+    paths = importlib.import_module(
+        "scripts.api_reference_manifest"
+    ).CLASS_REFERENCE_PATHS
+    header = "".join(f"<th>{h}</th>" for h in ("Family", "Model"))
+    body: list[str] = []
+    for family in families:
+        for i, row in enumerate(family.rows):
+            body.extend(
+                render_row(
+                    family.family if i == 0 else "",
+                    row,
+                    paths,
+                )
+            )
     return "\n".join(
         [
             BEGIN_MARKER,
             BANNER,
             "",
-            "| Family | Models |",
-            "|---|---|",
-            *rows,
+            "<table>",
+            f"<thead><tr>{header}</tr></thead>",
+            "<tbody>",
+            *body,
+            "</tbody>",
+            "</table>",
             END_MARKER,
         ]
     )
@@ -169,7 +245,7 @@ def main() -> None:
     args = parser.parse_args()
     families = collect_models()
     current, updated = rendered_readme(args.readme, families)
-    count = sum(len(row.models) for row in families)
+    count = len({row.hf_id for family in families for row in family.rows})
     if args.check:
         if current != updated:
             raise SystemExit(
