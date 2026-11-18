@@ -172,14 +172,15 @@ def _peak_gib(
             (dense_p + expert_p) * 6 + dense_p * opt / d_div + expert_p * opt / e_div
         ) / GIB
 
-    ctx = get("rollout_max_context_len")
+    context_field = "max_seq_len" if get("max_seq_len") else "rollout_max_context_len"
+    ctx = get(context_field)
     prompt = get("rollout_max_prompt_len")
     response = get("rollout_max_response_len")
     sample = int(ctx or 0) or (int(prompt or 0) + int(response or 0))
 
     def raise_sample_len() -> None:
         if ctx:
-            raise_("rollout_max_context_len", ctx)
+            raise_(context_field, ctx)
         else:
             raise_("rollout_max_prompt_len", prompt, bool(prompt))
             raise_("rollout_max_response_len", response, bool(response))
@@ -253,13 +254,14 @@ def maybe_warn_gpu_oom(recipe: BaseTrainRecipe, model: ModelConfig) -> None:
     multi_turn_hooks = ["custom_generate_function", "custom_generate_function_path"]
     if knobs.get("loss_type") != "sft_loss":
         multi_turn_hooks += ["rollout_function", "rollout_function_path"]
-    if any(knobs.get(k) for k in multi_turn_hooks) and not knobs.get(
-        "rollout_max_context_len"
+    if any(knobs.get(k) for k in multi_turn_hooks) and not (
+        knobs.get("max_seq_len") or knobs.get("rollout_max_context_len")
     ):
         warnings.warn(
             "Multi-turn rollouts (custom_generate_function / rollout_function) can grow a sample past "
             "rollout_max_prompt_len + rollout_max_response_len, so the GPU OOM "
-            "estimate is a lower bound. Set rollout_max_context_len to cap sample length.",
+            "estimate is a lower bound. Set max_seq_len (newer Miles) or "
+            "rollout_max_context_len to cap sample length.",
             UserWarning,
             stacklevel=3,
         )

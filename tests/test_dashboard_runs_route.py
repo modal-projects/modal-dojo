@@ -387,7 +387,9 @@ def test_run_log_stream_events_always_include_json_data(
     async def no_sleep(_seconds):
         return None
 
-    monkeypatch.setattr("modal.client._Client.from_credentials", from_credentials)
+    monkeypatch.setattr(
+        "modal_dojo.common._modal_compat.open_async_client", from_credentials
+    )
     monkeypatch.setattr(_dashboard.asyncio, "sleep", no_sleep)
 
     with _client(monkeypatch, tmp_path) as client:
@@ -506,10 +508,9 @@ def test_final_record_is_written_once_and_not_shadowed_by_progress(
     queue.put(None)
     queue.put(None)
     queue.put(final_payload)
-    monkeypatch.setattr(reporting, "_REPORT_QUEUE", queue)
     monkeypatch.setattr(reporting, "_post", lambda item: delivered.append(item) or True)
     monkeypatch.setattr(reporting, "_REPORT_DRAIN_DEADLINE", time.monotonic() + 1.0)
-    reporting._worker()
+    reporting._worker(queue)
     assert delivered == [final_payload]
     assert queue.unfinished_tasks == 0
 

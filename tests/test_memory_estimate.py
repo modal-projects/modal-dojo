@@ -149,6 +149,15 @@ def test_multi_turn_without_context_cap_warns(hook: str) -> None:
     assert any("rollout_max_context_len" in str(w.message) for w in caught)
 
 
+def test_new_miles_context_cap_preserves_memory_estimate() -> None:
+    legacy = _qwen3_5_knobs(rollout_max_context_len=65536)
+    modern = _qwen3_5_knobs(max_seq_len=65536)
+    assert (
+        _peak_gib(_QWEN3_5_4B, modern, 79.2)[0]
+        == _peak_gib(_QWEN3_5_4B, legacy, 79.2)[0]
+    )
+
+
 def test_offload_fraction_retains_opt_state_on_gpu() -> None:
     full, _ = _peak_gib(_QWEN3_5_4B, _qwen3_5_knobs(), 79.2)
     retained, raised = _peak_gib(

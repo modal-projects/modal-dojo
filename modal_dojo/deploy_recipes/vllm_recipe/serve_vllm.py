@@ -1,9 +1,9 @@
 """vLLM serving helper — builds a Modal app that hosts a model via vLLM.
 
-The model is served by ``Server``, a Modal *server* class registered with
-``@app.server`` (Modal's low-latency routing service for inference workloads).
-The endpoint is the Modal class itself — its ``@modal.enter()`` starts the
-``vllm serve`` subprocess.
+The model is served by ``modal_dojo.remote.serving.Server``, a Modal *server*
+class registered with ``app.server`` (Modal's low-latency routing service for
+inference workloads). The endpoint is the Modal class itself — its
+``@modal.enter()`` starts the ``vllm serve`` subprocess.
 
 ``model_path`` accepts either:
   - a **HuggingFace repo id** (e.g. ``"Qwen/Qwen3-4B"``) — vLLM downloads
@@ -19,6 +19,7 @@ Deploy separately from the training app:
 
 from __future__ import annotations
 
+import json
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
@@ -38,10 +39,10 @@ def build_vllm_serve_app(
     checkpoints_mount_path: str | None = None,
     unauthenticated: bool = False,
 ) -> "App":
-    import modal
     from modal import App, Image, Volume
 
     from modal_dojo.common import hf_secrets
+    from modal_dojo.remote import serving
 
     gpu = recipe.gpu or "H100"
     n_gpu = recipe.n_gpu or 1
@@ -86,51 +87,29 @@ def build_vllm_serve_app(
     if revision:
         _extra = ["--revision", revision, *_extra]
 
-    @app.server(
+    app.Server = app.server(
         image=image,
         gpu=f"{gpu}:{n_gpu}",
         scaledown_window=10 * 60,
         startup_timeout=startup_timeout,
         volumes=volumes,
         secrets=hf_secrets(),
-        serialized=True,
+        env={
+            serving.SERVE_SPEC_ENV: json.dumps(
+                {
+                    "model_path": model_path,
+                    "served_model_name": served_model_name,
+                    "port": vllm_port,
+                    "n_gpu": n_gpu,
+                    "extra_args": _extra,
+                }
+            )
+        },
         include_source=False,
         port=vllm_port,
         exit_grace_period=25,
         routing_region="us-east",
         target_concurrency=32,
         unauthenticated=unauthenticated,
-    )
-    class Server:
-        @modal.enter()
-        def startup(self):
-            import os
-            import subprocess
-
-            if model_path.startswith("/") and os.path.isdir(model_path):
-                hf_config_path = os.path.join(model_path, "config.json")
-                if not os.path.exists(hf_config_path):
-                    print(
-                        "[modal-dojo] Converting checkpoint from mt to hf for serving."
-                    )
-
-            cmd = [
-                "vllm",
-                "serve",
-                "--uvicorn-log-level=info",
-                model_path,
-                "--served-model-name",
-                served_model_name,
-                "--host",
-                "0.0.0.0",
-                "--port",
-                str(vllm_port),
-                "--tensor-parallel-size",
-                str(n_gpu),
-                *_extra,
-            ]
-            print(*cmd)
-            subprocess.Popen(" ".join(cmd), shell=True)
-
-    setattr(app, "Server", Server)
+    )(serving.Server)
     return app

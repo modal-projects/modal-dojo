@@ -74,8 +74,8 @@ class DeepSeek_V4_1_Flash_LoRA_Recipe(DeepSeek_V4_1_Flash_Recipe):
         DeepSeek_V4_1_Flash_LoRA
     )
     docker_image: str = (
-        "radixark/miles:dev@sha256:"
-        "25869dfe011bda93e9ac01833d0ee8ece9aac34cb8940cf19fa46cef322efd16"
+        "modalresearch/miles:dojo-deepseek-v41-lora-base@sha256:"
+        "31b2eff51b95380627eba2c0294f9520c9f71ddc0a0a3f6cd44e8c239392e048"
     )
     miles_git_ref: str | None = MILES_LORA_COMMIT
     sglang_git_ref: str | None = SGLANG_LORA_COMMIT

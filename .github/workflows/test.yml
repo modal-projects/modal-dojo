@@ -20,16 +20,16 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.4.0
         with:
           ref: ${{ github.head_ref || github.ref_name }}
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version-file: ".python-version"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v5.4.2
 
       - name: Install dependencies
         run: uv sync --locked --group dev
