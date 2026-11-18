@@ -16,6 +16,7 @@ import time
 from queue import Full, Queue
 import atexit
 from typing import Any, Callable
+from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -26,14 +27,9 @@ PHASE_REPORT_URL_ENV = "SLIME_PHASE_REPORT_URL"
 PHASE_REPORT_TOKEN_ENV = "SLIME_PHASE_REPORT_TOKEN"
 
 # Internal queue entry: each item is {"_url": str, "_timeout": float, **payload}.
-# Status reports use the framework-status URL with a short 1s timeout;
-# rollout-data reports derive a /api/training-rollouts URL from the same base
-# with a longer timeout because payloads can be 100KB+.
-_REPORT_QUEUE: "Queue[dict[str, Any] | None]" = Queue(maxsize=512)
-_REPORTER_STARTED = False
-_REPORTER_THREAD: threading.Thread | None = None
+# Each dashboard endpoint has its own queue and worker (a lane), so posts stay
+# ordered per endpoint and a slow endpoint can't hold up the others.
 _REPORTER_DRAINING = False
-_REPORT_DRAIN_SENTINEL_QUEUED = False
 _REPORTER_LOCK = threading.Lock()
 _UNACKNOWLEDGED_TIMING_LOCK = threading.Lock()
 _PRE_DRAIN_HOOKS: list[Callable[[], None]] = []
@@ -44,17 +40,31 @@ _ROLLOUT_PATH = "/api/training-rollouts"
 _ADVANTAGE_PATH = "/api/advantage-distributions"
 _METRIC_POINTS_PATH = "/api/metric-points"
 MAX_METRIC_POINTS_PER_BATCH = 5000
-_PHASE_TIMEOUT_SECONDS = 1.0
+# Status and rollout writes rewrite the run record and take seconds. Waiting for
+# them keeps a write from landing after the run's own final save.
+_PHASE_TIMEOUT_SECONDS = 30.0
 _STEP_EVENT_TIMEOUT_SECONDS = 5.0
-_ROLLOUT_TIMEOUT_SECONDS = 10.0
-REPORT_DRAIN_POST_TIMEOUT_SECONDS = 1.0
-REPORT_DRAIN_FINAL_POST_TIMEOUT_SECONDS = _ROLLOUT_TIMEOUT_SECONDS
-REPORT_DRAIN_FINAL_POST_COUNT = 4
+_ROLLOUT_TIMEOUT_SECONDS = 30.0
 REPORT_DRAIN_RETRY_DELAY_SECONDS = 0.1
-REPORT_DRAIN_TIMEOUT_SECONDS = (
-    REPORT_DRAIN_FINAL_POST_TIMEOUT_SECONDS * REPORT_DRAIN_FINAL_POST_COUNT
-)
+REPORT_DRAIN_TIMEOUT_SECONDS = 60.0
 _REPORT_DRAIN_DEADLINE: float | None = None
+
+
+class _Lane:
+    """One dashboard endpoint's queue and the worker thread that posts it."""
+
+    def __init__(self) -> None:
+        self.queue: Queue[dict[str, Any] | None] = Queue(maxsize=512)
+        self.thread: threading.Thread | None = None
+        self.sentinel_queued = False
+
+
+_LANES: dict[str, _Lane] = {}
+
+
+def _lane(url: str) -> _Lane:
+    with _REPORTER_LOCK:
+        return _LANES.setdefault(urlsplit(url).path.rstrip("/"), _Lane())
 
 
 def register_pre_drain_hook(hook: Callable[[], None]) -> None:
@@ -163,21 +173,40 @@ def _report_token() -> str:
     ).strip()
 
 
-def _ensure_worker(*, allow_during_drain: bool = False) -> None:
-    global _REPORTER_STARTED, _REPORTER_THREAD
-    if _REPORTER_STARTED or (_REPORTER_DRAINING and not allow_during_drain):
+def _ensure_worker(lane: _Lane, *, allow_during_drain: bool = False) -> None:
+    if lane.thread is not None or (_REPORTER_DRAINING and not allow_during_drain):
         return
     with _REPORTER_LOCK:
-        if _REPORTER_STARTED or (_REPORTER_DRAINING and not allow_during_drain):
+        if lane.thread is not None or (_REPORTER_DRAINING and not allow_during_drain):
             return
-        thread = threading.Thread(
+        lane.thread = threading.Thread(
             target=_worker,
+            args=(lane.queue,),
             name="modal-dojo-phase-reporter",
             daemon=True,
         )
-        thread.start()
-        _REPORTER_THREAD = thread
-        _REPORTER_STARTED = True
+        lane.thread.start()
+
+
+def _coalesce_status(
+    queue: "Queue[dict[str, Any] | None]", item: dict[str, Any]
+) -> bool:
+    """Fold a plain status update into the run's pending one.
+
+    The dashboard merges status updates into one snapshot, so only the latest
+    pending one is worth a seconds-long write. Step events are never folded.
+    """
+    with queue.mutex:
+        last = queue.queue[-1] if queue.queue else None
+        if (
+            last is None
+            or "step_event" in last
+            or "step_event" in item
+            or last.get("training_run_id") != item.get("training_run_id")
+        ):
+            return False
+        last.update(item)
+        return True
 
 
 def _enqueue(
@@ -191,10 +220,13 @@ def _enqueue(
     url = _phase_url()
     if not url:
         return
-    _ensure_worker()
+    lane = _lane(url)
+    _ensure_worker(lane)
     item = {"_url": url, "_timeout": timeout_seconds, **payload}
+    if _coalesce_status(lane.queue, item):
+        return
     try:
-        _REPORT_QUEUE.put_nowait(item)
+        lane.queue.put_nowait(item)
     except Exception:
         pass
 
@@ -206,10 +238,11 @@ def _enqueue_rollout(payload: dict[str, Any]) -> None:
     url = _rollout_url()
     if not url:
         return
-    _ensure_worker()
+    lane = _lane(url)
+    _ensure_worker(lane)
     item = {"_url": url, "_timeout": _ROLLOUT_TIMEOUT_SECONDS, **payload}
     try:
-        _REPORT_QUEUE.put_nowait(item)
+        lane.queue.put_nowait(item)
     except Exception:
         pass
 
@@ -221,10 +254,11 @@ def _enqueue_advantage(payload: dict[str, Any]) -> None:
     url = _advantage_url()
     if not url:
         return
-    _ensure_worker()
+    lane = _lane(url)
+    _ensure_worker(lane)
     item = {"_url": url, "_timeout": _ROLLOUT_TIMEOUT_SECONDS, **payload}
     try:
-        _REPORT_QUEUE.put_nowait(item)
+        lane.queue.put_nowait(item)
     except Exception:
         pass
 
@@ -236,10 +270,8 @@ def _enqueue_timing(payload: dict[str, Any], *, final: bool = False) -> None:
     url = _derive_url("/api/timing-events")
     if not url:
         return
-    if _REPORTER_DRAINING and final:
-        _ensure_worker(allow_during_drain=True)
-    else:
-        _ensure_worker()
+    lane = _lane(url)
+    _ensure_worker(lane, allow_during_drain=_REPORTER_DRAINING and final)
     item = {
         "_url": url,
         "_timeout": _ROLLOUT_TIMEOUT_SECONDS,
@@ -257,7 +289,7 @@ def _enqueue_timing(payload: dict[str, Any], *, final: bool = False) -> None:
                 )
             _UNACKNOWLEDGED_TIMING_FINALS[key] = item
     try:
-        _REPORT_QUEUE.put_nowait(item)
+        lane.queue.put_nowait(item)
     except Full:
         if final:
             print(
@@ -281,7 +313,8 @@ def _enqueue_metric_points(payload: dict[str, Any], *, final: bool = False) -> N
     url = _derive_url(_METRIC_POINTS_PATH)
     if not url:
         return
-    _ensure_worker(allow_during_drain=final)
+    lane = _lane(url)
+    _ensure_worker(lane, allow_during_drain=final)
     item = {
         "_url": url,
         "_timeout": _STEP_EVENT_TIMEOUT_SECONDS,
@@ -291,7 +324,7 @@ def _enqueue_metric_points(payload: dict[str, Any], *, final: bool = False) -> N
         "final": final,
     }
     try:  # the exit flush waits for room; the worker is still draining
-        _REPORT_QUEUE.put(item, block=final, timeout=_STEP_EVENT_TIMEOUT_SECONDS)
+        lane.queue.put(item, block=final, timeout=_STEP_EVENT_TIMEOUT_SECONDS)
     except Exception:
         pass
 
@@ -301,7 +334,7 @@ def _requeue_timing_retry(payload: dict[str, Any], retries: int) -> None:
         return
     payload["_retry_count"] = retries
     try:
-        _REPORT_QUEUE.put_nowait(payload)
+        _lane(payload["_url"]).queue.put_nowait(payload)
     except Full:
         if payload.get("final", False):
             print(
@@ -351,34 +384,32 @@ def _retry_timing_final_during_drain(payload: dict[str, Any], retries: int) -> b
     return False
 
 
-def _worker() -> None:
+def _worker(queue: "Queue[dict[str, Any] | None]") -> None:
     while True:
         try:
-            payload = _REPORT_QUEUE.get()
+            payload = queue.get()
         except Exception:
             continue
         if payload is None:
             try:
                 deadline = _REPORT_DRAIN_DEADLINE
                 remaining = deadline is None or time.monotonic() < deadline
-                with _REPORT_QUEUE.mutex:
-                    has_remaining = any(
-                        item is not None for item in _REPORT_QUEUE.queue
-                    )
+                with queue.mutex:
+                    has_remaining = any(item is not None for item in queue.queue)
                     if has_remaining and remaining:
-                        _REPORT_QUEUE.queue.append(None)
-                        _REPORT_QUEUE.unfinished_tasks += 1
-                        _REPORT_QUEUE.not_empty.notify()
+                        queue.queue.append(None)
+                        queue.unfinished_tasks += 1
+                        queue.not_empty.notify()
                         continue
-                    discarded_sentinels = len(_REPORT_QUEUE.queue)
+                    discarded_sentinels = len(queue.queue)
                     if discarded_sentinels:
-                        _REPORT_QUEUE.queue.clear()
-                        _REPORT_QUEUE.unfinished_tasks -= discarded_sentinels
-                        if _REPORT_QUEUE.unfinished_tasks == 0:
-                            _REPORT_QUEUE.all_tasks_done.notify_all()
+                        queue.queue.clear()
+                        queue.unfinished_tasks -= discarded_sentinels
+                        if queue.unfinished_tasks == 0:
+                            queue.all_tasks_done.notify_all()
                 return
             finally:
-                _REPORT_QUEUE.task_done()
+                queue.task_done()
         try:
             try:
                 delivered = _post(payload)
@@ -421,7 +452,7 @@ def _worker() -> None:
                         flush=True,
                     )
         finally:
-            _REPORT_QUEUE.task_done()
+            queue.task_done()
 
 
 def _post(item: dict[str, Any]) -> bool:
@@ -429,16 +460,8 @@ def _post(item: dict[str, Any]) -> bool:
     timeout = float(
         item.get("_timeout", _PHASE_TIMEOUT_SECONDS) or _PHASE_TIMEOUT_SECONDS
     )
-    if _REPORTER_DRAINING:
-        if _is_final_timing(item):
-            remaining = (
-                _REPORT_DRAIN_DEADLINE - time.monotonic()
-                if _REPORT_DRAIN_DEADLINE is not None
-                else REPORT_DRAIN_FINAL_POST_TIMEOUT_SECONDS
-            )
-            timeout = min(timeout, max(0.001, remaining))
-        else:
-            timeout = min(timeout, REPORT_DRAIN_POST_TIMEOUT_SECONDS)
+    if _REPORTER_DRAINING and _REPORT_DRAIN_DEADLINE is not None:
+        timeout = min(timeout, max(0.001, _REPORT_DRAIN_DEADLINE - time.monotonic()))
     retry_count = item.get("_retry_count")
     timing_debug = item.get("_timing_debug", False)
     if not url:
@@ -501,7 +524,8 @@ def _retry_unacknowledged_timing_finals() -> None:
         pending = tuple(_UNACKNOWLEDGED_TIMING_FINALS.values())
     for item in pending:
         key = (str(item.get("training_run_id", "")), str(item.get("storage_key", "")))
-        with _REPORT_QUEUE.mutex:
+        queue = _lane(item["_url"]).queue
+        with queue.mutex:
             already_queued = any(
                 queued is not None
                 and queued.get("final", False)
@@ -510,12 +534,12 @@ def _retry_unacknowledged_timing_finals() -> None:
                     str(queued.get("storage_key", "")),
                 )
                 == key
-                for queued in _REPORT_QUEUE.queue
+                for queued in queue.queue
             )
         if already_queued:
             continue
         try:
-            _REPORT_QUEUE.put_nowait(item)
+            queue.put_nowait(item)
         except Full:
             print(
                 f"[modal-dojo] timing final retry queue full for {key}",
@@ -526,9 +550,9 @@ def _retry_unacknowledged_timing_finals() -> None:
 register_pre_drain_hook(_retry_unacknowledged_timing_finals)
 
 
-def _compact_report_queue() -> None:
-    with _REPORT_QUEUE.mutex:
-        queued = list(_REPORT_QUEUE.queue)
+def _compact_report_queue(queue: "Queue[dict[str, Any] | None]") -> None:
+    with queue.mutex:
+        queued = list(queue.queue)
         final_priority: list[dict[str, Any] | None] = []
         metrics_by_run: dict[str, dict[str, Any]] = {}
         status_priority: list[dict[str, Any] | None] = []
@@ -572,41 +596,50 @@ def _compact_report_queue() -> None:
             for chunk in chunks:
                 final_priority.append({**merged, "points": chunk})
                 discarded -= 1
-        _REPORT_QUEUE.queue.clear()
-        _REPORT_QUEUE.queue.extend(final_priority)
-        _REPORT_QUEUE.queue.extend(status_priority)
-        _REPORT_QUEUE.queue.extend(remaining)
-        _REPORT_QUEUE.unfinished_tasks -= discarded
-        _REPORT_QUEUE.not_empty.notify_all()
+        queue.queue.clear()
+        queue.queue.extend(final_priority)
+        queue.queue.extend(status_priority)
+        queue.queue.extend(remaining)
+        queue.unfinished_tasks -= discarded
+        queue.not_empty.notify_all()
 
 
-def _drain_report_queue() -> None:
-    global _REPORTER_DRAINING, _REPORT_DRAIN_DEADLINE, _REPORT_DRAIN_SENTINEL_QUEUED
+def drain() -> None:
+    """Deliver queued reports, then stop accepting new ones.
+
+    Waits up to ``REPORT_DRAIN_TIMEOUT_SECONDS`` across all endpoints. Runs at
+    process exit; call it earlier to land every report before a final write.
+    """
+    global _REPORTER_DRAINING, _REPORT_DRAIN_DEADLINE
     _REPORT_DRAIN_DEADLINE = time.monotonic() + REPORT_DRAIN_TIMEOUT_SECONDS
     with _REPORTER_LOCK:
         _REPORTER_DRAINING = True
-    _compact_report_queue()
+    for lane in _lanes():
+        _compact_report_queue(lane.queue)
     _run_pre_drain_hooks()
-    _compact_report_queue()
-    with _REPORTER_LOCK:
-        thread = _REPORTER_THREAD
-        started = _REPORTER_STARTED
-        sentinel_queued = _REPORT_DRAIN_SENTINEL_QUEUED
-    if thread is None or not started:
-        return
+    lanes = _lanes()
+    for lane in lanes:
+        _compact_report_queue(lane.queue)
     deadline = _REPORT_DRAIN_DEADLINE
-    assert deadline is not None
-    if not sentinel_queued:
+    for lane in lanes:
+        if lane.thread is None or lane.sentinel_queued:
+            continue
         try:
-            _REPORT_QUEUE.put(None, timeout=max(0.0, deadline - time.monotonic()))
+            lane.queue.put(None, timeout=max(0.0, deadline - time.monotonic()))
         except Full:
-            return
-        with _REPORTER_LOCK:
-            _REPORT_DRAIN_SENTINEL_QUEUED = True
-    thread.join(timeout=max(0.0, deadline - time.monotonic()))
+            continue
+        lane.sentinel_queued = True
+    for lane in lanes:
+        if lane.thread is not None:
+            lane.thread.join(timeout=max(0.0, deadline - time.monotonic()))
 
 
-atexit.register(_drain_report_queue)
+def _lanes() -> list[_Lane]:
+    with _REPORTER_LOCK:
+        return list(_LANES.values())
+
+
+atexit.register(drain)
 
 
 def _advantage_samples_payload(

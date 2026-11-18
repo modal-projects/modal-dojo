@@ -6,7 +6,7 @@ import threading
 import time
 import warnings
 from contextlib import nullcontext
-from typing import Any
+from typing import Any, Callable
 
 import click
 from pydantic import ConfigDict
@@ -59,7 +59,7 @@ def _try_validate_model_parallelism(
         validate(model)
 
 
-def _terminalize_launch(run_record: TrainingRun, exc: BaseException) -> None:
+def terminalize_launch(run_record: TrainingRun, exc: BaseException) -> None:
     finished_at = int(time.time())
     if isinstance(exc, KeyboardInterrupt):
         mark_run_stopped(run_record)
@@ -181,7 +181,7 @@ _STAGE_LABELS: dict[str, str] = {
 }
 
 
-class _TrainStatusDisplay:
+class TrainStatusDisplay:
     """Terminal status helper for ``train()``.
 
     Prints a static banner once at the start, then a single concise status
@@ -362,6 +362,100 @@ class _TrainStatusDisplay:
             self._poll_thread.join(timeout=2.0)
         self._poll_stop = None
         self._poll_thread = None
+
+
+def launch_detached(
+    run_record: TrainingRun,
+    *,
+    framework_status_token: str,
+    build_app: Callable[[], Any],
+    start: Callable[[Any, str], Any],
+    status_display: TrainStatusDisplay,
+    show_output: bool,
+) -> TrainingRun:
+    """Record the run, open its app detached, and return once training is spawned.
+
+    ``start(app, framework_status_token)`` runs inside the detached app and
+    returns the spawned training call. If it doesn't return, the app is stopped
+    and the run is marked stopped or failed.
+    """
+    import modal
+
+    from modal_dojo.common.modal_lifecycle import stop_app
+
+    training_run_id = run_record.training_run_id
+    try:
+        run_record.save()
+        vol_put(
+            MetadataStore.FRAMEWORK_STATUS_TOKENS,
+            training_run_id,
+            {"token": framework_status_token},
+        )
+    except RuntimeError:
+        framework_status_token = ""
+    print(f"TrainingRun recorded: {training_run_id}")
+
+    app = None
+    function_call = None
+    launch_error = None
+    try:
+        app = build_app()
+        output_context = modal.enable_output() if show_output else nullcontext()
+        with output_context:
+            with app.run(detach=True):
+                try:
+                    run_record.modal_app_id = app.app_id or ""
+                    run_record.modal_app_url = modal_app_dashboard_url(
+                        run_record.modal_app_id
+                    )
+                    if show_output:
+                        status_display.set_modal_app_url(run_record.modal_app_url)
+                    try:
+                        run_record.save()
+                    except RuntimeError:
+                        pass
+                    function_call = start(app, framework_status_token)
+                except BaseException as exc:
+                    launch_error = exc
+
+        if launch_error is not None:
+            raise launch_error
+    except (KeyboardInterrupt, Exception) as exc:
+        if function_call is None:
+            app_id = run_record.modal_app_id or (app.app_id if app else "")
+            if app_id:
+                stop_app(app_id)
+            if isinstance(exc, KeyboardInterrupt) or app is None:
+                terminalize_launch(run_record, exc)
+                raise
+            error = DojoError(
+                f'Setup of Modal app "{app.name}" was interrupted before training '
+                "could begin. Relaunch to try again."
+            )
+            terminalize_launch(run_record, error)
+            raise error from exc
+        launch_error = exc
+
+    run_record.function_call_id = function_call.object_id
+    run_record._function_call = function_call
+    run_record._status_display = status_display if show_output else None
+    try:
+        run_record.save()
+    except RuntimeError:
+        pass
+    if isinstance(launch_error, KeyboardInterrupt):
+        print(f'Disconnected from Modal app "{app.name}". The app was left running.')
+        print(run_record.modal_app_url)
+        raise launch_error
+    if launch_error is not None:
+        print(
+            f"WARNING: training was launched, but Modal client cleanup failed: {launch_error}"
+        )
+    print(
+        f"Launched training {run_record.training_run_id}: "
+        f"app={run_record.modal_app_id}, function_call={run_record.function_call_id}"
+    )
+    return run_record
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
@@ -578,13 +672,13 @@ class TrainConfig:
         training_run_id: str,
         framework_status_url: str,
         config_path: Any,
-    ) -> "_TrainStatusDisplay":
+    ) -> "TrainStatusDisplay":
         dataset_name = ""
         if self.dataset:
             dataset_name = (
                 getattr(self.dataset, "hf_repo", "") or type(self.dataset).__name__
             )
-        return _TrainStatusDisplay(
+        return TrainStatusDisplay(
             run_id=training_run_id,
             framework=self.framework.value,
             model_name=getattr(self.model, "model_name", "") if self.model else "",
@@ -641,15 +735,12 @@ class TrainConfig:
         Returns:
             The launched training run.
         """
-        import modal
-
         from modal_dojo.cli.setup import ensure_dashboard_deployed
         from modal_dojo.common.config import (
             CONFIG_PATH,
             get_framework_status_url,
         )
 
-        from modal_dojo.common.modal_lifecycle import stop_app
         from modal_dojo.common.status_reporter import enqueue_framework_status
 
         from modal_dojo.common.config import require_migrated_config
@@ -685,121 +776,53 @@ class TrainConfig:
             started_at=created_at,
             metadata=self._build_run_metadata(),
         )
-        try:
-            run_record.save()
-            vol_put(
-                MetadataStore.FRAMEWORK_STATUS_TOKENS,
-                training_run_id,
-                {"token": framework_status_token},
-            )
-        except RuntimeError:
-            framework_status_token = ""
-        print(f"TrainingRun recorded: {training_run_id}")
 
-        app = None
-        function_call = None
-        launch_error = None
-        try:
-            app = self._build_app(training_run_id)
-            output_context = modal.enable_output() if show_output else nullcontext()
-            with output_context:
-                with app.run(detach=True):
-                    try:
-                        modal_app_id = app.app_id or ""
-                        modal_app_url = modal_app_dashboard_url(modal_app_id)
-                        if show_output:
-                            status_display.set_modal_app_url(modal_app_url)
-
-                        run_record.modal_app_id = modal_app_id
-                        run_record.modal_app_url = modal_app_url
-                        try:
-                            run_record.save()
-                        except RuntimeError:
-                            pass
-
-                        def _set_status(
-                            status: FrameworkStatus, *, is_active: bool = True
-                        ) -> None:
-                            run_record.framework_status = status
-                            if show_output:
-                                status_display.emit_stage(status.value)
-                            enqueue_framework_status(
-                                training_run_id,
-                                status.value,
-                                token=framework_status_token,
-                                is_active=is_active,
-                            )
-
-                        megatron_to_hf_mode = getattr(
-                            self.recipe, "megatron_to_hf_mode", ""
-                        )
-                        needs_conversion = megatron_to_hf_mode != "bridge"
-                        download_status, convert_status = (
-                            (SlimeStatus.DOWNLOAD_MODEL, SlimeStatus.CONVERT_MODEL)
-                            if isinstance(self.recipe, SlimeRecipe)
-                            else (MilesStatus.DOWNLOAD_MODEL, MilesStatus.CONVERT_MODEL)
-                        )
-                        _set_status(download_status, is_active=False)
-                        app.download.remote(
-                            training_run_id=training_run_id,
-                            framework_status_url=framework_status_url,
-                            framework_status_token=framework_status_token,
-                        )
-                        if needs_conversion:
-                            _set_status(convert_status, is_active=False)
-                            _convert_checkpoint_on_cache_miss(
-                                app,
-                                training_run_id=training_run_id,
-                                framework_status_url=framework_status_url,
-                                framework_status_token=framework_status_token,
-                            )
-
-                        function_call = app.train.spawn(
-                            modal_app_id=modal_app_id,
-                            modal_app_url=modal_app_url,
-                            framework_status_url=framework_status_url,
-                            framework_status_token=framework_status_token,
-                        )
-                    except BaseException as exc:
-                        launch_error = exc
-
-            if launch_error is not None:
-                raise launch_error
-        except (KeyboardInterrupt, Exception) as exc:
-            if function_call is None:
-                app_id = run_record.modal_app_id or (app.app_id if app else "")
-                if app_id:
-                    stop_app(app_id)
-                if isinstance(exc, KeyboardInterrupt) or app is None:
-                    _terminalize_launch(run_record, exc)
-                    raise
-                error = DojoError(
-                    f'Setup of Modal app "{app.name}" was interrupted before training '
-                    "could begin. Relaunch your TrainConfig to try again."
+        def start(app: Any, framework_status_token: str) -> Any:
+            def _set_status(status: FrameworkStatus, *, is_active: bool = True) -> None:
+                run_record.framework_status = status
+                if show_output:
+                    status_display.emit_stage(status.value)
+                enqueue_framework_status(
+                    training_run_id,
+                    status.value,
+                    token=framework_status_token,
+                    is_active=is_active,
                 )
-                _terminalize_launch(run_record, error)
-                raise error from exc
-            launch_error = exc
 
-        run_record.function_call_id = function_call.object_id
-        run_record._function_call = function_call
-        run_record._status_display = status_display if show_output else None
-        try:
-            run_record.save()
-        except RuntimeError:
-            pass
-        if isinstance(launch_error, KeyboardInterrupt):
-            print(
-                f'Disconnected from Modal app "{app.name}". The app was left running.'
+            megatron_to_hf_mode = getattr(self.recipe, "megatron_to_hf_mode", "")
+            needs_conversion = megatron_to_hf_mode != "bridge"
+            download_status, convert_status = (
+                (SlimeStatus.DOWNLOAD_MODEL, SlimeStatus.CONVERT_MODEL)
+                if isinstance(self.recipe, SlimeRecipe)
+                else (MilesStatus.DOWNLOAD_MODEL, MilesStatus.CONVERT_MODEL)
             )
-            print(run_record.modal_app_url)
-            raise launch_error
-        if launch_error is not None:
-            print(
-                f"WARNING: training was launched, but Modal client cleanup failed: {launch_error}"
+            _set_status(download_status, is_active=False)
+            app.download.remote(
+                training_run_id=training_run_id,
+                framework_status_url=framework_status_url,
+                framework_status_token=framework_status_token,
             )
-        print(
-            f"Launched training {run_record.training_run_id}: "
-            f"app={run_record.modal_app_id}, function_call={run_record.function_call_id}"
+            if needs_conversion:
+                _set_status(convert_status, is_active=False)
+                _convert_checkpoint_on_cache_miss(
+                    app,
+                    training_run_id=training_run_id,
+                    framework_status_url=framework_status_url,
+                    framework_status_token=framework_status_token,
+                )
+
+            return app.train.spawn(
+                modal_app_id=run_record.modal_app_id,
+                modal_app_url=run_record.modal_app_url,
+                framework_status_url=framework_status_url,
+                framework_status_token=framework_status_token,
+            )
+
+        return launch_detached(
+            run_record,
+            framework_status_token=framework_status_token,
+            build_app=lambda: self._build_app(training_run_id),
+            start=start,
+            status_display=status_display,
+            show_output=show_output,
         )
-        return run_record
