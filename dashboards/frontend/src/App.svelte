@@ -14,7 +14,7 @@
     fetchEvalDetail,
   } from "./lib/api.js";
   import logoSvg from "./lib/logo.svg";
-  import { fmtDuration } from "./lib/format.js";
+  import { fmtDuration, formatTagValue, getGroupTags } from "./lib/format.js";
   import { createSidebarCollapsedState } from "./lib/sidebarCollapsed.svelte.js";
   const DOCS_URL = "https://dojo.modal.dev";
 
@@ -39,6 +39,7 @@
   let activeRecipes = $state(new Set());
   let activeStatuses = $state(new Set());
   let activeGroups = $state(new Set());
+  let activeTags = $state({});
   let activeTrainingTypes = $state(new Set());
   let trainingGroupBy = $state("none");
   // Facet values we've seen across loads. New ones are
@@ -251,6 +252,9 @@
       if (universe.every((value) => selected.has(value))) continue;
       facets[name] = [...selected];
     }
+    for (const [key, values] of Object.entries(activeTags)) {
+      if (values.length) facets[`tag.${key}`] = values;
+    }
     return facets;
   }
 
@@ -291,7 +295,7 @@
   // not take the rows down with it: count the loaded window instead. Exact
   // once everything is paged in, an undercount before that.
   function countsFromPage(page) {
-    const buckets = { status: {}, recipe: {}, group: {}, training_type: {} };
+    const buckets = { status: {}, recipe: {}, group: {}, training_type: {}, tags: Object.create(null) };
     for (const run of page) {
       const values = {
         status: getStatus(run),
@@ -302,6 +306,17 @@
       };
       for (const [name, value] of Object.entries(values)) {
         buckets[name][value] = (buckets[name][value] || 0) + 1;
+      }
+      const valuesByKey = new Map();
+      for (const tag of getGroupTags(run)?.tags || []) {
+        if (!valuesByKey.has(tag.key)) valuesByKey.set(tag.key, new Set());
+        valuesByKey.get(tag.key).add(formatTagValue(tag.value));
+      }
+      for (const [key, values] of valuesByKey) {
+        if (!Object.hasOwn(buckets.tags, key)) buckets.tags[key] = Object.create(null);
+        for (const value of values) {
+          buckets.tags[key][value] = (buckets.tags[key][value] || 0) + 1;
+        }
       }
     }
     return { total: page.length, matching: page.length, ...buckets };
@@ -360,6 +375,7 @@
         activeStatuses = new Set();
         activeGroups = new Set();
         activeTrainingTypes = new Set();
+        activeTags = {};
       }
     } finally {
       // Always retire the cold-start skeleton once any attempt settles — even a
@@ -441,6 +457,7 @@
   let recipeCounts = $derived(runCounts.recipe || {});
   let statusCounts = $derived(runCounts.status || {});
   let groupCounts = $derived(runCounts.group || {});
+  let tagCounts = $derived(runCounts.tags || {});
   let trainingTypeCounts = $derived(runCounts.training_type || {});
 
   let recipes = $derived(Object.keys(recipeCounts).sort());
@@ -805,6 +822,23 @@
     activeGroups = new Set();
   }
 
+  function addTagValue(key, value) {
+    const values = Object.hasOwn(activeTags, key) ? activeTags[key] : [];
+    if (!value || values.includes(value)) return;
+    activeTags = { ...activeTags, [key]: [...values, value] };
+  }
+
+  function removeTagValue(key, value) {
+    activeTags = {
+      ...activeTags,
+      [key]: activeTags[key].filter((item) => item !== value),
+    };
+  }
+
+  function clearTags() {
+    activeTags = {};
+  }
+
   function toggleTrainingType(value) {
     const next = new Set(activeTrainingTypes);
     if (next.has(value)) next.delete(value);
@@ -942,6 +976,8 @@
         {groups}
         {groupCounts}
         {activeGroups}
+        {tagCounts}
+        {activeTags}
         {trainingTypes}
         {trainingTypeCounts}
         {activeTrainingTypes}
@@ -967,6 +1003,9 @@
         onToggleGroup={toggleGroup}
         onSelectAllGroups={selectAllGroups}
         onClearGroups={clearGroups}
+        onAddTagValue={addTagValue}
+        onRemoveTagValue={removeTagValue}
+        onClearTags={clearTags}
         onToggleTrainingType={toggleTrainingType}
         onSelectAllTrainingTypes={selectAllTrainingTypes}
         onClearTrainingTypes={clearTrainingTypes}
