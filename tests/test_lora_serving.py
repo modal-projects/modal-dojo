@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -133,7 +134,8 @@ def test_sglang_app_loads_adapter_and_warms_it_up() -> None:
         def __init__(self, *_args, **_kwargs):
             pass
 
-        def server(self, **_kwargs):
+        def server(self, **kwargs):
+            captured["env"] = kwargs["env"]
             return lambda cls: cls
 
     def build_server_cmd(**kwargs):
@@ -164,7 +166,9 @@ def test_sglang_app_loads_adapter_and_warms_it_up() -> None:
             lora_name="iter_0000010",
             lora_path="/checkpoints/run-1/iter_0000010/adapter_hf",
         )
-        app.SGLangEndpoint().start()
+        # The endpoint reads its serve spec from the env the app sets.
+        with patch.dict(os.environ, captured["env"]):
+            app.SGLangEndpoint().start()
 
     args = captured["server_args"]
     assert args["--enable-lora"] == ""

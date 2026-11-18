@@ -25,7 +25,7 @@ GUIDES_DIR = ROOT / "docs-next" / "src" / "content" / "docs" / "guides"
 DEFAULT_OUTPUT = ROOT / "docs-next" / "public" / "llms.txt"
 
 SITE = "https://dojo.modal.dev"
-REPO = "https://github.com/modal-projects/modal-dojo"
+REPO = "https://github.com/modal-labs/modal-dojo"
 GUIDE_SECTION_ORDER = ("start", "tools", "migration")
 
 

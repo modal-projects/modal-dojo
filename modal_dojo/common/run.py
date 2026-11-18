@@ -372,6 +372,11 @@ class TrainingRun(BaseModel):
         )
 
     def _source_model_config(self) -> "ModelConfig":
+        if self.framework is Framework.SPINDLE:
+            # TODO(helena): Export the LoRA adapter and merge with tinker_cookbook.weights.build_hf_model.
+            raise ValueError(
+                "Spindle checkpoint conversion to a serving model is not supported in v0."
+            )
         raw = self.source_model
         if raw is None:
             raise ValueError("No source_model on this TrainingRun.")

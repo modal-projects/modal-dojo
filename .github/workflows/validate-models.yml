@@ -37,15 +37,15 @@ jobs:
     env:
       UV_CACHE_DIR: /tmp/uv-cache
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@v4.4.0
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version-file: ".python-version"
 
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - uses: astral-sh/setup-uv@v5.4.2
 
       - name: Sync dependencies
         run: uv sync --group ci --group dev
@@ -81,16 +81,18 @@ jobs:
     env:
       MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-      MODAL_ENVIRONMENT: training-gym
+      MODAL_ENVIRONMENT: dojo
+      # dojo defaults to an image builder version modal 1.6.1 can't use.
+      MODAL_IMAGE_BUILDER_VERSION: "2025.06"
       UV_CACHE_DIR: /tmp/uv-cache
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@v4.4.0
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version-file: ".python-version"
 
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - uses: astral-sh/setup-uv@v5.4.2
 
       - name: Sync dependencies
         run: uv sync --group ci --group dev
@@ -118,7 +120,7 @@ jobs:
 
       - name: Upload result
         if: always() && hashFiles(format('{0}.json', steps.artifact.outputs.name)) != ''
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: ${{ steps.artifact.outputs.name }}.json
@@ -136,19 +138,19 @@ jobs:
     env:
       UV_CACHE_DIR: /tmp/uv-cache
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@v4.4.0
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@v5.6.0
         with:
           python-version-file: ".python-version"
 
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - uses: astral-sh/setup-uv@v5.4.2
 
       - name: Sync dependencies
         run: uv sync --group ci --group dev
 
       - name: Download results
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@v4.3.0
         with:
           path: results
           pattern: validate-result-*
@@ -170,7 +172,7 @@ jobs:
           > comment.md
 
       - name: Post comment
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        uses: actions/github-script@v7.1.0
         with:
           script: |
             const fs = require('fs');

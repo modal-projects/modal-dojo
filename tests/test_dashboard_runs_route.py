@@ -277,6 +277,54 @@ def test_runs_route_unions_repeated_facet_values(fake_volume, monkeypatch, tmp_p
     assert [run["run_id"] for run in both.json()] == ["run-route-1", "run-route-2"]
 
 
+def test_runs_route_filters_tags_and_counts(fake_volume, monkeypatch, tmp_path):
+    _save_records()
+    run = TrainingRun.from_id("run-route-1")
+    run.metadata["group_tags"] = {
+        "tags": [
+            {"key": "owner", "value": "Bob"},
+            {"key": "backend", "value": "alpha"},
+            {"key": "custom.key", "value": "a,b=c & d"},
+        ]
+    }
+    run.save()
+    TrainingRun(
+        training_run_id="other",
+        framework=Framework.MILES,
+        config={},
+        metadata={"group_tags": {"overrides": {"owner": "Alice"}}},
+    ).save()
+    with _client(monkeypatch, tmp_path) as client:
+        selected = client.get(
+            "/api/runs?tag.owner=Bob&tag.owner=Alice&tag.backend=alpha"
+        )
+        both = client.get("/api/runs?tag.owner=Bob&tag.owner=Alice")
+        missing = client.get("/api/runs?tag.owner=Grace")
+        mismatch = client.get("/api/runs?tag.owner=bob&tag.owner=Bo")
+        combined = client.get("/api/runs?tag.owner=Bob&recipe=miles")
+        special = client.get("/api/runs", params={"tag.custom.key": "a,b=c & d"})
+        counts = client.get(
+            "/api/runs/counts?tag.owner=Bob&tag.owner=Alice&tag.backend=alpha",
+        ).json()
+        no_matches = client.get("/api/runs/counts?tag.owner=Grace").json()
+        invalid = client.get("/api/runs?tag.owner=Bob&limit=0")
+    assert selected.status_code == 200
+    assert [item["run_id"] for item in selected.json()] == ["run-route-1"]
+    assert {item["run_id"] for item in both.json()} == {"run-route-1", "other"}
+    assert missing.json() == []
+    assert mismatch.json() == []
+    assert combined.json() == []
+    assert [item["run_id"] for item in special.json()] == ["run-route-1"]
+    assert counts["tags"] == {
+        "owner": {"Bob": 1, "Alice": 1},
+        "backend": {"alpha": 1},
+        "custom.key": {"a,b=c & d": 1},
+    }
+    assert counts["matching"] == 1
+    assert no_matches["matching"] == 0
+    assert invalid.status_code == 400
+
+
 def test_runs_counts_route_counts_every_run_and_the_current_query(
     fake_volume, monkeypatch, tmp_path
 ):
@@ -387,7 +435,9 @@ def test_run_log_stream_events_always_include_json_data(
     async def no_sleep(_seconds):
         return None
 
-    monkeypatch.setattr("modal.client._Client.from_credentials", from_credentials)
+    monkeypatch.setattr(
+        "modal_dojo.common._modal_compat.open_async_client", from_credentials
+    )
     monkeypatch.setattr(_dashboard.asyncio, "sleep", no_sleep)
 
     with _client(monkeypatch, tmp_path) as client:
@@ -506,10 +556,9 @@ def test_final_record_is_written_once_and_not_shadowed_by_progress(
     queue.put(None)
     queue.put(None)
     queue.put(final_payload)
-    monkeypatch.setattr(reporting, "_REPORT_QUEUE", queue)
     monkeypatch.setattr(reporting, "_post", lambda item: delivered.append(item) or True)
     monkeypatch.setattr(reporting, "_REPORT_DRAIN_DEADLINE", time.monotonic() + 1.0)
-    reporting._worker()
+    reporting._worker(queue)
     assert delivered == [final_payload]
     assert queue.unfinished_tasks == 0
 
