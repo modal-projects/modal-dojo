@@ -61,6 +61,9 @@ def is_already_gone(output: str, name: str) -> bool:
     resource leaves the backend running.
     """
     lowered = output.lower()
+    # Stopping a stopped app says so without naming it, but can only be the app.
+    if "app is already stopped" in lowered:
+        return True
     if name.lower() not in lowered:
         return False
     return any(
@@ -79,7 +82,8 @@ def stop(pr_number: int) -> None:
     name = app_name(pr_number)
     print(f"Stopping dashboard API preview {name}")
     result = subprocess.run(
-        [sys.executable, "-m", "modal", "app", "stop", name],
+        # CI has no terminal to answer modal's confirmation prompt.
+        [sys.executable, "-m", "modal", "app", "stop", "--yes", name],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
