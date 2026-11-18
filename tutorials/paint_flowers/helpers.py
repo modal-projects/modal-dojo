@@ -236,7 +236,7 @@ def bake_reference_pool() -> None:
 def overlay_flower_image(image: modal.Image) -> modal.Image:
     return (
         image.uv_pip_install(
-            "modal==1.6.1", "httpx==0.28.1", "pillow==11.3.0", "datasets==5.1.0"
+            "modal==1.6.4", "httpx==0.28.1", "pillow==11.3.0", "datasets==5.1.0"
         )
         .add_local_file(__file__, remote_path="/root/helpers.py", copy=True)
         .run_function(bake_reference_pool)

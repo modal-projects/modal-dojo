@@ -100,7 +100,7 @@ config = TrainConfig(
         image_run_commands=[
             "apt-get update && apt-get install -y --no-install-recommends "
             "rdma-core libibverbs1 ibverbs-providers",
-            "uv pip install --system modal==1.6.1 'mini-swe-agent==2.4.6' 'datasets==5.1.0'",
+            "uv pip install --system modal==1.6.4 'mini-swe-agent==2.4.6' 'datasets==5.1.0'",
         ],
         image_env={"MSWEA_SILENT_STARTUP": "1"},
         app_tags={"agentic_rollout": "harbor"},
