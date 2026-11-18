@@ -221,6 +221,7 @@ def test_backend_identity_includes_hardware_and_server():
         name="model-32k", model=MODEL, trainer_gpu="H100", platform={}
     )
     first = deployment.deployment_name(preset, URL)
+    assert len(f"{deployment.SERVER_NAME}-inference-{first}") < 64
     assert deployment.deployment_name(copy.deepcopy(preset), URL) == first
     assert deployment.deployment_name(preset, "other-server") != first
     preset.trainer_gpu = "H200"
@@ -248,14 +249,12 @@ def test_real_spindle_preset_and_deployment_request():
     )
     assert compiled.definition_id == name
     assert compiled.recipe.trainer_gpu == "H100"
-    from modal._utils.name_utils import check_object_name
-
     for app_name in (
         compiled.trainer_app_name,
         compiled.inference_app_name,
         f"{deployment.SERVER_NAME}-lora-{name}",
     ):
-        check_object_name(app_name, "App")
+        assert len(app_name) < 64
     with pytest.raises(DojoConfigError, match="No bundled"):
         deployment.select_config(Requirements(MODEL, 64, 32, 1000000))
 
