@@ -234,13 +234,18 @@ def test_real_spindle_preset_and_deployment_request():
     from spindle.control_plane.deployments import DeploymentRequest, DeploymentRoutes
 
     req = Requirements(
-        MODEL, 64, 32, 32768, {"trainer_gpu": "H100", "trainer_gpus_per_node": 4}
+        MODEL,
+        64,
+        32,
+        32768,
+        {"trainer_gpu": "H200", "trainer_gpus_per_node": 2, "inference_gpu": "H200"},
     )
     config = deployment.select_config(req)
     assert config.model == MODEL
     assert config.max_context_length == 32768
-    assert config.trainer_gpu == "H100"
-    assert config.trainer_gpus_per_node == 4
+    assert config.trainer_gpu == "H200"
+    assert config.trainer_gpus_per_node == 2
+    assert config.inference_gpu == "H200"
     config.platform["frontend"] = deployment.SERVER_NAME
     routes = DeploymentRoutes.from_definitions([DeploymentConfig.create(config)])
     name = deployment.deployment_name(config, URL)
@@ -248,7 +253,9 @@ def test_real_spindle_preset_and_deployment_request():
         routes.build(DeploymentRequest(name=name, recipe=vars(config)))
     )
     assert compiled.definition_id == name
-    assert compiled.recipe.trainer_gpu == "H100"
+    assert compiled.recipe.trainer_gpu == "H200"
+    assert compiled.recipe.trainer_gpus_per_node == 2
+    assert compiled.recipe.inference_gpu == "H200"
     for app_name in (
         compiled.trainer_app_name,
         compiled.inference_app_name,
