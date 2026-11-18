@@ -137,9 +137,40 @@ export async function fetchRunRollouts(trainingRunId, { signal } = {}) {
     .sort((a, b) => a.rollout_id - b.rollout_id);
 }
 
+function rolloutUrl(trainingRunId, rolloutId) {
+  return `${SERVER}/runs/${encodeURIComponent(trainingRunId)}/rollouts/${encodeURIComponent(rolloutId)}`;
+}
+
+// The whole step with every sample. Large steps can be tens of MB, so the
+// viewer uses fetchRolloutIndex and only downloads use this.
 export async function fetchRollout(trainingRunId, rolloutId) {
+  const res = await fetch(rolloutUrl(trainingRunId, rolloutId));
+  if (!res.ok) return null;
+  return await res.json();
+}
+
+// A step for the viewer. Large steps are stored in pages: then `samples`
+// holds placeholders built from the per-sample index (score and grouping
+// fields, plus `_page`) until fetchRolloutPage supplies the real samples.
+export async function fetchRolloutIndex(trainingRunId, rolloutId) {
+  const res = await fetch(`${rolloutUrl(trainingRunId, rolloutId)}?view=index`);
+  if (!res.ok) return null;
+  const detail = await res.json();
+  if (detail?.sample_pages?.length) {
+    detail.samples = detail.sample_pages.flatMap((page, number) =>
+      detail.sample_index
+        .slice(page.start, page.start + page.count)
+        .map((entry) => ({ ...entry, _page: number })),
+    );
+    delete detail.sample_index;
+  }
+  return detail;
+}
+
+// One page of a paged step: `{ start, samples }`.
+export async function fetchRolloutPage(trainingRunId, rolloutId, page) {
   const res = await fetch(
-    `${SERVER}/runs/${encodeURIComponent(trainingRunId)}/rollouts/${encodeURIComponent(rolloutId)}`,
+    `${rolloutUrl(trainingRunId, rolloutId)}/samples/${encodeURIComponent(page)}`,
   );
   if (!res.ok) return null;
   return await res.json();

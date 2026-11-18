@@ -5,6 +5,13 @@ dashboard can list rollouts per training run without scanning the eval store.
 Records are written by slime's `log_rollout_data` hook through the async
 phase-reporter; reads happen via the dashboard's
 ``/api/runs/{id}/rollouts`` endpoint.
+
+A step whose samples serialize larger than ``ROLLOUT_PAGE_MAX_BYTES`` is
+stored in pages: its ``training-rollouts`` file becomes a manifest holding a
+per-sample index (score and grouping fields) and the page layout, and the
+samples go to ``training-rollout-samples``. Readers that only need scores, or
+one sample, then never load the whole step. ``load_payload`` returns the
+original single-file shape for both layouts.
 """
 
 from __future__ import annotations
@@ -15,6 +22,8 @@ import json
 import re
 import time
 from collections.abc import Awaitable
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -23,14 +32,54 @@ from modal_dojo.common.advantage_distribution import quantile
 from modal_dojo.common.coerce import optional_int, safe_int
 from modal_dojo.common.sample import Sample
 from modal_dojo.utils.metadata import (
+    _READ_CONCURRENCY,
     MetadataStore,
     vol_get,
     vol_get_summary_items,
     vol_list,
     vol_list_keys,
+    vol_put_many,
     vol_put_summary_items,
     vol_put_with_summary,
 )
+
+# Steps whose samples serialize larger than this are split into pages of about
+# this size. Large steps reach 30-170 MB, which is slow for the dashboard to
+# read whole, while it only needs per-sample scores plus the one sample shown.
+ROLLOUT_PAGE_MAX_BYTES = 4 * 1024 * 1024
+
+# Per-sample fields kept in a paged step's index: what the reward histogram
+# and rollout grouping need without loading sample bodies.
+_INDEX_FIELDS = ("score", "rollout_index", "sample_index", "group_index")
+
+
+def _paginate(samples: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Split samples into consecutive pages of at most ROLLOUT_PAGE_MAX_BYTES.
+
+    A single sample larger than the limit gets a page of its own.
+    """
+    pages: list[list[dict[str, Any]]] = []
+    page: list[dict[str, Any]] = []
+    page_bytes = 0
+    for sample in samples:
+        sample_bytes = len(json.dumps(sample).encode())
+        if page and page_bytes + sample_bytes > ROLLOUT_PAGE_MAX_BYTES:
+            pages.append(page)
+            page, page_bytes = [], 0
+        page.append(sample)
+        page_bytes += sample_bytes
+    if page:
+        pages.append(page)
+    return pages
+
+
+def _index_entry(sample: dict[str, Any]) -> dict[str, Any]:
+    entry = {field: sample.get(field) for field in _INDEX_FIELDS}
+    if entry["rollout_index"] is None:
+        metadata = sample.get("metadata")
+        if isinstance(metadata, dict):
+            entry["rollout_index"] = optional_int(metadata.get("rollout_id"))
+    return entry
 
 
 class TrainingRolloutSample(Sample):
@@ -370,19 +419,106 @@ class TrainingRolloutResult(BaseModel):
         )
         return {**self.to_summary(), "export_size_bytes": export_size_bytes}
 
+    @staticmethod
+    def page_key(storage_key: str, page: int) -> str:
+        return f"{storage_key}__p{page:04d}"
+
     def save(self, *, is_async: bool = False) -> None | Awaitable[None]:
         self._touch_created_at()
         payload = self.model_dump(mode="json")
-        return vol_put_with_summary(
+        summary_item = self._stored_summary(payload)
+        pages = _paginate(payload["samples"])
+        put_pages = None
+        if len(pages) > 1:
+            # Pages first, then the manifest that points at them, so a reader
+            # never sees a manifest whose pages are missing.
+            page_values: dict[str, dict[str, Any]] = {}
+            layout: list[dict[str, int]] = []
+            start = 0
+            for number, page in enumerate(pages):
+                page_values[self.page_key(self.storage_key, number)] = {
+                    "start": start,
+                    "samples": page,
+                }
+                layout.append({"start": start, "count": len(page)})
+                start += len(page)
+            put_pages = partial(
+                vol_put_many, MetadataStore.TRAINING_ROLLOUT_SAMPLES, page_values
+            )
+            payload = {
+                **payload,
+                "samples": [],
+                "sample_index": [_index_entry(s) for s in payload["samples"]],
+                "sample_pages": layout,
+            }
+        put = partial(
+            vol_put_with_summary,
             MetadataStore.TRAINING_ROLLOUTS,
             self.storage_key,
             payload,
             summary_store=self.summary_store(self.training_run_id),
-            summary_item=self._stored_summary(payload),
+            summary_item=summary_item,
             item_id_key="rollout_id",
             sort_key=lambda item: int(item.get("rollout_id") or 0),
             reverse=False,
-            is_async=is_async,
+        )
+        if is_async:
+
+            async def _run() -> None:
+                if put_pages is not None:
+                    await put_pages(is_async=True)
+                await put(is_async=True)
+
+            return _run()
+        if put_pages is not None:
+            put_pages()
+        put()
+        return None
+
+    @classmethod
+    def _stitch(cls, storage_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Turn a stored step (paged or not) back into the single-file shape."""
+        layout = payload.pop("sample_pages", None)
+        payload.pop("sample_index", None)
+        if layout:
+            keys = [cls.page_key(storage_key, n) for n in range(len(layout))]
+            # Pages are read in parallel: one at a time, a 168 MB step's 44
+            # pages took twice as long as reading the old single file.
+            with ThreadPoolExecutor(
+                max_workers=min(_READ_CONCURRENCY, len(keys))
+            ) as pool:
+                pages = pool.map(
+                    partial(vol_get, MetadataStore.TRAINING_ROLLOUT_SAMPLES), keys
+                )
+                payload["samples"] = [
+                    sample for page in pages for sample in page.get("samples") or []
+                ]
+        return payload
+
+    @classmethod
+    def load_payload(cls, training_run_id: str, rollout_id: int) -> dict[str, Any]:
+        """The whole step, with every sample. Raises KeyError if missing."""
+        key = f"{training_run_id}__{int(rollout_id):08d}"
+        return cls._stitch(key, vol_get(MetadataStore.TRAINING_ROLLOUTS, key))
+
+    @classmethod
+    def load_index(cls, training_run_id: str, rollout_id: int) -> dict[str, Any]:
+        """The step as stored: a manifest for paged steps, else the whole step.
+
+        A manifest has empty ``samples`` plus ``sample_index`` (one entry per
+        sample, in order) and ``sample_pages`` (``start``/``count`` per page).
+        """
+        key = f"{training_run_id}__{int(rollout_id):08d}"
+        return vol_get(MetadataStore.TRAINING_ROLLOUTS, key)
+
+    @classmethod
+    def load_page(
+        cls, training_run_id: str, rollout_id: int, page: int
+    ) -> dict[str, Any]:
+        """One sample page: ``start`` (index of its first sample) and ``samples``."""
+        key = f"{training_run_id}__{int(rollout_id):08d}"
+        return vol_get(
+            MetadataStore.TRAINING_ROLLOUT_SAMPLES, cls.page_key(key, int(page))
         )
 
     @classmethod
@@ -419,7 +555,9 @@ class TrainingRolloutResult(BaseModel):
         )
         for key in sorted(keys - summaries.keys()):
             try:
-                payload = vol_get(MetadataStore.TRAINING_ROLLOUTS, key)
+                payload = cls._stitch(
+                    key, vol_get(MetadataStore.TRAINING_ROLLOUTS, key)
+                )
                 result = cls.model_validate(payload)
                 if (
                     result.training_run_id != training_run_id
