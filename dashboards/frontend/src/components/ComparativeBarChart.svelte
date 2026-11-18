@@ -22,6 +22,10 @@
   //   zoomable          boolean                        — drag over the plot (or the +/−
   //                                                      buttons) narrows the visible span
   //                                                      of categories
+  //   onOpen            (series) => void               — a series may carry extra fields
+  //                                                      (e.g. rollout_id); double-clicking
+  //                                                      one of its bars calls this with the
+  //                                                      series object
 
   import ZoomOutIcon from "lucide-svelte/icons/zoom-out";
 
@@ -40,6 +44,7 @@
     yMax = null,
     emptyText = "No data to compare.",
     zoomable = true,
+    onOpen = null,
   } = $props();
 
   // Inclusive `[lo, hi]` category indices on screen; `null` shows everything.
@@ -146,6 +151,7 @@
         const magPct = (Math.abs(v) / span) * 100;
         return {
           si,
+          series: s,
           name: s.name ?? `series ${si + 1}`,
           color: colorFor(s, si),
           value: v,
@@ -270,6 +276,7 @@
                 title={barTitle(cluster.label, bar)}
                 role="presentation"
                 onpointerenter={() => enterBar(cluster.ci, bar.si)}
+                ondblclick={() => onOpen?.(bar.series)}
               >
                 {#if showValueLabels && bar.value !== 0}
                   <span class="absolute top-[-14px] left-[50%] [transform:translateX(-50%)] text-[9px] text-(--muted) [font-variant-numeric:tabular-nums] whitespace-nowrap pointer-events-none">{format(bar.value)}</span>
