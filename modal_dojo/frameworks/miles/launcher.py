@@ -358,7 +358,14 @@ def build_miles_app(
     volume_prefix = miles.name or f"miles-{type(miles).__name__.lstrip('_').lower()}"
     MilesRecipe._validate_datasets(dataset, eval_dataset, loss_type=miles.loss_type)
     if miles.loss_type == "sft_loss":
-        dataset = _SftDataset(dataset)
+        sft_config = miles._escape_hatch_values()
+        dataset = _SftDataset(
+            dataset,
+            allow_pretokenized=True,
+            require_pretokenized=sft_config.get("modal_dojo_sft_loss_mask")
+            == "pretokenized",
+            metadata_key=sft_config.get("metadata_key", "metadata"),
+        )
     dataset_path = MilesRecipe._resolve_data_paths(dataset)
     eval_dataset_path = (
         MilesRecipe._resolve_data_paths(eval_dataset)

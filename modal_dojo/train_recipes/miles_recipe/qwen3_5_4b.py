@@ -5,7 +5,7 @@ from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models import ModelConfig, Qwen3_5_4B
-from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
+from modal_dojo.train_recipes.miles_recipe.recipe import MilesLossMaskType, MilesRecipe
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
@@ -13,7 +13,7 @@ class Qwen3_5_4B_Miles_Recipe(MilesRecipe):
     """Qwen3.5-4B recipe."""
 
     model_config_class: ClassVar[type[ModelConfig]] = Qwen3_5_4B
-    sft_supported: ClassVar[bool] = False
+    loss_mask_type: MilesLossMaskType = "chat_template"
 
     miles_model_name: str = "qwen3.5-4B"
     optimizer_cpu_offload: bool = True

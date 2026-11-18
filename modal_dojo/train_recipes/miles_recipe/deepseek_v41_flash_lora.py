@@ -15,7 +15,7 @@ from modal_dojo.train_recipes.miles_recipe.deepseek_v41_flash import (
 )
 
 # TODO: Use a released image once Miles #4205 and SGLang #45231 are included.
-MILES_LORA_COMMIT = "6c8e2378cfe3dc5f99633e9719a80586dac86683"
+MILES_LORA_COMMIT = "65e785ff5e794a7081383e18e70c4555cb1fe0fb"
 SGLANG_LORA_COMMIT = "34033fe90b90f1bb64e63337268beada57f21f84"
 
 

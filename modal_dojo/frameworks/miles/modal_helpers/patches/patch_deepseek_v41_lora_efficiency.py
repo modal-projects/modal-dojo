@@ -1,11 +1,12 @@
 """Avoid redundant frozen-weight I/O and worker-wide padding for native V4.1 LoRA.
 
-Source: radixark/miles@6c8e2378cfe3dc5f99633e9719a80586dac86683.
+Source: radixark/miles@65e785ff5e794a7081383e18e70c4555cb1fe0fb.
 Remove each rewrite when upstream implements the corresponding optimization.
-The startup rewrite preserves upstream's cancellation-safe release task.
+The startup rewrite preserves upstream's enclosing offload control flow.
 """
 
 from pathlib import Path
+from textwrap import indent
 
 
 def patch_initial_lora_offload(root):
@@ -26,6 +27,12 @@ def patch_initial_lora_offload(root):
         "        await api_client.release_memory_occupation()\n"
         "        await api_client.resume_memory_occupation(tags=[GPU_MEMORY_TYPE_WEIGHTS])\n"
     )
+    # Earlier native-LoRA sources keep this pair inside the needs_offload
+    # branch; newer sources extract it into a cancellation-safe release task.
+    extra_indent = ""
+    if text.count(anchor) != 1:
+        extra_indent = "    "
+        anchor = indent(anchor, extra_indent)
     if text.count(anchor) != 1:
         raise ValueError("Native Miles initial serving offload anchor changed")
     replacement = f"""        {marker}
@@ -41,7 +48,7 @@ def patch_initial_lora_offload(root):
             await api_client.release_memory_occupation()
             await api_client.resume_memory_occupation(tags=[GPU_MEMORY_TYPE_WEIGHTS])
 """
-    text = text.replace(anchor, replacement)
+    text = text.replace(anchor, indent(replacement, extra_indent))
     compile(text, str(path), "exec")
     path.write_text(text)
 

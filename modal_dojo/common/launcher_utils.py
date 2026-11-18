@@ -560,7 +560,12 @@ def prepare_launch_config(
 
     escape_hatch = getattr(cfg, "_ESCAPE_HATCH_FIELD", None)
     for field in yaml_config_fields:
-        if isinstance(val := getattr(cfg, field, None), dict):
+        val = getattr(cfg, field, None)
+        if field == escape_hatch:
+            # Recipes can derive runtime-only settings without mutating their
+            # caller's configuration (e.g. train-only settings under SFT).
+            val = cfg._escape_hatch_values() or val
+        if isinstance(val, dict):
             path = os.path.join(tmpdir, f"{field}.yaml")
             with open(path, "w") as f:
                 yaml.dump(val, f)
