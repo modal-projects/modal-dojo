@@ -1265,6 +1265,13 @@ def fastapi_app():
         }
         return {name: set(values) for name, values in selected.items() if values}
 
+    def _requested_tags(request: Request) -> dict[str, set[str]]:
+        tags: dict[str, set[str]] = {}
+        for name, value in request.query_params.multi_items():
+            if name.startswith("tag.") and name[4:]:
+                tags.setdefault(name[4:], set()).add(value)
+        return tags
+
     async def load_run_summaries() -> list[RunSummary]:
         try:
             data = await get_cached_list("runs", load_runs)
@@ -1306,6 +1313,7 @@ def fastapi_app():
             summaries,
             filters=filters,
             facets=facets,
+            tags=_requested_tags(request),
             query=q,
             since=since,
             limit=limit,
@@ -1329,6 +1337,7 @@ def fastapi_app():
     # current query, which is how many rows paging can still reach.
     @web.get("/api/runs/counts")
     async def run_counts(
+        request: Request,
         q: str = "",
         status: FacetParam = None,
         recipe: FacetParam = None,
@@ -1341,6 +1350,7 @@ def fastapi_app():
             filter_run_summaries(
                 summaries,
                 facets=_requested_facets(status, recipe, group, training_type),
+                tags=_requested_tags(request),
                 query=q,
             )
         )

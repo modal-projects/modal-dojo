@@ -1,4 +1,4 @@
-"""Train a model on an environment without writing a recipe."""
+"""Train a model on an environment with the model's preset recipe."""
 
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 
 
 def _preset_recipe(model: ModelConfig) -> SlimeRecipe | MilesRecipe:
-    """The model's tuned recipe: slime's preset if it has one, else Miles'."""
     from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
     from modal_dojo.train_recipes.slime_recipe.recipe import SlimeRecipe
 
@@ -37,54 +36,49 @@ def _preset_recipe(model: ModelConfig) -> SlimeRecipe | MilesRecipe:
     return recipe
 
 
-# TODO: add a reference page once the Environment / ManagedTrainConfig / Budget
-# API shape is final; until then these stay out of the generated SDK reference.
+def _context_fields(preset: SlimeRecipe | MilesRecipe, context: int) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "rollout_max_response_len": context - 1,
+        "eval_max_response_len": context - 1,
+    }
+    if isinstance(preset.max_tokens_per_gpu, int):
+        fields["max_tokens_per_gpu"] = max(preset.max_tokens_per_gpu, context)
+    if hasattr(preset, "max_seq_len"):
+        fields["max_seq_len"] = context
+    else:
+        fields["extra_config"] = {
+            **(preset.extra_config or {}),
+            "rollout_max_context_len": context,
+        }
+    return fields
+
+
+# TODO: add to the API reference once the API shape is final.
 @exclude_from_api_reference
 class ManagedTrainConfig:
-    """Train a model on an environment using the model's preset recipe.
+    """Train a model on an environment with its preset recipe until ``budget`` runs out.
 
     ```python
     run = ManagedTrainConfig(
         Qwen3_5_4B(),
-        Environment(dataset=my_dataset, reward_fn=my_reward),
+        Environment(
+            dataset=my_dataset, reward_fn=my_reward, max_context_len=32_768
+        ),
         Budget(max_cost_usd=50, max_hours=6),
     ).train()
     ```
 
-    The recipe is the model's preset (slime's if it has one, otherwise
-    Miles'), with the environment wired in:
-
-    - ``custom_rm_function`` is ``environment.reward_fn``, and
-      ``custom_generate_function`` is ``environment.generate_fn`` when it has
-      one.
-    - It keeps doing rollouts and training on them until any limit of
-      ``budget`` runs out, then saves a final checkpoint and stops (see
-      ``Budget``). With no ``max_rollouts``, learning-rate schedules that
-      decay over ``num_rollout`` effectively stay constant.
-    - ``rollout_batch_size`` is capped at the number of tasks. When that cap
-      applies, ``global_batch_size`` becomes ``rollout_batch_size *
-      n_samples_per_prompt``: one on-policy update per rollout.
-
-    ``recipe_overrides`` are recipe fields applied last, so they win over
-    both the preset and the values above. The resulting ``TrainConfig`` is
-    ``train_config``; ``train()`` and ``launch()`` run it.
-
-    With ``fallback_recipes``, its recipes replace the preset and each is
-    built the same way; ``launch()`` tries them in order, moving on when one
-    has not started training within the fallback's threshold (see
+    With ``fallback_recipes``, ``launch()`` tries each recipe in turn, moving
+    on when one has not started training within the threshold (see
     ``Fallback``). Proof of concept.
 
     Attributes:
-        model: The model to train. It must have a recipe preset.
-        environment: Tasks, rollout, and reward to train on.
-        budget: When to stop: after so many rollouts, dollars, or hours,
-            whichever runs out first.
-        recipe_overrides: Recipe fields to set on top of the preset, such as
-            ``{"n_samples_per_prompt": 8, "lr": 1e-6}``.
-        fallback_recipes: Recipes to try in order when one waits too long
-            for GPUs, instead of the model's preset.
-        train_config: The ``TrainConfig`` this builds (the first, with
-            fallbacks).
+        model: The model to train; it needs a slime or Miles preset.
+        environment: The dataset, reward, and optional rollout.
+        budget: When to stop.
+        recipe_overrides: Recipe fields applied on top of the preset.
+        fallback_recipes: Recipes to try in order, instead of the preset.
+        train_config: The built ``TrainConfig`` (the first, with fallbacks).
         train_configs: Every ``TrainConfig`` ``launch()`` may try, in order.
     """
 
@@ -149,6 +143,8 @@ class ManagedTrainConfig:
         }
         if env.generate_fn is not None:
             derived["custom_generate_function"] = env.generate_fn
+        if env.max_context_len is not None:
+            derived.update(_context_fields(preset, env.max_context_len))
         num_tasks = len(list(env.dataset.rows()))
         if num_tasks < preset.rollout_batch_size:
             samples = overrides.get("n_samples_per_prompt", preset.n_samples_per_prompt)
@@ -158,7 +154,6 @@ class ManagedTrainConfig:
 
     @property
     def recipe(self) -> SlimeRecipe | MilesRecipe:
-        """The recipe ``train_config`` trains with."""
         return self.train_config.recipe
 
     def train(self, *, show_output: bool = True) -> TrainingRun:

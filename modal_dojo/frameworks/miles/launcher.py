@@ -335,7 +335,6 @@ def apply_source_overlays(image: Image, miles: MilesRecipe) -> Image:
             " miles_git_ref checkout; substep timings will be missing'",
         )
     if miles.budget is not None:
-        # After every other patch: it edits the driver loop as they leave it.
         image = image.run_commands(
             f"echo {_PATCH_BUDGET_STOP_B64} | base64 -d | python3"
         )
@@ -712,7 +711,7 @@ def build_miles_app(
         framework_status_url: str = "",
         framework_status_token: str = "",
     ):
-        started_at = time.time()  # a Budget counts from here
+        started_at = time.time()
         mark_training_started(training_run_id)  # capacity granted; see Fallback
         cluster, modal_app_id, modal_app_url = await start_training_cluster(
             miles,

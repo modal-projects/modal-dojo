@@ -250,7 +250,58 @@ def test_facet_counts_cover_every_run():
         "recipe": {"slime": 2, "miles": 1},
         "group": {"nightly": 2, "(no group)": 1},
         "training_type": {"rl": 3},
+        "tags": {},
     }
+
+
+def test_tags_facet_filters_and_counts():
+    tagged = _summary(
+        group_tags={
+            "tags": [
+                {"key": "owner", "value": "Bob"},
+                {"key": "owner", "value": "Bob"},
+                {"key": "backend", "value": "alpha"},
+            ]
+        }
+    )
+    other = _summary(run_id="other", group_tags={"overrides": {"owner": "Alice"}})
+    untagged = _summary(run_id="untagged")
+    runs = [tagged, other, untagged]
+    assert count_run_facets(runs)["tags"] == {
+        "owner": {"Bob": 1, "Alice": 1},
+        "backend": {"alpha": 1},
+    }
+    assert filter_run_summaries(runs, tags={"owner": {"Bob"}}) == [tagged]
+    assert filter_run_summaries(runs, tags={"owner": {"Alice", "Bob"}}) == [
+        tagged,
+        other,
+    ]
+    assert filter_run_summaries(
+        runs,
+        tags={"owner": {"Alice", "Bob"}, "backend": {"alpha"}},
+    ) == [tagged]
+    assert (
+        filter_run_summaries(
+            runs,
+            tags={"owner": {"Alice"}, "backend": {"alpha"}},
+        )
+        == []
+    )
+    assert (
+        filter_run_summaries(
+            runs,
+            tags={"owner": {"Bob"}},
+            facets={"status": {"failed"}},
+        )
+        == []
+    )
+    assert filter_run_summaries(runs, tags={"owner": set()}) == filter_run_summaries(
+        runs
+    )
+    assert filter_run_summaries(runs, tags={"owner": {"unknown"}}) == []
+    assert filter_run_summaries(runs, tags={"missing": {"value"}}) == []
+    assert filter_run_summaries(runs, tags={"owner": {"bob", "Bo"}}) == []
+    assert count_run_facets([])["tags"] == {}
 
 
 def test_training_type_facet_filters_and_counts():

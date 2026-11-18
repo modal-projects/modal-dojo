@@ -419,10 +419,7 @@ class SlimeRecipe(BaseTrainRecipe):
             Modal retries for the training function. Each retry resumes from
             the last checkpoint.
         budget:
-            Stop early once training has cost or taken this much, after
-            saving a final checkpoint. ``num_rollout`` is still the most
-            rollouts it runs and must equal ``budget.max_rollouts`` when that
-            is set; ``ManagedTrainConfig`` sets it from the budget.
+            Save and stop once this ``Budget`` runs out.
         capture_trace:
             Attach sampled per-request execution traces to recorded rollouts.
         trace_sample_limit:

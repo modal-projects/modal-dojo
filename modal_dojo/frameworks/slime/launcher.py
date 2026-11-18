@@ -460,7 +460,6 @@ def build_slime_app(
 
     image = _overlay_slime_source(image, slime)
     if slime.budget is not None:
-        # After every other patch: it edits the driver loop as they leave it.
         image = image.run_commands(*_patch_commands((budget_stop_patch(SLIME_ROOT),)))
 
     if slime.image_run_commands:
@@ -815,7 +814,7 @@ def build_slime_app(
         framework_status_url: str = "",
         framework_status_token: str = "",
     ):
-        started_at = time.time()  # a Budget counts from here
+        started_at = time.time()
         mark_training_started(training_run_id)  # capacity granted; see Fallback
         cluster, modal_app_id, modal_app_url = await start_training_cluster(
             slime,
