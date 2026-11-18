@@ -30,8 +30,7 @@ concurrency:
 
 jobs:
   publish:
-    runs-on:
-      group: modal-dojo-image-builders
+    runs-on: ubuntu-24.04-32core
     timeout-minutes: 360
     steps:
       - name: Validate publish settings
