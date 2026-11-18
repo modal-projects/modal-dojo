@@ -79,7 +79,7 @@ def metric_secrets(metric: MetricConfig) -> list[Any]:
     if metric.provider == "wandb":
         from modal import Secret
 
-        return [Secret.from_name(getattr(metric, "modal_wandb_secret_name"))]
+        return [Secret.from_name(metric.modal_wandb_secret_name)]
     return []
 
 

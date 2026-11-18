@@ -72,8 +72,7 @@ class DatasetConfig(ABC):
     def write(self, path: str) -> None:
         """Materialize training data at ``path``."""
         with open(path, "w") as f:
-            for row in self.rows():
-                f.write(json.dumps(row) + "\n")
+            f.writelines(json.dumps(row) + "\n" for row in self.rows())
 
     def _expected_columns(self) -> set[str]:
         cols: set[str] = set()

@@ -98,7 +98,11 @@ def auto_batch_size_enabled(recipe: Any) -> bool:
 
 def _sample_len(recipe: Any) -> int:
     """Longest sample the recipe declares, in tokens (0 when unknown)."""
-    ctx = _as_int(_effective(recipe, "rollout_max_context_len")) or 0
+    ctx = (
+        _as_int(_effective(recipe, "max_seq_len"))
+        or _as_int(_effective(recipe, "rollout_max_context_len"))
+        or 0
+    )
     prompt = _as_int(_effective(recipe, "rollout_max_prompt_len")) or 0
     response = _as_int(_effective(recipe, "rollout_max_response_len")) or 0
     return ctx or (prompt + response)

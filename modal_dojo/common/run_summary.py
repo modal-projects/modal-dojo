@@ -355,7 +355,7 @@ def _timestamp(value: object) -> int:
         parsed_number = float(value)
     except ValueError:
         try:
-            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = dt.datetime.fromisoformat(value)
         except ValueError:
             return 0
         if parsed.tzinfo is None:

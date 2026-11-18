@@ -76,6 +76,8 @@ from modal_dojo.train_recipes.miles_recipe.recipe import (
     HF_CACHE_PATH,
     MilesRecipe,
 )
+from modal_dojo.common.budget import driver_budget_env
+from modal_dojo.common.budget_stop_patch import encoded_patch as budget_stop_patch
 from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
 from modal_dojo.frameworks.miles.modal_helpers.utils import (
     build_train_cmd,
@@ -111,6 +113,7 @@ _PATCH_ROLLOUT_STATUS_B64 = encode_patch(
 )
 _PATCH_ADVANTAGE_DIST_B64 = encode_patch("patch_advantage_distribution", _MILES_PATCHES)
 _PATCH_SUBSTEP_TIMING_B64 = encode_patch("patch_substep_timing", _MILES_PATCHES)
+_PATCH_BUDGET_STOP_B64 = budget_stop_patch(MILES_ROOT)
 _PATCH_ZERO_STD_B64 = encode_patch("patch_zero_std_metrics", _MILES_PATCHES)
 
 _REPORTING_PATCH_COMMANDS = (
@@ -329,6 +332,10 @@ def apply_source_overlays(image: Image, miles: MilesRecipe) -> Image:
             f"echo {_PATCH_SUBSTEP_TIMING_B64} | base64 -d | python3"
             " || echo 'WARNING: substep timing patch did not apply to the"
             " miles_git_ref checkout; substep timings will be missing'",
+        )
+    if miles.budget is not None:
+        image = image.run_commands(
+            f"echo {_PATCH_BUDGET_STOP_B64} | base64 -d | python3"
         )
     return image
 
@@ -703,6 +710,7 @@ def build_miles_app(
         framework_status_url: str = "",
         framework_status_token: str = "",
     ):
+        started_at = time.time()
         cluster, modal_app_id, modal_app_url = await start_training_cluster(
             miles,
             (hf_cache_volume, data_volume, checkpoints_volume),
@@ -783,13 +791,11 @@ def build_miles_app(
                     await _prepare_shared_inputs()
             except BaseException as exc:
                 os.makedirs(os.path.dirname(prep_error), exist_ok=True)
-                with open(prep_error, "w") as f:
-                    f.write(repr(exc))
+                await asyncio.to_thread(Path(prep_error).write_text, repr(exc))
                 await checkpoints_volume.commit.aio()
                 raise
             os.makedirs(os.path.dirname(prep_marker), exist_ok=True)
-            with open(prep_marker, "w") as f:
-                f.write(str(time.time()))
+            await asyncio.to_thread(Path(prep_marker).write_text, str(time.time()))
             await checkpoints_volume.commit.aio()
         else:
             deadline = time.time() + download_timeout + dataset_timeout
@@ -799,11 +805,11 @@ def build_miles_app(
                     data_volume.reload.aio(),
                     checkpoints_volume.reload.aio(),
                 )
-                if os.path.exists(prep_marker):
+                if await asyncio.to_thread(os.path.exists, prep_marker):
                     break
-                if os.path.exists(prep_error):
-                    with open(prep_error) as f:
-                        raise RuntimeError(f"Head preparation failed: {f.read()}")
+                if await asyncio.to_thread(os.path.exists, prep_error):
+                    error = await asyncio.to_thread(Path(prep_error).read_text)
+                    raise RuntimeError(f"Head preparation failed: {error}")
                 if time.time() > deadline:
                     raise RuntimeError("Timed out waiting for head preparation marker")
                 await asyncio.sleep(5)
@@ -947,6 +953,7 @@ def build_miles_app(
                 extra_env={
                     "MODAL_DOJO_TRAINING_RUN_ID": training_run_id,
                     "MODAL_DOJO_CHECKPOINTS_VOLUME_NAME": checkpoints_volume_name,
+                    **driver_budget_env(miles, started_at=started_at),
                     **shared.training_reporting_env(
                         miles, model, app_name, framework_status_url
                     ),
