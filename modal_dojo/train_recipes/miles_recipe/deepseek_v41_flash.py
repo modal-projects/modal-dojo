@@ -303,3 +303,25 @@ class DeepSeek_V4_1_Flash_Recipe(MilesRecipe):
                 [*patches, *(c for c in current if c not in patches)],
             )
         return self
+
+    @model_validator(mode="after")
+    def _require_allgather_cp(self) -> "DeepSeek_V4_1_Flash_Recipe":
+        """DeepSeek V4 only supports allgather context parallelism.
+
+        Miles asserts ``args.allgather_cp`` in ``hf_validate_args``, so a run
+        launched with ``context_parallel_size > 1`` and no allgather flag dies
+        at startup. Default the flag on; an explicit opt-out is a config error.
+        """
+        if self.context_parallel_size <= 1:
+            return self
+        cfg = dict(self.extra_config or {})
+        if cfg.get("allgather_cp") is False:
+            raise ValueError(
+                "context_parallel_size > 1 requires allgather_cp for "
+                "DeepSeek-V4.1 (miles rejects zigzag CP); remove the "
+                "allgather_cp override or drop context parallelism."
+            )
+        if "allgather_cp" not in cfg:
+            cfg["allgather_cp"] = True
+            object.__setattr__(self, "extra_config", cfg)
+        return self
