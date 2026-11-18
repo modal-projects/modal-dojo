@@ -11,7 +11,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 dependencies = [
-    "modal==1.6.1",
+    "modal==1.6.3",
     "synchronicity~=0.12.6",
     "click~=8.5.0",
     "cloudpickle~=3.1.2",
@@ -33,6 +33,13 @@ spindle = [
     "tml-renderers==0.2.0",
     "tinker-cookbook==0.5.9",
 ]
+spindle-deploy = [
+    "modal-dojo[spindle]",
+    "modal-spindle==0.1.8; python_version == '3.12'",
+]
+
+[tool.uv.sources]
+modal-spindle = { git = "https://github.com/modal-projects/spindle.git", rev = "16ce201dae9862347cb17437fa0cfed3e3db313e" }
 
 [build-system]
 requires = ["hatchling"]

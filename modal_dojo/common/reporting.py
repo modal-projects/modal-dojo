@@ -40,8 +40,6 @@ _ROLLOUT_PATH = "/api/training-rollouts"
 _ADVANTAGE_PATH = "/api/advantage-distributions"
 _METRIC_POINTS_PATH = "/api/metric-points"
 MAX_METRIC_POINTS_PER_BATCH = 5000
-# Status and rollout writes rewrite the run record and take seconds. Waiting for
-# them keeps a write from landing after the run's own final save.
 _PHASE_TIMEOUT_SECONDS = 30.0
 _STEP_EVENT_TIMEOUT_SECONDS = 5.0
 _ROLLOUT_TIMEOUT_SECONDS = 30.0
