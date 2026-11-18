@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlencode
 from typing import (
-    TYPE_CHECKING,
+    Any,
     Annotated,
     Awaitable,
     Callable,
@@ -33,10 +33,6 @@ from typing import (
 import modal
 from modal.exception import Error
 
-if TYPE_CHECKING:
-    from google.protobuf.timestamp_pb2 import Timestamp
-    from modal.client import _Client
-    from modal_proto import api_pb2
 
 # Imported at module scope so FastAPI can resolve endpoint annotations such as
 # ``request: Request`` in stream_run_logs(). Under ``from __future__ import
@@ -297,17 +293,7 @@ def _resolve_log_window(
     return max(0.0, since_ts), until_ts
 
 
-def _to_timestamp(secs: float) -> Timestamp:
-    """Convert epoch seconds (with fractional part) to a protobuf ``Timestamp``."""
-    from google.protobuf.timestamp_pb2 import Timestamp
-
-    ts = Timestamp()
-    ts.seconds = int(secs)
-    ts.nanos = int((secs - int(secs)) * 1e9)
-    return ts
-
-
-def _parse_log_batches(batches: Iterable[api_pb2.TaskLogsBatch]) -> list[LogEntry]:
+def _parse_log_batches(batches: Iterable[Any]) -> list[LogEntry]:
     """Flatten Modal ``AppFetchLogs`` batches into ``LogEntry`` dicts."""
     logs: list[LogEntry] = []
     for batch in batches:
@@ -936,17 +922,20 @@ def fastapi_app():
             await _flush_dirty_metrics()
 
     metric_flush_stop: asyncio.Event | None = None
+    metric_flush_task: asyncio.Task[None] | None = None
 
     @web.on_event("startup")
     async def _start_metric_flush_loop() -> None:
-        nonlocal metric_flush_stop
+        nonlocal metric_flush_stop, metric_flush_task
         metric_flush_stop = asyncio.Event()
-        asyncio.create_task(_metric_flush_loop(metric_flush_stop))
+        metric_flush_task = asyncio.create_task(_metric_flush_loop(metric_flush_stop))
 
     @web.on_event("shutdown")
     async def _stop_metric_flush_loop() -> None:
         if metric_flush_stop is not None:
             metric_flush_stop.set()
+        if metric_flush_task is not None:
+            await metric_flush_task
         await _flush_dirty_metrics()
 
     def _rebuild_timing_lanes(entry: TimingEntry) -> None:
@@ -999,10 +988,10 @@ def fastapi_app():
 
     # ── Shared Modal client ───────────────────────────────────────────────
     # Opens a client at startup and reuses it across all requests.
-    modal_client: _Client | None = None
+    modal_client: Any | None = None
     modal_client_lock = asyncio.Lock()
 
-    async def get_modal_client() -> _Client | None:
+    async def get_modal_client() -> Any | None:
         """Return the shared, connection-open Modal client.
 
         Creates it once (guarded by a lock) and reuses it thereafter. Returns
@@ -1017,11 +1006,11 @@ def fastapi_app():
         if not token_id or not token_secret:
             return None
 
-        from modal.client import _Client
+        from modal_dojo.common._modal_compat import open_async_client
 
         async with modal_client_lock:
             if modal_client is None:
-                modal_client = await _Client.from_credentials(token_id, token_secret)
+                modal_client = await open_async_client(token_id, token_secret)
             return modal_client
 
     @web.on_event("startup")
@@ -1285,11 +1274,11 @@ def fastapi_app():
     async def _get_run_or_404(training_run_id: str) -> TrainingRun:
         try:
             return await TrainingRun.from_id(training_run_id, is_async=True)
-        except KeyError:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=f"TrainingRun {training_run_id!r} not found",
-            )
+            ) from exc
 
     # ── Training runs ────────────────────────────────────────────────────
 
@@ -1313,6 +1302,13 @@ def fastapi_app():
             "training_type": training_type,
         }
         return {name: set(values) for name, values in selected.items() if values}
+
+    def _requested_tags(request: Request) -> dict[str, set[str]]:
+        tags: dict[str, set[str]] = {}
+        for name, value in request.query_params.multi_items():
+            if name.startswith("tag.") and name[4:]:
+                tags.setdefault(name[4:], set()).add(value)
+        return tags
 
     async def load_run_summaries() -> list[RunSummary]:
         try:
@@ -1355,6 +1351,7 @@ def fastapi_app():
             summaries,
             filters=filters,
             facets=facets,
+            tags=_requested_tags(request),
             query=q,
             since=since,
             limit=limit,
@@ -1378,6 +1375,7 @@ def fastapi_app():
     # current query, which is how many rows paging can still reach.
     @web.get("/api/runs/counts")
     async def run_counts(
+        request: Request,
         q: str = "",
         status: FacetParam = None,
         recipe: FacetParam = None,
@@ -1390,6 +1388,7 @@ def fastapi_app():
             filter_run_summaries(
                 summaries,
                 facets=_requested_facets(status, recipe, group, training_type),
+                tags=_requested_tags(request),
                 query=q,
             )
         )
@@ -1399,11 +1398,11 @@ def fastapi_app():
     async def get_run(training_run_id: str):
         try:
             run = await TrainingRun.from_id(training_run_id, is_async=True)
-        except KeyError:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=f"Training run {training_run_id!r} not found",
-            )
+            ) from exc
         try:
             result = await vol_get(
                 MetadataStore.TRAIN_RESULTS,
@@ -1517,7 +1516,7 @@ def fastapi_app():
         lock = component_compile_locks.setdefault(digest, asyncio.Lock())
         try:
             async with lock:
-                if bundle.is_file():
+                if await run_in_threadpool(bundle.is_file):
                     return
                 data = await run_in_threadpool(_read_component_source, source, digest)
                 try:
@@ -1625,7 +1624,7 @@ def fastapi_app():
         await _refresh_dashboard_component_volume()
         source = _component_source_path(manifest)
         cache_root = Path("/tmp/training-gym-dashboard-components")
-        cache_root.mkdir(parents=True, exist_ok=True)
+        await run_in_threadpool(cache_root.mkdir, parents=True, exist_ok=True)
         bundle = cache_root / f"{digest}.{component_frame_version()}.js"
 
         if not bundle.is_file():
@@ -1714,10 +1713,10 @@ def fastapi_app():
             if entry.loaded_at is None:
                 try:
                     await _load_metrics(batch.training_run_id, entry)
-                except Exception:
+                except Exception as exc:
                     raise HTTPException(
                         status_code=503, detail="Metric store unavailable"
-                    )
+                    ) from exc
             entry.dirty |= entry.metrics.merge_points(batch.points)
             try:
                 await _refresh_derived_metrics(batch.training_run_id, entry)
@@ -1797,11 +1796,11 @@ def fastapi_app():
             data = await run_in_threadpool(
                 vol_get, MetadataStore.TRAINING_ROLLOUTS, key
             )
-        except KeyError:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=f"Rollout {rollout_id} for run {training_run_id!r} not found",
-            )
+            ) from exc
 
         if isinstance(data, dict):
             _apply_parsed(data.get("samples"))
@@ -2087,7 +2086,7 @@ def fastapi_app():
         """
         import json
 
-        from modal_proto import api_pb2
+        from modal_dojo.common._modal_compat import stream_app_logs
 
         run = await _get_run_or_404(training_run_id)
 
@@ -2138,13 +2137,13 @@ def fastapi_app():
             while True:
                 if await request.is_disconnected():
                     return
-                req = api_pb2.AppGetLogsRequest(
-                    app_id=app_id,
-                    timeout=55,
-                    last_entry_id=last_entry_id,
-                )
                 try:
-                    async for log_batch in client.stub.AppGetLogs.unary_stream(req):
+                    async for log_batch in stream_app_logs(
+                        client,
+                        app_id=app_id,
+                        timeout=55,
+                        last_entry_id=last_entry_id,
+                    ):
                         if await request.is_disconnected():
                             return
                         consecutive_errors = 0
@@ -2243,7 +2242,7 @@ def fastapi_app():
           - ``has_more``: whether there are more log entries to fetch
           - ``next_until``: the timestamp of the next log entry to fetch
         """
-        from modal_proto import api_pb2
+        from modal_dojo.common._modal_compat import fetch_app_logs
 
         if max_lines < 0:
             raise HTTPException(status_code=400, detail="max_lines must be positive")
@@ -2286,26 +2285,28 @@ def fastapi_app():
         try:
             client = await get_modal_client()
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Modal auth: {exc!s}")
+            raise HTTPException(status_code=502, detail=f"Modal auth: {exc!s}") from exc
         if client is None:
             raise HTTPException(
                 status_code=503,
                 detail="No Modal credentials configured. Run modal-dojo setup.",
             )
 
-        req = api_pb2.AppFetchLogsRequest(
-            app_id=app_id,
-            since=_to_timestamp(since_ts),
-            until=_to_timestamp(until_ts),
-            limit=max_lines,
-            search_text=search.strip(),
-        )
         try:
-            resp = await client.stub.AppFetchLogs(req)
+            batches = await fetch_app_logs(
+                client,
+                app_id=app_id,
+                since=since_ts,
+                until=until_ts,
+                limit=max_lines,
+                search_text=search.strip(),
+            )
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"AppFetchLogs: {exc!s}")
+            raise HTTPException(
+                status_code=502, detail=f"AppFetchLogs: {exc!s}"
+            ) from exc
 
-        logs = _parse_log_batches(resp.batches)
+        logs = _parse_log_batches(batches)
         has_more, next_until = _compute_next_page(logs, max_lines)
 
         return JSONResponse(
@@ -2333,11 +2334,11 @@ def fastapi_app():
                 vol_get, MetadataStore.TRAIN_RESULTS, training_run_id
             )
             return JSONResponse(data)
-        except KeyError:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=f"No training result for {training_run_id!r}",
-            )
+            ) from exc
 
     # ── Eval results ─────────────────────────────────────────────────────
 
@@ -2353,11 +2354,11 @@ def fastapi_app():
     async def eval_detail(eval_id: str):
         try:
             data = await run_in_threadpool(vol_get, MetadataStore.EVAL_RESULTS, eval_id)
-        except KeyError:
+        except KeyError as exc:
             raise HTTPException(
                 status_code=404,
                 detail=f"EvalResult {eval_id!r} not found",
-            )
+            ) from exc
         if isinstance(data, dict):
             _apply_parsed(data.get("rows"))
         return JSONResponse(data)

@@ -45,7 +45,7 @@ def test_preflight_wraps_access_failure(monkeypatch):
         raise Exception("user does not have models write access")
 
     module = _stub_wandb(monkeypatch, login=login_without_write_access)
-    with pytest.raises(RuntimeError, match="W&B pre-flight failed.*qwen3-asr-rl"):
+    with pytest.raises(RuntimeError, match=r"W&B pre-flight failed.*qwen3-asr-rl"):
         preflight_wandb(_CFG)
     module.teardown.assert_called_once_with()
 

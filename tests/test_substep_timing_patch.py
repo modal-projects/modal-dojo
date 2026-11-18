@@ -449,6 +449,21 @@ def test_executor_driver_still_requires_required_calls(miles, tmp_path):
         miles._patch_executor_driver(src, tmp_path / "train.py")
 
 
+def test_executor_driver_with_combined_startup(miles, tmp_path):
+    source = _EXECUTOR_TRAIN.replace(
+        "    create_rollout_components()\n    create_training_models()\n",
+        "    create_components()\n",
+    ).replace("rollout_executor.get.remote()", "rollout_executor.get()")
+    path = tmp_path / "train.py"
+    path.write_text(source)
+    miles._patch_file(path, miles.ENTRYPOINTS[path.name])
+    patched = path.read_text()
+    for phase in ("initialize_components", "generate_rollouts", "train_models"):
+        assert f"_tg_time_phase('{phase}')" in patched
+    assert "_tg_role('driver', rollout_id)" in patched
+    compile(patched, str(path), "exec")
+
+
 def test_executor_package_skips_unpatchable_files(miles, tmp_path, capsys):
     """One executor file that drifts must not lose the others, or the build."""
     files = {

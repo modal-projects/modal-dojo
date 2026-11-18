@@ -28,7 +28,7 @@ def test_chat_serializes_tool_arguments_without_mutating_messages(monkeypatch) -
     import requests
 
     monkeypatch.setattr(requests, "post", post)
-    monkeypatch.setattr(deployment_module, "_modal_proxy_auth_headers", lambda: {})
+    monkeypatch.setattr(deployment_module, "_modal_proxy_auth_headers", dict)
     deployment = CustomDeployment.model_construct(
         deployment_id="test",
         served_model_name="test-model",

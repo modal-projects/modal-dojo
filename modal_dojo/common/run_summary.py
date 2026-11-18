@@ -355,7 +355,7 @@ def _timestamp(value: object) -> int:
         parsed_number = float(value)
     except ValueError:
         try:
-            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = dt.datetime.fromisoformat(value)
         except ValueError:
             return 0
         if parsed.tzinfo is None:
@@ -589,7 +589,7 @@ def _group_tags(metadata: JsonDict, group_id: str) -> GroupTags | None:
     tags: list[GroupTag] = []
     if isinstance(raw_tags, list):
         for item in raw_tags:
-            tag = _mapping(item)
+            tag = item if isinstance(item, dict) else {}
             key = _text(tag.get("key"))
             if key:
                 tags.append(

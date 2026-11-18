@@ -33,6 +33,8 @@
     groups,
     groupCounts,
     activeGroups,
+    tagCounts,
+    activeTags,
     trainingTypes,
     trainingTypeCounts,
     activeTrainingTypes,
@@ -58,6 +60,9 @@
     onToggleGroup,
     onSelectAllGroups,
     onClearGroups,
+    onAddTagValue,
+    onRemoveTagValue,
+    onClearTags,
     onToggleTrainingType,
     onSelectAllTrainingTypes,
     onClearTrainingTypes,
@@ -281,6 +286,8 @@
       {groupCounts}
       {activeGroups}
       allGroupsActive={activeGroups.size === groups.length}
+      {tagCounts}
+      {activeTags}
       {trainingTypes}
       {trainingTypeCounts}
       {activeTrainingTypes}
@@ -296,6 +303,9 @@
       onToggleGroup={onToggleGroup}
       onSelectAllGroups={onSelectAllGroups}
       onClearGroups={onClearGroups}
+      onAddTagValue={onAddTagValue}
+      onRemoveTagValue={onRemoveTagValue}
+      onClearTags={onClearTags}
       onToggleTrainingType={onToggleTrainingType}
       onSelectAllTrainingTypes={onSelectAllTrainingTypes}
       onClearTrainingTypes={onClearTrainingTypes}

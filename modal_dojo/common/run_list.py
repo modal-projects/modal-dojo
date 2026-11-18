@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
 from typing import Literal
 
@@ -12,6 +13,28 @@ NO_GROUP = "(no group)"
 PENDING_STATUS = "pending"
 
 FACET_NAMES = ("status", "recipe", "group", "training_type")
+
+
+def run_tag_values(summary: RunSummary) -> dict[str, set[str]]:
+    if summary.group_tags is None:
+        return {}
+    tags = summary.group_tags.tags
+    values = (
+        [(tag.key, tag.value) for tag in tags]
+        if tags
+        else summary.group_tags.overrides.items()
+    )
+    result: dict[str, set[str]] = {}
+    for key, value in values:
+        text = (
+            value
+            if isinstance(value, str)
+            else "—"
+            if value is None
+            else json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        )
+        result.setdefault(key, set()).add(text)
+    return result
 
 
 def run_list_field_metadata() -> dict[str, dict[str, object]]:
@@ -48,12 +71,17 @@ def count_run_facets(summaries: Iterable[RunSummary]) -> dict[str, object]:
     the page can no longer be counted from the rows the client happens to hold.
     """
     facets: dict[str, dict[str, int]] = {name: {} for name in FACET_NAMES}
+    tags: dict[str, dict[str, int]] = {}
     total = 0
     for summary in summaries:
         total += 1
         for name, value in run_facet_values(summary).items():
             facets[name][value] = facets[name].get(value, 0) + 1
-    return {"total": total, **facets}
+        for key, values in run_tag_values(summary).items():
+            counts = tags.setdefault(key, {})
+            for value in values:
+                counts[value] = counts.get(value, 0) + 1
+    return {"total": total, **facets, "tags": tags}
 
 
 def _search_values(summary: RunSummary) -> Iterable[str]:
@@ -95,6 +123,7 @@ def filter_run_summaries(
     *,
     filters: Mapping[str, str] | None = None,
     facets: Mapping[str, set[str]] | None = None,
+    tags: Mapping[str, set[str]] | None = None,
     query: str = "",
     since: int | None = None,
     limit: int | None = None,
@@ -106,7 +135,8 @@ def filter_run_summaries(
     ``facets`` keeps only runs whose bucket is in the given set (see
     ``run_facet_values``); a facet without an entry is unfiltered. ``query`` is
     matched case-insensitively against the run's identifiers, model, dataset and
-    group tags, and ``offset``/``limit`` page the sorted result.
+    group tags, and ``offset``/``limit`` page the sorted result. ``tags`` matches
+    exact values with OR within a key and AND across keys; empty sets are inactive.
     """
     metadata = run_list_field_metadata()
     active_filters = {
@@ -132,6 +162,13 @@ def filter_run_summaries(
             values = run_facet_values(summary)
             if any(
                 values[name] not in expected for name, expected in active_facets.items()
+            ):
+                continue
+        if tags:
+            tag_values = run_tag_values(summary)
+            if any(
+                expected and not tag_values.get(key, set()).intersection(expected)
+                for key, expected in tags.items()
             ):
                 continue
         if not _matches_query(summary, normalized_query):
