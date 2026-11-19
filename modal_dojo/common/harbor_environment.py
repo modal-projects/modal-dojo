@@ -25,11 +25,9 @@ from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.harbor_harnesses import (
     HARBOR_VERSION,
     SCRATCH_DIR,
-    TMUX_INSTALL_COMMAND,
-    Harness,
-    episode_class,
+    AgentHarness,
+    BashHarness,
     extract_script,
-    parse_harness,
     require_package,
     run_shell,
 )
@@ -190,22 +188,22 @@ class HarborEnvironment(Environment):
     ```python
     run = ManagedTrainConfig(
         Qwen3_5_4B(),
-        HarborEnvironment("swesmith@1.0", harness=Harness.MINI_SWE_AGENT),
+        HarborEnvironment("swesmith@1.0", harness=MiniSweAgent()),
         Budget(max_cost_usd=100),
     ).train()
     ```
 
     Each episode runs in a sandbox built from the task's ``environment/``; the
-    task's ``tests/test.sh`` then sets the reward.
+    task's tests then set the reward, graded by Harbor's own ``Verifier``.
 
     Attributes:
         source: A Harbor hub dataset (``name[@version]``) or a public GitHub URL.
-        harness: A ``Harness``: ``BASH``, ``MINI_SWE_AGENT``, or ``TERMINUS_2``.
+        harness: How the model works in the container: ``BashHarness()``,
+            ``MiniSweAgent()``, ``Terminus2()``, or your own ``AgentHarness``.
         task_names: Only use these tasks.
         max_tasks: Use at most this many tasks.
-        max_turns: Model replies per episode (default: 1 for bash, else 50).
-        max_output_chars: Command output shown per turn (bash only).
-        system_prompt: System message (bash only).
+        max_turns: Model replies per episode (default: the harness's
+            ``default_max_turns``: 1 for bash, 50 for the others).
         reward_key: Key to read from ``reward.json``.
         max_context_len: Token limit for one episode; tasks don't set one.
     """
@@ -214,34 +212,28 @@ class HarborEnvironment(Environment):
         self,
         source: str,
         *,
-        harness: Harness,
+        harness: AgentHarness,
         task_names: list[str] | None = None,
         max_tasks: int | None = None,
         max_turns: int | None = None,
-        max_output_chars: int = 4000,
-        system_prompt: str | None = None,
         reward_key: str = "reward",
         max_context_len: int | None = None,
     ) -> None:
         self._source_spec = _parse_source(source)
-        harness = parse_harness(harness)
-        episode = episode_class(harness)
+        if not isinstance(harness, AgentHarness):
+            raise DojoConfigError(
+                f"harness must be an AgentHarness instance such as MiniSweAgent(), "
+                f"got {harness!r}"
+            )
         if max_turns is None:
-            max_turns = episode.default_max_turns
+            max_turns = harness.default_max_turns
         if max_turns < 1:
             raise DojoConfigError(f"max_turns must be at least 1, got {max_turns}")
-        if system_prompt is not None and harness != Harness.BASH:
-            raise DojoConfigError(
-                f"system_prompt applies to the bash harness only; {harness.value!r} "
-                "uses its own prompts"
-            )
         self.source = source
         self.harness = harness
         self.task_names = task_names
         self.max_tasks = max_tasks
         self.max_turns = max_turns
-        self.max_output_chars = max_output_chars
-        self.system_prompt = system_prompt
         self.reward_key = reward_key
         super().__init__(None, harbor_reward, max_context_len=max_context_len)
         self._dataset: _HarborTaskDataset | None = None
@@ -249,7 +241,7 @@ class HarborEnvironment(Environment):
     @property
     def single_turn(self) -> bool:
         """Whether the framework's own generation and ``reward_fn`` suffice."""
-        return self.harness == Harness.BASH and self.max_turns == 1
+        return type(self.harness) is BashHarness and self.max_turns == 1
 
     def task_dirs(self) -> list[Path]:
         """The Harbor task directories this environment trains on."""
@@ -328,13 +320,12 @@ class HarborEnvironment(Environment):
             "agent_timeout_sec": task.config.agent.timeout_sec
             or _DEFAULT_AGENT_TIMEOUT_SEC,
             "instruction": instruction,
-            "harness": self.harness,
-            "system_prompt": self.system_prompt,
+            "harness": self.harness.name,
+            "image_commands": list(self.harness.image_commands),
             "reward_key": self.reward_key,
             "max_turns": self.max_turns,
-            "max_output_chars": self.max_output_chars,
         }
-        messages = episode_class(self.harness).preview_messages(instruction, label)
+        messages = self.harness.preview_messages(instruction, label)
         return {"messages": messages, "label": json.dumps(label)}
 
     @property
@@ -354,7 +345,19 @@ class HarborEnvironment(Environment):
     @property
     def generate_fn(self):
         """Harness-driven rollout; pass as the recipe's ``custom_generate_function``."""
-        return None if self.single_turn else harbor_generate
+        if self.single_turn:
+            return None
+        # The harness travels with the function: launchers pickle functions
+        # defined outside modal_dojo by value. A custom harness's module may
+        # not exist in the image, so pickle its class by value too.
+        module = sys.modules.get(type(self.harness).__module__)
+        if module is not None and not module.__name__.startswith(
+            ("__main__", "modal_dojo")
+        ):
+            import cloudpickle
+
+            cloudpickle.register_pickle_by_value(module)
+        return functools.partial(harbor_generate, harness=self.harness)
 
 
 def _load_task(sample: Any) -> dict[str, Any]:
@@ -369,9 +372,9 @@ def _task_image(task: dict[str, Any]):
     import modal
 
     image_spec = task["image"]
-    needs_tmux = task.get("harness") == Harness.TERMINUS_2
+    commands = task.get("image_commands", [])
     key = hashlib.sha256(
-        json.dumps([image_spec, needs_tmux], sort_keys=True).encode()
+        json.dumps([image_spec, commands], sort_keys=True).encode()
     ).hexdigest()
     if key in _image_cache:
         return _image_cache[key]
@@ -381,8 +384,8 @@ def _task_image(task: dict[str, Any]):
         context = Path(tempfile.mkdtemp(prefix=f"harbor-{task['task_name']}-"))
         extract_tar_gz(base64.b64decode(image_spec["dockerfile_context"]), context)
         image = modal.Image.from_dockerfile(context / "Dockerfile", context_dir=context)
-    if needs_tmux:  # a layer on the task image, built once per task
-        image = image.run_commands(TMUX_INSTALL_COMMAND)
+    if commands:  # the harness's layer on the task image, built once per task
+        image = image.run_commands(*commands)
     _image_cache[key] = image
     return image
 
@@ -403,7 +406,7 @@ def _open_sandbox(task: dict[str, Any]):
 def _run_tests(sb: Any, task: dict[str, Any]) -> float:
     """Grade the episode in ``sb`` with Harbor's own ``Verifier``."""
     require_package("harbor", HARBOR_VERSION)
-    from modal_dojo.common.harbor_verifier import verify
+    from modal_dojo.common.harbor_sandbox import verify
 
     return verify(
         sb,
@@ -426,7 +429,7 @@ def _verify(task: dict[str, Any], script: str) -> float:
 async def harbor_reward(args: Any, sample: Any, **kwargs: Any) -> float:
     """Slime/Miles ``custom_rm`` for rows built by ``HarborEnvironment``."""
     task = _load_task(sample)
-    if task["harness"] != Harness.BASH or task["max_turns"] > 1:
+    if task["harness"] != BashHarness.name or task["max_turns"] > 1:
         raise DojoConfigError(
             f"Harbor task {task['task_name']!r} uses the {task['harness']!r} "
             f"harness for {task['max_turns']} turn(s); pass "
@@ -544,9 +547,17 @@ def _append(
 
 
 async def harbor_generate(
-    args: Any, sample: Any, sampling_params: dict[str, Any], evaluation: bool = False
+    args: Any,
+    sample: Any,
+    sampling_params: dict[str, Any],
+    evaluation: bool = False,
+    *,
+    harness: AgentHarness,
 ) -> Any:
-    """Slime/Miles ``custom_generate_function`` for ``HarborEnvironment`` rows."""
+    """Slime/Miles ``custom_generate_function`` for ``HarborEnvironment`` rows.
+
+    ``HarborEnvironment.generate_fn`` binds ``harness``.
+    """
     Status = type(sample).Status
     task = _load_task(sample)
     tokenizer = _tokenizer(args.hf_checkpoint)
@@ -569,7 +580,7 @@ async def harbor_generate(
     try:
         sb = await asyncio.to_thread(_open_sandbox, task)
         deadline = time.monotonic() + task["agent_timeout_sec"]
-        episode = episode_class(task["harness"])(sb, task, deadline)
+        episode = harness.start_episode(sb, task, deadline)
         messages = await asyncio.to_thread(
             episode.initial_messages, task["instruction"]
         )

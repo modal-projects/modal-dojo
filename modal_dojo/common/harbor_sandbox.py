@@ -1,4 +1,7 @@
-"""Grade a Harbor task with Harbor's own ``Verifier``, in a modal-dojo ``Sandbox``.
+"""Harbor's own code running in a modal-dojo ``Sandbox``.
+
+``SandboxEnvironment`` gives Harbor's ``Verifier`` and Terminus 2's
+``TmuxSession`` the environment interface they expect.
 
 Imports Harbor at module level; import this module lazily, after
 ``require_package("harbor", HARBOR_VERSION)``.
@@ -15,6 +18,7 @@ from pathlib import Path
 
 from harbor.environments.base import BaseEnvironment, ExecResult
 from harbor.environments.capabilities import EnvironmentCapabilities
+from harbor.models.task.config import EnvironmentConfig
 from harbor.models.task.task import Task
 from harbor.models.trial.paths import EnvironmentPaths, TrialPaths
 from harbor.verifier.verifier import (
@@ -40,16 +44,23 @@ class SandboxEnvironment(BaseEnvironment):
     """Harbor's environment interface over an already started ``Sandbox``."""
 
     def __init__(
-        self, sb: Sandbox, task: Task, trial_paths: TrialPaths, *, timeout_sec: int
+        self,
+        sb: Sandbox,
+        *,
+        name: str,
+        env_config: EnvironmentConfig,
+        timeout_sec: int,
+        trial_paths: TrialPaths | None = None,
     ) -> None:
+        """``trial_paths`` is where the ``Verifier`` downloads its logs."""
         self._sb = sb
         self._timeout_sec = timeout_sec
         super().__init__(
-            environment_dir=task.paths.environment_dir,
-            environment_name=task.name,
-            session_id=task.name,
-            trial_paths=trial_paths,
-            task_env_config=task.config.environment,
+            environment_dir=Path(name) / "environment",  # unused: already built
+            environment_name=name,
+            session_id=name,
+            trial_paths=trial_paths or TrialPaths(trial_dir=Path(name)),
+            task_env_config=env_config,
         )
 
     @staticmethod
@@ -145,7 +156,11 @@ def verify(sb: Sandbox, task_files: str, *, task_name: str, reward_key: str) -> 
             f" && mkdir -p {paths.verifier_dir}",
         )
         environment = SandboxEnvironment(
-            sb, task, trial_paths, timeout_sec=int(task.config.verifier.timeout_sec)
+            sb,
+            name=task_name,
+            env_config=task.config.environment,
+            timeout_sec=int(task.config.verifier.timeout_sec),
+            trial_paths=trial_paths,
         )
         verifier = Verifier(task=task, trial_paths=trial_paths, environment=environment)
         try:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import functools
 import importlib.metadata
 import os
@@ -10,22 +12,12 @@ import shlex
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, ClassVar
 
 from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.errors import DojoConfigError
-
-
-# TODO: add to the API reference along with HarborEnvironment.
-@exclude_from_api_reference
-class Harness(str, Enum):
-    """How the model works in a Harbor task's container."""
-
-    BASH = "bash"
-    MINI_SWE_AGENT = "mini-swe-agent"
-    TERMINUS_2 = "terminus-2"
 
 
 SCRATCH_DIR = "/tmp/modal-dojo-harbor"
@@ -95,24 +87,69 @@ def run_shell(
     return result.returncode, result.stdout + result.stderr, timed_out
 
 
-class Episode(ABC):
-    """One harness-driven episode in one sandbox."""
+# TODO: add to the API reference along with HarborEnvironment.
+@exclude_from_api_reference
+class AgentHarness(ABC):
+    """How a model works in a Harbor task's container, one episode at a time.
 
-    name: ClassVar[Harness]
-    default_max_turns: ClassVar[int]
+    Configure one and pass it as ``HarborEnvironment(..., harness=MyHarness())``.
+    Subclass it to add your own. Each episode runs on a fresh copy:
 
-    def __init__(self, sb: Any, task: dict[str, Any], deadline: float) -> None:
+    1. ``setup`` attaches the episode's started sandbox (``self.sb``, which has
+       ``run``, ``write``, ``read``, ``upload_dir`` and ``download_dir``).
+    2. ``initial_messages`` builds the opening chat messages.
+    3. After every model reply, ``step`` acts on it and returns the next user
+       message, or ``None`` to end the episode.
+    4. The task's tests then grade whatever the sandbox holds.
+
+    ```python
+    class OneCommand(AgentHarness):
+        name = "one-command"
+        default_max_turns = 1
+
+        def preview_messages(self, instruction, task):
+            return [{"role": "user", "content": f"{instruction}\nReply with one command."}]
+
+        def step(self, response):
+            self.sb.run("bash", "-c", response)
+            return None
+    ```
+
+    The harness is pickled to the rollout workers, so keep its configuration
+    picklable; per-episode state belongs in ``setup``.
+
+    Attributes:
+        name: Identifies the harness in rollout metadata and dataset labels.
+        default_max_turns: Model replies per episode unless ``max_turns`` is set.
+        image_commands: Shell commands baked into each task's image once, before
+            any episode (Terminus 2 installs tmux this way).
+    """
+
+    name: ClassVar[str]
+    default_max_turns: ClassVar[int] = 50
+    image_commands: ClassVar[tuple[str, ...]] = ()
+
+    def start_episode(
+        self, sb: Any, task: dict[str, Any], deadline: float
+    ) -> AgentHarness:
+        """A fresh copy of this harness, set up for one episode."""
+        episode = copy.deepcopy(self)
+        episode.setup(sb, task, deadline)
+        return episode
+
+    def setup(self, sb: Any, task: dict[str, Any], deadline: float) -> None:
+        """Attach the episode's sandbox; override to add per-episode state."""
         self.sb = sb
         self.task = task
         self.deadline = deadline
         self.metadata: dict[str, Any] = {}
 
     def time_left(self) -> float:
+        """Seconds until the task's agent timeout."""
         return self.deadline - time.monotonic()
 
-    @classmethod
     @abstractmethod
-    def preview_messages(cls, instruction: str, task: dict[str, Any]) -> list[dict]:
+    def preview_messages(self, instruction: str, task: dict[str, Any]) -> list[dict]:
         """The opening messages, without a sandbox (dataset rows show these)."""
 
     def initial_messages(self, instruction: str) -> list[dict]:
@@ -162,13 +199,30 @@ def format_observation(exit_code: int, output: str, *, max_chars: int) -> str:
     return f"Exit code: {exit_code}\nOutput:\n{output}"
 
 
-class BashEpisode(Episode):
-    name = Harness.BASH
+# TODO: add to the API reference along with HarborEnvironment.
+@exclude_from_api_reference
+class BashHarness(AgentHarness):
+    """One fenced bash block per reply; the model sees its exit code and output.
+
+    With ``max_turns=1`` (the default) the model answers with one script, and
+    the framework's own generation and reward function run the episode.
+
+    Attributes:
+        system_prompt: System message; defaults to one for single or multi-turn.
+        max_output_chars: Command output shown per turn.
+    """
+
+    name = "bash"
     default_max_turns = 1
 
-    @classmethod
-    def preview_messages(cls, instruction: str, task: dict[str, Any]) -> list[dict]:
-        system = task.get("system_prompt") or (
+    def __init__(
+        self, *, system_prompt: str | None = None, max_output_chars: int = 4000
+    ) -> None:
+        self.system_prompt = system_prompt
+        self.max_output_chars = max_output_chars
+
+    def preview_messages(self, instruction: str, task: dict[str, Any]) -> list[dict]:
+        system = self.system_prompt or (
             MULTI_TURN_SYSTEM_PROMPT
             if task["max_turns"] > 1
             else SINGLE_TURN_SYSTEM_PROMPT
@@ -186,9 +240,7 @@ class BashEpisode(Episode):
             self.sb, self.task, script, timeout_sec=self.time_left()
         )
         self.metadata.setdefault("exit_codes", []).append(exit_code)
-        return format_observation(
-            exit_code, output, max_chars=self.task["max_output_chars"]
-        )
+        return format_observation(exit_code, output, max_chars=self.max_output_chars)
 
 
 def _render(template: str, **variables: Any) -> str:
@@ -247,14 +299,20 @@ def _mini_swe_agent() -> _MiniSweAgentConfig:
     )
 
 
-class MiniSweAgentEpisode(Episode):
-    """mini-swe-agent's ``mini_textbased.yaml`` agent, turn for turn."""
+# TODO: add to the API reference along with HarborEnvironment.
+@exclude_from_api_reference
+class MiniSweAgent(AgentHarness):
+    """mini-swe-agent's ``mini_textbased.yaml`` agent, turn for turn.
 
-    name = Harness.MINI_SWE_AGENT
+    Its prompts, action format, command timeout and submit signal come from
+    the installed ``mini-swe-agent`` package.
+    """
+
+    name = "mini-swe-agent"
     default_max_turns = 50
 
-    @classmethod
-    def _messages(cls, instruction: str, uname: dict[str, str]) -> list[dict]:
+    @staticmethod
+    def _messages(instruction: str, uname: dict[str, str]) -> list[dict]:
         mini = _mini_swe_agent()
 
         variables = {"task": instruction, **uname}
@@ -263,10 +321,9 @@ class MiniSweAgentEpisode(Episode):
             {"role": "user", "content": _render(mini.instance_template, **variables)},
         ]
 
-    @classmethod
-    def preview_messages(cls, instruction: str, task: dict[str, Any]) -> list[dict]:
+    def preview_messages(self, instruction: str, task: dict[str, Any]) -> list[dict]:
         uname = {"system": "Linux", "release": "", "version": "", "machine": ""}
-        return cls._messages(instruction, uname)
+        return self._messages(instruction, uname)
 
     def initial_messages(self, instruction: str) -> list[dict]:
         result = self.sb.run(
@@ -333,11 +390,11 @@ class MiniSweAgentEpisode(Episode):
         )
 
 
-_TMUX_SESSION = "terminus-2"
-_TMUX_SEND_KEYS_MAX_COMMAND_LENGTH = 16_000
-_MAX_OUTPUT_BYTES = 10_000
-_MAX_DURATION_SEC = 60
+_TMUX_PANE = (160, 40)  # Terminus 2's default width and height
+_MAX_DURATION_SEC = 60  # Terminus 2 caps each command's wait at a minute
 
+# Built into the task image once, so TmuxSession.start() doesn't install it
+# at the start of every episode.
 TMUX_INSTALL_COMMAND = (
     "command -v tmux"
     " || (apt-get update && apt-get install -y --no-install-recommends tmux)"
@@ -347,132 +404,106 @@ TMUX_INSTALL_COMMAND = (
 )
 
 
-def limit_output_length(output: str, max_bytes: int = _MAX_OUTPUT_BYTES) -> str:
-    """Terminus 2's ``_limit_output_length``: keep the head and tail bytes."""
-    output_bytes = output.encode("utf-8")
-    if len(output_bytes) <= max_bytes:
-        return output
-    portion_size = max_bytes // 2
-    first_portion = output_bytes[:portion_size].decode("utf-8", errors="ignore")
-    last_portion = output_bytes[-portion_size:].decode("utf-8", errors="ignore")
-    omitted_bytes = (
-        len(output_bytes)
-        - len(first_portion.encode("utf-8"))
-        - len(last_portion.encode("utf-8"))
-    )
-    return (
-        f"{first_portion}\n[... output limited to {max_bytes} bytes; "
-        f"{omitted_bytes} interior bytes omitted ...]\n{last_portion}"
-    )
-
-
-def tmux_send_keys_commands(session: str, keys: str) -> list[str]:
-    """Terminus 2's ``_tmux_send_keys`` for one key string, split to fit tmux."""
-    prefix = f"tmux send-keys -t {shlex.quote(session)} --"
-    max_escaped = _TMUX_SEND_KEYS_MAX_COMMAND_LENGTH - len(prefix.encode()) - 1
-    if len(shlex.quote(keys).encode()) <= max_escaped:
-        return [f"{prefix} {shlex.quote(keys)}"]
-    commands, remaining = [], keys
-    while remaining:
-        lo, hi, best = 1, len(remaining), 1
-        while lo <= hi:
-            mid = (lo + hi) // 2
-            if len(shlex.quote(remaining[:mid]).encode()) <= max_escaped:
-                best, lo = mid, mid + 1
-            else:
-                hi = mid - 1
-        commands.append(f"{prefix} {shlex.quote(remaining[:best])}")
-        remaining = remaining[best:]
-    return commands
+@dataclass(frozen=True)
+class _Terminus2:
+    prompt_template: str
+    parser_cls: type
+    agent_cls: type
+    tmux_session_cls: type
+    pane_log_path: str
 
 
 @functools.cache
-def _terminus_2() -> tuple[str, type]:
-    """Terminus 2's JSON prompt template and parser class, from Harbor."""
+def _terminus_2() -> _Terminus2:
+    """Terminus 2's prompt, parser, agent class and tmux session, from Harbor."""
     require_package("harbor", HARBOR_VERSION)
     from harbor.agents.terminus_2 import terminus_2
     from harbor.agents.terminus_2.terminus_json_plain_parser import (
         TerminusJSONPlainParser,
     )
+    from harbor.agents.terminus_2.tmux_session import TmuxSession
+    from harbor.models.trial.paths import EnvironmentPaths
 
     templates = Path(terminus_2.__file__).parent / "templates"
-    return (templates / "terminus-json-plain.txt").read_text(), TerminusJSONPlainParser
+    return _Terminus2(
+        prompt_template=(templates / "terminus-json-plain.txt").read_text(),
+        parser_cls=TerminusJSONPlainParser,
+        agent_cls=terminus_2.Terminus2,
+        tmux_session_cls=TmuxSession,
+        pane_log_path=str(EnvironmentPaths.agent_dir / "terminus_2.pane"),
+    )
 
 
-class Terminus2Episode(Episode):
-    """Harbor's Terminus 2 agent (JSON parser), turn for turn."""
+# TODO: add to the API reference along with HarborEnvironment.
+@exclude_from_api_reference
+class Terminus2(AgentHarness):
+    """Harbor's Terminus 2 agent (JSON parser), turn for turn.
 
-    name = Harness.TERMINUS_2
+    The terminal is Harbor's own ``TmuxSession``, driven through
+    ``SandboxEnvironment``. The agent's loop is async and talks to an LLM
+    itself, so its per-turn steps are reproduced here; the output limit and
+    completion prompt are its own methods.
+    """
+
+    name = "terminus-2"
     default_max_turns = 50
+    image_commands = (TMUX_INSTALL_COMMAND,)
 
-    def __init__(self, sb: Any, task: dict[str, Any], deadline: float) -> None:
-        super().__init__(sb, task, deadline)
-        _, parser_cls = _terminus_2()
-        self._parser = parser_cls()
-        self._previous_buffer: str | None = None
+    def setup(self, sb: Any, task: dict[str, Any], deadline: float) -> None:
+        super().setup(sb, task, deadline)
+        self._t2 = _terminus_2()
+        self._parser = self._t2.parser_cls()
+        self._session: Any = None
         self._pending_completion = False
 
-    @classmethod
-    def _messages(cls, instruction: str, terminal_state: str) -> list[dict]:
-        prompt_template, _ = _terminus_2()
-        prompt = prompt_template.format(
+    @staticmethod
+    def _messages(instruction: str, terminal_state: str) -> list[dict]:
+        prompt = _terminus_2().prompt_template.format(
             instruction=instruction, terminal_state=terminal_state
         )
         return [{"role": "user", "content": prompt}]
 
-    @classmethod
-    def preview_messages(cls, instruction: str, task: dict[str, Any]) -> list[dict]:
-        return cls._messages(instruction, "Current Terminal Screen:\n")
+    def preview_messages(self, instruction: str, task: dict[str, Any]) -> list[dict]:
+        return self._messages(instruction, "Current Terminal Screen:\n")
 
-    def _tmux(self, command: str) -> Any:
-        return self.sb.run("bash", "-c", command)
+    def _limit(self, output: str) -> str:
+        # Terminus 2's _limit_output_length doesn't use its instance.
+        return self._t2.agent_cls._limit_output_length(None, output)
 
-    def _capture(self, entire: bool) -> str:
-        extra = " -S -" if entire else ""
-        return self._tmux(f"tmux capture-pane -p{extra} -t {_TMUX_SESSION}").stdout
+    def _confirm_completion(self, terminal_output: str) -> str:
+        json_agent = SimpleNamespace(_parser_name="json")
+        return self._t2.agent_cls._get_completion_confirmation_message(
+            json_agent, terminal_output
+        )
 
-    def _incremental_output(self) -> str:
-        """Terminus 2's ``get_incremental_output``."""
-        current = self._capture(entire=True)
-        if self._previous_buffer is None:
-            self._previous_buffer = current
-            return f"Current Terminal Screen:\n{self._capture(entire=False)}"
-        previous = self._previous_buffer.strip()
-        new_content = None
-        if previous in current:
-            idx = current.index(previous)
-            if "\n" in previous:
-                idx = previous.rfind("\n")
-            new_content = current[idx:]
-        self._previous_buffer = current
-        if new_content is not None and new_content.strip():
-            return f"New Terminal Output:\n{new_content}"
-        return f"Current Terminal Screen:\n{self._capture(entire=False)}"
+    def _output(self) -> str:
+        return self._limit(asyncio.run(self._session.get_incremental_output()))
 
     def initial_messages(self, instruction: str) -> list[dict]:
-        env = "".join(
-            f"-e {shlex.quote(f'{k}={v}')} "
-            for k, v in self.task.get("env", {}).items()
-        )
-        started = self._tmux(
-            "export TERM=xterm-256color && export SHELL=/bin/bash && "
-            f"tmux new-session {env}-x 160 -y 40 -d -s {_TMUX_SESSION} 'bash --login'"
-        )
-        if started.returncode != 0:
-            raise RuntimeError(f"Failed to start tmux session: {started.stderr}")
-        self._tmux("tmux set-option -g history-limit 10000000")
-        terminal_state = limit_output_length(self._incremental_output())
-        return self._messages(instruction, terminal_state)
+        from harbor.models.task.config import EnvironmentConfig
 
-    def _send(self, keystrokes: str, duration: float) -> None:
-        start = time.monotonic()
-        for command in tmux_send_keys_commands(_TMUX_SESSION, keystrokes):
-            sent = self._tmux(command)
-            if sent.returncode != 0:
-                raise RuntimeError(f"tmux send-keys failed: {sent.stderr}")
-        wait = min(duration, self.time_left()) - (time.monotonic() - start)
-        if wait > 0:
-            time.sleep(wait)
+        from modal_dojo.common.harbor_sandbox import SandboxEnvironment
+
+        environment = SandboxEnvironment(
+            self.sb,
+            name=self.task["task_name"],
+            env_config=EnvironmentConfig(env=self.task.get("env", {})),
+            timeout_sec=max(1, int(self.time_left())),
+        )
+        pane_log = self._t2.pane_log_path
+        self.sb.run("mkdir", "-p", str(Path(pane_log).parent))
+        width, height = _TMUX_PANE
+        self._session = self._t2.tmux_session_cls(
+            session_name=self.name,
+            environment=environment,
+            logging_path=pane_log,
+            local_asciinema_recording_path=None,
+            remote_asciinema_recording_path=None,
+            pane_width=width,
+            pane_height=height,
+        )
+        asyncio.run(self._session.start())
+        return self._messages(instruction, self._output())
 
     def step(self, response: str) -> str | None:
         result = self._parser.parse_response(response)
@@ -493,43 +524,24 @@ class Terminus2Episode(Episode):
             return None
 
         for command in result.commands:
-            self._send(command.keystrokes, min(command.duration, _MAX_DURATION_SEC))
-        terminal_output = limit_output_length(self._incremental_output())
+            wait = max(0.0, min(command.duration, _MAX_DURATION_SEC, self.time_left()))
+            asyncio.run(
+                self._session.send_keys(
+                    command.keystrokes, block=False, min_timeout_sec=wait
+                )
+            )
+        terminal_output = self._output()
 
         if result.is_task_complete:
             if self._pending_completion:
                 self.metadata["exit_status"] = "TaskComplete"
                 return None
             self._pending_completion = True
-            return (
-                f"Current terminal state:\n{terminal_output}\n\n"
-                "Are you sure you want to mark the task as complete? "
-                "This will trigger your solution to be graded and you won't be able to "
-                'make any further corrections. If so, include "task_complete": true '
-                "in your JSON response again."
-            )
+            return self._confirm_completion(terminal_output)
         self._pending_completion = False
         if "WARNINGS:" in feedback:
             return (
                 f"Previous response had warnings:\n{feedback}\n\n"
-                f"{limit_output_length(terminal_output)}"
+                f"{self._limit(terminal_output)}"
             )
-        return limit_output_length(terminal_output)
-
-
-EPISODES: dict[Harness, type[Episode]] = {
-    cls.name: cls for cls in (BashEpisode, MiniSweAgentEpisode, Terminus2Episode)
-}
-
-
-def parse_harness(harness: Harness | str) -> Harness:
-    try:
-        return Harness(harness)
-    except ValueError:
-        raise DojoConfigError(
-            f"Unknown harness {harness!r}; choose one of {[h.value for h in Harness]}"
-        ) from None
-
-
-def episode_class(harness: Harness | str) -> type[Episode]:
-    return EPISODES[parse_harness(harness)]
+        return self._limit(terminal_output)

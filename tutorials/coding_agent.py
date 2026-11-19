@@ -28,8 +28,8 @@
 from modal_dojo import (
     Budget,
     HarborEnvironment,
-    Harness,
     ManagedTrainConfig,
+    MiniSweAgent,
     Qwen3_5_4B,
 )
 
@@ -43,16 +43,21 @@ from modal_dojo import (
 #
 # The `harness` decides how the model works in the container:
 #
-# - `Harness.BASH`: one fenced bash block per reply; it sees the exit code and output.
-# - `Harness.MINI_SWE_AGENT`: [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)'s
+# - `BashHarness()`: one fenced bash block per reply; it sees the exit code and
+#   output.
+# - `MiniSweAgent()`: [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)'s
 #   text-based agent, with its own prompts: one command per reply, and it
 #   submits by printing `COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
-# - `Harness.TERMINUS_2`: Harbor's Terminus 2 agent: JSON replies send keystrokes to
+# - `Terminus2()`: Harbor's Terminus 2 agent: JSON replies send keystrokes to
 #   a tmux session.
 #
 # Each is reproduced turn for turn on the model's own tokens, so the model is
-# trained in exactly the harness you'll run it in. For software-engineering
-# agents, swap in a dataset like `swesmith@1.0` or `swe-gen-js@1.0`.
+# trained in exactly the harness you'll run it in. To train in a harness of
+# your own, subclass `AgentHarness`: its `step` method gets each model reply
+# and the episode's sandbox, and returns what the model sees next.
+#
+# For software-engineering agents, swap in a dataset like `swesmith@1.0` or
+# `swe-gen-js@1.0`.
 
 # ## Train
 #
@@ -70,7 +75,7 @@ from modal_dojo import (
 
 config = ManagedTrainConfig(
     Qwen3_5_4B(),
-    HarborEnvironment("hello-world", harness=Harness.MINI_SWE_AGENT, max_turns=8),
+    HarborEnvironment("hello-world", harness=MiniSweAgent(), max_turns=8),
     Budget(max_rollouts=10, max_cost_usd=20),
     recipe_overrides={
         "n_samples_per_prompt": 8,
