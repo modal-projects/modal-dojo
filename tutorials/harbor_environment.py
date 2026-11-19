@@ -17,7 +17,13 @@
 # that same container, and the reward they write is the training reward, the
 # same score `harbor run` would give that trajectory.
 
-from modal_dojo import Budget, HarborEnvironment, ManagedTrainConfig, Qwen3_5_4B
+from modal_dojo import (
+    Budget,
+    HarborEnvironment,
+    Harness,
+    ManagedTrainConfig,
+    Qwen3_5_4B,
+)
 
 # ## Choose the tasks and harness
 #
@@ -29,11 +35,11 @@ from modal_dojo import Budget, HarborEnvironment, ManagedTrainConfig, Qwen3_5_4B
 #
 # The `harness` decides how the model works in the container:
 #
-# - `"bash"`: one fenced bash block per reply; it sees the exit code and output.
-# - `"mini-swe-agent"`: [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)'s
+# - `Harness.BASH`: one fenced bash block per reply; it sees the exit code and output.
+# - `Harness.MINI_SWE_AGENT`: [mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent)'s
 #   text-based agent, with its own prompts: one command per reply, and it
 #   submits by printing `COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`.
-# - `"terminus-2"`: Harbor's Terminus 2 agent: JSON replies send keystrokes to
+# - `Harness.TERMINUS_2`: Harbor's Terminus 2 agent: JSON replies send keystrokes to
 #   a tmux session.
 #
 # Each is reproduced turn for turn on the model's own tokens, so the model is
@@ -56,7 +62,7 @@ from modal_dojo import Budget, HarborEnvironment, ManagedTrainConfig, Qwen3_5_4B
 
 config = ManagedTrainConfig(
     Qwen3_5_4B(),
-    HarborEnvironment("hello-world", harness="mini-swe-agent", max_turns=8),
+    HarborEnvironment("hello-world", harness=Harness.MINI_SWE_AGENT, max_turns=8),
     Budget(max_rollouts=10, max_cost_usd=20),
     recipe_overrides={
         "n_samples_per_prompt": 8,

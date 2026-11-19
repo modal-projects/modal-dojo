@@ -6,12 +6,22 @@ import re
 import shlex
 import time
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Literal, get_args
+from enum import Enum
+from typing import Any, ClassVar
 
+from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.errors import DojoConfigError
 
-HarnessName = Literal["bash", "mini-swe-agent", "terminus-2"]
-HARNESS_NAMES: tuple[str, ...] = get_args(HarnessName)
+
+# TODO: add to the API reference along with HarborEnvironment.
+@exclude_from_api_reference
+class Harness(str, Enum):
+    """How the model works in a Harbor task's container."""
+
+    BASH = "bash"
+    MINI_SWE_AGENT = "mini-swe-agent"
+    TERMINUS_2 = "terminus-2"
+
 
 SCRATCH_DIR = "/tmp/modal-dojo-harbor"
 
@@ -57,7 +67,7 @@ def run_shell(
 class Episode(ABC):
     """One harness-driven episode in one sandbox."""
 
-    name: ClassVar[str]
+    name: ClassVar[Harness]
     default_max_turns: ClassVar[int]
 
     def __init__(self, sb: Any, task: dict[str, Any], deadline: float) -> None:
@@ -122,7 +132,7 @@ def format_observation(exit_code: int, output: str, *, max_chars: int) -> str:
 
 
 class BashEpisode(Episode):
-    name = "bash"
+    name = Harness.BASH
     default_max_turns = 1
 
     @classmethod
@@ -160,7 +170,7 @@ def _render(template: str, **variables: Any) -> str:
 class MiniSweAgentEpisode(Episode):
     """mini-swe-agent's ``mini_textbased.yaml`` agent, turn for turn."""
 
-    name = "mini-swe-agent"
+    name = Harness.MINI_SWE_AGENT
     default_max_turns = 50
 
     @classmethod
@@ -299,7 +309,7 @@ def tmux_send_keys_commands(session: str, keys: str) -> list[str]:
 class Terminus2Episode(Episode):
     """Harbor's Terminus 2 agent (JSON parser), turn for turn."""
 
-    name = "terminus-2"
+    name = Harness.TERMINUS_2
     default_max_turns = 50
 
     def __init__(self, sb: Any, task: dict[str, Any], deadline: float) -> None:
@@ -418,15 +428,19 @@ class Terminus2Episode(Episode):
         return limit_output_length(terminal_output)
 
 
-EPISODES: dict[str, type[Episode]] = {
+EPISODES: dict[Harness, type[Episode]] = {
     cls.name: cls for cls in (BashEpisode, MiniSweAgentEpisode, Terminus2Episode)
 }
 
 
-def episode_class(harness: str) -> type[Episode]:
+def parse_harness(harness: Harness | str) -> Harness:
     try:
-        return EPISODES[harness]
-    except KeyError:
+        return Harness(harness)
+    except ValueError:
         raise DojoConfigError(
-            f"Unknown harness {harness!r}; choose one of {list(HARNESS_NAMES)}"
+            f"Unknown harness {harness!r}; choose one of {[h.value for h in Harness]}"
         ) from None
+
+
+def episode_class(harness: Harness | str) -> type[Episode]:
+    return EPISODES[parse_harness(harness)]

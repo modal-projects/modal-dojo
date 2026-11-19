@@ -12,6 +12,7 @@ import pytest
 from modal_dojo import Environment, HarborEnvironment
 from modal_dojo.common import harbor_environment as he
 from modal_dojo.common import harbor_harnesses as hh
+from modal_dojo.common.harbor_harnesses import Harness
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.sandbox import SandboxResult
 
@@ -61,7 +62,7 @@ def test_dataset_rows_prompt_with_instruction_and_pack_task(tmp_path):
         ),
     )
     _make_task(tmp_path, "a-task")
-    env = HarborEnvironment(str(tmp_path), system_prompt="sys", harness="bash")
+    env = HarborEnvironment(str(tmp_path), system_prompt="sys", harness=Harness.BASH)
 
     rows = list(env.dataset.rows())
     assert [r["messages"][1]["content"] for r in rows] == [
@@ -85,19 +86,19 @@ def test_dataset_rows_prompt_with_instruction_and_pack_task(tmp_path):
 
 def test_dataset_is_stable_and_validates_columns(tmp_path):
     _make_task(tmp_path, "t")
-    env = HarborEnvironment(str(tmp_path), harness="bash")
+    env = HarborEnvironment(str(tmp_path), harness=Harness.BASH)
     out = tmp_path / "out.jsonl"
     env.dataset.write(str(out))
     env.dataset.validate_written(str(out))
     assert (
         env.dataset.cache_key()
-        == HarborEnvironment(str(tmp_path), harness="bash").dataset.cache_key()
+        == HarborEnvironment(str(tmp_path), harness=Harness.BASH).dataset.cache_key()
     )
 
 
 def test_docker_image_wins_over_dockerfile(tmp_path):
     _make_task(tmp_path, "t", toml="[environment]\ndocker_image = 'python:3.12'\n")
-    assert _label(HarborEnvironment(str(tmp_path), harness="bash"))["image"] == {
+    assert _label(HarborEnvironment(str(tmp_path), harness=Harness.BASH))["image"] == {
         "docker_image": "python:3.12"
     }
 
@@ -108,17 +109,19 @@ def test_task_selection(tmp_path):
     assert [
         d.name
         for d in HarborEnvironment(
-            str(tmp_path), max_tasks=2, harness="bash"
+            str(tmp_path), max_tasks=2, harness=Harness.BASH
         ).task_dirs()
     ] == ["a", "b"]
     assert [
         d.name
         for d in HarborEnvironment(
-            str(tmp_path), task_names=["c"], harness="bash"
+            str(tmp_path), task_names=["c"], harness=Harness.BASH
         ).task_dirs()
     ] == ["c"]
     with pytest.raises(DojoConfigError, match="not found"):
-        HarborEnvironment(str(tmp_path), task_names=["zzz"], harness="bash").task_dirs()
+        HarborEnvironment(
+            str(tmp_path), task_names=["zzz"], harness=Harness.BASH
+        ).task_dirs()
 
 
 @pytest.mark.parametrize(
@@ -132,7 +135,7 @@ def test_task_selection(tmp_path):
 def test_unsupported_tasks_are_rejected(tmp_path, toml, dockerfile, match):
     _make_task(tmp_path, "t", toml=toml, dockerfile=dockerfile)
     with pytest.raises(DojoConfigError, match=match):
-        _ = HarborEnvironment(str(tmp_path), harness="bash").dataset
+        _ = HarborEnvironment(str(tmp_path), harness=Harness.BASH).dataset
 
 
 @pytest.mark.parametrize(
@@ -183,7 +186,7 @@ def test_parse_source(source, spec):
 )
 def test_local_and_unknown_sources_are_rejected(source):
     with pytest.raises(DojoConfigError, match="Local paths are not supported"):
-        HarborEnvironment(source, harness="bash")
+        HarborEnvironment(source, harness=Harness.BASH)
 
 
 def test_pinned_github_commit_is_cached(tmp_path, monkeypatch):
@@ -203,7 +206,7 @@ def test_pinned_github_commit_is_cached(tmp_path, monkeypatch):
 
 
 def test_reward_fn_ships_as_import_path():
-    fn = HarborEnvironment("hello-world", harness="bash").reward_fn
+    fn = HarborEnvironment("hello-world", harness=Harness.BASH).reward_fn
     assert f"{fn.__module__}.{fn.__name__}" == (
         "modal_dojo.common.harbor_environment.harbor_reward"
     )
@@ -288,7 +291,7 @@ def test_reward_runs_answer_before_tests_and_reads_reward(tmp_path, fake_sandbox
         "t",
         toml="[verifier]\nenv = { TOKEN = '${HARBOR_TEST_TOKEN}' }\n",
     )
-    env = HarborEnvironment(str(tmp_path), harness="bash")
+    env = HarborEnvironment(str(tmp_path), harness=Harness.BASH)
     fake_sandbox.reward_files = {"reward.txt": "0.75\n"}
 
     reward = asyncio.run(
@@ -308,7 +311,7 @@ def test_reward_runs_answer_before_tests_and_reads_reward(tmp_path, fake_sandbox
 
 def test_reward_is_zero_without_script_or_reward(tmp_path, fake_sandbox):
     _make_task(tmp_path, "t")
-    env = HarborEnvironment(str(tmp_path), harness="bash")
+    env = HarborEnvironment(str(tmp_path), harness=Harness.BASH)
 
     assert asyncio.run(env.reward_fn(None, _sample(env, "I can't"))) == 0.0
     assert fake_sandbox.instances == []
@@ -379,7 +382,7 @@ def _generation(text, finish="stop"):
 def multi_turn(tmp_path, monkeypatch, fake_sandbox):
     _make_task(tmp_path, "t")
     env = HarborEnvironment(
-        str(tmp_path), max_turns=3, max_output_chars=20, harness="bash"
+        str(tmp_path), max_turns=3, max_output_chars=20, harness=Harness.BASH
     )
     row = list(env.dataset.rows())[0]
     posts: list[dict] = []
@@ -410,13 +413,16 @@ def _run(mt, sample=None):
 
 
 def test_generate_fn_only_for_multi_turn(tmp_path):
-    assert HarborEnvironment("x", harness="bash").generate_fn is None
-    fn = HarborEnvironment("x", max_turns=2, harness="bash").generate_fn
+    assert HarborEnvironment("x", harness=Harness.BASH).generate_fn is None
+    fn = HarborEnvironment("x", max_turns=2, harness=Harness.BASH).generate_fn
     assert f"{fn.__module__}.{fn.__name__}" == (
         "modal_dojo.common.harbor_environment.harbor_generate"
     )
-    assert HarborEnvironment("x", harness="mini-swe-agent").generate_fn is fn
-    assert HarborEnvironment("x", harness="terminus-2", max_turns=1).generate_fn is fn
+    assert HarborEnvironment("x", harness=Harness.MINI_SWE_AGENT).generate_fn is fn
+    assert (
+        HarborEnvironment("x", harness=Harness.TERMINUS_2, max_turns=1).generate_fn
+        is fn
+    )
 
 
 def test_multi_turn_episode_masks_observations_and_scores_in_sandbox(multi_turn):
@@ -572,7 +578,7 @@ def test_observation_tokens_close_turn_and_open_next(tokenizer):
 def test_memory_sizes(tmp_path, toml, memory_mb):
     _make_task(tmp_path, "t", toml=toml)
     assert (
-        _label(HarborEnvironment(str(tmp_path), harness="bash"))["memory_mb"]
+        _label(HarborEnvironment(str(tmp_path), harness=Harness.BASH))["memory_mb"]
         == memory_mb
     )
 
@@ -584,7 +590,7 @@ def test_managed_config_trains_on_a_harbor_environment(tmp_path):
     from modal_dojo import Budget, ManagedTrainConfig, Qwen3_5_4B
 
     _make_task(tmp_path, "t")
-    env = HarborEnvironment(str(tmp_path), harness="mini-swe-agent")
+    env = HarborEnvironment(str(tmp_path), harness=Harness.MINI_SWE_AGENT)
     assert isinstance(env, Environment)
 
     recipe = ManagedTrainConfig(Qwen3_5_4B(), env, Budget(max_rollouts=7)).recipe
@@ -604,28 +610,30 @@ def test_harness_is_validated():
     with pytest.raises(DojoConfigError, match="Unknown harness"):
         HarborEnvironment("x", harness="claude-code")
     with pytest.raises(DojoConfigError, match="bash harness only"):
-        HarborEnvironment("x", harness="terminus-2", system_prompt="hi")
-    assert HarborEnvironment("x", harness="bash").max_turns == 1
-    assert HarborEnvironment("x", harness="mini-swe-agent").max_turns == 50
-    assert HarborEnvironment("x", harness="terminus-2").max_turns == 50
+        HarborEnvironment("x", harness=Harness.TERMINUS_2, system_prompt="hi")
+    assert HarborEnvironment("x", harness=Harness.BASH).max_turns == 1
+    assert HarborEnvironment("x", harness=Harness.MINI_SWE_AGENT).max_turns == 50
+    assert HarborEnvironment("x", harness=Harness.TERMINUS_2).max_turns == 50
 
 
 def test_dataset_rows_preview_each_harness(tmp_path):
     _make_task(tmp_path, "t")
     multi = list(
-        HarborEnvironment(str(tmp_path), harness="bash", max_turns=2).dataset.rows()
+        HarborEnvironment(
+            str(tmp_path), harness=Harness.BASH, max_turns=2
+        ).dataset.rows()
     )[0]["messages"]
     assert "one step at a time" in multi[0]["content"]
 
     mini = list(
-        HarborEnvironment(str(tmp_path), harness="mini-swe-agent").dataset.rows()
+        HarborEnvironment(str(tmp_path), harness=Harness.MINI_SWE_AGENT).dataset.rows()
     )[0]["messages"]
     assert [m["role"] for m in mini] == ["system", "user"]
     assert "```mswea_bash_command" in mini[0]["content"]
     assert mini[1]["content"].startswith("Please solve this issue: Create /app/t.txt")
 
     (terminus,) = list(
-        HarborEnvironment(str(tmp_path), harness="terminus-2").dataset.rows()
+        HarborEnvironment(str(tmp_path), harness=Harness.TERMINUS_2).dataset.rows()
     )[0]["messages"]
     assert terminus["role"] == "user"
     assert "Task Description:\nCreate /app/t.txt" in terminus["content"]
@@ -634,7 +642,7 @@ def test_dataset_rows_preview_each_harness(tmp_path):
 
 def test_reward_fn_rejects_agent_harness_rows(tmp_path):
     _make_task(tmp_path, "t")
-    env = HarborEnvironment(str(tmp_path), harness="mini-swe-agent", max_turns=1)
+    env = HarborEnvironment(str(tmp_path), harness=Harness.MINI_SWE_AGENT, max_turns=1)
     row = list(env.dataset.rows())[0]
     sample = SimpleNamespace(label=row["label"], response="```bash\nls\n```")
     with pytest.raises(DojoConfigError, match="mini-swe-agent"):
@@ -667,7 +675,7 @@ class _ShellRecorder:
 def _mini_episode(monkeypatch, *results):
     shell = _ShellRecorder(*results)
     monkeypatch.setattr(hh, "run_shell", shell)
-    episode = hh.MiniSweAgentEpisode(None, _task("mini-swe-agent"), deadline=1e18)
+    episode = hh.MiniSweAgentEpisode(None, _task(Harness.MINI_SWE_AGENT), deadline=1e18)
     return episode, shell
 
 
@@ -755,7 +763,7 @@ def _terminus(commands, complete=False):
 def test_terminus_2_drives_tmux_and_shows_new_output(monkeypatch):
     monkeypatch.setattr(hh.time, "sleep", lambda s: None)
     sb = _FakeTmuxSandbox()
-    episode = hh.Terminus2Episode(sb, _task("terminus-2", env={"A": "1"}), 1e18)
+    episode = hh.Terminus2Episode(sb, _task(Harness.TERMINUS_2, env={"A": "1"}), 1e18)
 
     (message,) = episode.initial_messages("Do it.")
     assert (
@@ -772,7 +780,7 @@ def test_terminus_2_drives_tmux_and_shows_new_output(monkeypatch):
 
 def test_terminus_2_parse_errors_warnings_and_double_completion(monkeypatch):
     monkeypatch.setattr(hh.time, "sleep", lambda s: None)
-    episode = hh.Terminus2Episode(_FakeTmuxSandbox(), _task("terminus-2"), 1e18)
+    episode = hh.Terminus2Episode(_FakeTmuxSandbox(), _task(Harness.TERMINUS_2), 1e18)
     episode.initial_messages("Do it.")
 
     error = episode.step("not json")
@@ -806,7 +814,7 @@ def test_context_length_passes_through_and_caps_rollouts(tmp_path, multi_turn):
     from modal_dojo import Budget, ManagedTrainConfig, Qwen3_5_4B
 
     env = HarborEnvironment(
-        str(tmp_path), harness="bash", max_turns=2, max_context_len=8192
+        str(tmp_path), harness=Harness.BASH, max_turns=2, max_context_len=8192
     )
     assert env.max_context_len == 8192
     recipe = ManagedTrainConfig(Qwen3_5_4B(), env, Budget(max_rollouts=1)).recipe

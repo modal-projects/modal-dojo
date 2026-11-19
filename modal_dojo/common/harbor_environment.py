@@ -27,10 +27,11 @@ from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.harbor_harnesses import (
     SCRATCH_DIR,
     TMUX_INSTALL_COMMAND,
-    HarnessName,
+    Harness,
     env_assignments,
     episode_class,
     extract_script,
+    parse_harness,
     run_shell,
 )
 
@@ -265,7 +266,7 @@ class HarborEnvironment(Environment):
     ```python
     run = ManagedTrainConfig(
         Qwen3_5_4B(),
-        HarborEnvironment("swesmith@1.0", harness="mini-swe-agent"),
+        HarborEnvironment("swesmith@1.0", harness=Harness.MINI_SWE_AGENT),
         Budget(max_cost_usd=100),
     ).train()
     ```
@@ -275,7 +276,7 @@ class HarborEnvironment(Environment):
 
     Attributes:
         source: A Harbor hub dataset (``name[@version]``) or a public GitHub URL.
-        harness: ``"bash"``, ``"mini-swe-agent"``, or ``"terminus-2"``.
+        harness: A ``Harness``: ``BASH``, ``MINI_SWE_AGENT``, or ``TERMINUS_2``.
         task_names: Only use these tasks.
         max_tasks: Use at most this many tasks.
         max_turns: Model replies per episode (default: 1 for bash, else 50).
@@ -289,7 +290,7 @@ class HarborEnvironment(Environment):
         self,
         source: str,
         *,
-        harness: HarnessName,
+        harness: Harness,
         task_names: list[str] | None = None,
         max_tasks: int | None = None,
         max_turns: int | None = None,
@@ -299,14 +300,15 @@ class HarborEnvironment(Environment):
         max_context_len: int | None = None,
     ) -> None:
         self._source_spec = _parse_source(source)
+        harness = parse_harness(harness)
         episode = episode_class(harness)
         if max_turns is None:
             max_turns = episode.default_max_turns
         if max_turns < 1:
             raise DojoConfigError(f"max_turns must be at least 1, got {max_turns}")
-        if system_prompt is not None and harness != "bash":
+        if system_prompt is not None and harness != Harness.BASH:
             raise DojoConfigError(
-                f"system_prompt applies to the bash harness only; {harness!r} "
+                f"system_prompt applies to the bash harness only; {harness.value!r} "
                 "uses its own prompts"
             )
         self.source = source
@@ -323,7 +325,7 @@ class HarborEnvironment(Environment):
     @property
     def single_turn(self) -> bool:
         """Whether the framework's own generation and ``reward_fn`` suffice."""
-        return self.harness == "bash" and self.max_turns == 1
+        return self.harness == Harness.BASH and self.max_turns == 1
 
     def task_dirs(self) -> list[Path]:
         """The Harbor task directories this environment trains on."""
@@ -410,7 +412,7 @@ def _task_image(task: dict[str, Any]):
     import modal
 
     image_spec = task["image"]
-    needs_tmux = task.get("harness") == "terminus-2"
+    needs_tmux = task.get("harness") == Harness.TERMINUS_2
     key = hashlib.sha256(
         json.dumps([image_spec, needs_tmux], sort_keys=True).encode()
     ).hexdigest()
@@ -498,7 +500,7 @@ def _verify(task: dict[str, Any], script: str) -> float:
 async def harbor_reward(args: Any, sample: Any, **kwargs: Any) -> float:
     """Slime/Miles ``custom_rm`` for rows built by ``HarborEnvironment``."""
     task = _load_task(sample)
-    if task["harness"] != "bash" or task["max_turns"] > 1:
+    if task["harness"] != Harness.BASH or task["max_turns"] > 1:
         raise DojoConfigError(
             f"Harbor task {task['task_name']!r} uses the {task['harness']!r} "
             f"harness for {task['max_turns']} turn(s); pass "
