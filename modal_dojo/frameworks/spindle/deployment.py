@@ -134,7 +134,9 @@ def request_json(client: httpx.Client, method: str, path: str, **kwargs) -> dict
     return body
 
 
-def ensure_backend(client: httpx.Client, requirements: Requirements) -> dict:
+def ensure_backend(
+    client: httpx.Client, requirements: Requirements, *, provision: bool = True
+) -> dict | None:
     rows = request_json(client, "GET", DEPLOYMENTS_PATH)["deployments"]
     matches = [row for row in rows if requirements.fits(row)]
     config = None
@@ -156,7 +158,7 @@ def ensure_backend(client: httpx.Client, requirements: Requirements) -> dict:
                 row["name"],
             ),
         )
-        if selected.get("apps", "ready") == "ready":
+        if not provision or selected.get("apps", "ready") == "ready":
             return selected
         name = selected["name"]
         if selected.get("apps") in {"missing", "failed"}:
@@ -164,6 +166,8 @@ def ensure_backend(client: httpx.Client, requirements: Requirements) -> dict:
                 client, "POST", DEPLOYMENTS_PATH, json={"name": name, "base": name}
             )
     else:
+        if not provision:
+            return None
         logger.info("Adding Spindle backend %s", name)
         request_json(
             client,

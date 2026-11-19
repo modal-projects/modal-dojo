@@ -27,6 +27,7 @@ def launch(recipe, *, show_output: bool = True, yes: bool = False) -> TrainingRu
     from modal_dojo.train_recipes.base import CHECKPOINTS_PATH
 
     from .connection import resolve_connection
+    from .launcher import check_server
     from .reporting import new_training_run
 
     require_migrated_config()
@@ -43,6 +44,8 @@ def launch(recipe, *, show_output: bool = True, yes: bool = False) -> TrainingRu
     connection = resolve_connection(
         recipe.base_url, recipe._api_key, recipe.requirements, yes=yes
     )
+    if connection.base_url and connection.api_key:
+        check_server(connection.base_url, connection.api_key, recipe.requirements)
     log_dir = f"{CHECKPOINTS_PATH}/{training_run_id}"
     status_display = TrainStatusDisplay(
         run_id=training_run_id,
@@ -183,8 +186,8 @@ def build_spindle_app(
 
 
 def spindle_requirements() -> list[str]:
-    """modal-dojo's own pins plus its ``spindle`` extra."""
-    from importlib.metadata import PackageNotFoundError, requires, version
+    """Client pins plus Spindle for provisioning in the driver."""
+    from importlib.metadata import requires
 
     from packaging.requirements import Requirement
 
@@ -198,10 +201,5 @@ def spindle_requirements() -> list[str]:
         ):
             requirement.marker = None
             pins.append(str(requirement))
-    try:
-        version("modal-spindle")
-    except PackageNotFoundError:
-        pass
-    else:
-        pins.append(SPINDLE_REQUIREMENT)
+    pins.append(SPINDLE_REQUIREMENT)
     return pins

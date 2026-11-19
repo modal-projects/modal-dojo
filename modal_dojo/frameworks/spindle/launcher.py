@@ -26,8 +26,9 @@ def check_server(
     requirements: Requirements,
     *,
     server_app: str | None = None,
+    provision: bool = False,
 ) -> dict[str, str | int | None]:
-    """Validate any Tinker service; provision and select only on Spindle."""
+    """Validate a Tinker service; only the driver may provision Spindle backends."""
     base_url = validate_url(base_url)
     with httpx.Client(
         base_url=base_url,
@@ -41,13 +42,15 @@ def check_server(
                 "Check that deployment, or provide an explicit server URL and key."
             )
         if info.get("spindle_version"):
-            selected = ensure_backend(client, requirements)
+            selected = ensure_backend(client, requirements, provision=provision)
             return {
                 "spindle_base_url": base_url,
                 "spindle_version": info["spindle_version"],
                 "spindle_commit": info.get("spindle_commit"),
-                "spindle_deployment": selected["name"],
-                "spindle_context_length": selected["max_context_length"],
+                "spindle_deployment": selected["name"] if selected else None,
+                "spindle_context_length": selected["max_context_length"]
+                if selected
+                else None,
             }
         if requirements.overrides:
             raise DojoConfigError(
@@ -153,6 +156,7 @@ async def run_program(
             api_key,
             requirements,
             server_app=server_app,
+            provision=True,
         )
         run.metadata.update(server)
         await run.save(is_async=True)

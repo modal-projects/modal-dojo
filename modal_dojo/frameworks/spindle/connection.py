@@ -182,9 +182,13 @@ def deploy_server(config, environment: str) -> Connection:
         environment_name=environment,
         allow_existing=True,
     )
-    _secret_exists(
+    if not _secret_exists(
         proxy_secret, environment, ["MODAL_PROXY_TOKEN_ID", "MODAL_PROXY_TOKEN_SECRET"]
-    )
+    ):
+        raise DojoConfigError(
+            f"Spindle's sampler proxy Secret {proxy_secret!r} is missing "
+            f"from environment {environment!r}."
+        )
     hf_secret = config.platform["secrets"].get("huggingface")
     if hf_secret and not _secret_exists(hf_secret, environment, ["HF_TOKEN"]):
         config.platform["secrets"]["huggingface"] = None
