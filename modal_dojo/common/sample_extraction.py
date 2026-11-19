@@ -304,7 +304,11 @@ def _extract_inference_metadata(sample: Any) -> dict[str, Any] | None:
 
     total = _coerce_int(_duck_get(prefix_info, "total_prompt_tokens", 0))
     cached = _coerce_int(_duck_get(prefix_info, "cached_tokens", 0))
-    resp_len = _duck_get(sample, "response_length")
+    # Multi-turn response_length includes tool observations; Miles exposes the
+    # generated-token count separately through its observation loss mask.
+    resp_len = _duck_get(sample, "effective_response_length")
+    if resp_len is None:
+        resp_len = _duck_get(sample, "response_length")
 
     inference: dict[str, Any] = {
         "tokens_in": total,

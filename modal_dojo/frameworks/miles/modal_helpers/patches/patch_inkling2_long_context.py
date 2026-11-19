@@ -2,6 +2,14 @@
 
 Image: radixark/miles:inkling-2-small@sha256:a2e3c49d5a266d9374d67ca4b706767b7bdf7d798958dd51520f61c29597e9a5
 The recipe also applies the existing, generic MoE sequence-chunk patch.
+
+Upstream Inkling support (#4819) still builds full relative-bias and residual
+mixing tensors; its recomputed layer inputs also retain the residual history.
+TODO: replace the streamed head when upstream supports Inkling's fp32 softcap
+and native head LoRA. The merged fused_lm_head path (#4645) rejects head LoRA;
+the open chunked-head proposals are not drop-in replacements for this path:
+https://github.com/radixark/miles/pull/1136
+https://github.com/radixark/miles/pull/1068
 """
 
 from pathlib import Path

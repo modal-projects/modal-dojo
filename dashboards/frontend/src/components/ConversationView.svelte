@@ -266,7 +266,7 @@
 
 {#if parsed.length}
 <div class="flex flex-col gap-[2px]">
-  {#if thinking}
+  {#if thinking && !(Array.isArray(messages) && messages.length)}
     <div class="turn turn-thinking">
       <div class="turn-header">
         <span class="text-[10px] font-[600] uppercase tracking-[0.05em] p-[2px_6px] rounded-[3px] bg-[rgba(168,139,250,0.12)] text-[#a78bfa]">Thinking</span>
