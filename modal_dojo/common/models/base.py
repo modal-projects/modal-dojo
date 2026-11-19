@@ -291,10 +291,13 @@ _QWEN3_XML_PARAM_RE = re.compile(
 
 
 def _parse_json_tool_block(block: str) -> ToolCall | None:
-    """Qwen3 wire format: the ``<tool_call>`` body is one JSON object."""
+    """Decode a JSON tool body; Inkling uses ``args`` for its arguments."""
     try:
         data = json.loads(block)
-        return ToolCall(name=data.get("name", ""), arguments=data.get("arguments", {}))
+        return ToolCall(
+            name=data.get("name", ""),
+            arguments=data.get("arguments", data.get("args", {})),
+        )
     except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         return None
 
