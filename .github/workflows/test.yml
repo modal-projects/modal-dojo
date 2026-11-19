@@ -49,6 +49,12 @@ jobs:
       - name: Run tests
         run: uv run pytest tests/ -v
 
+      - name: Check Inkling memory transformations against dense PyTorch
+        if: runner.os == 'Linux'
+        run: |
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+          uv run pytest tests/test_inkling2_long_context.py -v
+
       - name: Verify package builds
         run: uv build
 

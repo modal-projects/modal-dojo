@@ -8,6 +8,9 @@ on:
       - "modal_dojo/train_recipes/miles_recipe/recipe.py"
       - "scripts/fetch_miles_patch_snapshots.py"
       - "tests/testdata/miles/*.input"
+      - "modal_dojo/train_recipes/miles_recipe/inkling_2_small*.py"
+      - "scripts/fetch_inkling2_patch_snapshots.py"
+      - "tests/testdata/miles/inkling2_long_context/*.input"
 
 jobs:
   validate-snapshot:
@@ -40,3 +43,22 @@ jobs:
         run: |
           git add -A -- tests/testdata/miles
           git diff --cached --exit-code -- tests/testdata/miles
+
+  validate-inkling-snapshot:
+    runs-on: ubuntu-latest
+    environment: modal
+    permissions:
+      contents: read
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      MODAL_ENVIRONMENT: training-gym
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version-file: ".python-version"
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - run: uv sync --group dev
+      - run: uv run modal run scripts/fetch_inkling2_patch_snapshots.py
+      - run: git diff --exit-code -- tests/testdata/miles/inkling2_long_context
