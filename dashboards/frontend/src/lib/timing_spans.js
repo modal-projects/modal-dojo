@@ -28,6 +28,7 @@ export function collect(timings) {
           role,
           group: role === "rollout" ? "generation" : "step",
           name,
+          partial: lane.final === false,
           category: categoryOf(name),
         };
         const invocations = Array.isArray(phase?.invocations)
@@ -300,9 +301,11 @@ export function stepsOf(spans) {
       end: span.end,
       work: 0,
       idle: 0,
+      partial: false,
     };
     step.start = Math.min(step.start, span.start);
     step.end = Math.max(step.end, span.end);
+    step.partial ||= span.partial;
     if (span.kind === "idle") step.idle += span.total;
     else step.work += span.total;
     byRollout.set(span.rolloutId, step);
