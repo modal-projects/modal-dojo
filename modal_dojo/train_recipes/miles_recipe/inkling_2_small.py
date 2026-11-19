@@ -27,6 +27,7 @@ class Inkling_2_Small_LoRA_Recipe(MilesRecipe):
     # Copy of radixark/miles:inkling-2-small, same digest: Miles radixark/miles#4819
     # with an SGLang build that serves the model. Its Miles and SGLang trees are
     # not git checkouts, so the git-ref overlays cannot be used on it.
+    # TODO: Use a released image once Miles #4819 and its SGLang support land.
     docker_image: str = (
         "modalresearch/miles:dojo-inkling-2-small@sha256:"
         "a2e3c49d5a266d9374d67ca4b706767b7bdf7d798958dd51520f61c29597e9a5"
