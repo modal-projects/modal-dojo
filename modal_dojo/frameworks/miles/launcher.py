@@ -77,7 +77,7 @@ from modal_dojo.train_recipes.miles_recipe.recipe import (
     MilesRecipe,
 )
 from modal_dojo.common.budget import driver_budget_env
-from modal_dojo.common.budget_stop_patch import encoded_patch as budget_stop_patch
+from modal_dojo.common.budget_stop_patch import patch_command as budget_stop_patch
 from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
 from modal_dojo.frameworks.miles.modal_helpers.utils import (
     build_train_cmd,
@@ -113,7 +113,6 @@ _PATCH_ROLLOUT_STATUS_B64 = encode_patch(
 )
 _PATCH_ADVANTAGE_DIST_B64 = encode_patch("patch_advantage_distribution", _MILES_PATCHES)
 _PATCH_SUBSTEP_TIMING_B64 = encode_patch("patch_substep_timing", _MILES_PATCHES)
-_PATCH_BUDGET_STOP_B64 = budget_stop_patch(MILES_ROOT)
 _PATCH_ZERO_STD_B64 = encode_patch("patch_zero_std_metrics", _MILES_PATCHES)
 
 _REPORTING_PATCH_COMMANDS = (
@@ -333,10 +332,9 @@ def apply_source_overlays(image: Image, miles: MilesRecipe) -> Image:
             " || echo 'WARNING: substep timing patch did not apply to the"
             " miles_git_ref checkout; substep timings will be missing'",
         )
-    if miles.budget is not None:
-        image = image.run_commands(
-            f"echo {_PATCH_BUDGET_STOP_B64} | base64 -d | python3"
-        )
+    image = image.run_commands(
+        budget_stop_patch(MILES_ROOT, required=miles.budget is not None)
+    )
     return image
 
 

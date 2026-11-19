@@ -22,6 +22,7 @@ from rich.table import Table
 from rich.text import Text
 
 from modal_dojo.common.run_list import run_list_field_metadata
+from modal_dojo.common.run_steps import set_target_steps
 from modal_dojo.common.run_summary import RunSummary
 from modal_dojo.common.time import parse_time
 from modal_dojo.common.training_rollout import (
@@ -688,6 +689,63 @@ def show_run_params(*, run_id: str, json_output: bool) -> None:
     )
 
 
+def set_run_steps(*, run_id: str, steps: int, json_output: bool) -> None:
+    """Change how many rollouts a running slime/Miles run will train for."""
+    encoded_run_id = quote(run_id, safe="")
+    with DashboardClient() as client:
+        summary = _validate_run_summary(
+            client.get_json(
+                f"/api/runs/{encoded_run_id}",
+                params=None,
+                not_found_error=CLIError(
+                    f"Training run {run_id!r} was not found.",
+                    error="run_not_found",
+                    exit_code=ExitCode.NOT_FOUND,
+                    run_id=run_id,
+                    hint="modal-dojo run list",
+                ),
+            )
+        )
+
+    if summary.framework not in {"slime", "miles"}:
+        raise CLIError(
+            f"Run {run_id!r} uses {summary.framework!r}; only slime and Miles "
+            "runs can change their step count.",
+            error="unsupported_framework",
+            run_id=run_id,
+        )
+    if summary.display_status in {"completed", "cancelled", "stopped", "failed"}:
+        raise CLIError(
+            f"Run {run_id!r} is {summary.display_status}; only a running run "
+            "can change its step count.",
+            error="run_not_running",
+            run_id=run_id,
+        )
+    current_step, total_steps, step_unit = _current_step(summary)
+    if current_step is not None and steps < current_step:
+        raise click.BadParameter(
+            f"run {run_id!r} has already reached {step_unit} {current_step}.",
+            param_hint="STEPS",
+        )
+
+    set_target_steps(summary.training_run_id, steps)
+
+    if json_output:
+        print_json(
+            {
+                "run_id": summary.run_id,
+                "previous_total_steps": total_steps,
+                "total_steps": steps,
+                "current_step": current_step,
+            }
+        )
+        return
+    click.echo(
+        f"{run_id}: total {step_unit}s {total_steps or '?'} -> {steps}. "
+        "Takes effect before the next rollout starts."
+    )
+
+
 def _validate_log_payload(
     payload: object,
 ) -> tuple[list[dict[str, object]], bool, int | float | None]:
@@ -938,6 +996,30 @@ def get_command(*, run_id: str, verbose: bool, json_output: bool) -> None:
 def params_command(*, run_id: str, json_output: bool) -> None:
     """Show a run's framework training recipe."""
     show_run_params(run_id=run_id, json_output=json_output)
+
+
+@run_group.command(
+    "set-steps",
+    help=(
+        "Change how many steps (rollouts) a running slime or Miles run trains for.\n\n"
+        "The run picks up the new total before its next rollout, so it can be "
+        "extended or ended early without a restart; the final step saves a "
+        "checkpoint as usual. The learning-rate schedule keeps the length the "
+        "run was launched with. Runs launched before this command existed "
+        "ignore it."
+    ),
+    epilog=(
+        "Examples:\n"
+        "  modal-dojo run set-steps brave-falcon-3fa8 200\n"
+        "  modal-dojo run set-steps brave-falcon-3fa8 50 -j"
+    ),
+)
+@click.argument("run_id")
+@click.argument("steps", type=click.IntRange(min=1))
+@json_option
+def set_steps_command(*, run_id: str, steps: int, json_output: bool) -> None:
+    """Change how many steps a running run trains for."""
+    set_run_steps(run_id=run_id, steps=steps, json_output=json_output)
 
 
 @run_group.command(

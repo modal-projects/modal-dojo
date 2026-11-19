@@ -91,7 +91,7 @@ from .modal_helpers.utils import (
     resolve_checkpoint_ref,
 )
 from modal_dojo.common.budget import driver_budget_env
-from modal_dojo.common.budget_stop_patch import encoded_patch as budget_stop_patch
+from modal_dojo.common.budget_stop_patch import patch_command as budget_stop_patch
 from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
 from modal_dojo.common.checkpoint import Checkpoint
 from modal_dojo.common.framework import Framework
@@ -458,8 +458,9 @@ def build_slime_app(
         image = image.uv_pip_install(f"harbor=={HARBOR_PKG_VERSION}")
 
     image = _overlay_slime_source(image, slime)
-    if slime.budget is not None:
-        image = image.run_commands(*_patch_commands((budget_stop_patch(SLIME_ROOT),)))
+    image = image.run_commands(
+        budget_stop_patch(SLIME_ROOT, required=slime.budget is not None)
+    )
 
     if slime.image_run_commands:
         image = image.run_commands(*slime.image_run_commands)
