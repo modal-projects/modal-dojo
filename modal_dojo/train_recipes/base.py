@@ -168,7 +168,9 @@ class BaseTrainRecipe(ABC, metaclass=_UnwrapDojoErrorMeta):
         file, for the launcher to fill in when it ships it.
         """
         mod = getattr(fn, "__module__", None) or ""
-        name = getattr(fn, "__qualname__", None) or fn.__name__
+        name = getattr(fn, "__qualname__", None) or getattr(fn, "__name__", None)
+        if name is None:  # e.g. functools.partial; the launcher pickles it
+            return "__pending__.callable"
         if mod == "__main__":
             import inspect
 

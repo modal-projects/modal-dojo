@@ -28,7 +28,9 @@ from modal import App, Image, Secret
 from modal_dojo.common import hf_secrets, proxy_auth_secrets
 
 
-from modal_dojo.common.dataset import DatasetConfig, HarborDataset, _SftDataset
+from modal_dojo.common.dataset import DatasetConfig, _SftDataset
+from modal_dojo.common.harbor_environment import _HarborTaskDataset
+from modal_dojo.common.harbor_harnesses import HARNESS_PACKAGES
 from modal_dojo.common.framework import (
     mount_tools_dir,
 )
@@ -100,10 +102,6 @@ from modal_dojo.common.framework import Framework
 SLIME_ROOT = "/root/slime"
 # Pin by digest to prevent mutable-tag drift.  Tag: nightly-dev-20260722a
 SLIME_IMAGE = "slimerl/slime@sha256:a97ec147e37bef050337a9b229036eda00b4aa9c4d02b31a0109dc850f8ca342"
-# v0.8.0+ makes per-task CPU/memory requests configurable via enforcement
-# policies ("limit"/"ignore"), letting sandboxes burst on Modal and bill by
-# actual CPU-/RAM-second usage instead of over-provisioning a static reservation.
-HARBOR_PKG_VERSION = "0.8.0"
 
 _SLIME_PATCHES = Path(__file__).parent / "modal_helpers" / "patches"
 _PATCH_VALIDATION_B64 = encode_patch("patch_validation", _MEGATRON_PATCHES)
@@ -454,8 +452,8 @@ def build_slime_app(
             copy=True,
         )
 
-    if isinstance(dataset, HarborDataset) or isinstance(eval_dataset, HarborDataset):
-        image = image.uv_pip_install(f"harbor=={HARBOR_PKG_VERSION}")
+    if any(isinstance(d, _HarborTaskDataset) for d in (dataset, eval_dataset)):
+        image = image.uv_pip_install(*HARNESS_PACKAGES)
 
     image = _overlay_slime_source(image, slime)
     if slime.budget is not None:

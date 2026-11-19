@@ -43,7 +43,7 @@ Repo: https://github.com/modal-labs/modal-dojo
 
 - [Getting started with RL](https://dojo.modal.dev/tutorials/rl_basics)
 - [Painting flowers with code](https://dojo.modal.dev/tutorials/paint_flowers)
-- [Training multi-turn coding agents](https://dojo.modal.dev/tutorials/coding_agent)
+- [Training on a Harbor dataset](https://dojo.modal.dev/tutorials/coding_agent)
 - [Efficient inference using on-policy distillation](https://dojo.modal.dev/tutorials/on_policy_distillation)
 - [On-policy distillation across model families](https://dojo.modal.dev/tutorials/cross_tok_distill)
 - [Use fewer tokens without lobotomizing your model](https://dojo.modal.dev/tutorials/fewer_tokens)
@@ -97,7 +97,6 @@ Repo: https://github.com/modal-labs/modal-dojo
 ### Datasets
 
 - [DatasetConfig](https://dojo.modal.dev/reference/datasetconfig)
-- [HarborDataset](https://dojo.modal.dev/reference/harbordataset)
 - [HuggingFaceDataset](https://dojo.modal.dev/reference/huggingfacedataset)
 - [MultimodalDataset](https://dojo.modal.dev/reference/multimodaldataset)
 - [OnlineRollout](https://dojo.modal.dev/reference/onlinerollout)

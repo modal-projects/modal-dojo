@@ -70,39 +70,7 @@ modal secret create huggingface-secret HF_TOKEN=hf_...
 
 ## Harbor
 
-A [Harbor dataset](https://dojo.modal.dev/reference/harbordataset) provides a series of tasks, each containing instructions, files for the coding environment, and tests.
-
-```python
-from modal_dojo import HarborDataset
-
-hello_dataset = HarborDataset(dataset_name="harbor/hello-world")
-```
-
-If you have the files installed locally, you can instead use the filepath:
-
-```python
-hello_dataset = HarborDataset(path="/path/to/task_root")
-```
-
-Some tasks provide additional metadata:
-
-```python
-hello_dataset = HarborDataset(
-    # ...
-    label_metadata_path="task.toml",
-    test_data_dir="tests",
-)
-```
-
-During training, each task will be converted into a single user prompt. Like `HuggingFaceDataset`, you can optionally provide a system prompt or override the template for the user message. However, if the metadata contains variables, you can also use them in `prompt_template`!
-
-```python
-hello_dataset = HarborDataset(
-    # ...
-    system_prompt="You are an expert Python programmer.",
-    prompt_template="Perform task {task_name} stored at {task_path}: {instruction}",
-)
-```
+[Harbor](https://harborframework.com) tasks come with their own container, tests and reward, so they train through `HarborEnvironment` rather than a dataset. See [Training on a Harbor dataset](https://dojo.modal.dev/tutorials/coding_agent).
 
 ## Creating a custom dataset
 

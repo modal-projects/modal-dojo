@@ -41,10 +41,6 @@
       "link": "/reference/gpuallocationerror"
     },
     {
-      "label": "HarborDataset",
-      "link": "/reference/harbordataset"
-    },
-    {
       "label": "HFModelConfiguration",
       "link": "/reference/hfmodelconfiguration"
     },

@@ -27,6 +27,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# HarborEnvironment: Harbor's task models and Terminus 2, plus mini-swe-agent.
+# Keep in sync with HARNESS_PACKAGES in modal_dojo/common/harbor_harnesses.py.
+harbor = [
+    "harbor[modal]==0.25.0",
+    "mini-swe-agent==2.4.6",
+]
 # tinker-cookbook client for an existing Spindle server.
 spindle = [
     "tinker==0.35.0",
