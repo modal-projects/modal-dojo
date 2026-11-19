@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from modal_dojo.common.run import TrainingRun
 
 
-def launch(recipe, *, show_output: bool = True) -> TrainingRun:
+def launch(recipe, *, show_output: bool = True, yes: bool = False) -> TrainingRun:
     """Start the driver in a detached Modal app; return its TrainingRun handle."""
     from modal_dojo.cli.setup import ensure_dashboard_deployed
     from modal_dojo.common.config import (
@@ -26,16 +26,12 @@ def launch(recipe, *, show_output: bool = True) -> TrainingRun:
     from modal_dojo.common.train import TrainStatusDisplay, launch_detached
     from modal_dojo.train_recipes.base import CHECKPOINTS_PATH
 
+    from .connection import resolve_connection
     from .launcher import check_server
     from .reporting import new_training_run
 
     require_migrated_config()
     program = recipe.program
-    max_tokens = _max_tokens(program)
-    # Fail on a bad key, model or context before creating a run or an app.
-    server = check_server(
-        recipe.base_url, recipe._api_key, program.model_name, max_tokens=max_tokens
-    )
     training_run_id = create_hash(
         program.model_name, "", f"SpindleRecipe:{Framework.SPINDLE.value}", "", ""
     )
@@ -45,6 +41,11 @@ def launch(recipe, *, show_output: bool = True) -> TrainingRun:
         raise DojoConfigError(
             "Could not connect to Dojo. Run `modal-dojo setup` before launching Spindle."
         )
+    connection = resolve_connection(
+        recipe.base_url, recipe._api_key, recipe.requirements, yes=yes
+    )
+    if connection.base_url and connection.api_key:
+        check_server(connection.base_url, connection.api_key, recipe.requirements)
     log_dir = f"{CHECKPOINTS_PATH}/{training_run_id}"
     status_display = TrainStatusDisplay(
         run_id=training_run_id,
@@ -58,7 +59,15 @@ def launch(recipe, *, show_output: bool = True) -> TrainingRun:
         status_display.print_banner()
     run = new_training_run(program, training_run_id, log_dir)
     run.app_name = training_run_id
-    run.metadata.update(server)
+    run.metadata.update(
+        spindle_base_url=connection.base_url,
+        spindle_app=connection.app_name,
+        spindle_environment=connection.environment,
+    )
+    run.config["recipe"].update(
+        context_length=recipe.requirements.context_length,
+        **recipe.requirements.overrides,
+    )
 
     def start(app, framework_status_token: str):
         return app.train.spawn(
@@ -70,7 +79,10 @@ def launch(recipe, *, show_output: bool = True) -> TrainingRun:
         run,
         framework_status_token=secrets.token_urlsafe(32),
         build_app=lambda: build_spindle_app(
-            recipe, training_run_id, log_dir, max_tokens=max_tokens
+            recipe,
+            training_run_id,
+            log_dir,
+            connection=connection,
         ),
         start=start,
         status_display=status_display,
@@ -78,16 +90,12 @@ def launch(recipe, *, show_output: bool = True) -> TrainingRun:
     )
 
 
-def _max_tokens(program) -> int | None:
-    return program.config.max_tokens
-
-
 def _dataset_name(program) -> str:
     return type(program.config.dataset_builder).__name__
 
 
 def build_spindle_app(
-    recipe, training_run_id: str, log_dir: str, *, max_tokens: int | None
+    recipe, training_run_id: str, log_dir: str, *, connection
 ) -> modal.App:
     """A CPU-only app whose ``train`` function runs the program's driver."""
     import modal
@@ -118,7 +126,10 @@ def build_spindle_app(
         None, volume_prefix=Framework.SPINDLE.value
     )
     checkpoints = volumes[checkpoints_path]
-    base_url = recipe.base_url
+    # Only non-secret connection details enter the serialized function.
+    base_url = connection.base_url
+    server_app = connection.app_name
+    requirements = recipe.requirements
     app = modal.App(
         training_run_id,
         tags=build_app_tags(
@@ -134,7 +145,8 @@ def build_spindle_app(
         volumes=volumes,
         # The key stays out of the pickled function.
         secrets=[
-            modal.Secret.from_dict({"TINKER_API_KEY": recipe._api_key}),
+            *recipe.secrets,
+            *connection.driver_secrets(),
             *proxy_auth_secrets(),
             *hf_secrets(),
         ],
@@ -163,7 +175,8 @@ def build_spindle_app(
                 run=run,
                 base_url=base_url,
                 log_dir=log_dir,
-                max_tokens=max_tokens,
+                requirements=requirements,
+                server_app=server_app,
             )
         finally:
             await checkpoints.commit.aio()
@@ -173,10 +186,12 @@ def build_spindle_app(
 
 
 def spindle_requirements() -> list[str]:
-    """modal-dojo's own pins plus its ``spindle`` extra."""
+    """Client pins plus Spindle for provisioning in the driver."""
     from importlib.metadata import requires
 
     from packaging.requirements import Requirement
+
+    from .deployment import SPINDLE_REQUIREMENT
 
     pins = []
     for line in requires("modal-dojo") or []:
@@ -186,4 +201,5 @@ def spindle_requirements() -> list[str]:
         ):
             requirement.marker = None
             pins.append(str(requirement))
+    pins.append(SPINDLE_REQUIREMENT)
     return pins

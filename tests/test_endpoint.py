@@ -409,6 +409,7 @@ def test_launch_covers_every_pinned_endpoint_create_flag() -> None:
     }
     named_by_checkpoint = {"custom_volume_name", "custom_volume_path"}
     unsupported = {
+        "shared",
         "custom_hf_repo",
         "custom_hf_revision",
         "custom_hf_token",
