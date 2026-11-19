@@ -1,7 +1,8 @@
-"""Run tinker-cookbook RL against a Spindle server."""
+"""Run Tinker training code against a Spindle server."""
 
 from __future__ import annotations
 
+import inspect
 import os
 from typing import TYPE_CHECKING, Callable
 
@@ -13,13 +14,14 @@ if TYPE_CHECKING:
     from tinker_cookbook.rl.train import Config
 
     from modal_dojo.common.run import TrainingRun
-    from modal_dojo.frameworks.spindle.cookbook import CookbookRL
+    from modal_dojo.tinker import TinkerProgram
 
 
 class SpindleRecipe:
-    """Run a tinker-cookbook RL config against a Spindle server, driven from Modal.
+    """Run Tinker training code against a Spindle server, driven from Modal.
 
-    ``program`` is a tinker-cookbook ``rl_train.Config`` or its
+    ``program`` is a ``TinkerProgram`` with an async ``run(client, ctx)`` method,
+    a tinker-cookbook ``rl_train.Config``, or its
     ``modal_dojo.tinker.cookbook_rl`` wrapper. Requires
     ``uv sync --extra spindle``. Like Slime and Miles, ``launch()`` starts the
     driver in a detached Modal app and returns a ``TrainingRun`` handle;
@@ -32,13 +34,15 @@ class SpindleRecipe:
     Provisioning requires the ``spindle-deploy`` extra and Python 3.12.
     Checkpoints stay on the server. The config's ``log_path`` is
     replaced by the run's directory on the ``spindle-checkpoints`` volume, from
-    which a retried driver resumes. Pass ``secrets`` for credentials needed by
-    the program's environments or reward functions.
+    which a retried driver resumes. Cookbook programs default to three retries;
+    custom programs default to zero unless they implement checkpoint recovery.
+    Pass ``secrets`` for credentials needed by the program's environments or
+    reward functions.
     """
 
     def __init__(
         self,
-        program: CookbookRL | Config,
+        program: TinkerProgram | Config,
         *,
         base_url: str | None = None,
         api_key: str | None = None,
@@ -49,7 +53,7 @@ class SpindleRecipe:
         inference_gpu: str | None = None,
         inference_gpus_per_node: int | None = None,
         detach: bool = True,
-        max_retries: int = 3,
+        max_retries: int | None = None,
         cpu: float = 4.0,
         memory: int = 8192,
         image_overlay: Callable[[modal.Image], modal.Image] | None = None,
@@ -63,17 +67,21 @@ class SpindleRecipe:
                 "Install with `uv sync --extra spindle` in this repository."
             ) from exc
         from modal_dojo.frameworks.spindle.cookbook import CookbookRL
+        from modal_dojo.tinker import TinkerProgram
 
         if isinstance(program, Config):
             program = CookbookRL(program)
-        if not isinstance(program, CookbookRL):
+        if not isinstance(program, TinkerProgram):
             raise DojoConfigError(
-                "Pass a tinker-cookbook rl_train.Config or cookbook_rl(config)."
+                "Pass a TinkerProgram, tinker-cookbook rl_train.Config, or cookbook_rl(config)."
             )
-        config = program.config
-        if base_url and config.base_url and base_url != config.base_url:
+        if not inspect.iscoroutinefunction(program.run):
+            raise DojoConfigError("TinkerProgram.run must be an async method")
+        config = program.config if isinstance(program, CookbookRL) else None
+        config_url = config.base_url if config is not None else None
+        if base_url and config_url and base_url != config_url:
             raise DojoConfigError("base_url conflicts with the config's base_url")
-        base_url = base_url or config.base_url or os.environ.get("TINKER_BASE_URL")
+        base_url = base_url or config_url or os.environ.get("TINKER_BASE_URL")
         if api_key and not base_url:
             raise DojoConfigError("An explicit api_key requires a base_url.")
         api_key = (api_key or os.environ.get("TINKER_API_KEY")) if base_url else None
@@ -96,10 +104,16 @@ class SpindleRecipe:
                     raise DojoConfigError(f"{name} must be a GPU type such as 'H100'.")
             elif type(value) is not int or value <= 0:
                 raise DojoConfigError(f"{name} must be a positive integer.")
-        if context_length is not None and config.max_tokens >= context_length:
+        if (
+            context_length is not None
+            and config is not None
+            and config.max_tokens >= context_length
+        ):
             raise DojoConfigError(
                 "max_tokens must leave room for prompts within context_length."
             )
+        if max_retries is None:
+            max_retries = 3 if config is not None else 0
         if max_retries < 0:
             raise DojoConfigError("max_retries must be non-negative")
         # launch() checks the model and context length against the server.
@@ -108,8 +122,8 @@ class SpindleRecipe:
         self.program = program
         self.requirements = Requirements(
             program.model_name,
-            config.max_tokens,
-            config.lora_rank,
+            config.max_tokens if config is not None else 0,
+            config.lora_rank if config is not None else 0,
             context_length,
             overrides,
         )

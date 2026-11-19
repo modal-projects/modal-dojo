@@ -1,4 +1,4 @@
-"""Launch a Spindle driver in a detached Modal app, like Slime and Miles."""
+"""Launch a TinkerProgram's driver in a detached Modal app, like Slime and Miles."""
 
 from __future__ import annotations
 
@@ -91,7 +91,11 @@ def launch(recipe, *, show_output: bool = True, yes: bool = False) -> TrainingRu
 
 
 def _dataset_name(program) -> str:
-    return type(program.config.dataset_builder).__name__
+    from .cookbook import CookbookRL
+
+    if isinstance(program, CookbookRL):
+        return type(program.config.dataset_builder).__name__
+    return type(program).__name__
 
 
 def build_spindle_app(
@@ -109,7 +113,7 @@ def build_spindle_app(
         resolve_caller_context,
     )
 
-    # Pickle the caller's reward functions and builders by value.
+    # Pickle the caller's programs, reward functions and builders by value.
     _, caller_script = resolve_caller_context()
     image = (
         modal.Image.debian_slim(python_version="3.12")
