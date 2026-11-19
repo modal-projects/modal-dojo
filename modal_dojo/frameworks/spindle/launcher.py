@@ -21,24 +21,27 @@ from .deployment import (
 
 
 def check_server(
-    base_url, api_key, model_name, *, max_tokens=None, requirements=None, scope=None
-):
+    base_url: str,
+    api_key: str,
+    requirements: Requirements,
+    *,
+    server_app: str | None = None,
+) -> dict[str, str | int | None]:
     """Validate any Tinker service; provision and select only on Spindle."""
     base_url = validate_url(base_url)
-    requirements = requirements or Requirements(model_name, max_tokens or 0, 32)
     with httpx.Client(
         base_url=base_url,
         headers={**proxy_headers_for(base_url), "X-API-Key": api_key},
         timeout=60,
     ) as client:
         info = request_json(client, "GET", "/api/v1/get_server_capabilities")
-        if scope == SERVER_NAME and info.get("spindle_version") != SPINDLE_VERSION:
+        if server_app == SERVER_NAME and info.get("spindle_version") != SPINDLE_VERSION:
             raise DojoConfigError(
                 f"Managed app {SERVER_NAME!r} is not serving Spindle {SPINDLE_VERSION}. "
                 "Check that deployment, or provide an explicit server URL and key."
             )
         if info.get("spindle_version"):
-            selected = ensure_backend(client, requirements, scope=scope or base_url)
+            selected = ensure_backend(client, requirements)
             return {
                 "spindle_base_url": base_url,
                 "spindle_version": info["spindle_version"],
@@ -53,11 +56,11 @@ def check_server(
         supported = [
             row
             for row in info.get("supported_models", [])
-            if row.get("model_name") == model_name
+            if row.get("model_name") == requirements.model_name
         ]
         if not supported:
             raise DojoConfigError(
-                f"The Tinker server does not advertise model {model_name!r}."
+                f"The Tinker server does not advertise model {requirements.model_name!r}."
             )
         context = supported[0].get("max_context_length")
         if context is not None and (
@@ -130,7 +133,7 @@ def routed_clients(base_url: str, model_name: str, deployment: str | None):
 
 
 async def run_program(
-    program, *, run, base_url, log_dir, max_tokens=None, requirements=None, scope=None
+    program, *, run, base_url, log_dir, requirements: Requirements, server_app=None
 ):
     from .context import TinkerContext
     from .reporting import run_lifecycle
@@ -148,10 +151,8 @@ async def run_program(
             check_server,
             base_url,
             api_key,
-            program.model_name,
-            max_tokens=max_tokens,
-            requirements=requirements,
-            scope=scope,
+            requirements,
+            server_app=server_app,
         )
         run.metadata.update(server)
         await run.save(is_async=True)

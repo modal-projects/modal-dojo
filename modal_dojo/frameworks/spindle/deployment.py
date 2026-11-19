@@ -8,6 +8,8 @@ import json
 import logging
 import time
 
+import httpx
+
 from modal_dojo.common.errors import DojoConfigError
 
 logger = logging.getLogger(__name__)
@@ -18,6 +20,12 @@ SPINDLE_REQUIREMENT = (
 )
 SERVER_NAME = "dojo-spindle-v" + SPINDLE_VERSION.replace(".", "-")
 DEPLOYMENTS_PATH = "/api/v1/spindle/deployments"
+_FRONTEND_FIELDS = {
+    "platform",
+    "session_idle_timeout_s",
+    "pool_idle_timeout_s",
+    "sweep_interval_s",
+}
 
 
 @dataclass(frozen=True)
@@ -41,6 +49,7 @@ class Requirements:
 def select_config(requirements: Requirements):
     """Choose the smallest supported context, then apply hardware overrides."""
     try:
+        from spindle import __version__
         from spindle.deploy_wizard import bundled_presets
         from spindle.configuration import BaseConfig
         from spindle.deployments import DeploymentConfig
@@ -50,6 +59,12 @@ def select_config(requirements: Requirements):
             "Install with `uv sync --extra spindle-deploy` in this repository, "
             "or connect to an existing deployment without GPU overrides."
         ) from exc
+
+    if __version__ != SPINDLE_VERSION:
+        raise DojoConfigError(
+            f"Provisioning requires Spindle {SPINDLE_VERSION}, but {__version__} is installed. "
+            "Install the pinned spindle-deploy extra before deploying."
+        )
 
     candidates = [
         preset.config
@@ -84,20 +99,17 @@ def select_config(requirements: Requirements):
     return config
 
 
-def deployment_name(config, scope: str) -> str:
-    """Stable across retries; scoped so two frontends never share GPU app names."""
+def deployment_name(config) -> str:
+    """Identify the config consistently across explicit URLs and app discovery."""
     settings = {k: v for k, v in vars(config).items() if k not in {"name", "platform"}}
     digest = hashlib.sha256(
         json.dumps([SPINDLE_VERSION, settings], sort_keys=True).encode()
     ).hexdigest()[:12]
-    server = hashlib.sha256(scope.encode()).hexdigest()[:6]
-    # Spindle prefixes this with '<frontend>-inference-'; Modal caps app names.
-    return f"dojo-{digest}-{server}"
+    # Spindle scopes GPU app names with its frontend name.
+    return f"dojo-{digest}"
 
 
-def request_json(client, method: str, path: str, **kwargs):
-    import httpx
-
+def request_json(client: httpx.Client, method: str, path: str, **kwargs) -> dict:
     try:
         response = client.request(method, path, **kwargs)
     except httpx.TransportError as exc:
@@ -114,27 +126,35 @@ def request_json(client, method: str, path: str, **kwargs):
             "deployment API. No replacement server was created."
         )
     try:
-        return response.json()
+        body = response.json()
     except ValueError as exc:
         raise DojoConfigError("The server returned an invalid JSON response.") from exc
+    if not isinstance(body, dict):
+        raise DojoConfigError(f"Expected a JSON object from {path}.")
+    return body
 
 
-def ensure_backend(client, requirements: Requirements, *, scope: str) -> dict:
+def ensure_backend(client: httpx.Client, requirements: Requirements) -> dict:
     rows = request_json(client, "GET", DEPLOYMENTS_PATH)["deployments"]
     matches = [row for row in rows if requirements.fits(row)]
     config = None
     if requirements.overrides or not matches:
         config = select_config(requirements)
-        name = deployment_name(config, scope)
-        # The same server can be reached by app discovery or an explicit URL.
-        # Compare the config fingerprint; the suffix only isolates app names.
-        config_name = name.rsplit("-", 1)[0]
+        name = deployment_name(config)
+        # Reuse configs created with the earlier server-specific suffix as well.
         matches = [
-            row for row in matches if row["name"].rsplit("-", 1)[0] == config_name
+            row
+            for row in matches
+            if row["name"] == name or row["name"].startswith(name + "-")
         ]
     if matches:
         selected = min(
-            matches, key=lambda row: (row["max_context_length"], row["name"])
+            matches,
+            key=lambda row: (
+                row.get("apps", "ready") != "ready",
+                row["max_context_length"],
+                row["name"],
+            ),
         )
         if selected.get("apps", "ready") == "ready":
             return selected
@@ -149,7 +169,14 @@ def ensure_backend(client, requirements: Requirements, *, scope: str) -> dict:
             client,
             "POST",
             DEPLOYMENTS_PATH,
-            json={"name": name, "recipe": vars(config)},
+            json={
+                "name": name,
+                "recipe": {
+                    key: value
+                    for key, value in vars(config).items()
+                    if key not in _FRONTEND_FIELDS and key != "name"
+                },
+            },
         )
 
     deadline = time.monotonic() + 3600

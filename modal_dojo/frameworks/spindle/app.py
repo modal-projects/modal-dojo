@@ -31,7 +31,6 @@ def launch(recipe, *, show_output: bool = True, yes: bool = False) -> TrainingRu
 
     require_migrated_config()
     program = recipe.program
-    max_tokens = _max_tokens(program)
     connection = resolve_connection(
         recipe.base_url, recipe._api_key, recipe.requirements, yes=yes
     )
@@ -80,7 +79,6 @@ def launch(recipe, *, show_output: bool = True, yes: bool = False) -> TrainingRu
             recipe,
             training_run_id,
             log_dir,
-            max_tokens=max_tokens,
             connection=connection,
         ),
         start=start,
@@ -89,16 +87,12 @@ def launch(recipe, *, show_output: bool = True, yes: bool = False) -> TrainingRu
     )
 
 
-def _max_tokens(program) -> int | None:
-    return program.config.max_tokens
-
-
 def _dataset_name(program) -> str:
     return type(program.config.dataset_builder).__name__
 
 
 def build_spindle_app(
-    recipe, training_run_id: str, log_dir: str, *, max_tokens: int | None, connection
+    recipe, training_run_id: str, log_dir: str, *, connection
 ) -> modal.App:
     """A CPU-only app whose ``train`` function runs the program's driver."""
     import modal
@@ -131,7 +125,7 @@ def build_spindle_app(
     checkpoints = volumes[checkpoints_path]
     # Only non-secret connection details enter the serialized function.
     base_url = connection.base_url
-    scope = connection.app_name
+    server_app = connection.app_name
     requirements = recipe.requirements
     app = modal.App(
         training_run_id,
@@ -177,9 +171,8 @@ def build_spindle_app(
                 run=run,
                 base_url=base_url,
                 log_dir=log_dir,
-                max_tokens=max_tokens,
                 requirements=requirements,
-                scope=scope,
+                server_app=server_app,
             )
         finally:
             await checkpoints.commit.aio()

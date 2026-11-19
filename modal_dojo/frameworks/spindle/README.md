@@ -42,6 +42,11 @@ Lookup, network and authentication failures stop the launch. They do not trigger
 replacement servers. Discovery does not choose an arbitrary Spindle app or scan
 other environments. Set the Modal profile and environment before launching.
 
+Deployment and discovery use the same app name, derived from Dojo's pinned
+Spindle version: `0.1.8` becomes `dojo-spindle-v0-1-8`. A manually deployed
+server with another name can be used through an explicit URL/key or a saved
+connection. Upgrading the pin gives new deployments a different versioned name.
+
 Managed servers retain their API-key Secret. Future drivers receive that named
 Secret and look up the live URL; the credentials need not be downloaded to the
 launching computer or written to `~/.modal-dojo.toml`. Explicit connections are
@@ -66,14 +71,16 @@ context capacity. `context_length` includes prompt/history and completion;
 Cookbook's `max_tokens` limits generated output. Programs must keep their actual
 sequences within the server's capacity.
 
-Without hardware overrides, Dojo reuses the smallest sufficient registered
-context. With overrides, it reuses the matching Dojo-created configuration.
+Without hardware overrides, Dojo prefers a ready backend with the smallest
+sufficient context. With overrides, it reuses the matching Dojo-created configuration.
 Otherwise it selects a bundled Spindle preset, applies the overrides, and adds a
 separate deployment through Spindle's deployment API. It never changes an
 existing shared backend's hardware. Stable configuration names make later runs
 and retries reuse the deployment, including when its apps need redeployment.
 The selected deployment name is sent to Tinker model-creation calls while the
 original Hugging Face model name remains available for tokenization.
+Adding a backend preserves the existing server's authentication, storage and
+idle-timeout settings.
 
 GPU type and count are separate settings. Count, parallelism, concurrency and
 other unspecified settings retain preset defaults; arbitrary overrides are not

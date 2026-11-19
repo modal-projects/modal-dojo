@@ -162,7 +162,7 @@ def deploy_server(config, environment: str) -> Connection:
 
     if sys.version_info[:2] != (3, 12):
         raise DojoConfigError("Deploying Spindle requires Python 3.12.")
-    config.name = deployment_name(config, SERVER_NAME)
+    config.name = deployment_name(config)
     config.platform["frontend"] = SERVER_NAME
     config.platform["modal"]["environment"] = environment
     config.platform["requires_proxy_auth"] = True

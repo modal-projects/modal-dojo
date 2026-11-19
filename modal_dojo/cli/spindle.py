@@ -17,7 +17,9 @@ def spindle_group():
 @click.option("--base-url", help="Save this server as the environment's default.")
 @click.option("--model", help="Base model for the initial Spindle backend.")
 @click.option(
-    "--context-length", type=click.IntRange(min=1), default=32768, show_default=True
+    "--context-length",
+    type=click.IntRange(min=1),
+    help="Minimum total context length (defaults to the model's smallest preset).",
 )
 @click.option("--trainer-gpu")
 @click.option("--trainer-gpus-per-node", type=click.IntRange(min=1))
@@ -54,7 +56,9 @@ def setup_command(
 
     environment = environment or config.get("environment") or "main"
     if base_url:
-        if model or trainer_gpu or trainer_gpus_per_node or inference_gpu:
+        if any(
+            (model, context_length, trainer_gpu, trainer_gpus_per_node, inference_gpu)
+        ):
             raise click.UsageError(
                 "Use --base-url to save a connection, or --model to set up Spindle."
             )

@@ -145,7 +145,7 @@ def test_external_tinker_uses_only_standard_api_and_no_modal_credentials(monkeyp
         )
 
     transport(monkeypatch, handler)
-    result = launcher.check_server(URL, "test-key", MODEL, requirements=REQ)
+    result = launcher.check_server(URL, "test-key", REQ)
     assert result["tinker_provider"] == "external"
     assert calls == ["/api/v1/get_server_capabilities"]
 
@@ -160,8 +160,14 @@ def test_http_failure_does_not_provision(monkeypatch, status):
 
     transport(monkeypatch, handler)
     with pytest.raises(DojoConfigError):
-        launcher.check_server(URL, "test-key", MODEL, requirements=REQ)
+        launcher.check_server(URL, "test-key", REQ)
     assert calls == ["GET"]
+
+
+def test_invalid_response_is_reported_as_a_configuration_error(monkeypatch):
+    transport(monkeypatch, lambda request: httpx.Response(200, json=[]))
+    with pytest.raises(DojoConfigError, match="JSON object"):
+        launcher.check_server(URL, "test-key", REQ)
 
 
 def test_spindle_reuses_smallest_sufficient_deployment(monkeypatch):
@@ -183,9 +189,26 @@ def test_spindle_reuses_smallest_sufficient_deployment(monkeypatch):
         )
 
     transport(monkeypatch, handler)
-    result = launcher.check_server(URL, "test-key", MODEL, requirements=REQ)
+    result = launcher.check_server(URL, "test-key", REQ)
     assert result["spindle_deployment"] == "fit"
     assert requests == ["GET", "GET"]
+
+
+def test_ready_backend_is_preferred_to_repairing_a_failed_one():
+    def handler(request):
+        assert request.method == "GET"
+        return httpx.Response(
+            200,
+            json={
+                "deployments": [
+                    row("failed", apps="failed"),
+                    row("ready", 65536, apps="ready"),
+                ]
+            },
+        )
+
+    with httpx.Client(base_url=URL, transport=httpx.MockTransport(handler)) as client:
+        assert deployment.ensure_backend(client, REQ)["name"] == "ready"
 
 
 def test_gpu_override_adds_one_backend_and_reuses_it(monkeypatch):
@@ -208,24 +231,25 @@ def test_gpu_override_adds_one_backend_and_reuses_it(monkeypatch):
 
     req = Requirements(MODEL, 64, 32, 32768, {"trainer_gpu": "H100"})
     with httpx.Client(base_url=URL, transport=httpx.MockTransport(handler)) as client:
-        first = deployment.ensure_backend(client, req, scope=URL)
-        second = deployment.ensure_backend(client, req, scope=URL)
+        first = deployment.ensure_backend(client, req)
+        second = deployment.ensure_backend(client, req)
     assert first["name"] == second["name"]
     assert len(created) == 1
     assert created[0]["recipe"]["trainer_gpu"] == "H100"
     assert rows[0]["name"] == "existing"
 
 
-def test_backend_identity_includes_hardware_and_server():
+def test_backend_identity_includes_hardware_and_is_scoped_by_frontend():
     preset = SimpleNamespace(
         name="model-32k", model=MODEL, trainer_gpu="H100", platform={}
     )
-    first = deployment.deployment_name(preset, URL)
+    first = deployment.deployment_name(preset)
     assert len(f"{deployment.SERVER_NAME}-inference-{first}") < 64
-    assert deployment.deployment_name(copy.deepcopy(preset), URL) == first
-    assert deployment.deployment_name(preset, "other-server") != first
+    assert deployment.deployment_name(copy.deepcopy(preset)) == first
+    preset.platform = {"frontend": "another-server"}
+    assert deployment.deployment_name(preset) == first
     preset.trainer_gpu = "H200"
-    assert deployment.deployment_name(preset, URL) != first
+    assert deployment.deployment_name(preset) != first
 
 
 def test_real_spindle_preset_and_deployment_request():
@@ -248,7 +272,7 @@ def test_real_spindle_preset_and_deployment_request():
     assert config.inference_gpu == "H200"
     config.platform["frontend"] = deployment.SERVER_NAME
     routes = DeploymentRoutes.from_definitions([DeploymentConfig.create(config)])
-    name = deployment.deployment_name(config, URL)
+    name = deployment.deployment_name(config)
     compiled = asyncio.run(
         routes.build(DeploymentRequest(name=name, recipe=vars(config)))
     )
@@ -264,6 +288,13 @@ def test_real_spindle_preset_and_deployment_request():
         assert len(app_name) < 64
     with pytest.raises(DojoConfigError, match="No bundled"):
         deployment.select_config(Requirements(MODEL, 64, 32, 1000000))
+
+
+def test_local_spindle_version_must_match_the_managed_app_version(monkeypatch):
+    spindle = pytest.importorskip("spindle")
+    monkeypatch.setattr(spindle, "__version__", "0.1.9")
+    with pytest.raises(DojoConfigError, match=r"requires Spindle 0\.1\.8"):
+        deployment.select_config(REQ)
 
 
 def test_routing_keeps_program_model_and_other_services_unchanged(monkeypatch):
@@ -349,12 +380,29 @@ def test_setup_saves_only_on_explicit_request(monkeypatch):
     save.assert_called_once_with(URL, "test-secret", "test")
 
 
-def test_discovered_and_explicit_urls_reuse_same_custom_backend(monkeypatch):
+def test_setup_uses_the_preset_context_and_rejects_mixed_options(monkeypatch):
+    from modal_dojo.cli import entrypoint_cli
+
+    resolve = Mock(return_value=connection.Connection(URL))
+    monkeypatch.setattr(connection, "resolve_connection", resolve)
+    runner = CliRunner()
+    result = runner.invoke(entrypoint_cli, ["spindle", "setup", "--model", MODEL])
+    assert result.exit_code == 0, result.output
+    assert resolve.call_args.args[2].context_length is None
+    resolve.reset_mock()
+    result = runner.invoke(
+        entrypoint_cli,
+        ["spindle", "setup", "--base-url", URL, "--context-length", "32768", "--yes"],
+    )
+    assert result.exit_code != 0
+    assert "--base-url" in result.output and "--model" in result.output
+    resolve.assert_not_called()
+
+
+def test_backend_with_previous_server_suffix_is_reused(monkeypatch):
     config = SimpleNamespace(name="qwen35-2b-lora-32k", trainer_gpu="H100", model=MODEL)
     monkeypatch.setattr(deployment, "select_config", lambda req: config)
-    existing = row(
-        deployment.deployment_name(config, deployment.SERVER_NAME), apps="ready"
-    )
+    existing = row(deployment.deployment_name(config) + "-4e8eaf", apps="ready")
 
     def handler(request):
         assert request.method == "GET"
@@ -362,7 +410,7 @@ def test_discovered_and_explicit_urls_reuse_same_custom_backend(monkeypatch):
 
     req = Requirements(MODEL, 64, 32, 32768, {"trainer_gpu": "H100"})
     with httpx.Client(base_url=URL, transport=httpx.MockTransport(handler)) as client:
-        assert deployment.ensure_backend(client, req, scope=URL) == existing
+        assert deployment.ensure_backend(client, req) == existing
 
 
 def test_failed_backend_is_redeployed_in_place():
@@ -377,7 +425,7 @@ def test_failed_backend_is_redeployed_in_place():
         return httpx.Response(200, json={"deployments": [existing]})
 
     with httpx.Client(base_url=URL, transport=httpx.MockTransport(handler)) as client:
-        result = deployment.ensure_backend(client, REQ, scope=URL)
+        result = deployment.ensure_backend(client, REQ)
     assert result["name"] == "existing"
     assert posts == [{"name": "existing", "base": "existing"}]
 
@@ -390,6 +438,8 @@ def test_real_spindle_http_api_registers_and_reuses_config():
     from spindle.deployments import DeploymentConfig
 
     config = deployment.select_config(REQ)
+    config.session_idle_timeout_s = 600
+    config.pool_idle_timeout_s = 900
     compiled = DeploymentConfig.create(config)
 
     class MemoryStore:
@@ -424,11 +474,13 @@ def test_real_spindle_http_api_registers_and_reuses_config():
     )
     req = Requirements(MODEL, 64, 32, 32768, {"trainer_gpu": "H100"})
     with TestClient(app, headers={"X-API-Key": "test-key"}) as client:
-        first = deployment.ensure_backend(client, req, scope=URL)
-        second = deployment.ensure_backend(client, req, scope=URL)
+        first = deployment.ensure_backend(client, req)
+        second = deployment.ensure_backend(client, req)
     assert first["name"] == second["name"]
     assert published == [first["name"]]
     assert len(store.rows) == 2
+    assert store.rows[first["name"]]["recipe"]["session_idle_timeout_s"] == 600
+    assert store.rows[first["name"]]["recipe"]["pool_idle_timeout_s"] == 900
 
 
 def test_managed_server_version_mismatch_does_not_provision(monkeypatch):
@@ -440,9 +492,7 @@ def test_managed_server_version_mismatch_does_not_provision(monkeypatch):
 
     transport(monkeypatch, handler)
     with pytest.raises(DojoConfigError, match="not serving Spindle"):
-        launcher.check_server(
-            URL, "test-key", MODEL, requirements=REQ, scope=deployment.SERVER_NAME
-        )
+        launcher.check_server(URL, "test-key", REQ, server_app=deployment.SERVER_NAME)
     assert calls == ["/api/v1/get_server_capabilities"]
 
 
