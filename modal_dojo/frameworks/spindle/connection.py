@@ -146,7 +146,7 @@ def _confirm_deploy(config, environment: str, *, yes: bool):
         raise DojoConfigError(
             "No saved connection or compatible Spindle server exists in this environment. "
             "Provide base_url and api_key, approve deployment with .train(yes=True) / "
-            ".launch(yes=True), or run `modal-dojo spindle setup --model MODEL --yes`."
+            ".launch(yes=True)."
         )
     if not click.confirm(description, default=False, err=True):
         raise DojoConfigError("Spindle deployment cancelled. No server was created.")
@@ -205,16 +205,3 @@ def deploy_server(config, environment: str) -> Connection:
             "Spindle deployment finished without a discoverable server."
         )
     return connection
-
-
-def save_default(base_url: str, api_key: str, environment: str) -> None:
-    """Explicitly save a shared default, without touching any deployed server's key."""
-    import modal
-
-    values = {"TINKER_BASE_URL": validate_url(base_url), "TINKER_API_KEY": api_key}
-    if not api_key:
-        raise DojoConfigError("An API key is required to save a default connection.")
-    modal.Secret.objects.create(
-        DEFAULT_SECRET, values, environment_name=environment, allow_existing=True
-    )
-    modal.Secret.from_name(DEFAULT_SECRET, environment_name=environment).update(values)

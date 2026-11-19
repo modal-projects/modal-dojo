@@ -159,10 +159,6 @@
       "link": "/reference/cli/skills"
     },
     {
-      "label": "modal-dojo spindle",
-      "link": "/reference/cli/spindle"
-    },
-    {
       "label": "modal-dojo setup",
       "link": "/reference/cli/setup"
     },

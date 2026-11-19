@@ -6,7 +6,6 @@ import json
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from click.testing import CliRunner
 import httpx
 import pytest
 
@@ -359,46 +358,6 @@ def test_raw_cookbook_config_and_hardware_validation(monkeypatch):
         SpindleRecipe(config, context_length=64)
 
 
-def test_setup_saves_only_on_explicit_request(monkeypatch):
-    from modal_dojo.cli import entrypoint_cli
-
-    save = Mock()
-    monkeypatch.setattr(connection, "save_default", save)
-    monkeypatch.setenv("TINKER_API_KEY", "test-secret")
-    runner = CliRunner()
-    result = runner.invoke(
-        entrypoint_cli, ["spindle", "setup", "--base-url", URL, "--env", "test"]
-    )
-    assert result.exit_code != 0
-    save.assert_not_called()
-    result = runner.invoke(
-        entrypoint_cli,
-        ["spindle", "setup", "--base-url", URL, "--env", "test", "--yes"],
-    )
-    assert result.exit_code == 0, result.output
-    assert "test-secret" not in result.output
-    save.assert_called_once_with(URL, "test-secret", "test")
-
-
-def test_setup_uses_the_preset_context_and_rejects_mixed_options(monkeypatch):
-    from modal_dojo.cli import entrypoint_cli
-
-    resolve = Mock(return_value=connection.Connection(URL))
-    monkeypatch.setattr(connection, "resolve_connection", resolve)
-    runner = CliRunner()
-    result = runner.invoke(entrypoint_cli, ["spindle", "setup", "--model", MODEL])
-    assert result.exit_code == 0, result.output
-    assert resolve.call_args.args[2].context_length is None
-    resolve.reset_mock()
-    result = runner.invoke(
-        entrypoint_cli,
-        ["spindle", "setup", "--base-url", URL, "--context-length", "32768", "--yes"],
-    )
-    assert result.exit_code != 0
-    assert "--base-url" in result.output and "--model" in result.output
-    resolve.assert_not_called()
-
-
 def test_backend_with_previous_server_suffix_is_reused(monkeypatch):
     config = SimpleNamespace(name="qwen35-2b-lora-32k", trainer_gpu="H100", model=MODEL)
     monkeypatch.setattr(deployment, "select_config", lambda req: config)
@@ -530,26 +489,3 @@ def test_new_server_uses_stable_names_and_preserves_credentials(monkeypatch):
         for _, _, options in writes
     )
     assert writes[1][0] == writes[3][0] == deployment.SERVER_NAME + "-api"
-
-
-def test_save_default_is_scoped_and_does_not_replace_server_secret(monkeypatch):
-    import modal
-
-    create, update, named = Mock(), Mock(), Mock()
-    named.return_value = SimpleNamespace(update=update)
-    monkeypatch.setattr(
-        modal,
-        "Secret",
-        SimpleNamespace(objects=SimpleNamespace(create=create), from_name=named),
-    )
-    connection.save_default(URL, "test-key", "test")
-    create.assert_called_once_with(
-        connection.DEFAULT_SECRET,
-        {"TINKER_BASE_URL": URL, "TINKER_API_KEY": "test-key"},
-        environment_name="test",
-        allow_existing=True,
-    )
-    named.assert_called_once_with(connection.DEFAULT_SECRET, environment_name="test")
-    update.assert_called_once_with(
-        {"TINKER_BASE_URL": URL, "TINKER_API_KEY": "test-key"}
-    )
