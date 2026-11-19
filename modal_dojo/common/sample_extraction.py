@@ -362,10 +362,7 @@ def _trajectory_sample_limit() -> int:
 
 
 def _compact_trajectory_messages(raw: Any) -> list[dict[str, Any]] | None:
-    """Coerce a Sample's ``trajectory_messages`` into a compact, size-bounded
-    list of ``{role, content}`` turns the dashboard can render. Caps the number
-    of messages and truncates each long content (head+tail with an elision
-    notice) so a single verbose episode can't blow up the rollout payload."""
+    """Compact trajectory turns, preserving tool-call JSON for the renderer."""
     if not isinstance(raw, list) or not raw:
         return None
     out: list[dict[str, Any]] = []
@@ -381,7 +378,8 @@ def _compact_trajectory_messages(raw: Any) -> list[dict[str, Any]] | None:
                     content = json.dumps(content)
                 except TypeError:
                     content = str(content)
-        if len(content) > _TRAJECTORY_MSG_CHARS_MAX:
+        # Cutting through a tool call corrupts its JSON and hides executed commands.
+        if len(content) > _TRAJECTORY_MSG_CHARS_MAX and "<tool_call>" not in content:
             edge = _TRAJECTORY_MSG_CHARS_MAX // 2
             elided = len(content) - 2 * edge
             content = (
