@@ -11,6 +11,40 @@ torch = pytest.importorskip("torch")
 from modal_dojo.frameworks.miles import inkling2_long_context as lc  # noqa: E402
 
 
+def test_flex_compile_limit_survives_surrounding_config_scope(monkeypatch):
+    import importlib
+
+    flex_module = importlib.import_module("torch.nn.attention.flex_attention")
+    graphs = []
+    compile_fn = torch.compile
+
+    def backend(graph, inputs):
+        graphs.append(graph)
+        return graph.forward
+
+    def compile_on_cpu(fn, **kwargs):
+        kwargs.pop("mode")
+        return compile_fn(fn, backend=backend, **kwargs)
+
+    # Exercise the real compiler's specialization counter without a GPU kernel.
+    monkeypatch.setattr(flex_module, "flex_attention", lambda x: x.sin() * 2)
+    monkeypatch.setattr(torch, "compile", compile_on_cpu)
+    torch._dynamo.reset()
+    lc._flex_compiled.cache_clear()
+    try:
+        with torch._dynamo.config.patch(recompile_limit=8):
+            compiled = lc._flex_compiled()
+        with torch._dynamo.config.patch(recompile_limit=8):
+            for length in range(2, 14):
+                x = torch.randn(length, requires_grad=True)
+                compiled(x).sum().backward()
+                torch.testing.assert_close(x.grad, 2 * x.detach().cos())
+        assert len(graphs) == 12
+    finally:
+        lc._flex_compiled.cache_clear()
+        torch._dynamo.reset()
+
+
 @pytest.mark.parametrize("temperature", [0.7, 1.0])
 @pytest.mark.parametrize("length", [2, 8, 9])
 def test_streamed_scores_match_dense_values_and_lora_gradients(length, temperature):

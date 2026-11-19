@@ -60,6 +60,39 @@ def validate():
     )
     scores.sum().backward()
     assert torch.isfinite(x.grad).all() and torch.isfinite(weight.grad).all()
+    # Exercise the pinned compiler beyond its default eight specializations,
+    # including a surrounding config scope like those used during training.
+    import importlib
+    from unittest.mock import patch
+
+    flex_module = importlib.import_module("torch.nn.attention.flex_attention")
+    compile_fn = torch.compile
+    graphs = []
+
+    def backend(graph, inputs):
+        graphs.append(graph)
+        return graph.forward
+
+    def compile_on_cpu(fn, **kwargs):
+        kwargs.pop("mode")
+        return compile_fn(fn, backend=backend, **kwargs)
+
+    try:
+        with (
+            patch.object(flex_module, "flex_attention", lambda x: x.sin() * 2),
+            patch.object(torch, "compile", compile_on_cpu),
+        ):
+            with torch._dynamo.config.patch(recompile_limit=8):
+                compiled = inkling2_long_context._flex_compiled()
+            with torch._dynamo.config.patch(recompile_limit=8):
+                for length in range(2, 14):
+                    x = torch.randn(length, requires_grad=True)
+                    compiled(x).sum().backward()
+                    torch.testing.assert_close(x.grad, 2 * x.detach().cos())
+        assert len(graphs) == 12, len(graphs)
+    finally:
+        inkling2_long_context._flex_compiled.cache_clear()
+        torch._dynamo.reset()
     # Parser inspection does not instantiate the model or touch GPU memory.
     result = subprocess.run(
         [sys.executable, "/root/miles/train.py", "--help"],
@@ -79,6 +112,7 @@ def validate():
         "torch": str(torch.__version__),
         "patches": "applied",
         "streamed_cpu_backward": "passed",
+        "compiler_specializations": len(graphs),
         "parser": "help passed",
     }
 

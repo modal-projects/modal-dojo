@@ -192,14 +192,27 @@ def _flex_compiled():
 
     # The pinned image's dynamic flex compiler generates an invalid launcher
     # for unequal query/key lengths. Fixed chunk shapes avoid that path.
-    # Match upstream's cache allowance: variable-length rollouts otherwise
-    # exhaust the default eight specializations and fall back to eager flex.
-    torch._dynamo.config.cache_size_limit = max(
-        1024, torch._dynamo.config.cache_size_limit
+    # The full-model backward hit the default eight-specialization limit even
+    # after setting the global limit during wrapper construction. Set the limit
+    # on this compile region, so surrounding config scopes cannot reset it.
+    # Fullgraph makes exhaustion an error rather than a dense attention fallback.
+    compiled = torch.compile(
+        flex_attention,
+        dynamic=False,
+        fullgraph=True,
+        recompile_limit=1024,
+        mode="max-autotune-no-cudagraphs",
     )
-    return torch.compile(
-        flex_attention, dynamic=False, mode="max-autotune-no-cudagraphs"
-    )
+
+    def run(*args, **kwargs):
+        with torch._dynamo.config.patch(
+            accumulated_recompile_limit=max(
+                1024, torch._dynamo.config.accumulated_recompile_limit
+            )
+        ):
+            return compiled(*args, **kwargs)
+
+    return run
 
 
 def relative_attention(
