@@ -111,7 +111,7 @@ _ABORT_SINCE_MILES_4320 = (
 
 def _run_abort_patch(work: Path) -> None:
     script = _ABORT_PATCH.read_text().replace(
-        "/root/miles/miles/rollout/sglang_rollout.py", str(work)
+        "/root/miles/miles/rollout/sglang_rollout.py", work.as_posix()
     )
     exec(compile(script, str(_ABORT_PATCH), "exec"), {})
 
