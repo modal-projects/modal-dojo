@@ -97,7 +97,6 @@ Repo: https://github.com/modal-labs/modal-dojo
 ### Datasets
 
 - [DatasetConfig](https://dojo.modal.dev/reference/datasetconfig)
-- [HarborDataset](https://dojo.modal.dev/reference/harbordataset)
 - [HuggingFaceDataset](https://dojo.modal.dev/reference/huggingfacedataset)
 - [MultimodalDataset](https://dojo.modal.dev/reference/multimodaldataset)
 - [OnlineRollout](https://dojo.modal.dev/reference/onlinerollout)

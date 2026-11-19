@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import functools
 import hashlib
 import json
@@ -31,7 +32,7 @@ from modal_dojo.common.harbor_harnesses import (
     require_package,
     run_shell,
 )
-from modal_dojo.common.sandbox import extract_tar_gz, open_sandbox, tar_gz
+from modal_dojo.common.sandbox import extract_tar_gz, tar_gz
 
 logger = logging.getLogger(__name__)
 
@@ -294,11 +295,10 @@ class HarborEnvironment(Environment):
                 f"Harbor task {name!r} has no test script in tests/ (separate "
                 "verifier environments are not supported)."
             )
-        if env_cfg.docker_image:
-            image: dict[str, str] = {"docker_image": env_cfg.docker_image}
-        elif (task.paths.environment_dir / "Dockerfile").is_file():
-            image = {"dockerfile_context": _tar_b64(task.paths.environment_dir)}
-        else:
+        if not (
+            env_cfg.docker_image
+            or (task.paths.environment_dir / "Dockerfile").is_file()
+        ):
             raise DojoConfigError(
                 f"Harbor task {name!r} has neither environment.docker_image nor "
                 "environment/Dockerfile (docker-compose environments are not "
@@ -308,20 +308,16 @@ class HarborEnvironment(Environment):
         instruction = task.instruction.strip()
         label = {
             "task_name": name,
-            "image": image,
-            "workdir": env_cfg.workdir,
-            "cpu": env_cfg.cpus,
-            "memory_mb": env_cfg.memory_mb,
             "env": env_cfg.env,
-            # The worker rebuilds Harbor's Task from these to run its Verifier;
-            # the image context is packed above, and the solution never ships.
-            "task_files": _tar_b64(task_dir, exclude=("environment", "solution")),
+            # The worker rebuilds Harbor's Task from these: Harbor builds the
+            # image from environment/ and grades with tests/. The solution
+            # never ships.
+            "task_files": _tar_b64(task_dir, exclude=("solution",)),
             "verifier_timeout_sec": task.config.verifier.timeout_sec,
             "agent_timeout_sec": task.config.agent.timeout_sec
             or _DEFAULT_AGENT_TIMEOUT_SEC,
             "instruction": instruction,
             "harness": self.harness.name,
-            "image_commands": list(self.harness.image_commands),
             "reward_key": self.reward_key,
             "max_turns": self.max_turns,
         }
@@ -365,65 +361,25 @@ def _load_task(sample: Any) -> dict[str, Any]:
     return json.loads(label) if isinstance(label, str) else label
 
 
-_image_cache: dict[str, Any] = {}
-
-
-def _task_image(task: dict[str, Any]):
-    import modal
-
-    image_spec = task["image"]
-    commands = task.get("image_commands", [])
-    key = hashlib.sha256(
-        json.dumps([image_spec, commands], sort_keys=True).encode()
-    ).hexdigest()
-    if key in _image_cache:
-        return _image_cache[key]
-    if "docker_image" in image_spec:
-        image = modal.Image.from_registry(image_spec["docker_image"])
-    else:
-        context = Path(tempfile.mkdtemp(prefix=f"harbor-{task['task_name']}-"))
-        extract_tar_gz(base64.b64decode(image_spec["dockerfile_context"]), context)
-        image = modal.Image.from_dockerfile(context / "Dockerfile", context_dir=context)
-    if commands:  # the harness's layer on the task image, built once per task
-        image = image.run_commands(*commands)
-    _image_cache[key] = image
-    return image
-
-
-def _open_sandbox(task: dict[str, Any]):
-    """A started sandbox in the task's container; close with ``__exit__``."""
-    return open_sandbox(
-        app_name="modal-dojo-harbor",
-        image=_task_image(task),
-        timeout=int(task["agent_timeout_sec"] + task["verifier_timeout_sec"] + 3600),
-        workdir=task.get("workdir"),
-        cpu=float(task["cpu"]) if task.get("cpu") else None,
-        memory=task.get("memory_mb"),
-        setup=[("mkdir", "-p", SCRATCH_DIR)],
-    )
-
-
-def _run_tests(sb: Any, task: dict[str, Any]) -> float:
-    """Grade the episode in ``sb`` with Harbor's own ``Verifier``."""
+def _episode_environment(task: dict[str, Any]):
+    """The task's started Harbor ``ModalEnvironment``, as an async context."""
     require_package("harbor", HARBOR_VERSION)
-    from modal_dojo.common.harbor_sandbox import verify
+    from modal_dojo.common.harbor_sandbox import episode_environment
 
-    return verify(
-        sb,
-        task["task_files"],
-        task_name=task["task_name"],
-        reward_key=task["reward_key"],
-    )
+    return episode_environment(task, scratch_dir=SCRATCH_DIR)
 
 
-def _verify(task: dict[str, Any], script: str) -> float:
-    """Run ``script`` then the task's tests in a fresh sandbox; return the reward."""
-    sb = _open_sandbox(task)
-    try:
-        run_shell(sb, task, script, timeout_sec=task["agent_timeout_sec"])
-        return _run_tests(sb, task)
-    finally:
-        sb.__exit__(None, None, None)
+async def _verify(task: dict[str, Any], script: str) -> float:
+    """Run ``script`` then the task's tests in a fresh environment."""
+    async with _episode_environment(task) as episode:
+        await asyncio.to_thread(
+            run_shell,
+            episode.sandbox,
+            task,
+            script,
+            timeout_sec=task["agent_timeout_sec"],
+        )
+        return await episode.verify(task["reward_key"])
 
 
 async def harbor_reward(args: Any, sample: Any, **kwargs: Any) -> float:
@@ -440,7 +396,7 @@ async def harbor_reward(args: Any, sample: Any, **kwargs: Any) -> float:
     if script is None:
         return 0.0
     try:
-        return await asyncio.to_thread(_verify, task, script)
+        return await _verify(task, script)
     except Exception:
         logger.exception(
             "Harbor task %s: sandbox verification failed; scoring 0.0",
@@ -575,12 +531,14 @@ async def harbor_generate(
     sample.reward = None
     sample.status = Status.PENDING
 
-    sb = None
+    environments = contextlib.AsyncExitStack()
     episode = None
     try:
-        sb = await asyncio.to_thread(_open_sandbox, task)
+        harbor_episode = await environments.enter_async_context(
+            _episode_environment(task)
+        )
         deadline = time.monotonic() + task["agent_timeout_sec"]
-        episode = harness.start_episode(sb, task, deadline)
+        episode = harness.start_episode(harbor_episode.sandbox, task, deadline)
         messages = await asyncio.to_thread(
             episode.initial_messages, task["instruction"]
         )
@@ -645,7 +603,7 @@ async def harbor_generate(
 
         if sample.status == Status.PENDING:
             sample.status = Status.COMPLETED
-        sample.reward = await asyncio.to_thread(_run_tests, sb, task)
+        sample.reward = await harbor_episode.verify(task["reward_key"])
     except Exception:
         logger.exception(
             "Harbor task %s: episode failed; scoring 0.0", task.get("task_name")
@@ -659,6 +617,5 @@ async def harbor_generate(
                 **(sample.metadata or {}),
                 **{f"harbor_{k}": v for k, v in episode.metadata.items()},
             }
-        if sb is not None:
-            await asyncio.to_thread(sb.__exit__, None, None, None)
+        await environments.aclose()
     return sample

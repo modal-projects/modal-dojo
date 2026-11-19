@@ -46,7 +46,6 @@ _EXPORTS = {
     "Endpoint": ("modal_dojo.common.endpoint", "Endpoint"),
     "Sandbox": ("modal_dojo.common.sandbox", "Sandbox"),
     "SandboxResult": ("modal_dojo.common.sandbox", "SandboxResult"),
-    "HarborDataset": ("modal_dojo.common.dataset", "HarborDataset"),
     "HarborEnvironment": (
         "modal_dojo.common.harbor_environment",
         "HarborEnvironment",
@@ -66,7 +65,6 @@ _EXPORTS = {
     "ImageEvalRowResult": ("modal_dojo.common.eval", "ImageEvalRowResult"),
     "Sample": ("modal_dojo.common.sample", "Sample"),
     "extract_code": ("modal_dojo.common.eval", "extract_code"),
-    "HarborEval": ("modal_dojo.common.eval", "HarborEval"),
     "DeepSeek_V4_1_Flash": (
         "modal_dojo.common.models",
         "DeepSeek_V4_1_Flash",
@@ -272,7 +270,6 @@ __all__ = [
     "GLM_5_3_Flash_LoRA",
     "GLM_5_3_Flash_LoRA_Recipe",
     "GLM_5_3_Flash_LoRA_256k_Recipe",
-    "HarborDataset",
     "HarborEnvironment",
     "AgentHarness",
     "BashHarness",
@@ -287,7 +284,6 @@ __all__ = [
     "ImageEvalRowResult",
     "Sample",
     "extract_code",
-    "HarborEval",
     "HFModelConfiguration",
     "HuggingFaceDataset",
     "MultimodalDataset",

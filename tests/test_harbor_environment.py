@@ -2,19 +2,24 @@ import asyncio
 import base64
 import io
 import json
+import shlex
 import tarfile
+import threading
 from enum import Enum
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from harbor.environments.base import BaseEnvironment, ExecResult
+from harbor.models.task.config import EnvironmentConfig
+from harbor.models.trial.paths import TrialPaths
 
 from modal_dojo import Environment, HarborEnvironment
 from modal_dojo.common import harbor_environment as he
 from modal_dojo.common import harbor_harnesses as hh
+from modal_dojo.common import harbor_sandbox as hs
 from modal_dojo.common.harbor_harnesses import BashHarness, MiniSweAgent, Terminus2
 from modal_dojo.common.errors import DojoConfigError
-from modal_dojo.common.sandbox import SandboxResult
 
 
 @pytest.fixture(autouse=True)
@@ -75,17 +80,17 @@ def test_dataset_rows_prompt_with_instruction_and_pack_task(tmp_path):
     assert label["task_name"] == "b-task"
     assert label["verifier_timeout_sec"] == 30.0
     assert label["agent_timeout_sec"] == 45.0
-    assert (label["cpu"], label["memory_mb"]) == (2, 4096)
     with tarfile.open(
         fileobj=io.BytesIO(base64.b64decode(label["task_files"])), mode="r:gz"
     ) as tar:
         assert sorted(tar.getnames()) == [
+            "environment",
+            "environment/Dockerfile",
             "instruction.md",
             "task.toml",
             "tests",
             "tests/test.sh",
         ]
-    assert "dockerfile_context" in label["image"]
 
 
 def test_dataset_is_stable_and_validates_columns(tmp_path):
@@ -98,13 +103,6 @@ def test_dataset_is_stable_and_validates_columns(tmp_path):
         env.dataset.cache_key()
         == HarborEnvironment(str(tmp_path), harness=BashHarness()).dataset.cache_key()
     )
-
-
-def test_docker_image_wins_over_dockerfile(tmp_path):
-    _make_task(tmp_path, "t", toml="[environment]\ndocker_image = 'python:3.12'\n")
-    assert _label(HarborEnvironment(str(tmp_path), harness=BashHarness()))["image"] == {
-        "docker_image": "python:3.12"
-    }
 
 
 def test_task_selection(tmp_path):
@@ -230,51 +228,73 @@ def test_extract_script(response, script):
     assert hh.extract_script(response) == script
 
 
-class _FakeSandbox:
-    """Runs nothing; records calls and serves canned verifier output."""
+class _FakeEnvironment(BaseEnvironment):
+    """Harbor's environment interface, running nothing.
 
-    instances: list["_FakeSandbox"] = []
+    Records calls and serves canned verifier output.
+    """
+
+    instances: list["_FakeEnvironment"] = []
     reward_files: dict[str, str] = {}
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
         self.calls: list[tuple] = []
-        self.files: dict[str, bytes | str] = {}
-        _FakeSandbox.instances.append(self)
+        self.files: dict[str, str] = {}
+        super().__init__(
+            environment_dir=kwargs["environment_dir"],
+            environment_name=kwargs["environment_name"],
+            session_id=kwargs["session_id"],
+            trial_paths=kwargs["trial_paths"],
+            task_env_config=kwargs["task_env_config"],
+        )
+        type(self).instances.append(self)
 
-    def __enter__(self):
-        return self
+    @staticmethod
+    def type():
+        return "fake"
 
-    def __exit__(self, *exc):
-        return None
+    def _validate_definition(self):
+        pass
 
-    def write(self, path, data):
-        self.calls.append(("write", path))
-        self.files[path] = data
+    async def start(self, force_build):
+        self.calls.append(("start",))
 
-    def run(self, *cmd, timeout=None):
-        self.calls.append(("run", cmd))
-        return SandboxResult("", "", 0)
+    async def stop(self, delete):
+        self.calls.append(("stop",))
 
-    def upload_dir(self, local_dir, remote_dir):
-        self.calls.append(("upload_dir", remote_dir))
+    async def upload_file(self, source_path, target_path):
+        self.calls.append(("write", target_path))
+        self.files[target_path] = Path(source_path).read_text()  # noqa: ASYNC240
 
-    def download_dir(self, remote_dir, local_dir):
-        self.calls.append(("download_dir", remote_dir))
-        local_dir.mkdir(parents=True, exist_ok=True)
+    async def upload_dir(self, source_dir, target_dir):
+        self.calls.append(("upload_dir", target_dir))
+
+    async def download_file(self, source_path, target_path):
+        raise FileNotFoundError(source_path)
+
+    async def download_dir(self, source_dir, target_dir):
+        self.calls.append(("download_dir", source_dir))
+        Path(target_dir).mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240
         for name, text in self.reward_files.items():
-            (local_dir / name).write_text(text)
+            (Path(target_dir) / name).write_text(text)
+
+    async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
+        self.calls.append(("run", command, env))
+        return ExecResult(stdout="", stderr="", return_code=0)
 
 
 @pytest.fixture
-def fake_sandbox(monkeypatch):
-    import modal_dojo.common.sandbox as sandbox_mod
-
-    _FakeSandbox.instances = []
-    _FakeSandbox.reward_files = {}
-    monkeypatch.setattr(sandbox_mod, "Sandbox", _FakeSandbox)
-    monkeypatch.setattr(he, "_task_image", lambda task: "image")
-    return _FakeSandbox
+def fake_environment(monkeypatch):
+    """Harbor's environment factory, returning a ``_FakeEnvironment``."""
+    _FakeEnvironment.instances = []
+    _FakeEnvironment.reward_files = {}
+    monkeypatch.setattr(
+        hs.EnvironmentFactory,
+        "create_environment_from_config",
+        staticmethod(lambda **kwargs: _FakeEnvironment(**kwargs)),
+    )
+    return _FakeEnvironment
 
 
 def _sample(env: HarborEnvironment, response: str):
@@ -284,7 +304,7 @@ def _sample(env: HarborEnvironment, response: str):
 
 
 def test_reward_runs_answer_before_tests_and_reads_reward(
-    tmp_path, fake_sandbox, monkeypatch
+    tmp_path, fake_environment, monkeypatch
 ):
     monkeypatch.setenv("HARBOR_TEST_TOKEN", "tok")
     _make_task(
@@ -293,35 +313,39 @@ def test_reward_runs_answer_before_tests_and_reads_reward(
         toml="[verifier]\nenv = { TOKEN = '${HARBOR_TEST_TOKEN}' }\n",
     )
     env = HarborEnvironment(str(tmp_path), harness=BashHarness())
-    fake_sandbox.reward_files = {"reward.txt": "0.75\n"}
+    fake_environment.reward_files = {"reward.txt": "0.75\n"}
 
     reward = asyncio.run(
         env.reward_fn(None, _sample(env, "```bash\ntouch /app/t.txt\n```"))
     )
 
     assert reward == 0.75
-    sb = fake_sandbox.instances[0]
-    assert sb.files[f"{hh.SCRATCH_DIR}/step.sh"] == "touch /app/t.txt\n"
+    (environment,) = fake_environment.instances
+    assert environment.kwargs["config"].type == "modal"  # Harbor's ModalEnvironment
+    assert environment.files[f"{hh.SCRATCH_DIR}/step.sh"] == "touch /app/t.txt\n"
     solve_at = next(
-        i for i, c in enumerate(sb.calls) if c[0] == "run" and "step.sh" in c[1][-1]
+        i
+        for i, c in enumerate(environment.calls)
+        if c[0] == "run" and "step.sh" in c[1]
     )
-    assert solve_at < sb.calls.index(("upload_dir", "/tests"))
-    test_cmd = next(
-        c[1][-1] for c in sb.calls if c[0] == "run" and "(/tests/test.sh)" in c[1][-1]
+    assert solve_at < environment.calls.index(("upload_dir", "/tests"))
+    _, test_cmd, test_env = next(
+        c for c in environment.calls if c[0] == "run" and "(/tests/test.sh)" in c[1]
     )
-    assert "export TOKEN=tok" in test_cmd
-    assert test_cmd.endswith("(/tests/test.sh) > /logs/verifier/test-stdout.txt 2>&1")
+    assert test_cmd == "(/tests/test.sh) > /logs/verifier/test-stdout.txt 2>&1"
+    assert test_env == {"TOKEN": "tok"}
+    assert environment.calls[-1] == ("stop",)
 
 
-def test_reward_is_zero_without_script_or_reward(tmp_path, fake_sandbox):
+def test_reward_is_zero_without_script_or_reward(tmp_path, fake_environment):
     _make_task(tmp_path, "t")
     env = HarborEnvironment(str(tmp_path), harness=BashHarness())
 
     assert asyncio.run(env.reward_fn(None, _sample(env, "I can't"))) == 0.0
-    assert fake_sandbox.instances == []
+    assert fake_environment.instances == []
 
     assert asyncio.run(env.reward_fn(None, _sample(env, "```bash\ntrue\n```"))) == 0.0
-    assert len(fake_sandbox.instances) == 1
+    assert len(fake_environment.instances) == 1
 
 
 # ── Multi-turn ────────────────────────────────────────────────────────────
@@ -383,7 +407,7 @@ def _generation(text, finish="stop"):
 
 
 @pytest.fixture
-def multi_turn(tmp_path, monkeypatch, fake_sandbox):
+def multi_turn(tmp_path, monkeypatch, fake_environment):
     _make_task(tmp_path, "t")
     env = HarborEnvironment(
         str(tmp_path), max_turns=3, harness=BashHarness(max_output_chars=20)
@@ -406,7 +430,12 @@ def multi_turn(tmp_path, monkeypatch, fake_sandbox):
         apply_chat_template_kwargs='{"enable_thinking": false}',
     )
     return SimpleNamespace(
-        env=env, row=row, posts=posts, replies=replies, args=args, sandbox=fake_sandbox
+        env=env,
+        row=row,
+        posts=posts,
+        replies=replies,
+        args=args,
+        sandbox=fake_environment,
     )
 
 
@@ -519,10 +548,10 @@ def test_multi_turn_respects_response_token_budget(multi_turn):
 def test_multi_turn_sandbox_failure_scores_zero(multi_turn, monkeypatch):
     mt = multi_turn
 
-    def boom(task):
+    async def boom(self, force_build):
         raise RuntimeError("no capacity")
 
-    monkeypatch.setattr(he, "_open_sandbox", boom)
+    monkeypatch.setattr(_FakeEnvironment, "start", boom)
     sample = _run(mt)
     assert sample.reward == 0.0
     assert sample.status is _FakeSample.Status.COMPLETED
@@ -567,21 +596,6 @@ def test_observation_tokens_close_turn_and_open_next(tokenizer):
         tokenizer, "out", last_token=ord("x"), template_kwargs={}
     )
     assert tokenizer.decode(no_eot) == "<user>out¶\n<assistant>"
-
-
-@pytest.mark.parametrize(
-    ("toml", "memory_mb"),
-    [
-        ("[environment]\nmemory = '4G'\n", 4096),
-        ("[environment]\nmemory = '512M'\n", 512),
-    ],
-)
-def test_memory_sizes(tmp_path, toml, memory_mb):
-    _make_task(tmp_path, "t", toml=toml)
-    assert (
-        _label(HarborEnvironment(str(tmp_path), harness=BashHarness()))["memory_mb"]
-        == memory_mb
-    )
 
 
 # ── ManagedTrainConfig ────────────────────────────────────────────────────
@@ -729,24 +743,37 @@ def test_mini_swe_agent_format_errors_and_submit(monkeypatch):
     assert episode.metadata["exit_status"] == "RepeatedFormatError"
 
 
-class _FakeTmuxSandbox:
+class _FakeTmuxEnvironment(_FakeEnvironment):
     """A tmux session whose pane echoes whatever keys are sent."""
 
-    def __init__(self):
-        self.buffer = "root@box:/app# "
-        self.commands = []
+    buffer = "root@box:/app# "
 
-    def run(self, *cmd, timeout=None):
-        script = cmd[-1]
-        self.commands.append(script)
-        if "capture-pane" in script:
-            return SandboxResult(self.buffer, "", 0)
-        if "send-keys" in script:
-            import shlex
-
-            keys = shlex.split(script)[-1]
+    async def exec(self, command, cwd=None, env=None, timeout_sec=None, user=None):
+        self.calls.append(("run", command, env))
+        if "capture-pane" in command:
+            return ExecResult(stdout=self.buffer, stderr="", return_code=0)
+        if "send-keys" in command:
+            keys = shlex.split(command)[-1]
             self.buffer += keys.replace("\n", "\nroot@box:/app# ")
-        return SandboxResult("", "", 0)
+        return ExecResult(stdout="", stderr="", return_code=0)
+
+
+@pytest.fixture
+def tmux_sandbox(tmp_path):
+    """An ``EnvironmentSandbox`` over a fake tmux pane, on a background loop."""
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    environment = _FakeTmuxEnvironment(
+        environment_dir=tmp_path / "environment",
+        environment_name="t",
+        session_id="t",
+        trial_paths=TrialPaths(trial_dir=tmp_path / "trial"),
+        task_env_config=EnvironmentConfig(),
+    )
+    yield hs.EnvironmentSandbox(environment, loop)
+    loop.call_soon_threadsafe(loop.stop)
+    thread.join()
 
 
 def _terminus(commands, complete=False):
@@ -760,29 +787,29 @@ def _terminus(commands, complete=False):
     )
 
 
-def test_terminus_2_drives_tmux_and_shows_new_output(monkeypatch):
-    sb = _FakeTmuxSandbox()
+def test_terminus_2_drives_tmux_and_shows_new_output(tmux_sandbox):
     harness = Terminus2()
-    episode = harness.start_episode(sb, _task(harness, env={"A": "1"}), 1e18)
+    episode = harness.start_episode(tmux_sandbox, _task(harness), 1e18)
 
     (message,) = episode.initial_messages("Do it.")
     assert (
         "Task Description:\nDo it.\n\nCurrent terminal state:\n" in message["content"]
     )
     assert message["content"].endswith("Current Terminal Screen:\nroot@box:/app# \n")
-    start = next(c for c in sb.commands if "tmux new-session" in c)
-    assert start.startswith("export A=1\n")
+    commands = [c[1] for c in tmux_sandbox.environment.calls if c[0] == "run"]
+    start = next(c for c in commands if "tmux new-session" in c)
     assert "tmux new-session -x 160 -y 40 -d -s terminus-2 'bash --login'" in start
 
     observation = episode.step(_terminus(["ls\n"]))
     assert observation.startswith("New Terminal Output:\n")
     assert "ls\nroot@box:/app# " in observation
-    assert any("send-keys -t terminus-2 -- 'ls\n'" in c for c in sb.commands)
+    commands = [c[1] for c in tmux_sandbox.environment.calls if c[0] == "run"]
+    assert any("send-keys -t terminus-2 -- 'ls\n'" in c for c in commands)
 
 
-def test_terminus_2_parse_errors_warnings_and_double_completion(monkeypatch):
+def test_terminus_2_parse_errors_warnings_and_double_completion(tmux_sandbox):
     harness = Terminus2()
-    episode = harness.start_episode(_FakeTmuxSandbox(), _task(harness), 1e18)
+    episode = harness.start_episode(tmux_sandbox, _task(harness), 1e18)
     episode.initial_messages("Do it.")
 
     error = episode.step("not json")

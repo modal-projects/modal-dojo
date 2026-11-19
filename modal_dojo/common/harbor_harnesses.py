@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import copy
 import functools
 import importlib.metadata
@@ -22,11 +21,11 @@ from modal_dojo.common.errors import DojoConfigError
 
 SCRATCH_DIR = "/tmp/modal-dojo-harbor"
 
-HARBOR_VERSION = "0.8.0"
+HARBOR_VERSION = "0.25.0"
 MINI_SWE_AGENT_VERSION = "2.4.6"
 # Installed by the ``harbor`` extra locally and by the launchers in workers.
 HARNESS_PACKAGES = (
-    f"harbor=={HARBOR_VERSION}",
+    f"harbor[modal]=={HARBOR_VERSION}",
     f"mini-swe-agent=={MINI_SWE_AGENT_VERSION}",
 )
 
@@ -96,7 +95,8 @@ class AgentHarness(ABC):
     Subclass it to add your own. Each episode runs on a fresh copy:
 
     1. ``setup`` attaches the episode's started sandbox (``self.sb``, which has
-       ``run``, ``write``, ``read``, ``upload_dir`` and ``download_dir``).
+       ``run``, ``write``, ``read``, ``upload_dir`` and ``download_dir``, and
+       ``self.sb.environment``, Harbor's own ``ModalEnvironment``).
     2. ``initial_messages`` builds the opening chat messages.
     3. After every model reply, ``step`` acts on it and returns the next user
        message, or ``None`` to end the episode.
@@ -121,13 +121,10 @@ class AgentHarness(ABC):
     Attributes:
         name: Identifies the harness in rollout metadata and dataset labels.
         default_max_turns: Model replies per episode unless ``max_turns`` is set.
-        image_commands: Shell commands baked into each task's image once, before
-            any episode (Terminus 2 installs tmux this way).
     """
 
     name: ClassVar[str]
     default_max_turns: ClassVar[int] = 50
-    image_commands: ClassVar[tuple[str, ...]] = ()
 
     def start_episode(
         self, sb: Any, task: dict[str, Any], deadline: float
@@ -393,16 +390,6 @@ class MiniSweAgent(AgentHarness):
 _TMUX_PANE = (160, 40)  # Terminus 2's default width and height
 _MAX_DURATION_SEC = 60  # Terminus 2 caps each command's wait at a minute
 
-# Built into the task image once, so TmuxSession.start() doesn't install it
-# at the start of every episode.
-TMUX_INSTALL_COMMAND = (
-    "command -v tmux"
-    " || (apt-get update && apt-get install -y --no-install-recommends tmux)"
-    " || apk add --no-cache tmux bash"
-    " || dnf install -y tmux"
-    " || yum install -y tmux"
-)
-
 
 @dataclass(frozen=True)
 class _Terminus2:
@@ -439,15 +426,15 @@ def _terminus_2() -> _Terminus2:
 class Terminus2(AgentHarness):
     """Harbor's Terminus 2 agent (JSON parser), turn for turn.
 
-    The terminal is Harbor's own ``TmuxSession``, driven through
-    ``SandboxEnvironment``. The agent's loop is async and talks to an LLM
-    itself, so its per-turn steps are reproduced here; the output limit and
-    completion prompt are its own methods.
+    The terminal is Harbor's own ``TmuxSession`` on the episode's Harbor
+    environment; as in Harbor's trials, it installs tmux when the image lacks
+    it. The agent's loop is async and talks to an LLM itself, so its per-turn
+    steps are reproduced here; the output limit and completion prompt are its
+    own methods.
     """
 
     name = "terminus-2"
     default_max_turns = 50
-    image_commands = (TMUX_INSTALL_COMMAND,)
 
     def setup(self, sb: Any, task: dict[str, Any], deadline: float) -> None:
         super().setup(sb, task, deadline)
@@ -471,38 +458,28 @@ class Terminus2(AgentHarness):
         return self._t2.agent_cls._limit_output_length(None, output)
 
     def _confirm_completion(self, terminal_output: str) -> str:
-        json_agent = SimpleNamespace(_parser_name="json")
+        json_agent = SimpleNamespace(options=SimpleNamespace(parser_name="json"))
         return self._t2.agent_cls._get_completion_confirmation_message(
             json_agent, terminal_output
         )
 
     def _output(self) -> str:
-        return self._limit(asyncio.run(self._session.get_incremental_output()))
+        return self._limit(self.sb.call(self._session.get_incremental_output()))
 
     def initial_messages(self, instruction: str) -> list[dict]:
-        from harbor.models.task.config import EnvironmentConfig
-
-        from modal_dojo.common.harbor_sandbox import SandboxEnvironment
-
-        environment = SandboxEnvironment(
-            self.sb,
-            name=self.task["task_name"],
-            env_config=EnvironmentConfig(env=self.task.get("env", {})),
-            timeout_sec=max(1, int(self.time_left())),
-        )
         pane_log = self._t2.pane_log_path
         self.sb.run("mkdir", "-p", str(Path(pane_log).parent))
         width, height = _TMUX_PANE
         self._session = self._t2.tmux_session_cls(
             session_name=self.name,
-            environment=environment,
+            environment=self.sb.environment,
             logging_path=pane_log,
             local_asciinema_recording_path=None,
             remote_asciinema_recording_path=None,
             pane_width=width,
             pane_height=height,
         )
-        asyncio.run(self._session.start())
+        self.sb.call(self._session.start())
         return self._messages(instruction, self._output())
 
     def step(self, response: str) -> str | None:
@@ -525,7 +502,7 @@ class Terminus2(AgentHarness):
 
         for command in result.commands:
             wait = max(0.0, min(command.duration, _MAX_DURATION_SEC, self.time_left()))
-            asyncio.run(
+            self.sb.call(
                 self._session.send_keys(
                     command.keystrokes, block=False, min_timeout_sec=wait
                 )
