@@ -568,7 +568,9 @@ def _compact_report_queue(queue: "Queue[dict[str, Any] | None]") -> None:
                     str(item.get("training_run_id")), {**item, "points": {}}
                 )
                 for point in item.get("points", []):
-                    folded = merged["points"].setdefault(point["step"], {"metrics": {}})
+                    # Training and rollout steps can share a number, not an axis.
+                    key = (point["step"], point.get("step_key") or "")
+                    folded = merged["points"].setdefault(key, {"metrics": {}})
                     folded.update(
                         point, metrics={**folded["metrics"], **point["metrics"]}
                     )
