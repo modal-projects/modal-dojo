@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 import types
 
+from queue import Queue
+
 import pytest
 
 from modal_dojo.common import metric_mirror, reporting
@@ -150,8 +152,10 @@ def test_enqueue_metric_points_derives_url_and_retries(monkeypatch):
         items.append(item)
         blocking.append(block)
 
-    monkeypatch.setattr(reporting._REPORT_QUEUE, "put", put)
-    monkeypatch.setattr(reporting, "_ensure_worker", lambda **kw: None)
+    monkeypatch.setattr(reporting, "_LANES", {})
+    lane = reporting._lane("https://dash.test/api/metric-points")
+    monkeypatch.setattr(lane.queue, "put", put)
+    monkeypatch.setattr(reporting, "_ensure_worker", lambda *a, **kw: None)
     monkeypatch.setattr(reporting, "_REPORTER_DRAINING", False)
     reporting._enqueue_metric_points({"training_run_id": "r", "points": []})
     reporting._enqueue_metric_points({"training_run_id": "r", "points": []}, final=True)
@@ -171,9 +175,7 @@ def test_enqueue_metric_points_derives_url_and_retries(monkeypatch):
 def test_drain_compaction_folds_metric_batches_into_one_prioritized_post():
     metrics_url = "https://dash.test/api/metric-points"
     timing_url = "https://dash.test/api/timing-events"
-    queue = reporting._REPORT_QUEUE
-    while not queue.empty():
-        queue.get_nowait()
+    queue = Queue()
     for item in (
         {"_url": "https://dash.test/api/training-rollouts", "n": 1},
         {
@@ -196,7 +198,7 @@ def test_drain_compaction_folds_metric_batches_into_one_prioritized_post():
     ):
         queue.put_nowait(item)
     queue.unfinished_tasks = 6
-    reporting._compact_report_queue()
+    reporting._compact_report_queue(queue)
     final_timing, metrics, status, rollouts = queue.queue
     assert final_timing["n"] == 4 and status["n"] == 3 and rollouts["n"] == 1
     assert metrics["points"] == [
@@ -204,15 +206,53 @@ def test_drain_compaction_folds_metric_batches_into_one_prioritized_post():
     ]
     assert metrics["final"] is True and metrics["_retry_count"] == 3
     assert queue.unfinished_tasks == 4
-    while not queue.empty():
-        queue.get_nowait()
+
+
+def test_plain_status_updates_fold_but_step_events_do_not(monkeypatch):
+    monkeypatch.setenv(
+        "MODAL_DOJO_FRAMEWORK_STATUS_URL", "https://dash.test/api/framework-status"
+    )
+    monkeypatch.setattr(reporting, "_LANES", {})
+    monkeypatch.setattr(reporting, "_ensure_worker", lambda *a, **kw: None)
+    for payload in (
+        {"training_run_id": "r", "phase": "a", "progress_current": 1},
+        {"training_run_id": "r", "phase": "b"},
+        {"training_run_id": "r", "phase": "c", "step_event": "start"},
+        {"training_run_id": "r", "phase": "d"},
+        {"training_run_id": "other", "phase": "e"},
+    ):
+        reporting._enqueue(payload)
+    queued = list(reporting._lane("https://dash.test/api/framework-status").queue.queue)
+    assert [item["phase"] for item in queued] == ["b", "c", "d", "e"]
+    assert queued[0]["progress_current"] == 1
+
+
+def test_a_slow_endpoint_does_not_hold_up_the_others(monkeypatch):
+    import threading
+
+    monkeypatch.setenv(
+        "MODAL_DOJO_FRAMEWORK_STATUS_URL", "https://dash.test/api/framework-status"
+    )
+    monkeypatch.setattr(reporting, "_LANES", {})
+    release, rollout_posted = threading.Event(), threading.Event()
+
+    def post(item):
+        if item["_url"].endswith("/api/framework-status"):
+            release.wait(5)
+        else:
+            rollout_posted.set()
+        return True
+
+    monkeypatch.setattr(reporting, "_post", post)
+    reporting._enqueue({"training_run_id": "r", "phase": "slow"})
+    reporting._enqueue_rollout({"training_run_id": "r", "rollout_id": 0})
+    assert rollout_posted.wait(2)
+    release.set()
 
 
 def test_drain_compaction_splits_merged_metrics_at_the_batch_limit(monkeypatch):
     monkeypatch.setattr(reporting, "MAX_METRIC_POINTS_PER_BATCH", 2)
-    queue = reporting._REPORT_QUEUE
-    while not queue.empty():
-        queue.get_nowait()
+    queue = Queue()
     for steps in ((0, 1, 2), (3, 4)):
         queue.put_nowait(
             {
@@ -223,12 +263,10 @@ def test_drain_compaction_splits_merged_metrics_at_the_batch_limit(monkeypatch):
                 "_retry_count": 1,
             }
         )
-    reporting._compact_report_queue()
+    reporting._compact_report_queue(queue)
     batches = list(queue.queue)
     assert [[p["step"] for p in b["points"]] for b in batches] == [[0, 1], [2, 3], [4]]
     assert all(b["final"] for b in batches)  # every chunk keeps drain retries
-    while not queue.empty():
-        queue.get_nowait()
 
 
 # ── config wiring ─────

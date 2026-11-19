@@ -249,7 +249,7 @@ export default defineConfig({
                 name: 'Modal Dojo',
                 description:
                   'An open-source library that gives you the building blocks, tuned defaults, and observability you need for easy, production-grade post-training: supervised fine-tuning (SFT) and reinforcement learning (RL).',
-                codeRepository: 'https://github.com/modal-projects/modal-dojo',
+                codeRepository: 'https://github.com/modal-labs/modal-dojo',
                 programmingLanguage: 'Python',
                 author: { '@id': 'https://modal.com/#organization' },
               },
@@ -261,7 +261,7 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/modal-projects/modal-dojo',
+          href: 'https://github.com/modal-labs/modal-dojo',
         },
       ],
       // Code blocks mirror the main Modal docs site (modal.com/docs): shiki's
