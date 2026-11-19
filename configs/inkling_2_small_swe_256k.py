@@ -13,6 +13,8 @@ Prove one step by adding --launch; after inspecting reward, traces and dashboard
 timings, run --steps 10 --launch for the smoke. --generate my_swe_hooks:generate
 selects a multi-turn rollout. The existing 8k math preset stays the default for
 Inkling_2_Small; select this recipe explicitly.
+This example reuses the base recipe's checkpoint Volume in the selected Modal
+environment, avoiding another conversion when that checkpoint is already cached.
 
 256k is the total token budget: 16k initial prompt plus up to 240k response.
 In multi-turn rollouts, tool observations also occupy the total context budget.
@@ -66,6 +68,7 @@ def build_config(rows, reward, *, generate=None, steps=1):
         model=Inkling_2_Small(),
         dataset=SWETasks(rows),
         recipe=Inkling_2_Small_LoRA_256k_Recipe(
+            name="miles-inkling_2_small_lora_recipe",
             num_rollout=steps,
             custom_rm_function=reward,
             custom_generate_function=generate,

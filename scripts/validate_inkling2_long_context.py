@@ -157,13 +157,40 @@ def validate_gpu():
                 (g - e).abs().max().item() for g, e in zip(grads, expected_grads)
             ),
         }
-    _check_native_checkpoint()
+    # Exercise the actual Megatron checkpoint, including its reentrant backward,
+    # rather than only the torch stand-in used by local CPU tests.
+    hidden = torch.randn(17, 1, 8, device="cuda", requires_grad=True)
+    context = torch.randn(17, 1, 2, 8, device="cuda", requires_grad=True)
+
+    def layer(h, mask, c):
+        return (h + c.sum(-2)).square()
+
+    expected = torch.autograd.grad(
+        layer(hidden, None, context).sum(), (hidden, context)
+    )
+    token = lc._checkpoint_store.set(lc.CheckpointStore())
+    try:
+        output = lc.activation_checkpoint(layer, False, hidden, None, context)
+    finally:
+        lc._checkpoint_store.reset(token)
+    output.sum().backward()
+    for actual, reference in zip((hidden.grad, context.grad), expected, strict=True):
+        torch.testing.assert_close(actual, reference)
+
     results["native_checkpoint_backward"] = "passed"
     return results
 
 
-def _check_native_checkpoint():
+@app.function(
+    image=image, serialized=True, gpu="B300", timeout=1800, cpu=8, memory=65536
+)
+def stress_gpu():
+    import gc
+    import time
+
     import torch
+    import torch.nn.functional as F
+
     from modal_dojo.frameworks.miles import inkling2_long_context as lc
 
     # Exercise the actual Megatron checkpoint, including its reentrant backward,
@@ -186,20 +213,6 @@ def _check_native_checkpoint():
     for actual, reference in zip((hidden.grad, context.grad), expected, strict=True):
         torch.testing.assert_close(actual, reference)
 
-
-@app.function(
-    image=image, serialized=True, gpu="B300", timeout=1800, cpu=8, memory=65536
-)
-def stress_gpu():
-    import gc
-    import time
-
-    import torch
-    import torch.nn.functional as F
-
-    from modal_dojo.frameworks.miles import inkling2_long_context as lc
-
-    _check_native_checkpoint()
     torch.manual_seed(31)
     # Component test only. The reserve is not a loaded model and does not
     # reproduce its other live activations, optimizer, routing or collectives.
