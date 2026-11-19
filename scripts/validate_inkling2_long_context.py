@@ -236,9 +236,11 @@ def stress_gpu():
             tensor(262144, 8, 128),
         )
         r, projection = tensor(262144, 48, 16), tensor(16, 1024)
+        print("full_attention forward", flush=True)
         out, lse = lc.relative_attention(
             q, k, v, r, projection, [262144], window=None, block_mask_cache={}
         )
+        print("full_attention backward", flush=True)
         (out.float().square().mean() + lse.mean()).backward()
         assert out.shape == q.shape and torch.isfinite(out).all()
         assert all(torch.isfinite(x.grad).all() for x in (q, k, v, r, projection))
@@ -262,6 +264,7 @@ def stress_gpu():
                 + F.linear(F.linear(h, a), b).float()
             )
 
+        print("streamed_head forward", flush=True)
         scores = lc.stream_token_scores(
             hidden,
             tokens,
@@ -269,6 +272,7 @@ def stress_gpu():
             lambda x: 30 * torch.tanh(x / 30),
             vocab_size=200058,
         )
+        print("streamed_head backward", flush=True)
         (scores[..., 0].mean() + 0.01 * scores[..., 1].mean()).backward()
         assert scores.shape == (1, 262144, 2) and torch.isfinite(scores).all()
         assert all(torch.isfinite(x.grad).all() for x in (hidden, a, b))
