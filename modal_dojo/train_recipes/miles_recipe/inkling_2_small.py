@@ -1,4 +1,4 @@
-"""Inkling 2 Small LoRA recipe on one B300 node, mirroring upstream Miles.
+"""Inkling 2 Small LoRA with response-heavy 256k coding trajectories.
 
 The BF16 trainer and the engine serving the released NVFP4/MXFP8 experts do not
 fit on the GPUs together, so the trainer is parked on local disk during rollouts
@@ -6,21 +6,39 @@ and only the adapter is synced.
 """
 
 from dataclasses import field
+from pathlib import Path
 from typing import Any, ClassVar
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, model_validator
 from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.models import Inkling_2_Small, ModelConfig
+from modal_dojo.common.patches import encode_patch
 from modal_dojo.train_recipes.base import MicroBatchSize
 from modal_dojo.train_recipes.miles_recipe.recipe import MilesRecipe
 
 
+_PATCH_DIR = (
+    Path(__file__).resolve().parents[2] / "frameworks/miles/modal_helpers/patches"
+)
+
+
+def _image_commands() -> list[str]:
+    return [
+        f"echo {encode_patch(name, _PATCH_DIR)} | base64 -d | python3"
+        for name in ("patch_glm_5_3_flash_moe_seq_chunk", "patch_inkling2_long_context")
+    ]
+
+
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
 class Inkling_2_Small_LoRA_Recipe(MilesRecipe):
-    """Rank-32 LoRA GRPO, 8,192-token context, 1 node × 8 B300 GPUs.
+    """Rank-32 LoRA GRPO, 262,144-token context, 1 node × 8 B300 GPUs.
 
-    Defaults to one proof step; increasing the horizon is explicit.
+    Reserves 16k initial prompt tokens and 240k response tokens. Multi-turn
+    coding rollouts must supply exact token IDs, logprobs and tool-observation
+    loss masks via ``custom_generate_function``, plus executable-test rewards
+    via ``custom_rm_function``. Defaults to one proof step and no reward scorer;
+    full-length GPU validation is pending.
     """
 
     model_config_class: ClassVar[type[ModelConfig]] = Inkling_2_Small
@@ -61,11 +79,13 @@ class Inkling_2_Small_LoRA_Recipe(MilesRecipe):
     )
     max_retries: int = 0
 
-    rollout_batch_size: int = 32
+    # Eight DP ranks, one GRPO group. Do not pack several long trajectories.
+    rollout_batch_size: int = 1
     n_samples_per_prompt: int = 8
-    global_batch_size: int = 256
+    global_batch_size: int = 8
+    use_dynamic_batch_size: bool = False
+    micro_batch_size: MicroBatchSize = 1
     balance_data: bool = True
-    rm_type: str | None = "math"
     # Corrects for the gap between the BF16 trainer and the quantized engine.
     use_tis: bool = True
     use_rollout_routing_replay: bool = True
@@ -78,7 +98,7 @@ class Inkling_2_Small_LoRA_Recipe(MilesRecipe):
     recompute_granularity: str | None = "full"
     recompute_method: str | None = "uniform"
     recompute_num_layers: int | None = 1
-    max_tokens_per_gpu: MicroBatchSize = 8192
+    max_tokens_per_gpu: MicroBatchSize = 262144
     offload_train_target: str = "disk"
     offload_train_disk_dir: str = "/tmp/miles_train_offload"
 
@@ -100,7 +120,23 @@ class Inkling_2_Small_LoRA_Recipe(MilesRecipe):
     sglang_bf16_gemm_backend: str = "torch"
     sglang_page_size: int = 128
     sglang_mem_fraction_static: float = 0.6
-    sglang_context_length: int = 8192
+    sglang_context_length: int = 262144
+    sglang_max_running_requests: int | None = 1
+    sglang_server_concurrency: int | None = 8
+    sglang_chunked_prefill_size: int = 4096
+    max_seq_len: int = 262144
+    rollout_max_prompt_len: int = 16384
+    rollout_max_response_len: int = 245760
+    eval_max_response_len: int = 245760
+    seq_length: int = 262144
+    capture_trace: bool = True
+    # The pinned Miles image parses Inkling reasoning/tool blocks itself.
+    tito_model: str = "inkling"
+    use_session_server: str = "v1"
+    image_run_commands: list[str] = field(default_factory=_image_commands)
+    custom_model_provider_path: str = (
+        "modal_dojo.frameworks.miles.inkling2_long_context.model_provider"
+    )
     environment: dict[str, str] = field(
         default_factory=lambda: {
             # The inkling2 plugin lives in the Miles checkout and is not installed.
@@ -114,3 +150,56 @@ class Inkling_2_Small_LoRA_Recipe(MilesRecipe):
             "CONVERT_LOCAL_STAGING": "1",
         }
     )
+
+    @model_validator(mode="after")
+    def _validate_streaming_backend(self) -> "Inkling_2_Small_LoRA_Recipe":
+        overrides = self._escape_hatch_values()
+
+        def value(name, default=None):
+            return overrides.get(name, getattr(self, name, default))
+
+        for name in (
+            "tensor_model_parallel_size",
+            "pipeline_model_parallel_size",
+            "context_parallel_size",
+        ):
+            if value(name) != 1:
+                raise ValueError(f"Upstream Inkling 2 requires {name}=1")
+        if value("sequence_parallel"):
+            raise ValueError("Upstream Inkling 2 does not support sequence_parallel")
+        if value("loss_type") != "policy_loss" or value("qkv_format") != "thd":
+            raise ValueError("Inkling 256k requires packed thd policy_loss")
+        for name in (
+            "recompute_loss_function",
+            "true_on_policy_mode",
+            "use_sampling_support_replay",
+        ):
+            if value(name, False):
+                raise ValueError(f"Inkling streaming scores do not support {name}")
+        if (
+            value("recompute_granularity") != "full"
+            or value("recompute_method") != "uniform"
+            or value("recompute_num_layers") != 1
+        ):
+            raise ValueError(
+                "Inkling 256k requires full recomputation of one layer at a time"
+            )
+        if value("use_dynamic_batch_size") or value("micro_batch_size") != 1:
+            raise ValueError(
+                "Inkling 256k requires micro_batch_size=1 without dynamic packing"
+            )
+        required = _image_commands()
+        if (self.image_run_commands or [])[: len(required)] != required:
+            object.__setattr__(
+                self,
+                "image_run_commands",
+                [
+                    *required,
+                    *(
+                        command
+                        for command in self.image_run_commands or []
+                        if command not in required
+                    ),
+                ],
+            )
+        return self
