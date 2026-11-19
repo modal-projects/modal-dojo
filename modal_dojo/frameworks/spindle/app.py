@@ -31,9 +31,6 @@ def launch(recipe, *, show_output: bool = True, yes: bool = False) -> TrainingRu
 
     require_migrated_config()
     program = recipe.program
-    connection = resolve_connection(
-        recipe.base_url, recipe._api_key, recipe.requirements, yes=yes
-    )
     training_run_id = create_hash(
         program.model_name, "", f"SpindleRecipe:{Framework.SPINDLE.value}", "", ""
     )
@@ -43,6 +40,9 @@ def launch(recipe, *, show_output: bool = True, yes: bool = False) -> TrainingRu
         raise DojoConfigError(
             "Could not connect to Dojo. Run `modal-dojo setup` before launching Spindle."
         )
+    connection = resolve_connection(
+        recipe.base_url, recipe._api_key, recipe.requirements, yes=yes
+    )
     log_dir = f"{CHECKPOINTS_PATH}/{training_run_id}"
     status_display = TrainStatusDisplay(
         run_id=training_run_id,

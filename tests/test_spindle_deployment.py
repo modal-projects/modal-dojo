@@ -53,6 +53,65 @@ def test_explicit_url_never_borrows_an_unrelated_saved_key(monkeypatch):
         connection.resolve_connection(URL, None, REQ, environment="test")
 
 
+@pytest.mark.parametrize("setup_fails", [False, True])
+def test_dashboard_failure_does_not_provision_spindle(monkeypatch, setup_fails):
+    from modal_dojo.frameworks.spindle.app import launch
+
+    monkeypatch.setattr(
+        "modal_dojo.common.config.require_migrated_config", lambda: None
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.config.get_framework_status_url", lambda: None
+    )
+    monkeypatch.setattr(
+        "modal_dojo.cli.setup.ensure_dashboard_deployed",
+        Mock(
+            side_effect=DojoConfigError("dashboard setup failed")
+            if setup_fails
+            else None
+        ),
+    )
+    resolve = Mock(
+        side_effect=AssertionError("Must not provision before dashboard setup")
+    )
+    monkeypatch.setattr(connection, "resolve_connection", resolve)
+    with pytest.raises(
+        DojoConfigError, match=r"dashboard setup failed|Could not connect"
+    ):
+        launch(SimpleNamespace(program=SimpleNamespace(model_name=MODEL)), yes=True)
+    resolve.assert_not_called()
+
+
+def test_lookup_uses_the_current_environment_and_the_servers_named_secret(monkeypatch):
+    import modal
+
+    server = Mock()
+    server.get_web_url.return_value = URL
+    platform = Mock()
+    platform.remote.return_value = {"secrets": {"api": "custom-server-api"}}
+    lookup = Mock(side_effect=[server, platform])
+    exists = Mock(return_value=True)
+    monkeypatch.setattr(modal.Function, "from_name", lookup)
+    monkeypatch.setattr(connection, "_secret_exists", exists)
+
+    result = connection.lookup_server("test")
+
+    assert [call.args for call in lookup.call_args_list] == [
+        (deployment.SERVER_NAME, "server"),
+        (deployment.SERVER_NAME, "deployed_platform"),
+    ]
+    assert all(
+        call.kwargs == {"environment_name": "test"} for call in lookup.call_args_list
+    )
+    exists.assert_called_once_with("custom-server-api", "test", ["TINKER_API_KEY"])
+    assert result == connection.Connection(
+        URL,
+        secret_name="custom-server-api",
+        environment="test",
+        app_name=deployment.SERVER_NAME,
+    )
+
+
 def test_saved_connection_precedes_discovery_and_stays_remote(monkeypatch):
     exists = Mock(return_value=True)
     monkeypatch.setattr(connection, "_secret_exists", exists)
