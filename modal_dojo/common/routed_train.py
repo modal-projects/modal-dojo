@@ -1,4 +1,4 @@
-"""Train a model on an environment with the model's preset recipe."""
+"""Route a model, environment, and budget to a preset recipe."""
 
 from __future__ import annotations
 
@@ -138,17 +138,30 @@ def recipe_for(model: ModelConfig, max_context_len: int | None = None) -> Recipe
 
 # TODO: add to the API reference once the API shape is final.
 @exclude_from_api_reference
-class ManagedTrainConfig:
-    """Train a model on an environment with its preset recipe until ``budget`` runs out.
+class RoutedTrainConfig:
+    """Route a model, environment, and budget to the best recipe we have.
+
+    The user states what to train (model, environment with its context length)
+    and when to stop (budget); picking a framework and preset is ours, so recipe
+    improvements reach every routed run without a script change.
 
     ```python
-    run = ManagedTrainConfig(
+    run = RoutedTrainConfig(
         Qwen3_5_4B(),
         Environment(
             dataset=my_dataset, reward_fn=my_reward, max_context_len=32_768
         ),
         Budget(max_cost_usd=50, max_hours=6),
     ).train()
+    ```
+
+    The result is an ordinary ``TrainConfig``; edit it before training to
+    change any hyperparameter:
+
+    ```python
+    routed = RoutedTrainConfig(Qwen3_5_4B(), env, Budget(max_rollouts=100))
+    routed.train_config.recipe = dataclasses.replace(routed.recipe, lr=5e-7)
+    run = routed.train()
     ```
 
     Attributes:
