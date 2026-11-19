@@ -3,10 +3,10 @@ revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
-    "python_full_version == '3.14.*' and sys_platform == 'win32'",
     "python_full_version >= '3.15' and sys_platform == 'emscripten'",
-    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version < '3.14' and sys_platform == 'win32'",
     "python_full_version < '3.14' and sys_platform == 'emscripten'",
@@ -1749,7 +1749,7 @@ requires-dist = [
     { name = "httpx", specifier = "~=0.28.1" },
     { name = "modal", specifier = "==1.6.3" },
     { name = "modal-dojo", extras = ["spindle"], marker = "extra == 'spindle-deploy'" },
-    { name = "modal-spindle", marker = "python_full_version == '3.12.*' and extra == 'spindle-deploy'", git = "https://github.com/modal-projects/spindle.git?rev=16ce201dae9862347cb17437fa0cfed3e3db313e" },
+    { name = "modal-spindle", marker = "python_full_version == '3.12.*' and extra == 'spindle-deploy'", git = "https://github.com/modal-projects/spindle.git?rev=d23774980fb804eeca378930d19adcaede67c2f0" },
     { name = "packaging", specifier = "~=26.3" },
     { name = "pydantic", specifier = "~=2.14.1" },
     { name = "randomname", specifier = "~=0.2.1" },
@@ -1783,7 +1783,7 @@ docs = [
 [[package]]
 name = "modal-spindle"
 version = "0.1.8"
-source = { git = "https://github.com/modal-projects/spindle.git?rev=16ce201dae9862347cb17437fa0cfed3e3db313e#16ce201dae9862347cb17437fa0cfed3e3db313e" }
+source = { git = "https://github.com/modal-projects/spindle.git?rev=d23774980fb804eeca378930d19adcaede67c2f0#d23774980fb804eeca378930d19adcaede67c2f0" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },

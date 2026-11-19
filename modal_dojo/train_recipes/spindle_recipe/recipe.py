@@ -32,7 +32,8 @@ class SpindleRecipe:
     Provisioning requires the ``spindle-deploy`` extra and Python 3.12.
     Checkpoints stay on the server. The config's ``log_path`` is
     replaced by the run's directory on the ``spindle-checkpoints`` volume, from
-    which a retried driver resumes.
+    which a retried driver resumes. Pass ``secrets`` for credentials needed by
+    the program's environments or reward functions.
     """
 
     def __init__(
@@ -52,6 +53,7 @@ class SpindleRecipe:
         cpu: float = 4.0,
         memory: int = 8192,
         image_overlay: Callable[[modal.Image], modal.Image] | None = None,
+        secrets: list[modal.Secret] | None = None,
     ):
         try:
             from tinker_cookbook.rl.train import Config
@@ -117,6 +119,7 @@ class SpindleRecipe:
         self.cpu = cpu
         self.memory = memory
         self.image_overlay = image_overlay
+        self.secrets = list(secrets or [])
         self._api_key = api_key
 
     def launch(self, *, show_output: bool = True, yes: bool = False) -> TrainingRun:

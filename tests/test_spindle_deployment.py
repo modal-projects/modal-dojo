@@ -355,6 +355,15 @@ def test_local_spindle_version_must_match_the_managed_app_version(monkeypatch):
         deployment.select_config(REQ)
 
 
+def test_deepseek_1017_has_a_bundled_64k_backend():
+    pytest.importorskip("spindle")
+    config = deployment.select_config(
+        Requirements("deepseek-ai/DeepSeek-V4.1-Flash-1017", 2048, 32, 65536)
+    )
+    assert config.model == "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+    assert config.max_context_length == 65536
+
+
 def test_routing_keeps_program_model_and_other_services_unchanged(monkeypatch):
     tinker = pytest.importorskip("tinker")
     calls = []

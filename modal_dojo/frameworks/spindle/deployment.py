@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 SPINDLE_VERSION = "0.1.8"
 SPINDLE_REQUIREMENT = (
     "modal-spindle @ git+https://github.com/modal-projects/spindle.git@"
-    "16ce201dae9862347cb17437fa0cfed3e3db313e"
+    "d23774980fb804eeca378930d19adcaede67c2f0"
 )
 SERVER_NAME = "dojo-spindle-v" + SPINDLE_VERSION.replace(".", "-")
 DEPLOYMENTS_PATH = "/api/v1/spindle/deployments"

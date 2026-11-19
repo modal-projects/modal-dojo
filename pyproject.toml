@@ -39,7 +39,7 @@ spindle-deploy = [
 ]
 
 [tool.uv.sources]
-modal-spindle = { git = "https://github.com/modal-projects/spindle.git", rev = "16ce201dae9862347cb17437fa0cfed3e3db313e" }
+modal-spindle = { git = "https://github.com/modal-projects/spindle.git", rev = "d23774980fb804eeca378930d19adcaede67c2f0" }
 
 [build-system]
 requires = ["hatchling"]

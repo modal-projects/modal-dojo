@@ -142,6 +142,7 @@ def build_spindle_app(
         volumes=volumes,
         # The key stays out of the pickled function.
         secrets=[
+            *recipe.secrets,
             *connection.driver_secrets(),
             *proxy_auth_secrets(),
             *hf_secrets(),
