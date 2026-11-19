@@ -219,7 +219,13 @@ class _Reporter:
         )
 
     def report_timing(self, step, window):
-        report_timing(self.run, step, window.get_span_dicts())
+        if window.spans:
+            report_timing(
+                self.run,
+                step,
+                window.get_span_dicts(),
+                min(span.wall_start for span in window.spans),
+            )
 
     def flush_groups(self, step, metrics):
         samples = []

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from dataclasses import fields as dataclass_fields, is_dataclass
 from enum import Enum
 import logging
 from pathlib import Path
@@ -31,7 +32,11 @@ logger = logging.getLogger(__name__)
 def _recipe_fields(config, prefix=""):
     """Every config field, with nested configs and datasets as dotted keys."""
     fields = {}
-    names = getattr(config, "__chz_fields__", None) or vars(config)
+    names = getattr(config, "__chz_fields__", None) or (
+        [field.name for field in dataclass_fields(config)]
+        if is_dataclass(config)
+        else getattr(config, "__dict__", {})
+    )
     for name in names:
         if name.startswith("_"):
             continue
@@ -174,8 +179,10 @@ def report_rollouts(run: TrainingRun, step: int, samples: list, metrics: dict) -
         logger.exception("Could not report rollouts for step %s", step)
 
 
-def report_timing(run: TrainingRun, step: int, spans: list[dict]) -> None:
-    """Send ``step``'s timing from tinker-cookbook-style span dicts."""
+def report_timing(
+    run: TrainingRun, step: int, spans: list[dict], lane_start_unix_s: float
+) -> None:
+    """Send relative spans with their absolute lane start."""
     from modal_dojo.common.reporting import _enqueue_timing
 
     from .timing import timing_record
@@ -187,7 +194,7 @@ def report_timing(run: TrainingRun, step: int, spans: list[dict]) -> None:
             run.training_run_id,
             step,
             spans,
-            min(span["wall_start"] for span in spans),
+            lane_start_unix_s,
         )
         # storage_key is a property, so model_dump leaves it out; the
         # transport keys exit retries by it.

@@ -77,7 +77,7 @@ class TinkerContext:
         from modal_dojo.frameworks.spindle.reporting import report_status, report_timing
 
         status, span_name = _PHASES[name]
-        if status is not None and self.run.framework_status != status:
+        if status is not None:
             report_status(self.run, status, is_active=True, rollout_id=step)
         start = time.time()
         try:
@@ -93,7 +93,20 @@ class TinkerContext:
                     "duration": end - start,
                 }
             )
-            report_timing(self.run, step, spans)
+            lane_start = min(span["wall_start"] for span in spans)
+            report_timing(
+                self.run,
+                step,
+                [
+                    {
+                        **span,
+                        "wall_start": span["wall_start"] - lane_start,
+                        "wall_end": span["wall_end"] - lane_start,
+                    }
+                    for span in spans
+                ],
+                lane_start,
+            )
 
     def log_rollouts(
         self,
