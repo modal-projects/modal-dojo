@@ -22,48 +22,6 @@ if TYPE_CHECKING:
 
 Recipe = SlimeRecipe | MilesRecipe
 
-# Each model's presets as (longest context it is built for, recipe), shortest
-# first. ``None`` means the preset adapts to any context. Lookup walks the
-# model's MRO, so a subclass (e.g. a LoRA variant) uses its own entry first.
-ROUTES: dict[type[ModelConfig], tuple[tuple[int | None, type[Recipe]], ...]] = {
-    # slime
-    models.GLM_4_7: ((None, slime_recipe.GLM_4_7_Recipe),),
-    models.Qwen3_0_6B: ((None, slime_recipe.Qwen3_0_6B_Recipe),),
-    models.Qwen3_1_7B: ((None, slime_recipe.Qwen3_1_7B_Recipe),),
-    models.Qwen3_4B: ((None, slime_recipe.Qwen3_4B_Recipe),),
-    models.Qwen3_8B: ((None, slime_recipe.Qwen3_8B_Recipe),),
-    models.Qwen3_5_0_8B: ((None, slime_recipe.Qwen3_5_0_8B_Recipe),),
-    models.Qwen3_5_2B: ((None, slime_recipe.Qwen3_5_2B_Recipe),),
-    models.Qwen3_5_4B: ((None, slime_recipe.Qwen3_5_4B_Recipe),),
-    models.Qwen3_5_9B: ((None, slime_recipe.Qwen3_5_9B_Recipe),),
-    models.Qwen3_6_27B: ((None, slime_recipe.Qwen3_6_27B_Recipe),),
-    models.Qwen3_6_35B: ((None, slime_recipe.Qwen3_6_35B_Recipe),),
-    models.Qwen3_8_27B: ((None, slime_recipe.Qwen3_8_27B_Recipe),),
-    models.Qwen3_ASR_1_7B: ((None, slime_recipe.Qwen3_ASR_1_7B_Recipe),),
-    models.Qwen3_VL_8B: ((None, slime_recipe.Qwen3_VL_8B_Recipe),),
-    # Miles
-    models.Beam_1_0_501B_A23B_LoRA: (
-        (262_144, miles_recipe.Beam_1_0_501B_A23B_LoRA_256k_Recipe),
-    ),
-    models.DeepSeek_V4_1_Flash: ((None, miles_recipe.DeepSeek_V4_1_Flash_Recipe),),
-    models.DeepSeek_V4_1_Flash_LoRA: (
-        (None, miles_recipe.DeepSeek_V4_1_Flash_LoRA_Recipe),
-    ),
-    models.Gemma4_26B_A4B: ((None, miles_recipe.Gemma4_26B_A4B_Recipe),),
-    models.GLM_5_3_Flash_LoRA: (
-        (32_768, miles_recipe.GLM_5_3_Flash_LoRA_Recipe),
-        (262_144, miles_recipe.GLM_5_3_Flash_LoRA_256k_Recipe),
-    ),
-    models.Inkling_Small: ((None, miles_recipe.Inkling_Small_Recipe),),
-    models.Inkling_Small_LoRA: ((None, miles_recipe.Inkling_Small_LoRA_Recipe),),
-    models.Kimi_K3: (
-        (32_768, miles_recipe.Kimi_K3_LoRA_Recipe),
-        (65_536, miles_recipe.Kimi_K3_LoRA_64k_Recipe),
-    ),
-    models.Moonlight_16B_A3B_Instruct: ((None, miles_recipe.Moonlight_16B_A3B_Recipe),),
-    models.Muse_Spark_Open: ((65_536, miles_recipe.Muse_Spark_Open_64k_Recipe),),
-}
-
 
 def _context_fields(preset: Recipe, context: int) -> dict[str, Any]:
     prompt = getattr(preset, "rollout_max_prompt_len", None)
@@ -94,26 +52,88 @@ def recipe_for(model: ModelConfig, max_context_len: int | None = None) -> Recipe
     """Return the preset recipe that trains ``model`` at ``max_context_len``.
 
     Picks the shortest-context preset that fits, then sets its rollout limits
-    to ``max_context_len``. ``None`` keeps the first preset's own limits.
+    to ``max_context_len``. ``None`` keeps the preset's own limits.
     """
-    routes = next((ROUTES[cls] for cls in type(model).__mro__ if cls in ROUTES), None)
-    if routes is None:
-        raise DojoConfigError(
-            f"No recipe preset for {type(model).__name__} ({model.model_name!r}). "
-            "Use TrainConfig with an explicit recipe for this model."
-        )
-    if max_context_len is None:
-        return routes[0][1]()
-    for ceiling, recipe_cls in routes:
-        if ceiling is None or max_context_len <= ceiling:
-            preset = recipe_cls()
-            return dataclasses.replace(
-                preset, **_context_fields(preset, max_context_len)
+    ctx = max_context_len
+
+    def fits(limit: int) -> bool:
+        return ctx is None or ctx <= limit
+
+    # Cases match in order: a LoRA subclass must come before its base model.
+    match model:
+        # Presets built for a fixed context: the shortest one that fits.
+        case models.Kimi_K3() if fits(32_768):
+            preset = miles_recipe.Kimi_K3_LoRA_Recipe()
+        case models.Kimi_K3() if fits(65_536):
+            preset = miles_recipe.Kimi_K3_LoRA_64k_Recipe()
+        case models.GLM_5_3_Flash_LoRA() if fits(32_768):
+            preset = miles_recipe.GLM_5_3_Flash_LoRA_Recipe()
+        case models.GLM_5_3_Flash_LoRA() if fits(262_144):
+            preset = miles_recipe.GLM_5_3_Flash_LoRA_256k_Recipe()
+        case models.Beam_1_0_501B_A23B_LoRA() if fits(262_144):
+            preset = miles_recipe.Beam_1_0_501B_A23B_LoRA_256k_Recipe()
+        case models.Muse_Spark_Open() if fits(65_536):
+            preset = miles_recipe.Muse_Spark_Open_64k_Recipe()
+        case (
+            models.Kimi_K3()
+            | models.GLM_5_3_Flash_LoRA()
+            | models.Beam_1_0_501B_A23B_LoRA()
+            | models.Muse_Spark_Open()
+        ):
+            raise DojoConfigError(
+                f"No {type(model).__name__} preset supports max_context_len={ctx}"
             )
-    raise DojoConfigError(
-        f"No {type(model).__name__} preset supports max_context_len="
-        f"{max_context_len}; the longest is {routes[-1][0]}."
-    )
+        # Presets that adapt to any context. slime:
+        case models.GLM_4_7():
+            preset = slime_recipe.GLM_4_7_Recipe()
+        case models.Qwen3_0_6B():
+            preset = slime_recipe.Qwen3_0_6B_Recipe()
+        case models.Qwen3_1_7B():
+            preset = slime_recipe.Qwen3_1_7B_Recipe()
+        case models.Qwen3_4B():
+            preset = slime_recipe.Qwen3_4B_Recipe()
+        case models.Qwen3_8B():
+            preset = slime_recipe.Qwen3_8B_Recipe()
+        case models.Qwen3_5_0_8B():
+            preset = slime_recipe.Qwen3_5_0_8B_Recipe()
+        case models.Qwen3_5_2B():
+            preset = slime_recipe.Qwen3_5_2B_Recipe()
+        case models.Qwen3_5_4B():
+            preset = slime_recipe.Qwen3_5_4B_Recipe()
+        case models.Qwen3_5_9B():
+            preset = slime_recipe.Qwen3_5_9B_Recipe()
+        case models.Qwen3_6_27B():
+            preset = slime_recipe.Qwen3_6_27B_Recipe()
+        case models.Qwen3_6_35B():
+            preset = slime_recipe.Qwen3_6_35B_Recipe()
+        case models.Qwen3_8_27B():
+            preset = slime_recipe.Qwen3_8_27B_Recipe()
+        case models.Qwen3_ASR_1_7B():
+            preset = slime_recipe.Qwen3_ASR_1_7B_Recipe()
+        case models.Qwen3_VL_8B():
+            preset = slime_recipe.Qwen3_VL_8B_Recipe()
+        # Miles:
+        case models.DeepSeek_V4_1_Flash_LoRA():
+            preset = miles_recipe.DeepSeek_V4_1_Flash_LoRA_Recipe()
+        case models.DeepSeek_V4_1_Flash():
+            preset = miles_recipe.DeepSeek_V4_1_Flash_Recipe()
+        case models.Gemma4_26B_A4B():
+            preset = miles_recipe.Gemma4_26B_A4B_Recipe()
+        case models.Inkling_Small_LoRA():
+            preset = miles_recipe.Inkling_Small_LoRA_Recipe()
+        case models.Inkling_Small():
+            preset = miles_recipe.Inkling_Small_Recipe()
+        case models.Moonlight_16B_A3B_Instruct():
+            preset = miles_recipe.Moonlight_16B_A3B_Recipe()
+        case _:
+            raise DojoConfigError(
+                f"No recipe preset for {type(model).__name__} "
+                f"({model.model_name!r}). Use TrainConfig with an explicit "
+                "recipe for this model."
+            )
+    if ctx is None:
+        return preset
+    return dataclasses.replace(preset, **_context_fields(preset, ctx))
 
 
 # TODO: add to the API reference once the API shape is final.
