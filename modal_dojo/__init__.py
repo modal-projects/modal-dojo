@@ -39,9 +39,9 @@ _EXPORTS = {
     "Budget": ("modal_dojo.common.budget", "Budget"),
     "DatasetConfig": ("modal_dojo.common.dataset", "DatasetConfig"),
     "Environment": ("modal_dojo.common.environment", "Environment"),
-    "ManagedTrainConfig": (
-        "modal_dojo.common.managed_train",
-        "ManagedTrainConfig",
+    "RoutedTrainConfig": (
+        "modal_dojo.common.routed_train",
+        "RoutedTrainConfig",
     ),
     "Endpoint": ("modal_dojo.common.endpoint", "Endpoint"),
     "Sandbox": ("modal_dojo.common.sandbox", "Sandbox"),
@@ -248,7 +248,7 @@ __all__ = [
     "Budget",
     "DatasetConfig",
     "Environment",
-    "ManagedTrainConfig",
+    "RoutedTrainConfig",
     "Endpoint",
     "Sandbox",
     "SandboxResult",
