@@ -11,9 +11,6 @@ from functools import lru_cache, partial
 import math
 from types import MethodType
 
-import torch
-from torch.utils.checkpoint import checkpoint
-
 
 def stream_token_scores(
     hidden_states,
@@ -31,6 +28,9 @@ def stream_token_scores(
     at most one vocabulary chunk. The final row predicts outside this packed
     batch; Miles' response layout never selects it.
     """
+    import torch
+    from torch.utils.checkpoint import checkpoint
+
     if hidden_states.ndim != 3 or hidden_states.shape[1] != 1:
         raise ValueError("Inkling streaming scores require packed thd inputs")
     if tuple(input_ids.shape) != (1, hidden_states.shape[0]):
@@ -107,6 +107,7 @@ def select_token_scores(
     rollout_sampling_mask=None,
 ):
     """Use Miles' own response offsets and keep its policy loss/metrics intact."""
+    import torch
     from miles.backends.training_utils.loss.hub.logit_processors import (
         _local_response_layout,
     )
@@ -146,6 +147,8 @@ def chunked_residual_mix(
     chunk_size=1024,
 ):
     """Bound fp32 depth-mixing intermediates; never split sequence attention."""
+    import torch
+    from torch.utils.checkpoint import checkpoint
 
     def mix(*tensors):
         return tuple(
@@ -188,6 +191,7 @@ def attn_res_mix(sources, queries, *, normalize_values, partial_addend=None):
 
 @lru_cache(maxsize=1)
 def _flex_compiled():
+    import torch
     from torch.nn.attention.flex_attention import flex_attention
 
     # The pinned image's dynamic flex compiler generates an invalid launcher
@@ -224,7 +228,9 @@ def relative_attention(
     exceed the available memory at 256k. Recompute one query chunk at a time;
     this does not truncate attention or introduce a sliding window.
     """
+    import torch
     from torch.nn.attention.flex_attention import AuxRequest, create_block_mask
+    from torch.utils.checkpoint import checkpoint
 
     segment = torch.repeat_interleave(
         torch.arange(len(seqlens), device=q.device),
@@ -312,6 +318,8 @@ def relative_attention(
 
 
 def _cpu_copy(tensor):
+    import torch
+
     result = torch.empty_like(tensor, device="cpu", pin_memory=tensor.is_cuda)
     result.copy_(tensor.detach())
     return result
@@ -341,6 +349,8 @@ class CheckpointStore:
 
     @staticmethod
     def unpack_context(packed):
+        import torch
+
         device, blocks, shape = packed
         # Copy directly into the destination to avoid a second GPU-sized stack.
         result = torch.empty(shape, device=device, dtype=blocks[0].dtype)
@@ -354,6 +364,7 @@ _checkpoint_store = ContextVar("inkling2_checkpoint_store", default=None)
 
 def activation_checkpoint(function, distribute_saved_activations, *args):
     """CPU-save outer layer checkpoints; nested MoE checkpoints remain on GPU."""
+    import torch
     from megatron.core import tensor_parallel
 
     store = _checkpoint_store.get()
