@@ -24,6 +24,8 @@ def test_256k_cli_and_base_selection():
         "--seq-length": "262144",
         "--sglang-context-length": "262144",
         "--micro-batch-size": "1",
+        "--tito-model": "inkling",
+        "--use-session-server": "v1",
     }.items():
         assert cli[cli.index(flag) + 1] == value
     assert "--rm-type" not in cli

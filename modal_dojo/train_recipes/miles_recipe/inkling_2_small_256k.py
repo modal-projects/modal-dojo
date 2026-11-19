@@ -57,6 +57,10 @@ class Inkling_2_Small_LoRA_256k_Recipe(Inkling_2_Small_LoRA_Recipe):
     sglang_server_concurrency: int | None = 8
     sglang_chunked_prefill_size: int = 4096
     capture_trace: bool = True
+    # The pinned Miles image has an Inkling-family token-level session adapter.
+    # It parses reasoning/tool blocks itself; no SGLang parser override is needed.
+    tito_model: str = "inkling"
+    use_session_server: str = "v1"
 
     @model_validator(mode="after")
     def _validate_streaming_backend(self) -> "Inkling_2_Small_LoRA_256k_Recipe":

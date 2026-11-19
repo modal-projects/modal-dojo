@@ -20,6 +20,14 @@ environment, avoiding another conversion when that checkpoint is already cached.
 In multi-turn rollouts, tool observations also occupy the total context budget.
 This is a training configuration, not a SWE-bench leaderboard evaluation.
 The backend is experimental until the full-length proof and smoke pass.
+
+For the Harbor/mini-swe-agent use case in modal-projects/autoconfig#13, pass
+Inkling_2_Small_LoRA_256k_Recipe() to workload_recipe(config, recipe=...). This
+preset declares Miles' native ``inkling`` session adapter. Apply the 245760
+response cap after attaching the workload (including its extra_config value),
+because that adapter defaults to 8192 per completion. The workload owns agent
+execution, verifier rewards, token tracing, and the larger engine window needed
+for a final turn; max_seq_len still bounds the training trajectory at 262144.
 """
 
 import argparse
