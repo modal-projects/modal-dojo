@@ -379,7 +379,9 @@ def _compact_trajectory_messages(raw: Any) -> list[dict[str, Any]] | None:
                 except TypeError:
                     content = str(content)
         # Cutting through a tool call corrupts its JSON and hides executed commands.
-        if len(content) > _TRAJECTORY_MSG_CHARS_MAX and "<tool_call>" not in content:
+        if len(content) > _TRAJECTORY_MSG_CHARS_MAX and not (
+            msg.get("role") == "assistant" and "<tool_call>" in content
+        ):
             edge = _TRAJECTORY_MSG_CHARS_MAX // 2
             elided = len(content) - 2 * edge
             content = (

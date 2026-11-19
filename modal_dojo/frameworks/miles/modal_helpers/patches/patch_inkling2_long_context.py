@@ -97,6 +97,8 @@ def main() -> None:
     # Validate every target before modifying any of them.
     patched = [(path, patch_source(path.read_text(), path.name)) for path in paths]
     for path, source in patched:
+        compile(source, str(path), "exec")
+    for path, source in patched:
         path.write_text(source)
         print(f"Applied {MARKER} to {path}")
 

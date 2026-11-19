@@ -136,6 +136,7 @@ def rollout_lanes(records: list[dict[str, Any]]) -> dict[str, Any]:
         record["role"]: {
             "role": record["role"],
             "lane_start_unix_s": record["lane_start_unix_s"],
+            "final": record.get("final", False),
             "phases": record["phases"],
         }
         for record in records
