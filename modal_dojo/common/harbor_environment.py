@@ -6,14 +6,12 @@ import asyncio
 import base64
 import functools
 import hashlib
-import io
 import json
 import logging
 import re
 import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
 import time
 from collections.abc import Iterable
@@ -29,14 +27,13 @@ from modal_dojo.common.harbor_harnesses import (
     SCRATCH_DIR,
     TMUX_INSTALL_COMMAND,
     Harness,
-    env_assignments,
     episode_class,
     extract_script,
     parse_harness,
     require_package,
     run_shell,
 )
-from modal_dojo.common.sandbox import open_sandbox
+from modal_dojo.common.sandbox import extract_tar_gz, open_sandbox, tar_gz
 
 logger = logging.getLogger(__name__)
 
@@ -44,30 +41,23 @@ logger = logging.getLogger(__name__)
 _DEFAULT_AGENT_TIMEOUT_SEC = 600.0
 
 
-def _tar_b64(directory: Path) -> str:
-    """Gzipped tarball of ``directory``'s contents, base64-encoded."""
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for child in sorted(directory.iterdir()):
-            tar.add(child, arcname=child.name)
-    return base64.b64encode(buf.getvalue()).decode("ascii")
-
-
-def _untar_b64(payload: str, dest: Path) -> None:
-    with tarfile.open(
-        fileobj=io.BytesIO(base64.b64decode(payload)), mode="r:gz"
-    ) as tar:
-        tar.extractall(dest, filter="data")
+def _tar_b64(directory: Path, *, exclude: tuple[str, ...] = ()) -> str:
+    return base64.b64encode(tar_gz(directory, exclude=exclude)).decode("ascii")
 
 
 def _find_task_dirs(root: Path) -> list[Path]:
+    """Directories laid out as Harbor tasks; ``_build_row`` validates each one."""
     require_package("harbor", HARBOR_VERSION)
-    from harbor.models.task.task import Task
+    from harbor.models.task.paths import TaskPaths
 
-    if Task.is_valid_dir(root):
+    def is_task(path: Path) -> bool:
+        paths = TaskPaths(path)
+        return paths.config_path.is_file() and paths.environment_dir.is_dir()
+
+    if is_task(root):
         return [root]
     return sorted(
-        p.parent for p in root.rglob("task.toml") if Task.is_valid_dir(p.parent)
+        p.parent for p in root.rglob(TaskPaths.CONFIG_FILENAME) if is_task(p.parent)
     )
 
 
@@ -155,8 +145,7 @@ def _fetch_github(spec: dict[str, str]) -> Path:
                 f"(HTTP {exc.code}). The repository must be public."
             ) from exc
         tmp = Path(tempfile.mkdtemp(prefix="harbor-github-", dir=dest.parent.parent))
-        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as tar:
-            tar.extractall(tmp, filter="data")
+        extract_tar_gz(archive, tmp)
         (top,) = tmp.iterdir()  # GitHub archives hold one <repo>-<ref>/ folder
         dest.parent.mkdir(parents=True, exist_ok=True)
         top.replace(dest)
@@ -282,27 +271,33 @@ class HarborEnvironment(Environment):
 
     def _build_row(self, task_dir: Path) -> DatasetRow:
         """The task's prompt plus everything a worker needs to run and verify it."""
-        from harbor.models.task.config import TaskOS
+        from harbor.models.task.config import TaskConfig, TaskOS
         from harbor.models.task.task import Task
 
         name = task_dir.name
+        # Check what HarborEnvironment supports before Task() validates the rest.
         try:
-            task = Task(task_dir)
-        except (FileNotFoundError, ValueError) as exc:
-            raise DojoConfigError(f"Invalid Harbor task {name!r}: {exc}") from exc
-        config, env_cfg = task.config, task.config.environment
+            config = TaskConfig.model_validate_toml(
+                (task_dir / "task.toml").read_text()
+            )
+        except ValueError as exc:
+            raise DojoConfigError(f"Invalid task.toml in {name!r}: {exc}") from exc
         if config.steps:
             raise DojoConfigError(
                 f"Harbor task {name!r} is multi-step; HarborEnvironment supports "
                 "single-step tasks only."
             )
-        if env_cfg.os != TaskOS.LINUX:
+        if config.environment.os != TaskOS.LINUX:
             raise DojoConfigError(
-                f"Harbor task {name!r} targets os={env_cfg.os.value!r}; only linux "
-                "tasks are supported."
+                f"Harbor task {name!r} targets os={config.environment.os.value!r}; "
+                "only linux tasks are supported."
             )
-        test_script = task.paths.discovered_test_path_for(env_cfg.os)
-        if test_script is None:
+        try:
+            task = Task(task_dir)
+        except (FileNotFoundError, ValueError) as exc:
+            raise DojoConfigError(f"Invalid Harbor task {name!r}: {exc}") from exc
+        env_cfg = task.config.environment
+        if task.paths.discovered_test_path_for(env_cfg.os) is None:
             raise DojoConfigError(
                 f"Harbor task {name!r} has no test script in tests/ (separate "
                 "verifier environments are not supported)."
@@ -326,11 +321,12 @@ class HarborEnvironment(Environment):
             "cpu": env_cfg.cpus,
             "memory_mb": env_cfg.memory_mb,
             "env": env_cfg.env,
-            "tests": _tar_b64(task.paths.tests_dir),
-            "test_script": test_script.relative_to(task.paths.tests_dir).as_posix(),
-            "verifier_env": config.verifier.env,
-            "verifier_timeout_sec": config.verifier.timeout_sec,
-            "agent_timeout_sec": config.agent.timeout_sec or _DEFAULT_AGENT_TIMEOUT_SEC,
+            # The worker rebuilds Harbor's Task from these to run its Verifier;
+            # the image context is packed above, and the solution never ships.
+            "task_files": _tar_b64(task_dir, exclude=("environment", "solution")),
+            "verifier_timeout_sec": task.config.verifier.timeout_sec,
+            "agent_timeout_sec": task.config.agent.timeout_sec
+            or _DEFAULT_AGENT_TIMEOUT_SEC,
             "instruction": instruction,
             "harness": self.harness,
             "system_prompt": self.system_prompt,
@@ -361,32 +357,6 @@ class HarborEnvironment(Environment):
         return None if self.single_turn else harbor_generate
 
 
-def parse_reward(
-    reward_json: str | None, reward_txt: str | None, *, reward_key: str
-) -> float:
-    """Harbor's reward from the verifier's output files.
-
-    Harbor reads ``reward.json`` as a dict of rewards and ``reward.txt`` as
-    ``{"reward": value}``, but only inside private ``Verifier`` methods that
-    read local files, so this mirrors them and then picks ``reward_key``.
-    """
-    if reward_json and reward_json.strip():
-        data = json.loads(reward_json)
-        if isinstance(data, (int, float)):
-            return float(data)
-        if reward_key in data:
-            return float(data[reward_key])
-        numeric = [v for v in data.values() if isinstance(v, (int, float))]
-        if len(numeric) == 1:
-            return float(numeric[0])
-        raise ValueError(
-            f"reward.json has no {reward_key!r} key and several values: {sorted(data)}"
-        )
-    if reward_txt and reward_txt.strip():
-        return float(reward_txt.strip())
-    raise ValueError("verifier wrote neither reward.json nor reward.txt")
-
-
 def _load_task(sample: Any) -> dict[str, Any]:
     label = sample.label
     return json.loads(label) if isinstance(label, str) else label
@@ -409,7 +379,7 @@ def _task_image(task: dict[str, Any]):
         image = modal.Image.from_registry(image_spec["docker_image"])
     else:
         context = Path(tempfile.mkdtemp(prefix=f"harbor-{task['task_name']}-"))
-        _untar_b64(image_spec["dockerfile_context"], context)
+        extract_tar_gz(base64.b64decode(image_spec["dockerfile_context"]), context)
         image = modal.Image.from_dockerfile(context / "Dockerfile", context_dir=context)
     if needs_tmux:  # a layer on the task image, built once per task
         image = image.run_commands(TMUX_INSTALL_COMMAND)
@@ -431,49 +401,16 @@ def _open_sandbox(task: dict[str, Any]):
 
 
 def _run_tests(sb: Any, task: dict[str, Any]) -> float:
-    """Upload and run the task's tests in ``sb`` as Harbor does; return the reward."""
-    from harbor.models.task.config import TaskOS
-    from harbor.models.trial.paths import EnvironmentPaths
-    from harbor.utils.scripts import build_execution_command, needs_chmod
+    """Grade the episode in ``sb`` with Harbor's own ``Verifier``."""
+    require_package("harbor", HARBOR_VERSION)
+    from modal_dojo.common.harbor_verifier import verify
 
-    paths = EnvironmentPaths()
-    tests_dir, verifier_dir = paths.tests_dir, paths.verifier_dir
-    sb.write(f"{SCRATCH_DIR}/tests.tar.gz", base64.b64decode(task["tests"]))
-    sb.run(
-        "bash",
-        "-c",
-        f"rm -rf {tests_dir} {verifier_dir} && "
-        f"mkdir -p {tests_dir} {verifier_dir} && "
-        f"tar -xzf {SCRATCH_DIR}/tests.tar.gz -C {tests_dir}",
+    return verify(
+        sb,
+        task["task_files"],
+        task_name=task["task_name"],
+        reward_key=task["reward_key"],
     )
-    script = tests_dir / task["test_script"]
-    if needs_chmod(script):
-        sb.run("chmod", "+x", str(script))
-    command = build_execution_command(
-        script, verifier_dir / "test-stdout.txt", task_os=TaskOS.LINUX
-    )
-    env = env_assignments({**task.get("env", {}), **task.get("verifier_env", {})})
-    tested = sb.run(
-        "bash",
-        "-c",
-        f"{env} {command}".strip(),
-        timeout=int(task["verifier_timeout_sec"]),
-    )
-    reward_json = sb.run("cat", str(paths.reward_json_path))
-    reward_txt = sb.run("cat", str(paths.reward_text_path))
-    try:
-        return parse_reward(
-            reward_json.stdout if reward_json.returncode == 0 else None,
-            reward_txt.stdout if reward_txt.returncode == 0 else None,
-            reward_key=task["reward_key"],
-        )
-    except ValueError:
-        logger.warning(
-            "Harbor task %s: no usable reward (test exit %s); scoring 0.0",
-            task["task_name"],
-            tested.returncode,
-        )
-        return 0.0
 
 
 def _verify(task: dict[str, Any], script: str) -> float:

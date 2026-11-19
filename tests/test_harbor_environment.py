@@ -75,12 +75,16 @@ def test_dataset_rows_prompt_with_instruction_and_pack_task(tmp_path):
     assert label["task_name"] == "b-task"
     assert label["verifier_timeout_sec"] == 30.0
     assert label["agent_timeout_sec"] == 45.0
-    assert label["verifier_env"] == {"JUDGE": "x"}
     assert (label["cpu"], label["memory_mb"]) == (2, 4096)
     with tarfile.open(
-        fileobj=io.BytesIO(base64.b64decode(label["tests"])), mode="r:gz"
+        fileobj=io.BytesIO(base64.b64decode(label["task_files"])), mode="r:gz"
     ) as tar:
-        assert tar.getnames() == ["test.sh"]
+        assert sorted(tar.getnames()) == [
+            "instruction.md",
+            "task.toml",
+            "tests",
+            "tests/test.sh",
+        ]
     assert "dockerfile_context" in label["image"]
 
 
@@ -226,16 +230,6 @@ def test_extract_script(response, script):
     assert hh.extract_script(response) == script
 
 
-def test_parse_reward():
-    assert he.parse_reward(None, "0.5\n", reward_key="reward") == 0.5
-    assert he.parse_reward('{"reward": 1, "x": 2}', "0", reward_key="reward") == 1.0
-    assert he.parse_reward('{"pass_rate": 0.25}', None, reward_key="reward") == 0.25
-    with pytest.raises(ValueError):
-        he.parse_reward('{"a": 1, "b": 2}', None, reward_key="reward")
-    with pytest.raises(ValueError):
-        he.parse_reward(None, "", reward_key="reward")
-
-
 class _FakeSandbox:
     """Runs nothing; records calls and serves canned verifier output."""
 
@@ -260,12 +254,16 @@ class _FakeSandbox:
 
     def run(self, *cmd, timeout=None):
         self.calls.append(("run", cmd))
-        if cmd[0] == "cat":
-            name = Path(cmd[1]).name
-            if name in self.reward_files:
-                return SandboxResult(self.reward_files[name], "", 0)
-            return SandboxResult("", "No such file", 1)
         return SandboxResult("", "", 0)
+
+    def upload_dir(self, local_dir, remote_dir):
+        self.calls.append(("upload_dir", remote_dir))
+
+    def download_dir(self, remote_dir, local_dir):
+        self.calls.append(("download_dir", remote_dir))
+        local_dir.mkdir(parents=True, exist_ok=True)
+        for name, text in self.reward_files.items():
+            (local_dir / name).write_text(text)
 
 
 @pytest.fixture
@@ -304,12 +302,15 @@ def test_reward_runs_answer_before_tests_and_reads_reward(
     assert reward == 0.75
     sb = fake_sandbox.instances[0]
     assert sb.files[f"{hh.SCRATCH_DIR}/step.sh"] == "touch /app/t.txt\n"
-    order = [c[1] if c[0] == "write" else " ".join(c[1]) for c in sb.calls]
-    solve_at = next(i for i, c in enumerate(order) if "step.sh 2>&1" in c)
-    tests_at = order.index(f"{hh.SCRATCH_DIR}/tests.tar.gz")
-    assert solve_at < tests_at
-    test_cmd = next(c for c in sb.calls if c[0] == "run" and "test.sh" in c[1][-1])
-    assert test_cmd[1][-1].startswith("TOKEN=tok (/tests/test.sh) > ")
+    solve_at = next(
+        i for i, c in enumerate(sb.calls) if c[0] == "run" and "step.sh" in c[1][-1]
+    )
+    assert solve_at < sb.calls.index(("upload_dir", "/tests"))
+    test_cmd = next(
+        c[1][-1] for c in sb.calls if c[0] == "run" and "(/tests/test.sh)" in c[1][-1]
+    )
+    assert "export TOKEN=tok" in test_cmd
+    assert test_cmd.endswith("(/tests/test.sh) > /logs/verifier/test-stdout.txt 2>&1")
 
 
 def test_reward_is_zero_without_script_or_reward(tmp_path, fake_sandbox):
@@ -457,9 +458,8 @@ def test_multi_turn_episode_masks_observations_and_scores_in_sandbox(multi_turn)
     # One sandbox for the whole episode: command, then tests.
     (sb,) = mt.sandbox.instances
     assert sample.metadata["harbor_exit_codes"] == [0]
-    order = [c[1] if c[0] == "write" else " ".join(c[1]) for c in sb.calls]
-    assert order.index(f"{hh.SCRATCH_DIR}/step.sh") < order.index(
-        f"{hh.SCRATCH_DIR}/tests.tar.gz"
+    assert sb.calls.index(("write", f"{hh.SCRATCH_DIR}/step.sh")) < sb.calls.index(
+        ("upload_dir", "/tests")
     )
 
 
