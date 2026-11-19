@@ -350,10 +350,13 @@ def activation_checkpoint(function, distribute_saved_activations, *args):
         raise ValueError(
             "Inkling long context requires TP=1 without activation sharding"
         )
-    context = args[2]
+    # Autograd retains the hook closures until backward. Capturing the tensor
+    # here keeps every original GPU prefix alive despite copying it to CPU.
+    # Packing happens synchronously while args still owns the input tensor.
+    context_id = id(args[2])
 
     def pack(tensor):
-        if tensor is context:
+        if id(tensor) == context_id:
             return True, store.pack_context(tensor)
         return False, (tensor.device, _cpu_copy(tensor))
 

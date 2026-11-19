@@ -1,6 +1,8 @@
 """Numerical/gradient parity; run with `uv run --with torch pytest ...`."""
 
 import sys
+import gc
+import weakref
 from types import SimpleNamespace
 
 import pytest
@@ -173,6 +175,42 @@ def test_cpu_checkpoint_keeps_gradients_and_context(monkeypatch):
     actual = (h.grad, c.grad)
     for x, y in zip(actual, expected, strict=True):
         torch.testing.assert_close(x, y)
+
+
+def test_checkpoint_releases_original_context_before_backward(monkeypatch):
+    from torch.utils.checkpoint import checkpoint
+
+    monkeypatch.setitem(
+        sys.modules,
+        "megatron.core",
+        SimpleNamespace(
+            tensor_parallel=SimpleNamespace(
+                checkpoint=lambda fn, distribute, *args: checkpoint(
+                    fn, *args, use_reentrant=True
+                )
+            )
+        ),
+    )
+    base = torch.randn(3, 1, 2, 5, requires_grad=True)
+    context = base * 2
+    ref = weakref.ref(context)
+    hidden = torch.randn(3, 1, 5, requires_grad=True)
+    token = lc._checkpoint_store.set(lc.CheckpointStore())
+    try:
+        output = lc.activation_checkpoint(
+            lambda h, mask, c: (h + c.sum(-2)).square(),
+            False,
+            hidden,
+            None,
+            context,
+        )
+    finally:
+        lc._checkpoint_store.reset(token)
+    del context
+    gc.collect()
+    assert ref() is None, "checkpoint hooks retained the original device context"
+    output.sum().backward()
+    assert torch.isfinite(base.grad).all()
 
 
 @pytest.mark.parametrize("window", [None, 2])

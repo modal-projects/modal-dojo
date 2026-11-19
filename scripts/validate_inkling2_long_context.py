@@ -107,6 +107,9 @@ def main(gpu: bool = False, stress: bool = False):
     image=image, serialized=True, gpu="B300", timeout=1800, cpu=8, memory=65536
 )
 def validate_gpu():
+    import gc
+    import weakref
+
     import torch
     from modal_dojo.frameworks.miles import inkling2_long_context as lc
     from miles_plugins.models.inkling2.ops import relative_attention as original
@@ -160,24 +163,32 @@ def validate_gpu():
     # Exercise the actual Megatron checkpoint, including its reentrant backward,
     # rather than only the torch stand-in used by local CPU tests.
     hidden = torch.randn(17, 1, 8, device="cuda", requires_grad=True)
-    context = torch.randn(17, 1, 2, 8, device="cuda", requires_grad=True)
+    context_base = torch.randn(17, 1, 2, 8, device="cuda", requires_grad=True)
 
     def layer(h, mask, c):
         return (h + c.sum(-2)).square()
 
     expected = torch.autograd.grad(
-        layer(hidden, None, context).sum(), (hidden, context)
+        layer(hidden, None, context_base * 2).sum(), (hidden, context_base)
     )
+    context = context_base * 2
+    context_ref = weakref.ref(context)
     token = lc._checkpoint_store.set(lc.CheckpointStore())
     try:
         output = lc.activation_checkpoint(layer, False, hidden, None, context)
     finally:
         lc._checkpoint_store.reset(token)
+    del context
+    gc.collect()
+    assert context_ref() is None, "checkpoint hooks retain the device context"
     output.sum().backward()
-    for actual, reference in zip((hidden.grad, context.grad), expected, strict=True):
+    for actual, reference in zip(
+        (hidden.grad, context_base.grad), expected, strict=True
+    ):
         torch.testing.assert_close(actual, reference)
 
     results["native_checkpoint_backward"] = "passed"
+    results["native_checkpoint_releases_context"] = "passed"
     return results
 
 
@@ -187,6 +198,7 @@ def validate_gpu():
 def stress_gpu():
     import gc
     import time
+    import weakref
 
     import torch
     import torch.nn.functional as F
@@ -196,21 +208,28 @@ def stress_gpu():
     # Exercise the actual Megatron checkpoint, including its reentrant backward,
     # rather than only the torch stand-in used by local CPU tests.
     hidden = torch.randn(17, 1, 8, device="cuda", requires_grad=True)
-    context = torch.randn(17, 1, 2, 8, device="cuda", requires_grad=True)
+    context_base = torch.randn(17, 1, 2, 8, device="cuda", requires_grad=True)
 
     def layer(h, mask, c):
         return (h + c.sum(-2)).square()
 
     expected = torch.autograd.grad(
-        layer(hidden, None, context).sum(), (hidden, context)
+        layer(hidden, None, context_base * 2).sum(), (hidden, context_base)
     )
+    context = context_base * 2
+    context_ref = weakref.ref(context)
     token = lc._checkpoint_store.set(lc.CheckpointStore())
     try:
         output = lc.activation_checkpoint(layer, False, hidden, None, context)
     finally:
         lc._checkpoint_store.reset(token)
+    del context
+    gc.collect()
+    assert context_ref() is None, "checkpoint hooks retain the device context"
     output.sum().backward()
-    for actual, reference in zip((hidden.grad, context.grad), expected, strict=True):
+    for actual, reference in zip(
+        (hidden.grad, context_base.grad), expected, strict=True
+    ):
         torch.testing.assert_close(actual, reference)
 
     torch.manual_seed(31)
@@ -221,6 +240,7 @@ def stress_gpu():
         "tokens": 262144,
         "reserved_bytes": reserve.numel(),
         "native_checkpoint_backward": "passed",
+        "native_checkpoint_releases_context": "passed",
         "gpu": torch.cuda.get_device_name(),
     }
 
