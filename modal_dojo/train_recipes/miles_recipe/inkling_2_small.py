@@ -24,11 +24,11 @@ class Inkling_2_Small_LoRA_Recipe(MilesRecipe):
     """
 
     model_config_class: ClassVar[type[ModelConfig]] = Inkling_2_Small
-    # Miles radixark/miles#4819 with an SGLang build that serves the model.
-    # Its Miles and SGLang trees are not git checkouts, so the git-ref overlays
-    # cannot be used on it.
+    # Copy of radixark/miles:inkling-2-small, same digest: Miles radixark/miles#4819
+    # with an SGLang build that serves the model. Its Miles and SGLang trees are
+    # not git checkouts, so the git-ref overlays cannot be used on it.
     docker_image: str = (
-        "radixark/miles:inkling-2-small@sha256:"
+        "modalresearch/miles:dojo-inkling-2-small@sha256:"
         "a2e3c49d5a266d9374d67ca4b706767b7bdf7d798958dd51520f61c29597e9a5"
     )
     miles_model_name: str = "inkling2"
