@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -67,3 +68,26 @@ class Sandbox:
             stderr=proc.stderr.read(),
             returncode=proc.returncode,
         )
+
+
+def open_sandbox(
+    *,
+    app_name: str = _DEFAULT_APP_NAME,
+    setup: Sequence[Sequence[str]] = (),
+    **create_kwargs: Any,
+) -> Sandbox:
+    """A started ``Sandbox``; close it with ``__exit__``.
+
+    ``create_kwargs`` set to ``None`` are left out, so callers can pass optional
+    resources (``cpu``, ``memory``, ``workdir``) straight through. Each ``setup``
+    command runs before returning; if one raises, the sandbox is closed.
+    """
+    kwargs = {k: v for k, v in create_kwargs.items() if v is not None}
+    sb = Sandbox(app_name=app_name, **kwargs).__enter__()
+    try:
+        for cmd in setup:
+            sb.run(*cmd)
+    except BaseException:
+        sb.__exit__(None, None, None)
+        raise
+    return sb

@@ -18,6 +18,8 @@ from modal_dojo.common import (
 )
 from modal_dojo.common.checkpoint import Checkpoint
 from modal_dojo.common.dataset import DatasetConfig, HarborDataset, _SftDataset
+from modal_dojo.common.harbor_environment import _HarborTaskDataset
+from modal_dojo.common.harbor_harnesses import HARBOR_VERSION, HARNESS_PACKAGES
 from modal_dojo.common.framework import (
     Framework,
     mount_tools_dir,
@@ -104,7 +106,6 @@ RDMA_RUNTIME_INSTALL_COMMAND = (
 # v0.8.0+ makes per-task CPU/memory requests configurable via enforcement
 # policies ("limit"/"ignore"), letting sandboxes burst on Modal and bill by
 # actual CPU-/RAM-second usage instead of over-provisioning a static reservation.
-HARBOR_PKG_VERSION = "0.8.0"
 
 _MILES_PATCHES = Path(__file__).parent / "modal_helpers" / "patches"
 _PATCH_SGLANG_ABORT_B64 = encode_patch("patch_sglang_abort", _MILES_PATCHES)
@@ -234,8 +235,10 @@ def _build_miles_base_image(
         image = recipe.image_overlay(image)
         recipe.image_overlay = None
 
-    if isinstance(dataset, HarborDataset) or isinstance(eval_dataset, HarborDataset):
-        image = image.uv_pip_install(f"harbor=={HARBOR_PKG_VERSION}")
+    if any(isinstance(d, _HarborTaskDataset) for d in (dataset, eval_dataset)):
+        image = image.uv_pip_install(*HARNESS_PACKAGES)
+    elif isinstance(dataset, HarborDataset) or isinstance(eval_dataset, HarborDataset):
+        image = image.uv_pip_install(f"harbor=={HARBOR_VERSION}")
 
     image = apply_metric_image(image, recipe.metrics)
     image = image.add_local_python_source("modal_dojo", copy=True)

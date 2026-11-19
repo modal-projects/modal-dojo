@@ -16,6 +16,14 @@
 # Dockerfile, through an agent harness. When it's done, the task's tests run in
 # that same container, and the reward they write is the training reward, the
 # same score `harbor run` would give that trajectory.
+#
+# `HarborEnvironment` uses the [Harbor](https://pypi.org/project/harbor/) and
+# [mini-swe-agent](https://pypi.org/project/mini-swe-agent/) packages, so install
+# the extra first:
+#
+# ```bash
+# pip install 'modal-dojo[harbor]'
+# ```
 
 from modal_dojo import (
     Budget,

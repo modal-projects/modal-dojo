@@ -285,7 +285,10 @@ def _sample(env: HarborEnvironment, response: str):
     )
 
 
-def test_reward_runs_answer_before_tests_and_reads_reward(tmp_path, fake_sandbox):
+def test_reward_runs_answer_before_tests_and_reads_reward(
+    tmp_path, fake_sandbox, monkeypatch
+):
+    monkeypatch.setenv("HARBOR_TEST_TOKEN", "tok")
     _make_task(
         tmp_path,
         "t",
@@ -306,7 +309,7 @@ def test_reward_runs_answer_before_tests_and_reads_reward(tmp_path, fake_sandbox
     tests_at = order.index(f"{hh.SCRATCH_DIR}/tests.tar.gz")
     assert solve_at < tests_at
     test_cmd = next(c for c in sb.calls if c[0] == "run" and "test.sh" in c[1][-1])
-    assert test_cmd[1][-1].startswith("TOKEN='${HARBOR_TEST_TOKEN}' bash ")
+    assert test_cmd[1][-1].startswith("TOKEN=tok (/tests/test.sh) > ")
 
 
 def test_reward_is_zero_without_script_or_reward(tmp_path, fake_sandbox):
@@ -572,7 +575,6 @@ def test_observation_tokens_close_turn_and_open_next(tokenizer):
     [
         ("[environment]\nmemory = '4G'\n", 4096),
         ("[environment]\nmemory = '512M'\n", 512),
-        ("[environment]\nmemory_mb = 2048\nmemory = '4G'\n", 2048),
     ],
 )
 def test_memory_sizes(tmp_path, toml, memory_mb):

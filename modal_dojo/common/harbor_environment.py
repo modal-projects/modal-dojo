@@ -12,10 +12,10 @@ import logging
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
-import tomllib
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
@@ -25,6 +25,7 @@ from modal_dojo.common.dataset import DatasetConfig, DatasetRow
 from modal_dojo.common.environment import Environment
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.harbor_harnesses import (
+    HARBOR_VERSION,
     SCRATCH_DIR,
     TMUX_INSTALL_COMMAND,
     Harness,
@@ -32,17 +33,14 @@ from modal_dojo.common.harbor_harnesses import (
     episode_class,
     extract_script,
     parse_harness,
+    require_package,
     run_shell,
 )
+from modal_dojo.common.sandbox import open_sandbox
 
 logger = logging.getLogger(__name__)
 
-HARBOR_VERSION = "0.8.0"
-
-_TESTS_DIR = "/tests"
-_VERIFIER_DIR = "/logs/verifier"
-
-_DEFAULT_VERIFIER_TIMEOUT_SEC = 600.0
+# Harbor leaves ``agent.timeout_sec`` unset unless a task sets it.
 _DEFAULT_AGENT_TIMEOUT_SEC = 600.0
 
 
@@ -62,76 +60,15 @@ def _untar_b64(payload: str, dest: Path) -> None:
         tar.extractall(dest, filter="data")
 
 
-def _is_task_dir(path: Path) -> bool:
-    return (path / "instruction.md").is_file() and (path / "tests").is_dir()
-
-
 def _find_task_dirs(root: Path) -> list[Path]:
-    if _is_task_dir(root):
+    require_package("harbor", HARBOR_VERSION)
+    from harbor.models.task.task import Task
+
+    if Task.is_valid_dir(root):
         return [root]
     return sorted(
-        p.parent for p in root.rglob("instruction.md") if _is_task_dir(p.parent)
+        p.parent for p in root.rglob("task.toml") if Task.is_valid_dir(p.parent)
     )
-
-
-def _megabytes(size: str | int | None) -> int | None:
-    """Older task.toml sizes such as ``memory = '4G'``, in MiB."""
-    if size is None or isinstance(size, int):
-        return size
-    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([KMGT]?)i?B?\s*", size, re.IGNORECASE)
-    if match is None:
-        raise DojoConfigError(f"Unrecognized size {size!r} in task.toml")
-    scale = {"K": 1 / 1024, "": 1, "M": 1, "G": 1024, "T": 1024**2}
-    return int(float(match[1]) * scale[match[2].upper()])
-
-
-def _pack_task(task_dir: Path, **rollout: Any) -> dict[str, Any]:
-    """Everything a rollout worker needs to run and verify this task."""
-    config_path = task_dir / "task.toml"
-    config = tomllib.loads(config_path.read_text()) if config_path.exists() else {}
-    if config.get("steps"):
-        raise DojoConfigError(
-            f"Harbor task {task_dir.name!r} is multi-step; HarborEnvironment "
-            "supports single-step tasks only."
-        )
-    env_cfg = config.get("environment", {})
-    if env_cfg.get("os", "linux") != "linux":
-        raise DojoConfigError(
-            f"Harbor task {task_dir.name!r} targets os={env_cfg['os']!r}; "
-            "only linux tasks are supported."
-        )
-    if not (task_dir / "tests" / "test.sh").is_file():
-        raise DojoConfigError(f"Harbor task {task_dir.name!r} has no tests/test.sh")
-
-    env_dir = task_dir / "environment"
-    if env_cfg.get("docker_image"):
-        image: dict[str, str] = {"docker_image": env_cfg["docker_image"]}
-    elif (env_dir / "Dockerfile").is_file():
-        image = {"dockerfile_context": _tar_b64(env_dir)}
-    else:
-        raise DojoConfigError(
-            f"Harbor task {task_dir.name!r} has neither environment.docker_image "
-            "nor environment/Dockerfile (docker-compose environments are not "
-            "supported)."
-        )
-
-    verifier_cfg = config.get("verifier", {})
-    agent_cfg = config.get("agent", {})
-    return {
-        "task_name": task_dir.name,
-        "image": image,
-        "workdir": env_cfg.get("workdir"),
-        "cpu": env_cfg.get("cpus"),
-        "memory_mb": env_cfg.get("memory_mb") or _megabytes(env_cfg.get("memory")),
-        "env": env_cfg.get("env", {}),
-        "tests": _tar_b64(task_dir / "tests"),
-        "verifier_env": verifier_cfg.get("env", {}),
-        "verifier_timeout_sec": verifier_cfg.get(
-            "timeout_sec", _DEFAULT_VERIFIER_TIMEOUT_SEC
-        ),
-        "agent_timeout_sec": agent_cfg.get("timeout_sec") or _DEFAULT_AGENT_TIMEOUT_SEC,
-        **rollout,
-    }
 
 
 _CACHE_ROOT = Path.home() / ".cache" / "modal-dojo" / "harbor"
@@ -174,17 +111,15 @@ def _fetch_hub(ref: str) -> Path:
             return dest
     else:  # a moving version is fetched fresh every time
         dest = Path(tempfile.mkdtemp(prefix="harbor-hub-")) / "tasks"
-    if shutil.which("uvx") is None:
-        raise DojoConfigError(
-            f"Downloading Harbor dataset {ref!r} needs `uvx`; install uv."
-        )
+    require_package("harbor", HARBOR_VERSION)
     tmp = dest.with_name(dest.name + ".partial")
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True)
     subprocess.run(
         [
-            "uvx",
-            f"harbor@{HARBOR_VERSION}",
+            sys.executable,
+            "-m",
+            "harbor.cli.main",
             "datasets",
             "download",
             ref,
@@ -346,16 +281,63 @@ class HarborEnvironment(Environment):
         return dirs
 
     def _build_row(self, task_dir: Path) -> DatasetRow:
-        instruction = (task_dir / "instruction.md").read_text().strip()
-        label = _pack_task(
-            task_dir,
-            instruction=instruction,
-            harness=self.harness,
-            system_prompt=self.system_prompt,
-            reward_key=self.reward_key,
-            max_turns=self.max_turns,
-            max_output_chars=self.max_output_chars,
-        )
+        """The task's prompt plus everything a worker needs to run and verify it."""
+        from harbor.models.task.config import TaskOS
+        from harbor.models.task.task import Task
+
+        name = task_dir.name
+        try:
+            task = Task(task_dir)
+        except (FileNotFoundError, ValueError) as exc:
+            raise DojoConfigError(f"Invalid Harbor task {name!r}: {exc}") from exc
+        config, env_cfg = task.config, task.config.environment
+        if config.steps:
+            raise DojoConfigError(
+                f"Harbor task {name!r} is multi-step; HarborEnvironment supports "
+                "single-step tasks only."
+            )
+        if env_cfg.os != TaskOS.LINUX:
+            raise DojoConfigError(
+                f"Harbor task {name!r} targets os={env_cfg.os.value!r}; only linux "
+                "tasks are supported."
+            )
+        test_script = task.paths.discovered_test_path_for(env_cfg.os)
+        if test_script is None:
+            raise DojoConfigError(
+                f"Harbor task {name!r} has no test script in tests/ (separate "
+                "verifier environments are not supported)."
+            )
+        if env_cfg.docker_image:
+            image: dict[str, str] = {"docker_image": env_cfg.docker_image}
+        elif (task.paths.environment_dir / "Dockerfile").is_file():
+            image = {"dockerfile_context": _tar_b64(task.paths.environment_dir)}
+        else:
+            raise DojoConfigError(
+                f"Harbor task {name!r} has neither environment.docker_image nor "
+                "environment/Dockerfile (docker-compose environments are not "
+                "supported)."
+            )
+
+        instruction = task.instruction.strip()
+        label = {
+            "task_name": name,
+            "image": image,
+            "workdir": env_cfg.workdir,
+            "cpu": env_cfg.cpus,
+            "memory_mb": env_cfg.memory_mb,
+            "env": env_cfg.env,
+            "tests": _tar_b64(task.paths.tests_dir),
+            "test_script": test_script.relative_to(task.paths.tests_dir).as_posix(),
+            "verifier_env": config.verifier.env,
+            "verifier_timeout_sec": config.verifier.timeout_sec,
+            "agent_timeout_sec": config.agent.timeout_sec or _DEFAULT_AGENT_TIMEOUT_SEC,
+            "instruction": instruction,
+            "harness": self.harness,
+            "system_prompt": self.system_prompt,
+            "reward_key": self.reward_key,
+            "max_turns": self.max_turns,
+            "max_output_chars": self.max_output_chars,
+        }
         messages = episode_class(self.harness).preview_messages(instruction, label)
         return {"messages": messages, "label": json.dumps(label)}
 
@@ -382,7 +364,12 @@ class HarborEnvironment(Environment):
 def parse_reward(
     reward_json: str | None, reward_txt: str | None, *, reward_key: str
 ) -> float:
-    """Harbor's reward from the verifier's output files."""
+    """Harbor's reward from the verifier's output files.
+
+    Harbor reads ``reward.json`` as a dict of rewards and ``reward.txt`` as
+    ``{"reward": value}``, but only inside private ``Verifier`` methods that
+    read local files, so this mirrors them and then picks ``reward_key``.
+    """
     if reward_json and reward_json.strip():
         data = json.loads(reward_json)
         if isinstance(data, (int, float)):
@@ -432,46 +419,48 @@ def _task_image(task: dict[str, Any]):
 
 def _open_sandbox(task: dict[str, Any]):
     """A started sandbox in the task's container; close with ``__exit__``."""
-    from modal_dojo.common.sandbox import Sandbox
-
-    create_kwargs: dict[str, Any] = {
-        "image": _task_image(task),
-        "timeout": int(task["agent_timeout_sec"] + task["verifier_timeout_sec"] + 3600),
-    }
-    if task.get("workdir"):
-        create_kwargs["workdir"] = task["workdir"]
-    if task.get("cpu"):
-        create_kwargs["cpu"] = float(task["cpu"])
-    if task.get("memory_mb"):
-        create_kwargs["memory"] = int(task["memory_mb"])
-    sb = Sandbox(app_name="modal-dojo-harbor", **create_kwargs).__enter__()
-    try:
-        sb.run("mkdir", "-p", SCRATCH_DIR)
-    except BaseException:
-        sb.__exit__(None, None, None)
-        raise
-    return sb
+    return open_sandbox(
+        app_name="modal-dojo-harbor",
+        image=_task_image(task),
+        timeout=int(task["agent_timeout_sec"] + task["verifier_timeout_sec"] + 3600),
+        workdir=task.get("workdir"),
+        cpu=float(task["cpu"]) if task.get("cpu") else None,
+        memory=task.get("memory_mb"),
+        setup=[("mkdir", "-p", SCRATCH_DIR)],
+    )
 
 
 def _run_tests(sb: Any, task: dict[str, Any]) -> float:
-    """Upload and run the task's tests in ``sb``; return the reward they wrote."""
+    """Upload and run the task's tests in ``sb`` as Harbor does; return the reward."""
+    from harbor.models.task.config import TaskOS
+    from harbor.models.trial.paths import EnvironmentPaths
+    from harbor.utils.scripts import build_execution_command, needs_chmod
+
+    paths = EnvironmentPaths()
+    tests_dir, verifier_dir = paths.tests_dir, paths.verifier_dir
     sb.write(f"{SCRATCH_DIR}/tests.tar.gz", base64.b64decode(task["tests"]))
     sb.run(
         "bash",
         "-c",
-        f"rm -rf {_TESTS_DIR} {_VERIFIER_DIR} && "
-        f"mkdir -p {_TESTS_DIR} {_VERIFIER_DIR} && "
-        f"tar -xzf {SCRATCH_DIR}/tests.tar.gz -C {_TESTS_DIR}",
+        f"rm -rf {tests_dir} {verifier_dir} && "
+        f"mkdir -p {tests_dir} {verifier_dir} && "
+        f"tar -xzf {SCRATCH_DIR}/tests.tar.gz -C {tests_dir}",
+    )
+    script = tests_dir / task["test_script"]
+    if needs_chmod(script):
+        sb.run("chmod", "+x", str(script))
+    command = build_execution_command(
+        script, verifier_dir / "test-stdout.txt", task_os=TaskOS.LINUX
     )
     env = env_assignments({**task.get("env", {}), **task.get("verifier_env", {})})
     tested = sb.run(
         "bash",
         "-c",
-        f"{env} bash {_TESTS_DIR}/test.sh > {_VERIFIER_DIR}/test-stdout.txt 2>&1",
+        f"{env} {command}".strip(),
         timeout=int(task["verifier_timeout_sec"]),
     )
-    reward_json = sb.run("cat", f"{_VERIFIER_DIR}/reward.json")
-    reward_txt = sb.run("cat", f"{_VERIFIER_DIR}/reward.txt")
+    reward_json = sb.run("cat", str(paths.reward_json_path))
+    reward_txt = sb.run("cat", str(paths.reward_text_path))
     try:
         return parse_reward(
             reward_json.stdout if reward_json.returncode == 0 else None,

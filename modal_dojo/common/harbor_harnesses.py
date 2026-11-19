@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import functools
+import importlib.metadata
+import os
 import re
 import shlex
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any, ClassVar
 
 from modal_dojo._api_reference import exclude_from_api_reference
@@ -25,20 +30,46 @@ class Harness(str, Enum):
 
 SCRATCH_DIR = "/tmp/modal-dojo-harbor"
 
+HARBOR_VERSION = "0.8.0"
+MINI_SWE_AGENT_VERSION = "2.4.6"
+# Installed by the ``harbor`` extra locally and by the launchers in workers.
+HARNESS_PACKAGES = (
+    f"harbor=={HARBOR_VERSION}",
+    f"mini-swe-agent=={MINI_SWE_AGENT_VERSION}",
+)
+
+
+def require_package(distribution: str, version: str) -> None:
+    """Fail unless the harness package is installed at the pinned version."""
+    try:
+        installed = importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        installed = None
+    if installed != version:
+        found = "is not installed" if installed is None else f"is {installed}"
+        raise DojoConfigError(
+            f"HarborEnvironment needs {distribution}=={version}, but it {found}. "
+            "Install the extra: pip install 'modal-dojo[harbor]'."
+        )
+
+
 _FENCE_RE = re.compile(r"```([\w+-]*)[ \t]*\n(.*?)```", re.DOTALL)
 _SHELL_LANGS = frozenset({"bash", "sh", "shell", "zsh"})
 
 
-def env_assignments(env: dict[str, Any]) -> str:
-    """``K=V ...`` shell prefix, expanding ``${VAR}`` from the worker's env."""
-    import os
+def env_assignments(env: dict[str, str]) -> str:
+    """``K=V ...`` shell prefix, resolving ``${VAR}`` templates the way Harbor does."""
+    require_package("harbor", HARBOR_VERSION)
+    from harbor.utils.env import resolve_env_vars
 
     for key in env:
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
             raise DojoConfigError(f"Invalid environment variable name {key!r}")
-    return " ".join(
-        f"{k}={shlex.quote(os.path.expandvars(str(v)))}" for k, v in env.items()
-    )
+    try:
+        resolved = resolve_env_vars(env)
+    except ValueError as exc:
+        raise DojoConfigError(str(exc)) from exc
+    return " ".join(f"{k}={shlex.quote(v)}" for k, v in resolved.items())
 
 
 def run_shell(
@@ -167,6 +198,55 @@ def _render(template: str, **variables: Any) -> str:
     return Template(template, undefined=StrictUndefined).render(**variables)
 
 
+@dataclass(frozen=True)
+class _MiniSweAgentConfig:
+    system_template: str
+    instance_template: str
+    observation_template: str
+    format_error_template: str
+    env: dict[str, str]
+    action_regex: str
+    command_timeout_sec: int
+    max_consecutive_format_errors: int
+
+
+# mini-swe-agent's local environment ends the run when a command prints this.
+_SUBMIT_COMMAND_OUTPUT = "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
+
+
+@functools.cache
+def _mini_swe_agent() -> _MiniSweAgentConfig:
+    """``mini_textbased.yaml`` and the defaults it relies on, from the package."""
+    require_package("mini-swe-agent", MINI_SWE_AGENT_VERSION)
+    os.environ.setdefault("MSWEA_SILENT_STARTUP", "1")  # skip its startup banner
+    import yaml
+    from minisweagent.agents.default import AgentConfig
+    from minisweagent.config import builtin_config_dir
+    from minisweagent.environments.local import LocalEnvironmentConfig
+    from minisweagent.models.litellm_textbased_model import (
+        LitellmTextbasedModelConfig,
+    )
+
+    config = yaml.safe_load((builtin_config_dir / "mini_textbased.yaml").read_text())
+    agent, model = config["agent"], config["model"]
+
+    def default(cls: Any, field: str) -> Any:
+        return cls.model_fields[field].default
+
+    return _MiniSweAgentConfig(
+        system_template=agent["system_template"],
+        instance_template=agent["instance_template"],
+        observation_template=model["observation_template"],
+        format_error_template=model["format_error_template"],
+        env=config["environment"]["env"],
+        action_regex=default(LitellmTextbasedModelConfig, "action_regex"),
+        command_timeout_sec=default(LocalEnvironmentConfig, "timeout"),
+        max_consecutive_format_errors=default(
+            AgentConfig, "max_consecutive_format_errors"
+        ),
+    )
+
+
 class MiniSweAgentEpisode(Episode):
     """mini-swe-agent's ``mini_textbased.yaml`` agent, turn for turn."""
 
@@ -175,12 +255,12 @@ class MiniSweAgentEpisode(Episode):
 
     @classmethod
     def _messages(cls, instruction: str, uname: dict[str, str]) -> list[dict]:
-        from modal_dojo.common._vendor import mini_swe_agent as mini
+        mini = _mini_swe_agent()
 
         variables = {"task": instruction, **uname}
         return [
-            {"role": "system", "content": _render(mini.SYSTEM_TEMPLATE, **variables)},
-            {"role": "user", "content": _render(mini.INSTANCE_TEMPLATE, **variables)},
+            {"role": "system", "content": _render(mini.system_template, **variables)},
+            {"role": "user", "content": _render(mini.instance_template, **variables)},
         ]
 
     @classmethod
@@ -199,19 +279,19 @@ class MiniSweAgentEpisode(Episode):
         return self._messages(instruction, uname)
 
     def step(self, response: str) -> str | None:
-        from modal_dojo.common._vendor import mini_swe_agent as mini
+        mini = _mini_swe_agent()
 
         actions = [
-            a.strip() for a in re.findall(mini.ACTION_REGEX, response, re.DOTALL)
+            a.strip() for a in re.findall(mini.action_regex, response, re.DOTALL)
         ]
         if len(actions) != 1:
             errors = self.metadata.get("consecutive_format_errors", 0) + 1
             self.metadata["consecutive_format_errors"] = errors
-            if errors >= mini.MAX_CONSECUTIVE_FORMAT_ERRORS:
+            if errors >= mini.max_consecutive_format_errors:
                 self.metadata["exit_status"] = "RepeatedFormatError"
                 return None
             return _render(
-                mini.FORMAT_ERROR_TEMPLATE,
+                mini.format_error_template,
                 actions=actions,
                 error=f"Expected exactly 1 action, found {len(actions)}.",
             )
@@ -221,14 +301,14 @@ class MiniSweAgentEpisode(Episode):
             return None
 
         command = actions[0]
-        timeout = min(mini.COMMAND_TIMEOUT_SEC, self.time_left())
+        timeout = min(mini.command_timeout_sec, self.time_left())
         exit_code, output, timed_out = run_shell(
             self.sb,
             self.task,
             command,
             timeout_sec=timeout,
             shell="sh",
-            env=mini.ENVIRONMENT_ENV,
+            env=mini.env,
         )
         exception_info = ""
         if timed_out:
@@ -240,11 +320,11 @@ class MiniSweAgentEpisode(Episode):
         self.metadata.setdefault("exit_codes", []).append(exit_code)
 
         lines = output.lstrip().splitlines(keepends=True)
-        if lines and lines[0].strip() == mini.SUBMIT_COMMAND_OUTPUT and exit_code == 0:
+        if lines and lines[0].strip() == _SUBMIT_COMMAND_OUTPUT and exit_code == 0:
             self.metadata["exit_status"] = "Submitted"
             return None
         return _render(
-            mini.OBSERVATION_TEMPLATE,
+            mini.observation_template,
             output={
                 "output": output,
                 "returncode": exit_code,
@@ -306,6 +386,19 @@ def tmux_send_keys_commands(session: str, keys: str) -> list[str]:
     return commands
 
 
+@functools.cache
+def _terminus_2() -> tuple[str, type]:
+    """Terminus 2's JSON prompt template and parser class, from Harbor."""
+    require_package("harbor", HARBOR_VERSION)
+    from harbor.agents.terminus_2 import terminus_2
+    from harbor.agents.terminus_2.terminus_json_plain_parser import (
+        TerminusJSONPlainParser,
+    )
+
+    templates = Path(terminus_2.__file__).parent / "templates"
+    return (templates / "terminus-json-plain.txt").read_text(), TerminusJSONPlainParser
+
+
 class Terminus2Episode(Episode):
     """Harbor's Terminus 2 agent (JSON parser), turn for turn."""
 
@@ -314,19 +407,15 @@ class Terminus2Episode(Episode):
 
     def __init__(self, sb: Any, task: dict[str, Any], deadline: float) -> None:
         super().__init__(sb, task, deadline)
-        from modal_dojo.common._vendor.terminus_2_parser import (
-            TerminusJSONPlainParser,
-        )
-
-        self._parser = TerminusJSONPlainParser()
+        _, parser_cls = _terminus_2()
+        self._parser = parser_cls()
         self._previous_buffer: str | None = None
         self._pending_completion = False
 
     @classmethod
     def _messages(cls, instruction: str, terminal_state: str) -> list[dict]:
-        from modal_dojo.common._vendor.terminus_2 import PROMPT_TEMPLATE
-
-        prompt = PROMPT_TEMPLATE.format(
+        prompt_template, _ = _terminus_2()
+        prompt = prompt_template.format(
             instruction=instruction, terminal_state=terminal_state
         )
         return [{"role": "user", "content": prompt}]
