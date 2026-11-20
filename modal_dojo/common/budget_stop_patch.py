@@ -1,7 +1,9 @@
 """Patch slime/Miles ``train.py`` to save and stop when a ``Budget`` runs out.
 
 Before the save check, a spent budget makes the current rollout the last one
-(forcing a synchronous save); the loop then breaks. Apply after other patches.
+(forcing a synchronous save); the loop then breaks. The loop also iterates
+``run_steps.rollout_ids`` instead of ``range``, so ``modal-dojo run set-steps``
+can change ``num_rollout`` while the run trains. Apply after other patches.
 """
 
 from __future__ import annotations
@@ -19,11 +21,15 @@ PREAMBLE = (
     "    _md_sys.path.insert(0, '/root')\n"
     "try:\n"
     "    from modal_dojo.common.budget import budget_final as _md_budget_final\n"
+    "    from modal_dojo.common.run_steps import rollout_ids as _md_rollout_ids\n"
     "except ImportError:\n"
     "    print('WARNING: modal_dojo not importable; training budgets off')\n"
     "\n"
     "    def _md_budget_final(args, rollout_id):\n"
     "        return False\n"
+    "\n"
+    "    def _md_rollout_ids(args, start):\n"
+    "        return range(start, args.num_rollout)\n"
 )
 
 
@@ -71,7 +77,23 @@ def patch_source(src: str) -> str:
     if not imports:
         raise RuntimeError("budget patch: no top-level imports to follow")
 
+    call = loop.iter
+    if (
+        len(call.args) != 2
+        or not isinstance(call.args[1], ast.Attribute)
+        or call.lineno != call.end_lineno
+    ):
+        raise RuntimeError("budget patch: expected range(start, args.num_rollout)")
+    start = ast.get_source_segment(src, call.args[0])
+    args_name = ast.get_source_segment(src, call.args[1].value)
+
     lines = src.splitlines(keepends=True)
+    loop_header = lines[call.lineno - 1]
+    lines[call.lineno - 1] = (
+        loop_header[: call.col_offset]
+        + f"_md_rollout_ids({args_name}, {start})"
+        + loop_header[call.end_col_offset :]
+    )
     body = " " * loop.body[0].col_offset
     indent = " " * save.col_offset
     header = lines[save.lineno - 1]
@@ -110,3 +132,19 @@ def main(root: str) -> None:
 def encoded_patch(root: str) -> str:
     script = Path(__file__).read_text() + f"\n\nmain({root!r})\n"
     return base64.b64encode(script.encode()).decode()
+
+
+def patch_command(root: str, *, required: bool) -> str:
+    """Image build command applying this patch; fatal on failure only if ``required``.
+
+    A run with a ``Budget`` needs the patch to stop; any other run only loses
+    ``modal-dojo run set-steps``, so a source layout the patch does not recognize
+    warns instead of failing the build.
+    """
+    command = f"echo {encoded_patch(root)} | base64 -d | python3"
+    if required:
+        return command
+    return (
+        f"{command} || echo 'WARNING: rollout loop patch did not apply;"
+        " modal-dojo run set-steps will not affect this run'"
+    )

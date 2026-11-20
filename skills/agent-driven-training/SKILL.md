@@ -63,6 +63,11 @@ logging and saved artifacts. If the required evidence was not retained, state
 that limitation and identify the instrumentation needed; do not infer it from
 aggregate metrics.
 
+`run set-steps <run-id> <steps>` changes how many rollouts a running slime or
+Miles run trains for, effective before its next rollout. Use it to extend a run
+that is still improving or end one early; the LR schedule keeps its launch-time
+length. Changing a run's length costs compute, so get the user's approval first.
+
 ## 1. Configure and preflight
 
 If the user has not already chosen the model, dataset, reward function,
