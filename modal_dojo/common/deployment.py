@@ -13,6 +13,7 @@ from modal_dojo.common.checkpoint import (
     Checkpoint,
     CheckpointType,
     convert_megatron_checkpoint_to_hf,
+    convert_native_lora_checkpoint_to_peft,
 )
 from modal_dojo.common.errors import DojoConfigError
 from modal_dojo.common.openai_messages import _messages_to_openai
@@ -154,6 +155,7 @@ class CustomDeployment(BaseModel):
         modal_app_id: Modal app ID.
         modal_app_url: Dashboard URL.
         url: Endpoint URL.
+        lora_name: Name of the LoRA adapter served on top of ``model``, if any.
     """
 
     deployment_id: str
@@ -168,6 +170,18 @@ class CustomDeployment(BaseModel):
     modal_app_id: str = ""
     modal_app_url: str = ""
     url: str
+    lora_name: str | None = None
+
+    @property
+    def request_model_name(self) -> str:
+        """The ``model`` value OpenAI-compatible clients send to reach the trained weights.
+
+        For a LoRA deployment this is ``<served_model_name>:<lora_name>``; the bare
+        ``served_model_name`` answers with the base model.
+        """
+        if self.lora_name:
+            return f"{self.served_model_name}:{self.lora_name}"
+        return self.served_model_name
 
     @model_validator(mode="before")
     @classmethod
@@ -205,7 +219,11 @@ class CustomDeployment(BaseModel):
             model:
                 Model configuration or Hugging Face model name.
             checkpoint:
-                Training checkpoint to convert and serve.
+                Training checkpoint to convert and serve. A ``lora_adapter``
+                checkpoint is converted to a PEFT adapter and served on top of
+                ``model`` with SGLang; clients reach it through
+                ``request_model_name``. Only DeepSeek-V4.1-Flash native LoRA
+                adapters convert today.
             recipe:
                 SGLang or vLLM serving recipe.
             app_name:
@@ -223,7 +241,25 @@ class CustomDeployment(BaseModel):
         if recipe is None:
             recipe = SglangRecipe()
 
+        lora_name = lora_path = None
         if (
+            checkpoint is not None
+            and checkpoint.checkpoint_type == CheckpointType.lora_adapter
+        ):
+            if not isinstance(recipe, SglangRecipe):
+                raise DojoConfigError(
+                    "LoRA adapter checkpoints are served with SglangRecipe only."
+                )
+            lora_path = convert_native_lora_checkpoint_to_peft(
+                checkpoint.path,
+                model,
+                checkpoints_volume_name=checkpoint.checkpoints_volume_name,
+                checkpoints_mount_path=checkpoint.checkpoints_mount_path
+                or "/checkpoints",
+            )
+            # SGLang splits "<served>:<adapter>" on the first colon.
+            lora_name = checkpoint.name.replace(":", "-")
+        elif (
             checkpoint is not None
             and checkpoint.checkpoint_type == CheckpointType.megatron
         ):
@@ -233,7 +269,7 @@ class CustomDeployment(BaseModel):
                 recipe=recipe,
             )
 
-        if checkpoint is not None and checkpoint.path:
+        if checkpoint is not None and checkpoint.path and lora_path is None:
             model_path = checkpoint.path
         else:
             model_path = model.model_path or model.model_name
@@ -282,6 +318,8 @@ class CustomDeployment(BaseModel):
                 checkpoints_volume=checkpoints_volume,
                 checkpoints_mount_path=checkpoints_mount_path,
                 unauthenticated=unauthenticated,
+                lora_name=lora_name,
+                lora_path=lora_path,
             )
         elif isinstance(recipe, VllmRecipe):
             from modal_dojo.deploy_recipes.vllm_recipe.serve_vllm import (
@@ -336,6 +374,7 @@ class CustomDeployment(BaseModel):
             modal_app_id=modal_app_id,
             modal_app_url=modal_app_dashboard_url(modal_app_id),
             url=url,
+            lora_name=lora_name,
         )
         return deployment
 
@@ -368,7 +407,7 @@ class CustomDeployment(BaseModel):
         import requests
 
         body = {
-            "model": self.served_model_name,
+            "model": self.request_model_name,
             "messages": _messages_to_openai(messages),
             **extra,
         }

@@ -58,7 +58,8 @@ class Server:
 
 class SGLangEndpoint:
     """SGLang server. Spec keys: ``model_path``, ``served_model_name``,
-    ``port``, ``tp``, ``dp``, ``server_args``, ``startup_timeout``."""
+    ``request_model``, ``port``, ``tp``, ``dp``, ``server_args``,
+    ``startup_timeout``."""
 
     @modal.enter()
     def start(self):
@@ -73,7 +74,8 @@ class SGLangEndpoint:
         spec = _serve_spec()
         model_path = spec["model_path"]
         port = spec["port"]
-        served_model_name = spec["served_model_name"]
+        # A LoRA adapter answers under ``<served_model_name>:<lora_name>``.
+        request_model = spec["request_model"]
 
         args = rewrite_chat_template_kwargs(spec["server_args"], model_path=model_path)
         cmd = build_server_cmd(
@@ -92,7 +94,7 @@ class SGLangEndpoint:
         warmup_chat_completions(
             port=port,
             payload={
-                "model": served_model_name,
+                "model": request_model,
                 "messages": [{"role": "user", "content": "Reply with exactly OK."}],
                 "max_tokens": 8,
                 "temperature": 0,
@@ -100,7 +102,7 @@ class SGLangEndpoint:
             successful_requests=2,
             request_timeout=60.0,
         )
-        print(f"[modal-dojo] SGLang serving {served_model_name} ready.")
+        print(f"[modal-dojo] SGLang serving {request_model} ready.")
 
     @modal.exit()
     def stop(self):

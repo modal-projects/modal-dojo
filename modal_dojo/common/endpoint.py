@@ -13,6 +13,7 @@ from rich.text import Text
 
 from modal_dojo.common.checkpoint import (
     Checkpoint,
+    CheckpointType,
     convert_megatron_checkpoint_to_hf,
 )
 from modal_dojo.common.config import modal_proxy_auth_headers
@@ -160,6 +161,12 @@ class Endpoint:
             TimeoutError:
                 The endpoint does not publish a URL before ``wait_timeout_sec``.
         """
+        if checkpoint and checkpoint.checkpoint_type == CheckpointType.lora_adapter:
+            raise DojoConfigError(
+                f"{checkpoint.path} is a LoRA adapter. Modal Endpoints serve full "
+                "weights only; serve it with CustomDeployment.launch or "
+                "TrainingRun.serve instead."
+            )
         if checkpoint:
             model_config = (
                 model

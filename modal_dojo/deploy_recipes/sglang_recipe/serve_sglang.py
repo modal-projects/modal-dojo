@@ -12,6 +12,10 @@ straight to the SGLang port, so there's no separate wrapper function.
   - a **HuggingFace repo id** (e.g. ``"Qwen/Qwen3-4B"``) — SGLang
     downloads the weights from HF into the cache volume on first boot, or
   - an **absolute container path** to an HF-format checkpoint directory.
+
+``lora_name`` and ``lora_path`` load one PEFT adapter on top of ``model_path``.
+Clients select it with ``"model": "<served_model_name>:<lora_name>"``; the
+bare served name still answers with the base model.
 """
 
 from __future__ import annotations
@@ -35,6 +39,8 @@ def build_sglang_serve_app(
     checkpoints_volume: "Volume | str | None" = None,
     checkpoints_mount_path: str | None = None,
     unauthenticated: bool = False,
+    lora_name: str | None = None,
+    lora_path: str | None = None,
 ) -> "App":
     from modal import App, Image, Volume
 
@@ -99,6 +105,16 @@ def build_sglang_serve_app(
     server_args = recipe.server_args(served_model_name=served_model_name)
     if revision:
         server_args["--revision"] = revision
+    request_model = served_model_name
+    if lora_path:
+        if not lora_name:
+            raise ValueError("lora_path needs a lora_name to serve it under.")
+        server_args = {
+            "--enable-lora": "",
+            "--lora-paths": f"{lora_name}={lora_path}",
+            **server_args,
+        }
+        request_model = f"{served_model_name}:{lora_name}"
 
     app.SGLangEndpoint = app.server(
         image=image,
@@ -112,6 +128,7 @@ def build_sglang_serve_app(
                 {
                     "model_path": model_path,
                     "served_model_name": served_model_name,
+                    "request_model": request_model,
                     "port": sglang_port,
                     "tp": recipe.tp,
                     "dp": recipe.dp,
