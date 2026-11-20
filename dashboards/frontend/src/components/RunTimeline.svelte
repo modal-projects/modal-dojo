@@ -539,10 +539,10 @@
                 class="step"
                 style:left={`${pct(step.renderOffset ?? step.offset)}%`}
                 style:width={`${Math.max(pct(step.renderDuration ?? step.duration), 0.05)}%`}
-                title={`Step ${step.number}: ${fmtSecs(step.duration)} wall clock, ${fmtSecs(step.work)} work, ${fmtSecs(step.idle)} measured idle`}
+                title={`Step ${step.number}: ${fmtSecs(step.duration)} recorded wall clock, ${fmtSecs(step.work)} work, ${fmtSecs(step.idle)} measured idle${step.partial ? '. Partial: unfinished phases are not included.' : ''}`}
               >
                 <span class="step-text"
-                  >Step {step.number} · {fmtSecs(step.duration)}</span
+                  >Step {step.number} · {fmtSecs(step.duration)}{step.partial ? ' · partial' : ''}</span
                 >
               </div>
             {/each}
