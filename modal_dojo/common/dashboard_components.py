@@ -20,12 +20,59 @@ from typing import Any
 DASHBOARD_OVERLAY_VOLUME_NAME = "modal-dojo-dashboard-overlay"
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 MAX_COMPONENT_BYTES = 2 * 1024 * 1024
+# Size budget for one compiled component (its Svelte runtime and everything it
+# imports, bundled into the frame). A larger bundle fails to compile.
+MAX_COMPILED_COMPONENT_BYTES = 400_000
 
 
 class DashboardComponent(str, Enum):
-    """Supported run-scoped dashboard component slots."""
+    """Supported run-scoped dashboard component slots.
+
+    Every slot takes a Svelte component that the dashboard compiles and runs in
+    a sandboxed ``<iframe>``. The props each slot receives are listed in
+    :data:`COMPONENT_PROPS`.
+
+    - ``TRAJECTORY_VIEWER`` replaces the conversation view of the selected
+      sample. Only the most recently attached one is shown.
+    - ``SUMMARY_PANEL`` adds a panel to the run's Summary tab.
+    - ``ROLLOUT_PANEL`` adds a panel under the selected sample on the
+      Rollouts tab.
+
+    A run can attach several panels of each panel type; they render in
+    attachment order.
+    """
 
     TRAJECTORY_VIEWER = "trajectory_viewer"
+    SUMMARY_PANEL = "summary_panel"
+    ROLLOUT_PANEL = "rollout_panel"
+
+
+# The props each slot's component receives, as the dashboard posts them. Keep
+# this in step with the frontend call sites and dashboards/README.md.
+_SAMPLE_PROPS = {
+    "sample": "the selected normalized sample",
+    "samples": "all samples in the selected rollout group",
+    "rollout": "the expanded TrainingRolloutResult",
+    "run": "the TrainingRun summary",
+    "position": "the selected sample's position, as '<bucket>/<index>'",
+}
+COMPONENT_PROPS: dict[DashboardComponent, dict[str, str]] = {
+    DashboardComponent.TRAJECTORY_VIEWER: {
+        **_SAMPLE_PROPS,
+        "trajectory": "sample.metadata.trajectory_messages",
+        "rewardEvents": "sample.reward_events",
+    },
+    DashboardComponent.SUMMARY_PANEL: {
+        "run": "the TrainingRun summary",
+        "rollouts": "per-step rollout summaries, oldest first",
+    },
+    DashboardComponent.ROLLOUT_PANEL: dict(_SAMPLE_PROPS),
+}
+
+# Slots that show every attached component rather than only the latest one.
+MULTI_INSTANCE_COMPONENTS = frozenset(
+    {DashboardComponent.SUMMARY_PANEL, DashboardComponent.ROLLOUT_PANEL}
+)
 
 
 def _coerce_component_type(
@@ -51,11 +98,10 @@ def read_dashboard_component(
     path = Path(from_path).expanduser().resolve()
     if not path.is_file():
         raise ValueError(f"dashboard component file does not exist: {path}")
-    if (
-        component_type is DashboardComponent.TRAJECTORY_VIEWER
-        and path.suffix != ".svelte"
-    ):
-        raise ValueError("trajectory viewers must be Svelte files (.svelte)")
+    if path.suffix != ".svelte":
+        raise ValueError(
+            f"{component_type.value} components must be Svelte files (.svelte)"
+        )
 
     data = path.read_bytes()
     if not data:
@@ -133,10 +179,33 @@ def store_dashboard_component(
     return manifest
 
 
+def remove_dashboard_component_association(*, training_run_id: str, name: str) -> None:
+    """Delete a run's association record for ``name`` from the overlay Volume.
+
+    The content-addressed source stays: another run (or another name) can
+    point at the same digest, and the dashboard only serves sources that a
+    run's metadata still references. A missing record is not an error.
+    """
+    import modal
+    from modal.exception import NotFoundError
+
+    volume = modal.Volume.from_name(
+        DASHBOARD_OVERLAY_VOLUME_NAME, create_if_missing=True
+    )
+    try:
+        volume.remove_file(f"runs/{training_run_id}/{name}.json")
+    except (FileNotFoundError, NotFoundError):
+        pass
+
+
 __all__ = [
+    "COMPONENT_PROPS",
     "DASHBOARD_OVERLAY_VOLUME_NAME",
+    "MULTI_INSTANCE_COMPONENTS",
+    "MAX_COMPILED_COMPONENT_BYTES",
     "MAX_COMPONENT_BYTES",
     "DashboardComponent",
     "read_dashboard_component",
+    "remove_dashboard_component_association",
     "store_dashboard_component",
 ]

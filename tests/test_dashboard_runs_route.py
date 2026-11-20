@@ -83,7 +83,11 @@ def test_component_manifest_survives_dojo_cutover(
             "/api/runs/run-route-1/dashboard-components/trajectory_viewer"
         )
     assert response.status_code == 200
-    assert response.json() == manifest
+    body = response.json()
+    assert body.pop("frame_url").startswith(
+        "/api/runs/run-route-1/dashboard-components/trajectory_viewer/"
+    )
+    assert body == manifest
     assert TrainingRun.from_id("run-route-1").metadata["dashboard_components"] == {
         "viewer": manifest
     }
