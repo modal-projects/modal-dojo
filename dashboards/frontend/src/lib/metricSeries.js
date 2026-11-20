@@ -34,3 +34,35 @@ export function formatMetricValue(value) {
   if (magnitude !== 0 && (magnitude < 1e-3 || magnitude >= 1e6)) return value.toExponential(2);
   return String(Number(value.toPrecision(4)));
 }
+
+// One color per compared run, assigned by selection order (W&B-style).
+export const RUN_COLORS = [
+  "#4ade80",
+  "#60a5fa",
+  "#f472b6",
+  "#fbbf24",
+  "#a78bfa",
+  "#22d3ee",
+  "#fb7185",
+  "#a3e635",
+  "#f97316",
+  "#94a3b8",
+];
+
+export function runColor(index) {
+  return RUN_COLORS[index % RUN_COLORS.length];
+}
+
+// Index of the point in x-sorted `points` nearest to `x`.
+export function nearestIndex(points, x) {
+  let lo = 0;
+  let hi = points.length - 1;
+  if (hi < 0) return -1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (points[mid].x < x) lo = mid + 1;
+    else hi = mid;
+  }
+  if (lo > 0 && Math.abs(points[lo - 1].x - x) <= Math.abs(points[lo].x - x)) return lo - 1;
+  return lo;
+}
