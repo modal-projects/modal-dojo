@@ -39,6 +39,7 @@ _EXPORTS = {
     "Budget": ("modal_dojo.common.budget", "Budget"),
     "DatasetConfig": ("modal_dojo.common.dataset", "DatasetConfig"),
     "Environment": ("modal_dojo.common.environment", "Environment"),
+    "Fallback": ("modal_dojo.common.fallback", "Fallback"),
     "ManagedTrainConfig": (
         "modal_dojo.common.managed_train",
         "ManagedTrainConfig",
@@ -253,6 +254,7 @@ __all__ = [
     "Budget",
     "DatasetConfig",
     "Environment",
+    "Fallback",
     "ManagedTrainConfig",
     "Endpoint",
     "Sandbox",

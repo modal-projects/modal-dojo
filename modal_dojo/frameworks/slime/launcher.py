@@ -91,6 +91,7 @@ from .modal_helpers.utils import (
     resolve_checkpoint_ref,
 )
 from modal_dojo.common.budget import driver_budget_env
+from modal_dojo.common.fallback import mark_training_started
 from modal_dojo.common.budget_stop_patch import encoded_patch as budget_stop_patch
 from modal_dojo.common.patches import _MEGATRON_PATCHES, encode_patch
 from modal_dojo.common.checkpoint import Checkpoint
@@ -814,6 +815,7 @@ def build_slime_app(
         framework_status_token: str = "",
     ):
         started_at = time.time()
+        mark_training_started(training_run_id)  # capacity granted; see Fallback
         cluster, modal_app_id, modal_app_url = await start_training_cluster(
             slime,
             (hf_cache_volume, data_volume, checkpoints_volume),

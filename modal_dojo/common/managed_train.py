@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 from modal_dojo.common.budget import Budget
 from modal_dojo._api_reference import exclude_from_api_reference
 from modal_dojo.common.errors import DojoConfigError
+from modal_dojo.common.fallback import Fallback, launch_with_fallback
 from modal_dojo.common.train import TrainConfig
 
 if TYPE_CHECKING:
@@ -67,12 +68,18 @@ class ManagedTrainConfig:
     ).train()
     ```
 
+    With ``fallback_recipes``, ``launch()`` tries each recipe in turn, moving
+    on when one has not started training within the threshold (see
+    ``Fallback``). Proof of concept.
+
     Attributes:
         model: The model to train; it needs a slime or Miles preset.
         environment: The dataset, reward, and optional rollout.
         budget: When to stop.
         recipe_overrides: Recipe fields applied on top of the preset.
-        train_config: The built ``TrainConfig``.
+        fallback_recipes: Recipes to try in order, instead of the preset.
+        train_config: The built ``TrainConfig`` (the first, with fallbacks).
+        train_configs: Every ``TrainConfig`` ``launch()`` may try, in order.
     """
 
     def __init__(
@@ -81,6 +88,7 @@ class ManagedTrainConfig:
         environment: Environment,
         budget: Budget,
         recipe_overrides: dict[str, Any] | None = None,
+        fallback_recipes: Fallback | None = None,
     ) -> None:
         if not isinstance(budget, Budget):
             raise DojoConfigError(
@@ -91,14 +99,29 @@ class ManagedTrainConfig:
         self.environment = environment
         self.budget = budget
         self.recipe_overrides = dict(recipe_overrides or {})
-        self.train_config = TrainConfig(
-            dataset=environment.dataset,
-            model=model,
-            recipe=self._build_recipe(),
+        self.fallback_recipes = fallback_recipes
+        bases = (
+            list(fallback_recipes.recipes)
+            if fallback_recipes is not None
+            else [_preset_recipe(model)]
         )
+        self.train_configs = [
+            TrainConfig(
+                dataset=environment.dataset,
+                model=model,
+                recipe=self._build_recipe(base),
+            )
+            for base in bases
+        ]
 
-    def _build_recipe(self) -> SlimeRecipe | MilesRecipe:
-        preset = _preset_recipe(self.model)
+    @property
+    def train_config(self) -> TrainConfig:
+        """The first ``TrainConfig``: the preset's, or the primary fallback recipe's."""
+        return self.train_configs[0]
+
+    def _build_recipe(
+        self, preset: SlimeRecipe | MilesRecipe
+    ) -> SlimeRecipe | MilesRecipe:
         env = self.environment
         overrides = self.recipe_overrides
         unknown = set(overrides) - {f.name for f in dataclasses.fields(preset)}
@@ -134,7 +157,17 @@ class ManagedTrainConfig:
         return self.train_config.recipe
 
     def train(self, *, show_output: bool = True) -> TrainingRun:
-        return self.train_config.train(show_output=show_output)
+        """Launch, then wait for training to finish; see ``TrainConfig.train``."""
+        if self.fallback_recipes is None:
+            return self.train_config.train(show_output=show_output)
+        return self.launch(show_output=show_output).result(stop_app_on_success=True)
 
     def launch(self, *, show_output: bool = True) -> TrainingRun:
-        return self.train_config.launch(show_output=show_output)
+        """Start training detached, falling back through recipes if given."""
+        if self.fallback_recipes is None:
+            return self.train_config.launch(show_output=show_output)
+        return launch_with_fallback(
+            self.train_configs,
+            self.fallback_recipes.threshold,
+            launch=lambda config: config.launch(show_output=show_output),
+        )
