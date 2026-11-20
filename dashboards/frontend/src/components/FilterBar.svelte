@@ -16,6 +16,8 @@
     onToggleGroup, onSelectAllGroups, onClearGroups,
     onAddTagValue, onRemoveTagValue, onClearTags,
     onToggleTrainingType, onSelectAllTrainingTypes, onClearTrainingTypes,
+    // Pickers that list runs flat (the Metrics page's Add-run modal) hide it.
+    showGroupBy = true,
   } = $props();
 
   let root = $state();
@@ -154,6 +156,7 @@
     </div>
   {/each}
 
+  {#if showGroupBy}
   <div class="filterbar-menu-wrap ml-auto">
     <button
       class="group-by-button ghost-hover"
@@ -180,6 +183,7 @@
       </div>
     {/if}
   </div>
+  {/if}
 </nav>
 
 <style>

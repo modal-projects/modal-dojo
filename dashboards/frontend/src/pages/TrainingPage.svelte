@@ -1,5 +1,5 @@
 <script>
-  import { ExternalLink, Maximize2, PanelRightClose } from "lucide-svelte";
+  import { ChartLine, ExternalLink, Maximize2, PanelRightClose, X } from "lucide-svelte";
   import Drawer from "../components/Drawer.svelte";
   import FilterBar from "../components/FilterBar.svelte";
   import FrameworkStageProgress from "../components/FrameworkStageProgress.svelte";
@@ -66,6 +66,11 @@
     onToggleTrainingType,
     onSelectAllTrainingTypes,
     onClearTrainingTypes,
+    // Runs ticked for "Compare metrics" (a Set of run ids, owned by the parent).
+    selectedRunIds = new Set(),
+    onToggleRunSelected = () => {},
+    onClearRunSelection = () => {},
+    onCompareMetrics = () => {},
   } = $props();
 
   // The drawer is now driven by the parent: it holds the run-summary while the
@@ -105,7 +110,7 @@
 
   const drawerWidth = "min(420px, calc(100vw - 24px))";
   const columns = [
-    { key: "name", label: "Name", width: 240, minWidth: 140 },
+    { key: "name", label: "Name", width: 268, minWidth: 168 },
     { key: "status", label: "Status", width: 116, minWidth: 96 },
     { key: "stage", label: "Stage", width: 190, minWidth: 130 },
     { key: "training_type", label: "Type", width: 116, minWidth: 88 },
@@ -312,6 +317,22 @@
     />
   </div>
 
+  {#if selectedRunIds.size}
+    <div class="compare-bar" role="toolbar" aria-label="Selected runs">
+      <span class="text-(--text-bright) text-[13px] font-medium [font-variant-numeric:tabular-nums]">
+        {selectedRunIds.size} run{selectedRunIds.size === 1 ? "" : "s"} selected
+      </span>
+      <button type="button" class="compare-bar-primary" onclick={onCompareMetrics}>
+        <ChartLine size={14} strokeWidth={2.1} />
+        <span>Compare metrics</span>
+      </button>
+      <button type="button" class="log-button inline-flex items-center gap-[4px]" onclick={onClearRunSelection}>
+        <X size={12} strokeWidth={2.1} />
+        <span>Clear</span>
+      </button>
+    </div>
+  {/if}
+
   <div class="p-0" bind:this={list}>
     {#if loading}
       <div class="table-wrap freeze-header">
@@ -344,9 +365,17 @@
                 {@const groupTags = getGroupTags(run)}
                 <tr class="run-row" class:row-selected={drawerRunId === run.run_id}>
                   <td class="min-w-0 row-open-cell">
+                    <input
+                      type="checkbox"
+                      class="run-select-checkbox"
+                      checked={selectedRunIds.has(run.run_id)}
+                      aria-label={`Select ${runName} to compare metrics`}
+                      onclick={(event) => event.stopPropagation()}
+                      onchange={() => onToggleRunSelected(run.run_id)}
+                    />
                     <a
                       href={trainingRunDetailPath(run.run_id)}
-                      class="cell-open-button"
+                      class="cell-open-button pl-[40px]!"
                       title={runName}
                       aria-label={`Open training run ${runName}`}
                       onclick={(event) => selectRun(run.run_id, event)}

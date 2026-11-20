@@ -1,12 +1,13 @@
 <script>
   import { onMount } from "svelte";
-  import { Book, CheckCircle2, Zap } from "lucide-svelte";
+  import { Book, ChartLine, CheckCircle2, Zap } from "lucide-svelte";
   import "./app.css";
   import Sidebar from "./components/Sidebar.svelte";
   import DashboardHeader from "./components/DashboardHeader.svelte";
   import TrainingPage from "./pages/TrainingPage.svelte";
   import TrainingRunDetailPage from "./pages/TrainingRunDetailPage.svelte";
   import EvalsPage from "./pages/EvalsPage.svelte";
+  import MetricsPage from "./pages/MetricsPage.svelte";
   import {
     fetchRuns,
     fetchRunCounts,
@@ -16,6 +17,7 @@
   import logoSvg from "./lib/logo.svg";
   import { fmtDuration, formatTagValue, getGroupTags } from "./lib/format.js";
   import { createSidebarCollapsedState } from "./lib/sidebarCollapsed.svelte.js";
+  import { toggleInSet } from "./lib/set.js";
   const DOCS_URL = "https://dojo.modal.dev";
 
   // The server filters, sorts and pages the run list, so `runs` only holds the
@@ -64,20 +66,28 @@
   let initialRunsLoadStarted = false;
   let evalsRequestId = 0;
   let hasLoadedEvals = $state(false);
+  // Runs ticked on the training list, in the order they were ticked.
+  let selectedRunIds = $state(new Set());
+  // Runs on the Metrics compare page; mirrored in `/metrics?run=…`.
+  let compareRunIds = $state([]);
+  let mainEl = $state(null);
 
   const pageMeta = {
     training: { title: "Training runs" },
     evals: { title: "Evals" },
+    metrics: { title: "Metrics" },
   };
 
   const pagePaths = {
     training: "/training",
     evals: "/evals",
+    metrics: "/metrics",
   };
 
   function pageFromPath(pathname) {
     if (pathname === "/" || pathname.startsWith("/training")) return "training";
     if (pathname.startsWith("/evals")) return "evals";
+    if (pathname.startsWith("/metrics")) return "metrics";
     return "training";
   }
 
@@ -90,17 +100,31 @@
   const navItems = [
     { key: "training", label: "Training runs", Icon: Zap, path: pagePaths.training },
     { key: "evals", label: "Evals", Icon: CheckCircle2, path: pagePaths.evals },
+    { key: "metrics", label: "Metrics", Icon: ChartLine, path: pagePaths.metrics },
   ];
+
+  function compareRunIdsFromLocation() {
+    return [...new Set(new URLSearchParams(window.location.search).getAll("run").filter(Boolean))];
+  }
+
+  function metricsPath(ids) {
+    const params = new URLSearchParams();
+    for (const id of ids) params.append("run", id);
+    const query = params.toString();
+    return query ? `${pagePaths.metrics}?${query}` : pagePaths.metrics;
+  }
 
   if (typeof window !== "undefined") {
     activePage = pageFromPath(window.location.pathname);
     activeTrainingRunId = runIdFromPath(window.location.pathname);
+    compareRunIds = compareRunIdsFromLocation();
   }
 
   onMount(() => {
     const syncPageWithPath = () => {
       activePage = pageFromPath(window.location.pathname);
       activeTrainingRunId = runIdFromPath(window.location.pathname);
+      compareRunIds = compareRunIdsFromLocation();
     };
 
     if (window.location.pathname === "/") {
@@ -773,6 +797,8 @@
     if (error) return "error";
     if (activePage === "evals")
       return `${allEvals.length} eval${allEvals.length === 1 ? "" : "s"}`;
+    if (activePage === "metrics")
+      return `${compareRunIds.length} run${compareRunIds.length === 1 ? "" : "s"} compared`;
     if (!totalRuns) return "0 runs";
     return `${matchingRunCount} of ${totalRuns} runs`;
   });
@@ -855,14 +881,74 @@
   }
 
   function setActivePage(page) {
+    if (page !== activePage) mainEl?.scrollTo(0, 0);
     activePage = page;
     activeTrainingRunId = null;
     drawerRunId = null;
     if (typeof window === "undefined") return;
-    const targetPath = pagePaths[page] || pagePaths.training;
-    if (window.location.pathname !== targetPath) {
+    const targetPath =
+      page === "metrics" ? metricsPath(compareRunIds) : pagePaths[page] || pagePaths.training;
+    if (window.location.pathname + window.location.search !== targetPath) {
       window.history.pushState({}, "", targetPath);
     }
+  }
+
+  function toggleRunSelected(runId) {
+    selectedRunIds = toggleInSet(selectedRunIds, runId);
+  }
+
+  function openMetricsCompare() {
+    compareRunIds = [...selectedRunIds];
+    setActivePage("metrics");
+  }
+
+  function setCompareRunIds(ids) {
+    compareRunIds = ids;
+    if (typeof window === "undefined") return;
+    window.history.replaceState({}, "", metricsPath(ids));
+  }
+
+  // FilterBar's props, for the Metrics page's Add-run modal; it filters the
+  // same run list as the Training runs page.
+  let filterBarProps = $derived({
+    recipes,
+    recipeCounts,
+    activeRecipes,
+    allRecipesActive: activeRecipes.size === recipes.length,
+    statuses,
+    statusCounts,
+    activeStatuses,
+    allStatusesActive: activeStatuses.size === statuses.length,
+    groups,
+    groupCounts,
+    activeGroups,
+    allGroupsActive: activeGroups.size === groups.length,
+    tagCounts,
+    activeTags,
+    trainingTypes,
+    trainingTypeCounts,
+    activeTrainingTypes,
+    allTrainingTypesActive: activeTrainingTypes.size === trainingTypes.length,
+    onToggleRecipe: toggleRecipe,
+    onSelectAllRecipes: selectAllRecipes,
+    onClearRecipes: clearRecipes,
+    onToggleStatus: toggleStatus,
+    onSelectAllStatuses: selectAllStatuses,
+    onClearStatuses: clearStatuses,
+    onToggleGroup: toggleGroup,
+    onSelectAllGroups: selectAllGroups,
+    onClearGroups: clearGroups,
+    onAddTagValue: addTagValue,
+    onRemoveTagValue: removeTagValue,
+    onClearTags: clearTags,
+    onToggleTrainingType: toggleTrainingType,
+    onSelectAllTrainingTypes: selectAllTrainingTypes,
+    onClearTrainingTypes: clearTrainingTypes,
+  });
+
+  function isRunRunning(runId) {
+    const run = runs.find((item) => item.run_id === runId);
+    return run ? getTrainingRunStatus(run) === "running" : false;
   }
 
   function backToTrainingList() {
@@ -876,6 +962,7 @@
 
   // Opening a run shows the full detail page (a real route, not a drawer).
   function openTrainingRunDetail(runId) {
+    activePage = "training";
     drawerRunId = null;
     activeTrainingRunId = runId;
     if (typeof window === "undefined") return;
@@ -937,7 +1024,7 @@
       onToggleCollapsed={() => sidebar.toggle()}
     />
 
-    <main class="min-w-0 min-h-0 h-full flex flex-col overflow-y-auto">
+    <main class="min-w-0 min-h-0 h-full flex flex-col overflow-y-auto" bind:this={mainEl}>
       <DashboardHeader
         title={pageMeta[activePage].title}
         {statusText}
@@ -1009,6 +1096,25 @@
         onToggleTrainingType={toggleTrainingType}
         onSelectAllTrainingTypes={selectAllTrainingTypes}
         onClearTrainingTypes={clearTrainingTypes}
+        {selectedRunIds}
+        onToggleRunSelected={toggleRunSelected}
+        onClearRunSelection={() => (selectedRunIds = new Set())}
+        onCompareMetrics={openMetricsCompare}
+      />
+    {:else if activePage === "metrics"}
+      <MetricsPage
+        runIds={compareRunIds}
+        {runs}
+        filterProps={filterBarProps}
+        bind:search
+        {matchingRunCount}
+        {hasMoreRuns}
+        runsLoading={loading}
+        {getStatus}
+        onLoadMore={loadMoreRuns}
+        isRunning={isRunRunning}
+        onChangeRunIds={setCompareRunIds}
+        onOpenRun={openTrainingRunDetail}
       />
     {:else if activePage === "evals"}
       <EvalsPage
