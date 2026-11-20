@@ -316,3 +316,142 @@ def test_app_live_status_reads_stop_time(monkeypatch):
     assert app_live_status("ap-dead") is False
     assert app_live_status("ap-unknown") is None
     assert app_live_status("") is None
+
+
+@pytest.fixture(autouse=True)
+def _never_stop_real_apps(monkeypatch):
+    """Fail loudly if a test would reach Modal to stop a real app."""
+
+    def refuse(app_id: str) -> None:
+        raise AssertionError(f"test tried to stop real Modal app {app_id!r}")
+
+    monkeypatch.setattr("modal_dojo.common.run_reconciler.stop_app", refuse)
+
+
+def _queued_orphan(now: int, training_run_id: str, app_id: str) -> TrainingRun:
+    return _run(
+        training_run_id=training_run_id,
+        modal_app_id=app_id,
+        updated_at=now - 60,
+        metadata={
+            "framework_progress": {
+                "phase": "download_model",
+                "is_active": False,
+                "updated_at": now - QUEUED_STAGE_TIMEOUT_SECONDS - 60,
+            }
+        },
+    )
+
+
+def test_reconcile_stops_live_app_before_saving(fake_volume, monkeypatch):
+    now = int(time.time())
+    run = _queued_orphan(now, "orphan-live", "ap-live")
+    monkeypatch.setattr(
+        "modal_dojo.common.run_reconciler._load_running_runs", lambda: [run]
+    )
+    events: list[str] = []
+
+    def record_save(self: TrainingRun) -> None:
+        events.append(f"save:{(self.metadata or {}).get('stopped_modal_app_at')}")
+
+    monkeypatch.setattr(TrainingRun, "save", record_save)
+
+    results = reconcile_orphan_runs(
+        now=now,
+        get_app_live=lambda _app_id: True,
+        has_train_result=lambda _run_id: False,
+        stop_modal_app=lambda app_id: events.append(f"stop:{app_id}"),
+    )
+
+    assert [r.reason for r in results] == ["stale_queued_stage"]
+    assert results[0].stopped_modal_app is True
+    assert events == ["stop:ap-live", f"save:{now}"]
+
+
+def test_reconcile_stops_unreachable_app(fake_volume, monkeypatch):
+    now = int(time.time())
+    run = _queued_orphan(now, "orphan-unreachable", "ap-unknown")
+    monkeypatch.setattr(
+        "modal_dojo.common.run_reconciler._load_running_runs", lambda: [run]
+    )
+    stopped: list[str] = []
+
+    results = reconcile_orphan_runs(
+        now=now,
+        get_app_live=lambda _app_id: None,
+        has_train_result=lambda _run_id: False,
+        stop_modal_app=stopped.append,
+    )
+
+    assert [r.reason for r in results] == ["stale_modal_app_unreachable"]
+    assert results[0].stopped_modal_app is True
+    assert stopped == ["ap-unknown"]
+    saved = TrainingRun.from_id("orphan-unreachable")
+    assert saved.status == TrainingRunStatus.CANCELLED
+    assert saved.metadata["stopped_modal_app_at"] == now
+
+
+def test_reconcile_does_not_stop_dead_app(fake_volume, monkeypatch):
+    now = int(time.time())
+    run = _run(
+        training_run_id="orphan-dead", modal_app_id="ap-dead", updated_at=now - 120
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.run_reconciler._load_running_runs", lambda: [run]
+    )
+    stopped: list[str] = []
+
+    results = reconcile_orphan_runs(
+        now=now,
+        get_app_live=lambda _app_id: False,
+        has_train_result=lambda _run_id: False,
+        stop_modal_app=stopped.append,
+    )
+
+    assert [r.reason for r in results] == ["stale_modal_app_terminated"]
+    assert results[0].stopped_modal_app is False
+    assert stopped == []
+    assert "stopped_modal_app_at" not in (run.metadata or {})
+
+
+def test_reconcile_without_app_id_stops_nothing(fake_volume, monkeypatch):
+    now = int(time.time())
+    run = _run(
+        training_run_id="orphan-no-app",
+        updated_at=now - PRE_APP_TIMEOUT_SECONDS - 60,
+    )
+    monkeypatch.setattr(
+        "modal_dojo.common.run_reconciler._load_running_runs", lambda: [run]
+    )
+    stopped: list[str] = []
+
+    results = reconcile_orphan_runs(
+        now=now,
+        get_app_live=lambda _app_id: None,
+        has_train_result=lambda _run_id: False,
+        stop_modal_app=stopped.append,
+    )
+
+    assert [r.reason for r in results] == ["stale_pre_active_no_modal_app"]
+    assert results[0].stopped_modal_app is False
+    assert stopped == []
+
+
+def test_reconcile_dry_run_reports_but_does_not_stop(fake_volume, monkeypatch):
+    now = int(time.time())
+    run = _queued_orphan(now, "orphan-dry", "ap-live")
+    monkeypatch.setattr(
+        "modal_dojo.common.run_reconciler._load_running_runs", lambda: [run]
+    )
+    stopped: list[str] = []
+
+    results = reconcile_orphan_runs(
+        dry_run=True,
+        now=now,
+        get_app_live=lambda _app_id: True,
+        has_train_result=lambda _run_id: False,
+        stop_modal_app=stopped.append,
+    )
+
+    assert results[0].stopped_modal_app is True
+    assert stopped == []
