@@ -167,6 +167,10 @@
       "";
     if (directUrl) return directUrl;
 
+    const provider =
+      run?.train_result?.metric_provider || run?.config_summary?.metric_provider || "";
+    if (provider && provider !== "wandb") return "";
+
     const project =
       run?.config_summary?.metric_project || run?.config_summary?.wandb_project || "";
     return project ? `https://wandb.ai/home?search=${encodeURIComponent(project)}` : "";

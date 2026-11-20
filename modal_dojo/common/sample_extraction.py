@@ -304,7 +304,11 @@ def _extract_inference_metadata(sample: Any) -> dict[str, Any] | None:
 
     total = _coerce_int(_duck_get(prefix_info, "total_prompt_tokens", 0))
     cached = _coerce_int(_duck_get(prefix_info, "cached_tokens", 0))
-    resp_len = _duck_get(sample, "response_length")
+    # Multi-turn response_length includes tool observations; Miles exposes the
+    # generated-token count separately through its observation loss mask.
+    resp_len = _duck_get(sample, "effective_response_length")
+    if resp_len is None:
+        resp_len = _duck_get(sample, "response_length")
 
     inference: dict[str, Any] = {
         "tokens_in": total,
@@ -358,10 +362,7 @@ def _trajectory_sample_limit() -> int:
 
 
 def _compact_trajectory_messages(raw: Any) -> list[dict[str, Any]] | None:
-    """Coerce a Sample's ``trajectory_messages`` into a compact, size-bounded
-    list of ``{role, content}`` turns the dashboard can render. Caps the number
-    of messages and truncates each long content (head+tail with an elision
-    notice) so a single verbose episode can't blow up the rollout payload."""
+    """Compact trajectory turns, preserving tool-call JSON for the renderer."""
     if not isinstance(raw, list) or not raw:
         return None
     out: list[dict[str, Any]] = []
@@ -377,7 +378,10 @@ def _compact_trajectory_messages(raw: Any) -> list[dict[str, Any]] | None:
                     content = json.dumps(content)
                 except TypeError:
                     content = str(content)
-        if len(content) > _TRAJECTORY_MSG_CHARS_MAX:
+        # Cutting through a tool call corrupts its JSON and hides executed commands.
+        if len(content) > _TRAJECTORY_MSG_CHARS_MAX and not (
+            msg.get("role") == "assistant" and "<tool_call>" in content
+        ):
             edge = _TRAJECTORY_MSG_CHARS_MAX // 2
             elided = len(content) - 2 * edge
             content = (

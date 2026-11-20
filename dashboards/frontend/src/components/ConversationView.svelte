@@ -186,7 +186,7 @@
   function parseToolCallBlock(block) {
     try {
       const data = JSON.parse(block);
-      if (data.name) return { name: data.name, arguments: data.arguments || {} };
+      if (data.name) return { name: data.name, arguments: data.arguments ?? data.args ?? {} };
     } catch {}
 
     const fnMatch = block.match(/<function=([^>\n]+)>\s*([\s\S]*?)(?:<\/function>|$)/);
@@ -266,7 +266,7 @@
 
 {#if parsed.length}
 <div class="flex flex-col gap-[2px]">
-  {#if thinking}
+  {#if thinking && !parsed.some((msg) => msg.thinking)}
     <div class="turn turn-thinking">
       <div class="turn-header">
         <span class="text-[10px] font-[600] uppercase tracking-[0.05em] p-[2px_6px] rounded-[3px] bg-[rgba(168,139,250,0.12)] text-[#a78bfa]">Thinking</span>
@@ -279,8 +279,8 @@
     <div class="turn turn-{msg.role}">
       <div class="turn-header">
         <span class="text-[10px] font-[600] uppercase tracking-[0.05em] p-[2px_6px] rounded-[3px] role-{msg.role}">{roleLabel(msg.role)}</span>
-        {#if msg.role === "assistant" && idx > 0}
-          <span class="turn-meta">Turn {Math.ceil((idx + 1) / 2)}</span>
+        {#if msg.role === "assistant" && parsed.length > 1}
+          <span class="turn-meta">Turn {parsed.slice(0, idx + 1).filter((turn) => turn.role === "assistant").length}</span>
         {/if}
         {#if msg.role === "assistant" && msg.toolCalls.length}
           <span class="turn-meta">{msg.toolCalls.length} tool call{msg.toolCalls.length > 1 ? "s" : ""}</span>

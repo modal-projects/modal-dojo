@@ -984,7 +984,7 @@ class MilesRecipe(BaseTrainRecipe):
         )
         from modal_dojo.common.models.inkling_small import Inkling_Small_LoRA
         from modal_dojo.train_recipes.miles_recipe.inkling_2_small import (
-            Inkling_2_Small_LoRA_Recipe,
+            Inkling_2_Small_LoRA_256k_Recipe,
         )
         from modal_dojo.train_recipes.miles_recipe.inkling import (
             Inkling_Small_LoRA_Recipe,
@@ -1031,7 +1031,7 @@ class MilesRecipe(BaseTrainRecipe):
         if model_config.model_name == "moonshotai/Kimi-K3":
             return Kimi_K3_LoRA_Recipe()
         if model_config.model_name == "thinkingmachines/Inkling-2-Small":
-            return Inkling_2_Small_LoRA_Recipe()
+            return Inkling_2_Small_LoRA_256k_Recipe()
         if isinstance(model_config, Inkling_Small_LoRA):
             return Inkling_Small_LoRA_Recipe()
         if model_config.model_name == "thinkingmachines/Inkling-Small":

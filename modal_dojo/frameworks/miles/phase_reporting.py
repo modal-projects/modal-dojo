@@ -272,6 +272,21 @@ def before_train_step_hook(
     )
 
 
+def _declare_wrapped_hook(function: Any, key: str) -> None:
+    # Miles' typed config must assign this private setting to its wrapper;
+    # otherwise it rejects the extra_config key before starting the actors.
+    def add_arguments(parser: Any) -> None:
+        parser.add_argument(f"--{key.replace('_', '-')}", type=str, default=None)
+
+    function.add_arguments = add_arguments
+
+
+_declare_wrapped_hook(log_rollout_data, CUSTOM_ROLLOUT_LOG_FUNCTION_PATH_KEY)
+_declare_wrapped_hook(log_eval_rollout_data, CUSTOM_EVAL_ROLLOUT_LOG_FUNCTION_PATH_KEY)
+_declare_wrapped_hook(before_log_prob_hook, CUSTOM_BEFORE_LOG_PROB_HOOK_PATH_KEY)
+_declare_wrapped_hook(before_train_step_hook, CUSTOM_BEFORE_TRAIN_STEP_HOOK_PATH_KEY)
+
+
 __all__ = [
     "before_log_prob_hook",
     "before_train_step_hook",
