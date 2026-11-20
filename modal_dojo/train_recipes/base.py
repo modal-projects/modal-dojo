@@ -17,6 +17,7 @@ from modal_dojo.train_recipes.gpu_allocation import (
     GpuAllocation,
     resolve_gpu_allocation,
 )
+from modal_dojo.common.dataset import HarborTasks
 
 if TYPE_CHECKING:
     from modal_dojo.common.dataset import DatasetConfig
@@ -236,6 +237,11 @@ class BaseTrainRecipe(ABC, metaclass=_UnwrapDojoErrorMeta):
             )
         if eval_ds is None:
             return
+        if isinstance(ds, HarborTasks) != isinstance(eval_ds, HarborTasks):
+            raise DojoConfigError(
+                "dataset and eval_dataset must both be HarborTasks or neither: "
+                "Harbor rollout hooks apply to every sample in the run."
+            )
         for dataset_method in ("input_key", "label_key", "apply_chat_template"):
             train_value = getattr(ds, dataset_method)()
             eval_value = getattr(eval_ds, dataset_method)()
