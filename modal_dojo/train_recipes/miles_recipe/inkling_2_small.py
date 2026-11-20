@@ -31,7 +31,7 @@ def _image_commands() -> list[str]:
 
 
 @dataclass(config=ConfigDict(extra="forbid", arbitrary_types_allowed=True))
-class Inkling_2_Small_LoRA_Recipe(MilesRecipe):
+class Inkling_2_Small_LoRA_256k_Recipe(MilesRecipe):
     """Rank-32 LoRA GRPO, 262,144-token context, 1 node × 8 B300 GPUs.
 
     Reserves 16k initial prompt tokens and 240k response tokens. Multi-turn
@@ -152,7 +152,7 @@ class Inkling_2_Small_LoRA_Recipe(MilesRecipe):
     )
 
     @model_validator(mode="after")
-    def _validate_streaming_backend(self) -> "Inkling_2_Small_LoRA_Recipe":
+    def _validate_streaming_backend(self) -> "Inkling_2_Small_LoRA_256k_Recipe":
         overrides = self._escape_hatch_values()
 
         def value(name, default=None):
