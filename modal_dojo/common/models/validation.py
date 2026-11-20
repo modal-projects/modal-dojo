@@ -15,6 +15,7 @@ from .deepseek_v41_flash import DeepSeek_V4_1_Flash, DeepSeek_V4_1_Flash_LoRA
 from .gemma4_26b_a4b import Gemma4_26B_A4B
 from .glm_4_7 import GLM_4_7
 from .glm_5_3_flash import GLM_5_3_Flash_LoRA
+from .inkling_2_small import Inkling_2_Small
 from .inkling_small import Inkling_Small, Inkling_Small_LoRA
 from .muse_spark import Muse_Spark_Open
 from .kimi_k3 import Kimi_K3
@@ -136,6 +137,12 @@ VALIDATION_CONFIGS: set[_ValidationConfig] = {
     ),
     _ValidationConfig(
         "Gemma-4-26B-A4B-it", Gemma4_26B_A4B, Framework.MILES, timeout_s=2 * 60 * 60
+    ),
+    _ValidationConfig(
+        "Inkling-2-Small-LoRA",
+        Inkling_2_Small,
+        Framework.MILES,
+        timeout_s=4 * 60 * 60,
     ),
     _ValidationConfig(
         "Inkling-Small", Inkling_Small, Framework.MILES, timeout_s=3 * 60 * 60

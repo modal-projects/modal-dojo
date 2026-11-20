@@ -108,7 +108,7 @@ For a step-by-step walkthrough, see the [Getting started tutorial](https://dojo.
 | DeepSeek | <ul><li>[DeepSeek-V4.1-Flash](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash)</li><li>[DeepSeek-V4.1-Flash-1017](https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017)</li></ul> |
 | GLM | <ul><li>[GLM-4.7](https://huggingface.co/zai-org/GLM-4.7)</li><li>[GLM-5.3-Flash](https://huggingface.co/zai-org/GLM-5.3-Flash)</li></ul> |
 | Gemma | <ul><li>[Gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it)</li></ul> |
-| Inkling | <ul><li>[Inkling-Small](https://huggingface.co/thinkingmachines/Inkling-Small)</li></ul> |
+| Inkling | <ul><li>[Inkling-2-Small](https://huggingface.co/thinkingmachines/Inkling-2-Small)</li><li>[Inkling-Small](https://huggingface.co/thinkingmachines/Inkling-Small)</li></ul> |
 | Kimi | <ul><li>[Kimi-K3](https://huggingface.co/moonshotai/Kimi-K3)</li></ul> |
 | Moonlight | <ul><li>[Moonlight-16B-A3B-Instruct](https://huggingface.co/moonshotai/Moonlight-16B-A3B-Instruct)</li></ul> |
 | Muse | <ul><li>[Muse-Spark-Open-816B-A42B](https://huggingface.co/meta-models/Muse-Spark-Open-816B-A42B)</li></ul> |

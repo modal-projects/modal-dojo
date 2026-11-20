@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from modal_dojo.common.dataset import DatasetConfig, HuggingFaceDataset
 from modal_dojo.common.errors import DojoConfigError
-from modal_dojo.common.models import ModelConfig
+from modal_dojo.common.models import Inkling_2_Small, ModelConfig
 from modal_dojo.train_recipes.miles_recipe import MilesRecipe
 
 
@@ -16,8 +16,7 @@ def build_miles_validation(
 ) -> tuple[MilesRecipe, DatasetConfig]:
     """The model's base miles recipe and its validation dataset.
 
-    Every miles recipe today is a math-RL recipe scored by ``deepscaler``, so
-    they all validate against DAPO-Math-17k. Every rollout step consumes
+    Math-RL recipes validate against DAPO-Math-17k. Every rollout step consumes
     ``rollout_batch_size`` prompts, so materialize enough for the whole run
     rather than assuming the loader wraps epochs. SFT entries train on a
     short conversation slice instead.
@@ -49,7 +48,10 @@ def build_miles_validation(
         )
 
     recipe.skip_eval_before_train = True
-    recipe.rm_type = "deepscaler"
+    # Inkling's native math scorer understands its response format.
+    recipe.rm_type = (
+        "math" if isinstance(model_config, Inkling_2_Small) else "deepscaler"
+    )
     prompts_per_step = max(
         recipe.rollout_batch_size, recipe.over_sampling_batch_size or 0
     )
