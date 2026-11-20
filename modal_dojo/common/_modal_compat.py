@@ -14,10 +14,13 @@ back plain values or the response as-is. Callers must not import
 from __future__ import annotations
 
 import ast
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from types import FunctionType
 from typing import Any
+
+from modal_dojo.common.errors import DojoConfigError
 
 
 def stop_app_by_id(app_id: str) -> None:
@@ -53,6 +56,48 @@ async def open_async_client(token_id: str, token_secret: str) -> Any:
     from modal.client import _Client
 
     return await _Client.from_credentials(token_id, token_secret)
+
+
+async def lookup_workspace_name() -> str:
+    """Read the workspace slug; the public Workspace name uses the username field."""
+    from google.protobuf.empty_pb2 import Empty
+    from modal.client import _Client
+
+    client = await _Client.from_env()
+    return (await client.stub.WorkspaceNameLookup(Empty())).workspace_name
+
+
+async def lookup_active_endpoint_deployment(
+    endpoint_id: str, environment: str | None
+) -> str:
+    """Find the deployment served by an endpoint until the SDK exposes it."""
+    from modal.client import _Client
+    from modal_proto import api_pb2
+
+    client = await _Client.from_env()
+    created_before = time.time()
+    while True:
+        response = await client.stub.EndpointList(
+            api_pb2.EndpointListRequest(
+                environment_name=environment or "",
+                pagination=api_pb2.ListPagination(
+                    max_objects=100, created_before=created_before
+                ),
+            )
+        )
+        for item in response.items:
+            if item.endpoint_id == endpoint_id:
+                if not item.active_deployment_id:
+                    raise DojoConfigError(
+                        f"Endpoint {endpoint_id} has no active deployment to evaluate."
+                    )
+                return item.active_deployment_id
+        if len(response.items) < 100:
+            raise DojoConfigError(
+                f"Endpoint {endpoint_id} is not in environment "
+                f"{environment or 'default'!r}; pass environment= or deployment_id=."
+            )
+        created_before = response.items[-1].metadata.creation_info.created_at
 
 
 def to_proto_timestamp(secs: float) -> Any:

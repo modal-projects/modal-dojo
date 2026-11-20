@@ -14,6 +14,7 @@ from pydantic.dataclasses import dataclass
 
 from modal_dojo.common.checkpoint import Checkpoint, CheckpointType
 from modal_dojo.common.dataset import DatasetConfig, OnlineRollout
+from modal_dojo.common.evaluations import ModalEvalConfig
 from modal_dojo.common.errors import (
     DojoConfigError,
     DojoError,
@@ -472,6 +473,10 @@ class TrainConfig:
             Model identity and weight download behavior.
         recipe:
             Training framework, Modal resources, and framework arguments.
+        eval:
+            Score every Nth checkpoint with Modal Evals on the
+            ``eval_dataset`` (or ``dataset``) ``eval_rows()``. Internal-only:
+            needs the modal-labs workspace and the ``modal-evals`` SDK.
         resume_from_checkpoint:
             Start a new run from this Megatron checkpoint's weights with a
             fresh optimizer and LR schedule; ``recipe.num_rollout`` counts
@@ -494,6 +499,7 @@ class TrainConfig:
     model: ModelConfig
     recipe: SlimeRecipe | MilesRecipe
     eval_dataset: DatasetConfig | None = None
+    eval: ModalEvalConfig | None = None
     resume_from_checkpoint: Checkpoint | None = None
     # Whether a run outlives the local client. The app itself is always started
     # detached (the CLI's ``modal run --detach`` only detaches the entrypoint,
@@ -751,6 +757,15 @@ class TrainConfig:
             maybe_warn_gpu_oom(self.recipe, self.model)
             _warn_routing_replay_with_custom_rollout(self.recipe)
         _confirm_launch_warnings(caught)
+        eval_release = None
+        if self.eval is not None:
+            from modal_dojo.common.evaluations import prepare_eval
+
+            eval_release = prepare_eval(self)
+            print(
+                f"Modal Evals: published {eval_release.task_count} eval rows as "
+                f"{eval_release.evaluation_key} ({eval_release.release_id})"
+            )
         training_run_id = self._generate_training_run_id()
         ensure_dashboard_deployed()
         framework_status_url = get_framework_status_url() or ""
@@ -818,7 +833,7 @@ class TrainConfig:
                 framework_status_token=framework_status_token,
             )
 
-        return launch_detached(
+        launched_run = launch_detached(
             run_record,
             framework_status_token=framework_status_token,
             build_app=lambda: self._build_app(training_run_id),
@@ -826,3 +841,11 @@ class TrainConfig:
             status_display=status_display,
             show_output=show_output,
         )
+        if eval_release is not None:
+            from modal_dojo.common.evaluations import start_eval
+
+            try:
+                start_eval(self, launched_run.training_run_id, eval_release)
+            except Exception as exc:
+                print(f"WARNING: Modal Evals checkpoint watcher did not start: {exc}")
+        return launched_run

@@ -325,7 +325,8 @@ def test_eval_classes_are_not_documented() -> None:
     assert documented.isdisjoint(API_REFERENCE_DENYLIST)
     assert labels.isdisjoint(API_REFERENCE_DENYLIST)
     for name in API_REFERENCE_DENYLIST:
-        assert inspect.isclass(getattr(modal_dojo, name))
+        obj = getattr(modal_dojo, name)
+        assert inspect.isclass(obj) or inspect.isfunction(obj)
     assert "MetadataStore" in API_REFERENCE_DENYLIST
     assert {"extract_code", "score_in_sandbox"} <= documented
     assert {"extract_code", "score_in_sandbox"}.isdisjoint(API_REFERENCE_DENYLIST)
