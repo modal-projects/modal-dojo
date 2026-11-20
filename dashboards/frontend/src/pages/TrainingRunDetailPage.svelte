@@ -32,6 +32,8 @@
     fetchRun,
     fetchRunRollouts,
     fetchRollout,
+    fetchRolloutIndex,
+    fetchRolloutPage,
     fetchRunTimings,
     fetchRunAdvantages,
     fetchRunAdvantageStep,
@@ -551,14 +553,54 @@
     }, 1000);
   }
 
+  // A paged step starts with placeholder samples (`_page` set); load the
+  // pages the open sample's rollout spans, each page at most once.
+  const requestedPages = new Set();
+  $effect(() => {
+    const active = activeSample;
+    const rollout = expandedRollout;
+    const rolloutId = expandedRolloutId;
+    if (!active || !rollout || rolloutId == null) return;
+    const pages = new Set(
+      active.samples.filter((s) => s?._page != null).map((s) => s._page),
+    );
+    for (const page of pages) void loadRolloutPage(rollout, rolloutId, page);
+  });
+
+  async function loadRolloutPage(rollout, rolloutId, page) {
+    const key = `${runId}:${rolloutId}:${page}`;
+    if (requestedPages.has(key)) return;
+    requestedPages.add(key);
+    const data = await fetchRolloutPage(runId, rolloutId, page);
+    if (!data?.samples || expandedRollout !== rollout) {
+      requestedPages.delete(key);
+      return;
+    }
+    data.samples.forEach((sample, i) => {
+      rollout.samples[data.start + i] = sample;
+    });
+  }
+
   onDestroy(() => {
     if (rolloutLinkCopyResetTimer) clearTimeout(rolloutLinkCopyResetTimer);
   });
 
-  function downloadAllTrajectories() {
+  async function downloadAllTrajectories() {
     if (!expandedRollout?.samples?.length) return;
     const rollout = expandedRolloutId ?? 0;
-    const samples = expandedRollout.samples;
+    let samples = expandedRollout.samples;
+    let images = rolloutImages;
+    if (expandedRollout.sample_pages?.length) {
+      // A paged step only has the samples viewed so far; download all of them.
+      const full = await fetchRollout(runId, rollout);
+      if (!full?.samples?.length) return;
+      samples = full.samples;
+      images = {};
+      for (const s of samples) {
+        const meta = s?.metadata;
+        if (meta?.image_ref && meta.image) images[meta.image_ref] = meta.image;
+      }
+    }
     const groups = groupByRollout(samples);
     const scores = rolloutScores(samples, groups);
     const payload = {
@@ -569,7 +611,7 @@
       n_samples_per_prompt: expandedRollout.n_samples_per_prompt ?? null,
       mean: scores.reduce((a, v) => a + v, 0) / scores.length,
       // Shared images, keyed by the `metadata.image_ref` each sample carries.
-      images: rolloutImages,
+      images,
       samples: samples.map((s) => sampleToPayload(s, "refs_only")),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -854,7 +896,7 @@
     closeBucket();
     expandedRolloutLoading = true;
     try {
-      const detail = await fetchRollout(runId, rolloutId);
+      const detail = await fetchRolloutIndex(runId, rolloutId);
       if (expandedRolloutId === rolloutId) {
         expandedRollout = detail;
         expandedRolloutLoading = false;
@@ -1698,8 +1740,9 @@
     let cancelled = false;
     (async () => {
       try {
-        const first = await fetchRollout(id, fId);
-        const last = fId === lId ? first : await fetchRollout(id, lId);
+        // Only scores are needed, which the index carries for paged steps.
+        const first = await fetchRolloutIndex(id, fId);
+        const last = fId === lId ? first : await fetchRolloutIndex(id, lId);
         if (cancelled) return;
         scoreDist = buildScoreDist(first?.samples || [], last?.samples || [], fId, lId);
       } catch {
@@ -2281,6 +2324,9 @@
                               </button>
                             </div>
                           </div>
+                          {#if activeSample.samples.some((s) => s?._page != null)}
+                            <div class="rollout-sample-label">loading sample…</div>
+                          {/if}
                           {#if activeSample.sample.metadata?.inference}
                             <div class="rollout-sample-label">inference</div>
                             <InferenceStats inference={activeSample.sample.metadata.inference} />

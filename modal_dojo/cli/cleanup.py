@@ -80,6 +80,7 @@ def cleanup(*, older_than_days: int = 7, dry_run: bool = False) -> None:
         deleted_rollouts += vol_remove_keys_with_prefix(
             MetadataStore.TRAINING_ROLLOUTS, f"{rid}__"
         )
+        vol_remove_keys_with_prefix(MetadataStore.TRAINING_ROLLOUT_SAMPLES, f"{rid}__")
         vol_remove_keys_with_prefix(TrainingRolloutResult.summary_store(rid), "")
         timing_volume = metadata._metadata_volume()
         metadata._safe_reload(timing_volume)

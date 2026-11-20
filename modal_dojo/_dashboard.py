@@ -25,6 +25,7 @@ from typing import (
     Awaitable,
     Callable,
     Iterable,
+    Literal,
     TypedDict,
     cast,
 )
@@ -1704,12 +1705,21 @@ def fastapi_app():
         )
 
     @web.get("/api/runs/{training_run_id}/rollouts/{rollout_id}")
-    async def get_run_rollout(training_run_id: str, rollout_id: int):
-        key = f"{training_run_id}__{int(rollout_id):08d}"
+    async def get_run_rollout(
+        training_run_id: str,
+        rollout_id: int,
+        view: Literal["full", "index"] = "full",
+    ):
+        # ``full`` (the default, used by the CLI and downloads) always returns
+        # every sample. ``index`` returns a paged step's manifest instead, so
+        # the viewer can draw the histogram and fetch one page at a time.
+        load = (
+            TrainingRolloutResult.load_index
+            if view == "index"
+            else TrainingRolloutResult.load_payload
+        )
         try:
-            data = await run_in_threadpool(
-                vol_get, MetadataStore.TRAINING_ROLLOUTS, key
-            )
+            data = await run_in_threadpool(load, training_run_id, rollout_id)
         except KeyError as exc:
             raise HTTPException(
                 status_code=404,
@@ -1718,6 +1728,24 @@ def fastapi_app():
 
         if isinstance(data, dict):
             _apply_parsed(data.get("samples"))
+        return JSONResponse(data)
+
+    @web.get("/api/runs/{training_run_id}/rollouts/{rollout_id}/samples/{page}")
+    async def get_run_rollout_page(training_run_id: str, rollout_id: int, page: int):
+        try:
+            data = await run_in_threadpool(
+                TrainingRolloutResult.load_page, training_run_id, rollout_id, page
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Sample page {page} of rollout {rollout_id} for run "
+                    f"{training_run_id!r} not found"
+                ),
+            ) from exc
+
+        _apply_parsed(data.get("samples"))
         return JSONResponse(data)
 
     # ── Per-group advantage distributions ────────────────────────────────

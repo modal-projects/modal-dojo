@@ -31,6 +31,10 @@ class MetadataStore(Enum):
     TRAIN_RESULTS_SUMMARY = "train-results-summary"
     TRAINING_ROLLOUTS = "training-rollouts"
     TRAINING_ROLLOUTS_SUMMARY = "training-rollouts-summary"
+    # Sample pages of large training rollouts. When a step's samples are too
+    # big for one file, its ``training-rollouts`` file keeps a per-sample index
+    # and the samples live here, keyed ``{run}__{rollout:08d}__p{page:04d}``.
+    TRAINING_ROLLOUT_SAMPLES = "training-rollout-samples"
     # Per-step, per-group advantage distributions. slime only logs the mean
     # advantage per step; this store keeps the full per-sample distribution so
     # the dashboard can render per-group spread. Written one shard file per
