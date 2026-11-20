@@ -3,7 +3,8 @@
 Anchors are literal source lines, so the test worth having is one that runs them
 over the sources they were written for: ``tests/testdata`` holds slime's
 ``train.py`` after the rollout-status patcher (the state the timing patcher sees)
-and miles' two entrypoints as shipped in the pinned image. Regenerate the
+and miles' two entrypoints from before the executor layout (``miles/legacy``;
+the pinned image no longer ships them). Regenerate the
 expected output with ``uv run pytest tests/test_substep_timing_patch.py
 --rewrite``.
 """
@@ -48,7 +49,7 @@ DRIVERS = [
     ),
     (
         "miles",
-        "miles/train.py.status.output",
+        "miles/legacy/train.py.status.output",
         "train.py",
         "miles/train.py.timing.output",
         {
@@ -65,7 +66,7 @@ DRIVERS = [
     ),
     (
         "miles",
-        "miles/train_async.py.status.output",
+        "miles/legacy/train_async.py.status.output",
         "train_async.py",
         "miles/train_async.py.timing.output",
         {
@@ -285,7 +286,7 @@ def test_a_conditional_phase_is_timed_inside_its_branch(patchers, tmp_path):
 
 def test_patching_twice_is_a_no_op(miles, tmp_path, capsys):
     work = tmp_path / "train.py"
-    work.write_text((TESTDATA / "miles/train.py.status.output").read_text())
+    work.write_text((TESTDATA / "miles/legacy/train.py.status.output").read_text())
     miles._patch_file(work, miles.ENTRYPOINTS["train.py"])
     once = work.read_text()
     miles._patch_file(work, miles.ENTRYPOINTS["train.py"])
@@ -306,7 +307,7 @@ def test_preamble_stays_below_future_imports(patchers):
 def test_a_moved_anchor_fails_the_build(miles, tmp_path):
     """Half-instrumented timing is worse than none: a lane would just be absent."""
     work = tmp_path / "train.py"
-    source = (TESTDATA / "miles/train.py.status.output").read_text()
+    source = (TESTDATA / "miles/legacy/train.py.status.output").read_text()
     work.write_text(
         source.replace("await offload_train()", "await offload_train(args)")
     )
@@ -316,7 +317,7 @@ def test_a_moved_anchor_fails_the_build(miles, tmp_path):
 
 def test_a_duplicate_anchor_fails_the_build(miles, tmp_path):
     work = tmp_path / "train_async.py"
-    source = (TESTDATA / "miles/train_async.py.status.output").read_text()
+    source = (TESTDATA / "miles/legacy/train_async.py.status.output").read_text()
     source = source.replace(
         "await critic_model.offload()",
         "await critic_model.offload()\n                await critic_model.offload()",
@@ -342,7 +343,7 @@ def test_package_patch_failure_is_best_effort(
 
 def test_async_training_offloads_are_separate_from_train(miles, tmp_path):
     patched = _patched(
-        miles, tmp_path, "miles/train_async.py.status.output", "train_async.py"
+        miles, tmp_path, "miles/legacy/train_async.py.status.output", "train_async.py"
     )
     critic_train = patched.index("with _tg_rec.phase('train_models'):")
     critic_offload = patched.index("with _tg_rec.phase('offload_train'):")

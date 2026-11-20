@@ -19,11 +19,8 @@ TESTDATA_DIR = REPO_ROOT / "tests" / "testdata" / "miles"
 MILES_SOURCE_PATHS = {
     "train.py": "/root/miles/train.py",
     "train_async.py": "/root/miles/train_async.py",
-    "rollout_manager.py": "/root/miles/miles/ray/rollout/rollout_manager.py",
-    "rm_hub_init.py": "/root/miles/miles/rollout/rm_hub/__init__.py",
-    "sglang_rollout.py": "/root/miles/miles/rollout/sglang_rollout.py",
-    "actor.py": "/root/miles/miles/backends/megatron_utils/actor.py",
-    "model.py": "/root/miles/miles/backends/megatron_utils/model.py",
+    # The package-file fixtures (rollout_manager.py, actor.py, ...) are frozen
+    # pre-executor-layout sources: the pinned image no longer has that layout.
     "log_utils.py": "/root/miles/miles/backends/training_utils/log_utils.py",
 }
 
