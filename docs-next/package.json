@@ -14,8 +14,8 @@
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",
-    "@astrojs/starlight": "^0.35.2",
-    "astro": "^5.14.1",
+    "@astrojs/starlight": "^0.43.1",
+    "astro": "^7.4.12",
     "katex": "^0.18.2",
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",
