@@ -301,10 +301,13 @@ class HarborAgent:
 
     Attributes:
         name: Harbor agent name, such as ``"pi"``.
+        version: Agent version Harbor installs in each sandbox. ``None`` installs
+            the latest release, so a training run can change agent versions midway.
     """
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, version: str | None = None) -> None:
         self.name = name
+        self.version = version
 
 
 class HarborTasks(DatasetConfig):
@@ -379,6 +382,7 @@ class HarborTasks(DatasetConfig):
             "metadata": {
                 "harbor_task_path": task_dir.as_posix(),
                 "harbor_agent": self.agent.name,
+                "harbor_agent_version": self.agent.version,
             },
         }
 
