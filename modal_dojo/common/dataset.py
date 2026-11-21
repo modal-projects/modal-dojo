@@ -13,6 +13,7 @@ from enum import Enum
 from typing import Any, Literal
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 from modal_dojo.common.errors import DojoConfigError
@@ -311,16 +312,33 @@ class HarborTasks(DatasetConfig):
 
     Attributes:
         agent: Agent that solves each task.
-        path: Local directory whose subdirectories are Harbor tasks.
-        task_glob: Glob, relative to ``path``, selecting task directories.
+        path: Local directory holding the Harbor tasks. With ``git_url``, the
+            repository is cloned into it unless it already has files.
+        task_glob: Glob, relative to ``path``, selecting task directories, such
+            as ``"tasks/*"`` for tasks in a subdirectory of the repository.
+        git_url: Git repository holding the tasks, cloned when the run launches.
+        git_commit_id: Commit to check out. Defaults to the repository's default
+            branch; pin it for reproducible runs.
     """
 
     _type: DatasetType = DatasetType.HARBOR
 
-    def __init__(self, *, agent: HarborAgent, path: str, task_glob: str = "*") -> None:
+    def __init__(
+        self,
+        *,
+        agent: HarborAgent,
+        path: str,
+        task_glob: str = "*",
+        git_url: str | None = None,
+        git_commit_id: str | None = None,
+    ) -> None:
+        if git_commit_id and not git_url:
+            raise DojoConfigError("git_commit_id requires git_url")
         self.agent = agent
         self.path = path
         self.task_glob = task_glob
+        self.git_url = git_url
+        self.git_commit_id = git_commit_id
 
     def input_key(self) -> str:
         return "messages"
@@ -328,7 +346,20 @@ class HarborTasks(DatasetConfig):
     def label_key(self) -> str:
         return None
 
+    @staticmethod
+    def _git_clone(git_url: str, git_commit_id: str | None, path: str) -> None:
+        if Path(path).is_dir() and any(Path(path).iterdir()):
+            return
+        subprocess.run(
+            ["git", "clone", "-q", "--no-checkout", git_url, path], check=True
+        )
+        subprocess.run(
+            ["git", "-C", path, "checkout", "-q", git_commit_id or "HEAD"], check=True
+        )
+
     def _resolve_task_root(self) -> Path:
+        if self.git_url:
+            self._git_clone(self.git_url, self.git_commit_id, self.path)
         task_root = Path(self.path).resolve()
         if not task_root.exists():
             raise FileNotFoundError(f"task root does not exist: {task_root}")
