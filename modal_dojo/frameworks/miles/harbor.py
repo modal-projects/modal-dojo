@@ -60,5 +60,7 @@ async def run(base_url: str, metadata: dict[str, Any], **kwargs: Any) -> dict:
     return {"reward": (rewards or {}).get("reward", 0.0)}
 
 
-async def reward(args: Any, sample: Any, **kwargs: Any) -> float:
-    return sample.metadata.get("reward", 0.0)
+async def reward(args: Any, samples: Any, **kwargs: Any) -> float | list:
+    if isinstance(samples, list):
+        return [sample.metadata.get("reward", 0.0) for sample in samples]
+    return samples.metadata.get("reward", 0.0)
