@@ -1,17 +1,28 @@
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+logger = logging.getLogger(__name__)
+
 AGENT_CONFIG = {
     "custom_generate_function_path": "miles.rollout.generate_hub.agentic_tool_call.generate",
     "custom_agent_function_path": f"{__name__}.run",
-    "custom_agent_function_mode": "inline",  # TODO: should this be configurable?
+    # agent function mode could be either inline or subproc
+    # subproc will create a process for each rollout which will hog up host RAM
+    # inline is not ideal either because sync work on one process will block all other processes
+    # for now, inline is the better option, though we should move towards a hybrid future
+    "custom_agent_function_mode": "inline",
     "custom_rm_path": f"{__name__}.reward",
+    # TODO: revisit session server v2 when thinking about compaction (ss v2)
     "use_session_server": True,
-    "session_server_workers": 1,
+    # miles has a 120s timeout to collect finished sessions from session server
+    # with one worker, sessions that finish together queue behind it and hit the timeout
+    # so, we use multiple workers to distribute the session collection work
+    "session_server_workers": 8,
     "session_server_ip": "0.0.0.0",
     "session_message_matcher": "loose_tool_call",
 }
@@ -54,10 +65,16 @@ async def run(base_url: str, metadata: dict[str, Any], **kwargs: Any) -> dict:
                 trials_dir=Path(trials_dir),
             )
         )
+        # TODO: figure out best way to provide a time bound for this
         result = await trial.run()
-    rewards = result.verifier_result.rewards if result.verifier_result else None
-    # TODO: think about how to discern between agent failures vs sandbox failures
-    return {"reward": (rewards or {}).get("reward", 0.0)}
+
+    rewards = result.verifier_result.rewards if result.verifier_result else {}
+    reward = rewards.get("reward", None)
+    exc = result.exception_info
+    error = f"{exc.exception_type}: {exc.exception_message}" if exc else None
+    if error:
+        logger.warning("Harbor trial %s: %s", result.trial_name, error)
+    return {"reward": reward, "error": error}
 
 
 async def reward(args: Any, samples: Any, **kwargs: Any) -> float | list:
